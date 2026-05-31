@@ -1,0 +1,57 @@
+<ResourceDictionary xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+                    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+
+    <!--
+        Visual Studio Dark palette.
+
+        Applied as an overlay on top of ModernWpf's Dark theme — we only
+        override the brush keys we care about (window/panel backgrounds,
+        accent, text). Any brush we don't list here falls through to the
+        underlying Dark theme, so this is additive, not a full replacement.
+    -->
+
+    <!-- Palette -->
+    <Color x:Key="VsWindowColor">#FF18191B</Color>
+    <Color x:Key="VsPanelColor">#FF202124</Color>
+    <Color x:Key="VsListAltColor">#FF282A2E</Color>
+    <Color x:Key="VsHoverColor">#FF30333A</Color>
+    <Color x:Key="VsSelectionColor">#FF0B4F79</Color>
+    <Color x:Key="VsBorderColor">#FF3A3D42</Color>
+    <Color x:Key="VsAccentColor">#FF0E8DDA</Color>
+    <Color x:Key="VsAccentHoverColor">#FF32A4F0</Color>
+    <Color x:Key="VsTextColor">#FFF4F4F5</Color>
+    <Color x:Key="VsTextSecondaryColor">#FFC9CBD1</Color>
+    <Color x:Key="VsTextMutedColor">#FF8F949E</Color>
+
+    <!-- Window / page background -->
+    <SolidColorBrush x:Key="ApplicationPageBackgroundThemeBrush" Color="{StaticResource VsWindowColor}"/>
+
+    <!-- Panel & card backgrounds (used by our Card / SubtleCard styles) -->
+    <SolidColorBrush x:Key="SystemControlBackgroundChromeMediumLowBrush" Color="{StaticResource VsPanelColor}"/>
+    <SolidColorBrush x:Key="SystemControlBackgroundChromeMediumBrush"    Color="{StaticResource VsPanelColor}"/>
+    <SolidColorBrush x:Key="SystemControlBackgroundChromeHighBrush"      Color="{StaticResource VsPanelColor}"/>
+    <SolidColorBrush x:Key="SystemControlBackgroundAltMediumLowBrush"    Color="{StaticResource VsWindowColor}"/>
+    <SolidColorBrush x:Key="SystemControlBackgroundAltMediumBrush"       Color="{StaticResource VsListAltColor}"/>
+
+    <!-- List rows / hover -->
+    <SolidColorBrush x:Key="SystemControlBackgroundListLowBrush"    Color="{StaticResource VsListAltColor}"/>
+    <SolidColorBrush x:Key="SystemControlBackgroundListMediumBrush" Color="{StaticResource VsHoverColor}"/>
+
+    <!-- Accent (Start button, hit pills, selection) -->
+    <SolidColorBrush x:Key="SystemControlBackgroundAccentBrush"      Color="{StaticResource VsAccentColor}"/>
+    <SolidColorBrush x:Key="SystemControlHighlightAccentBrush"       Color="{StaticResource VsAccentColor}"/>
+    <SolidColorBrush x:Key="SystemControlHighlightAltAccentBrush"    Color="{StaticResource VsAccentHoverColor}"/>
+    <SolidColorBrush x:Key="SystemControlHighlightListAccentLowBrush" Color="{StaticResource VsSelectionColor}"/>
+
+    <!-- Text -->
+    <SolidColorBrush x:Key="SystemControlForegroundBaseHighBrush"     Color="{StaticResource VsTextColor}"/>
+    <SolidColorBrush x:Key="SystemControlForegroundBaseMediumBrush"   Color="{StaticResource VsTextSecondaryColor}"/>
+    <SolidColorBrush x:Key="SystemControlForegroundBaseMediumHighBrush" Color="{StaticResource VsTextColor}"/>
+    <SolidColorBrush x:Key="SystemControlForegroundBaseLowBrush"      Color="{StaticResource VsBorderColor}"/>
+    <SolidColorBrush x:Key="SystemControlForegroundChromeWhiteBrush"  Color="#FFFFFFFF"/>
+
+    <!-- Accent color resources (some ModernWpf controls bind to these directly) -->
+    <Color           x:Key="SystemAccentColor">#FF007ACC</Color>
+    <SolidColorBrush x:Key="SystemAccentColorBrush" Color="{StaticResource VsAccentColor}"/>
+
+</ResourceDictionary>
