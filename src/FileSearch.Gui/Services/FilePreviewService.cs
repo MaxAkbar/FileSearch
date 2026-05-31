@@ -1,50 +1,53 @@
 using System;
 using System.Collections.Generic;
-using System.IO;
 using System.Linq;
 using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
+using FileSearch.Core.Extractors;
 
 namespace FileSearch.Gui.Services;
 
 public sealed class FilePreviewService : IFilePreviewService
 {
+    private readonly IExtractorRegistry _extractorRegistry;
+
+    public FilePreviewService(IExtractorRegistry extractorRegistry)
+    {
+        _extractorRegistry = extractorRegistry ?? throw new ArgumentNullException(nameof(extractorRegistry));
+    }
+
     public async Task<string> LoadHitsPreviewAsync(
         string path,
         IReadOnlyList<int> hitLineNumbers,
         int contextLines,
         CancellationToken cancellationToken)
     {
-        if (!File.Exists(path) || hitLineNumbers.Count == 0)
+        if (hitLineNumbers.Count == 0)
+            return string.Empty;
+
+        var extractor = _extractorRegistry.GetFor(path);
+        if (extractor is null)
             return string.Empty;
 
         var sortedHits = hitLineNumbers.Distinct().OrderBy(x => x).ToList();
         var hitSet = new HashSet<int>(sortedHits);
         var windows = MergeWindows(sortedHits, contextLines);
 
-        await using var stream = new FileStream(
-            path, FileMode.Open, FileAccess.Read, FileShare.ReadWrite,
-            bufferSize: 64 * 1024, useAsync: true);
-        using var reader = new StreamReader(stream, detectEncodingFromByteOrderMarks: true);
-
         var sb = new StringBuilder();
-        int lineNumber = 0;
         int windowIndex = 0;
         bool needSeparator = false;
 
-        while (await reader.ReadLineAsync(cancellationToken).ConfigureAwait(false) is { } line)
+        await foreach (var line in extractor.ExtractAsync(path, cancellationToken).ConfigureAwait(false))
         {
-            lineNumber++;
-
             // Advance past windows we've finished.
-            while (windowIndex < windows.Count && lineNumber > windows[windowIndex].End)
+            while (windowIndex < windows.Count && line.Number > windows[windowIndex].End)
             {
                 windowIndex++;
                 needSeparator = true;
             }
             if (windowIndex >= windows.Count) break;
-            if (lineNumber < windows[windowIndex].Start) continue;
+            if (line.Number < windows[windowIndex].Start) continue;
 
             if (needSeparator)
             {
@@ -52,11 +55,11 @@ public sealed class FilePreviewService : IFilePreviewService
                 needSeparator = false;
             }
 
-            char marker = hitSet.Contains(lineNumber) ? '►' : ' ';
+            char marker = hitSet.Contains(line.Number) ? '►' : ' ';
             sb.Append(marker).Append(' ')
-              .Append(lineNumber.ToString().PadLeft(6))
+              .Append(line.Number.ToString().PadLeft(6))
               .Append("  ")
-              .AppendLine(line);
+              .AppendLine(line.Content);
         }
 
         return sb.ToString();

@@ -27,7 +27,7 @@ public sealed partial class MainViewModel : ObservableObject
     // When the toggle is off, files with these extensions are excluded
     // from the walk so we never even open them.
     private static readonly string[] s_documentExtensions =
-        { "*.pdf", "*.docx", "*.xlsx" };
+        { "*.pdf", "*.docx", "*.xlsx", "*.pptx", "*.rtf", "*.odt", "*.ods", "*.odp", "*.epub", "*.eml" };
 
     private readonly ISearcher _searcher;
     private readonly IQueryFactory _queryFactory;

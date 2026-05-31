@@ -14,15 +14,18 @@ public sealed class PlainTextExtractor : ITextExtractor
 {
     private static readonly string[] s_extensions =
     {
-        ".txt", ".md", ".markdown", ".rst", ".log", ".csv", ".tsv",
+        ".txt", ".text", ".md", ".markdown", ".rst", ".log", ".csv", ".tsv",
+        ".jsonl", ".ndjson",
         ".json", ".jsonc", ".xml", ".yaml", ".yml", ".toml", ".ini", ".cfg", ".conf",
-        ".html", ".htm", ".css", ".scss", ".less",
+        ".properties", ".lock", ".sln", ".slnx", ".csproj", ".vbproj", ".fsproj",
+        ".css", ".scss", ".less",
         ".js", ".jsx", ".mjs", ".cjs", ".ts", ".tsx",
         ".cs", ".csx", ".fs", ".fsx", ".vb",
         ".c", ".h", ".cpp", ".hpp", ".cc", ".cxx",
         ".py", ".rb", ".go", ".rs", ".java", ".kt", ".swift", ".php", ".pl",
         ".sh", ".bash", ".zsh", ".ps1", ".psm1", ".bat", ".cmd",
-        ".sql", ".graphql", ".proto",
+        ".sql", ".graphql", ".gql", ".proto", ".http", ".rest",
+        ".dockerfile", ".gradle", ".tf", ".tfvars", ".bicep",
         ".env", ".gitignore", ".gitattributes", ".editorconfig",
     };
 

@@ -27,6 +27,14 @@ public static class ServiceCollectionExtensions
         services.AddSingleton<ITextExtractor, PdfExtractor>();
         services.AddSingleton<ITextExtractor, WordExtractor>();
         services.AddSingleton<ITextExtractor, ExcelExtractor>();
+        services.AddSingleton<ITextExtractor, PowerPointExtractor>();
+        services.AddSingleton<ITextExtractor, OpenDocumentExtractor>();
+        services.AddSingleton<ITextExtractor, EpubExtractor>();
+        services.AddSingleton<ITextExtractor, RtfExtractor>();
+        services.AddSingleton<ITextExtractor, HtmlExtractor>();
+        services.AddSingleton<ITextExtractor, EmlExtractor>();
+        services.AddSingleton<ITextExtractor, XmlTextExtractor>();
+        services.AddSingleton<ITextExtractor, CalendarContactExtractor>();
         services.AddSingleton<ITextExtractor, ZipExtractor>();
 
         services.TryAddSingleton<IExtractorRegistry>(sp =>
