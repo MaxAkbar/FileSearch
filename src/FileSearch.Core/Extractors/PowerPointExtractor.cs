@@ -36,7 +36,7 @@ public sealed class PowerPointExtractor : ITextExtractor
             slideNumber++;
 
             if (slideId.RelationshipId is null) continue;
-            if (presentationPart.GetPartById(slideId.RelationshipId) is not SlidePart slidePart) continue;
+            if (presentationPart.GetPartById(slideId.RelationshipId!) is not SlidePart slidePart) continue;
 
             foreach (var text in ExtractTextBlocks(slidePart.Slide?.Descendants<A.Text>()))
             {
