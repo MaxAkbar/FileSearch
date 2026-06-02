@@ -27,6 +27,7 @@ public partial class App : System.Windows.Application
             .ConfigureServices(services =>
             {
                 services.AddSingleton<ISettingsStore, JsonSettingsStore>();
+                services.AddSingleton<IFileTypeOptionsStore, JsonFileTypeOptionsStore>();
                 services.AddFileSearchCore();
                 services.AddSingleton<IFilePreviewService, FilePreviewService>();
                 services.AddSingleton<IThemeService, ThemeService>();
@@ -114,6 +115,7 @@ public partial class App : System.Windows.Application
             try
             {
                 var store = _host.Services.GetRequiredService<ISettingsStore>();
+                var fileTypeStore = _host.Services.GetRequiredService<IFileTypeOptionsStore>();
                 var theme = _host.Services.GetRequiredService<IThemeService>();
                 var vm = _host.Services.GetRequiredService<MainViewModel>();
 
@@ -121,7 +123,9 @@ public partial class App : System.Windows.Application
                 settings.Theme = theme.CurrentTheme;
                 settings.RecentQueries = vm.RecentQueries.ToList();
                 settings.RecentPaths = vm.RecentPaths.ToList();
+                settings.SkipUnknownFileTypes = vm.SkipUnknownFileTypes;
                 store.Save(settings);
+                fileTypeStore.Save(vm.BuildFileTypeOptions());
             }
             catch
             {

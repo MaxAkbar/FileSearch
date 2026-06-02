@@ -69,6 +69,38 @@ public sealed class WalkerTests : IDisposable
     }
 
     [Fact]
+    public void Enumerate_AppliesIncludeExtensions()
+    {
+        File.WriteAllText(Path.Combine(_root, "a.cs"), "");
+        File.WriteAllText(Path.Combine(_root, "b.txt"), "");
+
+        var walker = new FileWalker();
+        var result = walker.Enumerate(
+            new[] { _root },
+            new WalkerOptions { IncludeExtensions = new HashSet<string>(StringComparer.OrdinalIgnoreCase) { ".cs" } },
+            CancellationToken.None).ToList();
+
+        Assert.Single(result);
+        Assert.EndsWith("a.cs", result[0]);
+    }
+
+    [Fact]
+    public void Enumerate_AppliesExcludeExtensions()
+    {
+        File.WriteAllText(Path.Combine(_root, "a.cs"), "");
+        File.WriteAllText(Path.Combine(_root, "b.txt"), "");
+
+        var walker = new FileWalker();
+        var result = walker.Enumerate(
+            new[] { _root },
+            new WalkerOptions { ExcludeExtensions = new HashSet<string>(StringComparer.OrdinalIgnoreCase) { ".txt" } },
+            CancellationToken.None).ToList();
+
+        Assert.Single(result);
+        Assert.EndsWith("a.cs", result[0]);
+    }
+
+    [Fact]
     public void Enumerate_SkipsFilesLargerThanMax()
     {
         File.WriteAllText(Path.Combine(_root, "small.txt"), "x");

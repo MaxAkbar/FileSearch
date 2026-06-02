@@ -7,6 +7,8 @@ public sealed record WalkerOptions
 {
     public IReadOnlyList<string> IncludeGlobs { get; init; } = Array.Empty<string>();
     public IReadOnlyList<string> ExcludeGlobs { get; init; } = Array.Empty<string>();
+    public IReadOnlySet<string> IncludeExtensions { get; init; } = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+    public IReadOnlySet<string> ExcludeExtensions { get; init; } = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
     public bool Recursive { get; init; } = true;
     public bool IncludeHidden { get; init; } = false;
 

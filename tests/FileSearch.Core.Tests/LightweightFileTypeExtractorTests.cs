@@ -79,6 +79,14 @@ public sealed class LightweightFileTypeExtractorTests : IDisposable
         Assert.Contains(".tf", extensions);
         Assert.Contains(".bicep", extensions);
         Assert.Contains(".dockerfile", extensions);
+        Assert.Contains(".cshtml", extensions);
+        Assert.Contains(".asp", extensions);
+        Assert.Contains(".aspx", extensions);
+        Assert.Contains(".razor", extensions);
+        Assert.Contains(".vue", extensions);
+        Assert.Contains(".svelte", extensions);
+        Assert.Contains(".lua", extensions);
+        Assert.Contains(".dart", extensions);
     }
 
     private static async Task<List<TextLine>> ReadAllAsync(ITextExtractor extractor, string path)

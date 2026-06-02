@@ -60,6 +60,10 @@ public sealed class FileWalker : IFileWalker
         if (options.ModifiedAfterUtc is { } after && e.LastWriteTimeUtc < after) return false;
         if (options.ModifiedBeforeUtc is { } before && e.LastWriteTimeUtc > before) return false;
 
+        var extension = Path.GetExtension(e.FileName.ToString());
+        if (options.IncludeExtensions.Count > 0 && !options.IncludeExtensions.Contains(extension)) return false;
+        if (options.ExcludeExtensions.Count > 0 && options.ExcludeExtensions.Contains(extension)) return false;
+
         if (!MatchesGlobs(e.FileName, options.IncludeGlobs, defaultIfEmpty: true)) return false;
         if (MatchesGlobs(e.FileName, options.ExcludeGlobs, defaultIfEmpty: false)) return false;
 

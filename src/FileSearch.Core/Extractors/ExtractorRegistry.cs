@@ -10,6 +10,8 @@ public sealed class ExtractorRegistry : IExtractorRegistry
     private readonly Dictionary<string, ITextExtractor> _byExtension;
     private readonly ITextExtractor? _fallback;
 
+    public IReadOnlySet<string> SupportedExtensions => _byExtension.Keys.ToHashSet(StringComparer.OrdinalIgnoreCase);
+
     /// <param name="extractors">All registered extractors.</param>
     /// <param name="fallback">
     /// Optional extractor used when no extension match is found. Pass the

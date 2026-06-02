@@ -10,6 +10,7 @@ using System.Windows.Data;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 using FileSearch.Core.Engine;
+using FileSearch.Core.Extractors;
 using FileSearch.Core.Queries;
 using FileSearch.Core.Walker;
 using FileSearch.Gui.Services;
@@ -23,18 +24,15 @@ public sealed partial class MainViewModel : ObservableObject
     private const int MaxHistoryEntries = 15;
     private const int HitsTabIndex = 1;
 
-    // Extensions of files that the "Office/PDF documents" toggle gates.
-    // When the toggle is off, files with these extensions are excluded
-    // from the walk so we never even open them.
-    private static readonly string[] s_documentExtensions =
-        { "*.pdf", "*.docx", "*.xlsx", "*.pptx", "*.rtf", "*.odt", "*.ods", "*.odp", "*.epub", "*.eml" };
-
     private readonly ISearcher _searcher;
+    private readonly IExtractorRegistry _extractorRegistry;
     private readonly IQueryFactory _queryFactory;
     private readonly IFilePreviewService _previewService;
     private readonly IThemeService _themeService;
     private readonly IFileLauncher _fileLauncher;
     private readonly ISettingsStore _settingsStore;
+    private readonly IFileTypeOptionsStore _fileTypeOptionsStore;
+    private readonly FileTypeOptions _fileTypeOptions;
     private readonly IShellIntegrationService _shellIntegrationService;
 
     private readonly Dictionary<string, FileResultViewModel> _filesByPath =
@@ -45,19 +43,24 @@ public sealed partial class MainViewModel : ObservableObject
 
     public MainViewModel(
         ISearcher searcher,
+        IExtractorRegistry extractorRegistry,
         IQueryFactory queryFactory,
         IFilePreviewService previewService,
         IThemeService themeService,
         IFileLauncher fileLauncher,
         ISettingsStore settingsStore,
+        IFileTypeOptionsStore fileTypeOptionsStore,
         IShellIntegrationService shellIntegrationService)
     {
         _searcher = searcher;
+        _extractorRegistry = extractorRegistry;
         _queryFactory = queryFactory;
         _previewService = previewService;
         _themeService = themeService;
         _fileLauncher = fileLauncher;
         _settingsStore = settingsStore;
+        _fileTypeOptionsStore = fileTypeOptionsStore;
+        _fileTypeOptions = _fileTypeOptionsStore.Load();
         _shellIntegrationService = shellIntegrationService;
 
         // Set up the filtered view used by the "Filter" tab.
@@ -72,6 +75,13 @@ public sealed partial class MainViewModel : ObservableObject
         foreach (var p in saved.RecentPaths) RecentPaths.Add(p);
         if (RecentQueries.Count > 0) QueryText = RecentQueries[0];
         if (RecentPaths.Count > 0) SearchPath = RecentPaths[0];
+        SkipUnknownFileTypes = saved.SkipUnknownFileTypes;
+        if (_fileTypeOptions.AdditionalPlainTextExtensions.Count == 0 && !string.IsNullOrWhiteSpace(saved.AdditionalPlainTextExtensions))
+        {
+            _fileTypeOptions.AdditionalPlainTextExtensions = ParseExtensions(saved.AdditionalPlainTextExtensions).ToList();
+            _fileTypeOptionsStore.Save(_fileTypeOptions);
+        }
+        AdditionalPlainTextExtensions = string.Join("; ", _fileTypeOptions.AdditionalPlainTextExtensions);
     }
 
     /// <summary>Dropdown for the "Containing text" field (most-recent first).</summary>
@@ -107,8 +117,16 @@ public sealed partial class MainViewModel : ObservableObject
     [ObservableProperty] private QueryMode _searchMode = QueryMode.Boolean;
     [ObservableProperty] private bool _matchCase;
     [ObservableProperty] private bool _enableDocumentExtraction = true;
+    [ObservableProperty] private bool _skipUnknownFileTypes;
     [ObservableProperty] private int _minSizeKB;
     [ObservableProperty] private int _maxSizeKB;
+    private string _additionalPlainTextExtensions = string.Empty;
+
+    public string AdditionalPlainTextExtensions
+    {
+        get => _additionalPlainTextExtensions;
+        set => SetProperty(ref _additionalPlainTextExtensions, value);
+    }
 
     // --- date filters (Dates tab) ---
     [ObservableProperty] private bool _modifiedAfterEnabled;
@@ -221,7 +239,8 @@ public sealed partial class MainViewModel : ObservableObject
         var stopwatch = Stopwatch.StartNew();
         try
         {
-            var request = new SearchRequest(query, new[] { SearchPath }, BuildWalkerOptions());
+            IProgress<SearchProgress> progress = new Progress<SearchProgress>(UpdateProgressStatus);
+            var request = new SearchRequest(query, new[] { SearchPath }, BuildWalkerOptions(), progress.Report);
 
             await foreach (var hit in _searcher.SearchAsync(request, token).ConfigureAwait(true))
             {
@@ -309,14 +328,16 @@ public sealed partial class MainViewModel : ObservableObject
     private WalkerOptions BuildWalkerOptions()
     {
         var include = ParsePatterns(FileNamePattern);
-        var exclude = new List<string>();
-        if (!EnableDocumentExtraction)
-            exclude.AddRange(s_documentExtensions);
 
         return new WalkerOptions
         {
             IncludeGlobs = include,
-            ExcludeGlobs = exclude,
+            IncludeExtensions = SkipUnknownFileTypes
+                ? BuildKnownTextExtensions()
+                : new HashSet<string>(StringComparer.OrdinalIgnoreCase),
+            ExcludeExtensions = EnableDocumentExtraction
+                ? new HashSet<string>(StringComparer.OrdinalIgnoreCase)
+                : _fileTypeOptions.DocumentExtensions.ToHashSet(StringComparer.OrdinalIgnoreCase),
             Recursive = IncludeSubfolders,
             MinFileSizeBytes = (long)Math.Max(0, MinSizeKB) * 1024,
             MaxFileSizeBytes = MaxSizeKB > 0
@@ -327,6 +348,50 @@ public sealed partial class MainViewModel : ObservableObject
                 ? ModifiedBefore.AddDays(1).AddSeconds(-1).ToUniversalTime() // inclusive end-of-day
                 : null,
         };
+    }
+
+    private HashSet<string> BuildKnownTextExtensions()
+    {
+        var extensions = _extractorRegistry.SupportedExtensions.ToHashSet(StringComparer.OrdinalIgnoreCase);
+        foreach (var extension in ParseExtensions(AdditionalPlainTextExtensions))
+            extensions.Add(extension);
+        return extensions;
+    }
+
+    public FileTypeOptions BuildFileTypeOptions()
+    {
+        _fileTypeOptions.AdditionalPlainTextExtensions = ParseExtensions(AdditionalPlainTextExtensions).ToList();
+        return _fileTypeOptions;
+    }
+
+    internal static string[] ParseExtensions(string raw)
+    {
+        if (string.IsNullOrWhiteSpace(raw)) return Array.Empty<string>();
+
+        return raw.Split(new[] { ';', ',', ' ', '\r', '\n', '\t' }, StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+            .Select(NormalizeExtension)
+            .Where(extension => extension.Length > 1)
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToArray();
+    }
+
+    private static string NormalizeExtension(string value)
+    {
+        var extension = value.Trim();
+        if (extension.StartsWith("*.", StringComparison.Ordinal))
+            extension = extension[1..];
+        if (!extension.StartsWith(".", StringComparison.Ordinal))
+            extension = "." + extension;
+        return extension.ToLowerInvariant();
+    }
+
+    private void UpdateProgressStatus(SearchProgress progress)
+    {
+        if (!IsSearching) return;
+
+        var skipped = progress.FilesSkipped > 0 ? $", {progress.FilesSkipped:n0} skipped" : string.Empty;
+        var failed = progress.FilesFailed > 0 ? $", {progress.FilesFailed:n0} failed" : string.Empty;
+        StatusText = $"Searching... {TotalHits:n0} hits in {FilesMatched:n0} files; {progress.FilesProcessed:n0}/{progress.FilesEnumerated:n0} scanned{skipped}{failed}";
     }
 
     private async Task LoadPreviewAsync(FileResultViewModel? file)

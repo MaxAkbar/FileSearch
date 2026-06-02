@@ -45,6 +45,22 @@ public sealed class Searcher : ISearcher
             FullMode = BoundedChannelFullMode.Wait,
         });
 
+        long filesEnumerated = 0;
+        long filesProcessed = 0;
+        long filesMatched = 0;
+        long filesSkipped = 0;
+        long filesFailed = 0;
+
+        void PublishProgress()
+        {
+            request.Progress?.Invoke(new SearchProgress(
+                Interlocked.Read(ref filesEnumerated),
+                Interlocked.Read(ref filesProcessed),
+                Interlocked.Read(ref filesMatched),
+                Interlocked.Read(ref filesSkipped),
+                Interlocked.Read(ref filesFailed)));
+        }
+
         var producer = Task.Run(async () =>
         {
             try
@@ -59,19 +75,33 @@ public sealed class Searcher : ISearcher
                     },
                     async (path, token) =>
                     {
+                        Interlocked.Increment(ref filesEnumerated);
                         var extractor = _extractors.GetFor(path);
-                        if (extractor is null) return;
+                        if (extractor is null)
+                        {
+                            Interlocked.Increment(ref filesSkipped);
+                            PublishProgress();
+                            return;
+                        }
 
                         try
                         {
-                            await ProcessFileAsync(path, extractor, request.Expression, channel.Writer, token)
+                            var hits = await ProcessFileAsync(path, extractor, request.Expression, channel.Writer, token)
                                 .ConfigureAwait(false);
+                            Interlocked.Increment(ref filesProcessed);
+                            if (hits > 0)
+                                Interlocked.Increment(ref filesMatched);
                         }
                         catch (OperationCanceledException) { throw; }
                         catch
                         {
+                            Interlocked.Increment(ref filesFailed);
                             // Swallow per-file errors so one bad file doesn't kill the run.
                             // A logging hook could be added here.
+                        }
+                        finally
+                        {
+                            PublishProgress();
                         }
                     }).ConfigureAwait(false);
             }
@@ -87,7 +117,7 @@ public sealed class Searcher : ISearcher
         await producer.ConfigureAwait(false); // surface producer-side exceptions
     }
 
-    private async Task ProcessFileAsync(
+    private async Task<int> ProcessFileAsync(
         string path,
         ITextExtractor extractor,
         Query query,
@@ -114,5 +144,7 @@ public sealed class Searcher : ISearcher
 
             if (++hitsForFile >= _options.MaxHitsPerFile) break;
         }
+
+        return hitsForFile;
     }
 }

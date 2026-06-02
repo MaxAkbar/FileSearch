@@ -11,6 +11,10 @@ public sealed class AppSettings
 {
     public AppTheme Theme { get; set; } = AppTheme.System;
 
+    public bool SkipUnknownFileTypes { get; set; } = false;
+
+    public string AdditionalPlainTextExtensions { get; set; } = string.Empty;
+
     /// <summary>
     /// Most-recently-used search queries, most-recent first. Capped at
     /// ~15 entries. Surfaced as the dropdown on the "Containing text" field.

@@ -1,3 +1,5 @@
+using System.Collections.Generic;
+
 namespace FileSearch.Core.Extractors;
 
 /// <summary>
@@ -8,5 +10,7 @@ namespace FileSearch.Core.Extractors;
 /// </summary>
 public interface IExtractorRegistry
 {
+    IReadOnlySet<string> SupportedExtensions { get; }
+
     ITextExtractor? GetFor(string path);
 }

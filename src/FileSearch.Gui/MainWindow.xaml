@@ -220,6 +220,17 @@
                                               ToolTip="When off, .pdf, .docx, .xlsx are skipped entirely."/>
                                     <TextBlock Text="Skips .pdf, .docx, .xlsx when off"
                                                Style="{StaticResource HintLabelStyle}"/>
+                                    <CheckBox Content="Skip unknown file types"
+                                              IsChecked="{Binding SkipUnknownFileTypes}"
+                                              Margin="0,14,0,0"
+                                              ToolTip="Faster, but extensionless or uncommon text files are not searched."/>
+                                    <TextBlock Text="Off by default to preserve full text coverage"
+                                               Style="{StaticResource HintLabelStyle}"/>
+                                    <TextBlock Text="Additional plain-text extensions" Style="{StaticResource FieldLabelStyle}" Margin="0,14,0,0"/>
+                                    <TextBox Text="{Binding AdditionalPlainTextExtensions, UpdateSourceTrigger=PropertyChanged}"
+                                             ui:ControlHelper.PlaceholderText=".liquid; .tmpl; .foo"/>
+                                    <TextBlock Text="Used when skipping unknown file types. Separate with commas or semicolons."
+                                               Style="{StaticResource HintLabelStyle}"/>
                                 </StackPanel>
 
                                 <StackPanel Grid.Column="4">

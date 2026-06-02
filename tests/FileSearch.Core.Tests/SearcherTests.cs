@@ -112,4 +112,34 @@ public sealed class SearcherTests : IDisposable
         Assert.Equal(2, hits.Count);
         Assert.All(hits, h => Assert.Contains("public class", h.LineContent));
     }
+
+    [Fact]
+    public async Task ReportsProgressMetrics()
+    {
+        File.WriteAllText(Path.Combine(_root, "a.txt"), "needle\n");
+        File.WriteAllText(Path.Combine(_root, "b.bin"), "needle\n");
+
+        var plain = new PlainTextExtractor();
+        var registry = new ExtractorRegistry(new ITextExtractor[] { plain });
+        var searcher = new Searcher(new FileWalker(), registry);
+        SearchProgress? progress = null;
+        var request = new SearchRequest(
+            new TermQuery("needle"),
+            new[] { _root },
+            new WalkerOptions(),
+            p => progress = p);
+
+        var hits = new List<Hit>();
+        await foreach (var h in searcher.SearchAsync(request, CancellationToken.None))
+            hits.Add(h);
+
+        var hit = Assert.Single(hits);
+        Assert.EndsWith("a.txt", hit.Path);
+        Assert.NotNull(progress);
+        Assert.Equal(2, progress.FilesEnumerated);
+        Assert.Equal(1, progress.FilesProcessed);
+        Assert.Equal(1, progress.FilesMatched);
+        Assert.Equal(1, progress.FilesSkipped);
+        Assert.Equal(0, progress.FilesFailed);
+    }
 }
