@@ -1,6 +1,6 @@
 # FileSearch
 
-FileSearch is a Windows desktop application for searching text across files and folders. It combines a reusable .NET search engine with a WPF user interface, document text extractors, query parsing, result previewing, and Microsoft Store/MSIX packaging support.
+FileSearch is a Windows desktop application for searching text across files and folders. It combines a reusable .NET search engine with a WPF user interface, document text extractors, query parsing, and packaging support for Microsoft Store distribution.
 
 ## Features
 
@@ -228,7 +228,7 @@ Outputs are written to `artifacts\store`:
 - `.appxsym` public symbols.
 - `.msixupload` file for Microsoft Store submission.
 
-For sideload testing, pass `-CertificateThumbprint` with a certificate trusted on the test machine. For Microsoft Store submission, upload the generated `.msixupload` file using the reserved identity and publisher values from Partner Center.
+For sideload testing, pass `-CertificateThumbprint` with a certificate trusted on the test machine. For Microsoft Store submission, upload the generated `.msixupload` file using the reserved identity and publisher values for the app in Partner Center.
 
 ## Development notes
 
@@ -250,4 +250,4 @@ Contributions are welcome. A typical workflow is:
 
 ## License
 
-No license file is currently included in this repository. Add one before redistributing or reusing the code outside the repository owner’s intended scope.
+FileSearch is licensed under the MIT License. See [LICENSE](LICENSE) for details.
