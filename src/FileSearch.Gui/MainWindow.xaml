@@ -46,6 +46,8 @@
                 </MenuItem>
             </MenuItem>
             <MenuItem Header="_Help">
+                <MenuItem Header="_User guide" Click="OnHelpClick"/>
+                <Separator/>
                 <MenuItem Header="_About" Click="OnAboutClick"/>
             </MenuItem>
         </Menu>

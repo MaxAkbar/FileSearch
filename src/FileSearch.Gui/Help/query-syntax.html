@@ -1,0 +1,124 @@
+<!doctype html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Query Syntax - FileSearch Help</title>
+    <link rel="stylesheet" href="css/help.css">
+</head>
+<body>
+    <div class="shell">
+        <aside class="sidebar">
+            <a class="brand" href="index.html" aria-label="FileSearch help home">
+                <img src="../Assets/FileSearch-256.png" alt="">
+                <span>
+                    <span class="brand-title">FileSearch</span>
+                    <span class="brand-subtitle">User help</span>
+                </span>
+            </a>
+            <div class="nav-heading">Using FileSearch</div>
+            <nav class="nav">
+                <a href="index.html">Overview</a>
+                <a href="search.html">Run a Search</a>
+                <a class="active" href="query-syntax.html">Query Syntax</a>
+                <a href="results.html">Results and Preview</a>
+                <a href="options.html">Options</a>
+                <a href="troubleshooting.html">Troubleshooting</a>
+            </nav>
+        </aside>
+
+        <main class="content">
+            <section class="hero">
+                <div class="eyebrow">Search Expressions</div>
+                <h1>Choose the query mode that matches the job.</h1>
+                <p class="lead">The Options tab controls how FileSearch interprets the Containing text field. Boolean is the default and works well for most searches.</p>
+            </section>
+
+            <h2>Modes</h2>
+            <div class="table-wrap">
+                <table>
+                    <thead>
+                        <tr>
+                            <th>Mode</th>
+                            <th>Behavior</th>
+                            <th>Use when</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <tr>
+                            <td><strong>Boolean</strong></td>
+                            <td>Parses terms, quoted phrases, slash-delimited regex terms, <code>AND</code>, <code>OR</code>, <code>NOT</code>, and parentheses.</td>
+                            <td>You want combinations like <code>(invoice OR receipt) AND NOT draft</code>.</td>
+                        </tr>
+                        <tr>
+                            <td><strong>Plain text</strong></td>
+                            <td>Treats the whole input as one literal substring.</td>
+                            <td>You want an exact phrase with no operators.</td>
+                        </tr>
+                        <tr>
+                            <td><strong>Regex</strong></td>
+                            <td>Treats the whole input as a .NET regular expression.</td>
+                            <td>You need pattern matching such as <code>TODO|FIXME</code>.</td>
+                        </tr>
+                    </tbody>
+                </table>
+            </div>
+
+            <h2>Boolean Syntax</h2>
+            <p>Boolean mode supports bare words, quoted phrases, regex terms wrapped in slashes, parentheses, and the operators <code>AND</code>, <code>OR</code>, and <code>NOT</code>. Operators are case-insensitive.</p>
+            <div class="table-wrap">
+                <table>
+                    <thead>
+                        <tr>
+                            <th>Expression</th>
+                            <th>Meaning</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <tr>
+                            <td><code>error timeout</code></td>
+                            <td>Find files containing both words. Adjacent terms are treated as <code>AND</code>.</td>
+                        </tr>
+                        <tr>
+                            <td><code>error OR warning</code></td>
+                            <td>Find files containing either term.</td>
+                        </tr>
+                        <tr>
+                            <td><code>timeout AND NOT test</code></td>
+                            <td>Find files containing <code>timeout</code> but not <code>test</code>.</td>
+                        </tr>
+                        <tr>
+                            <td><code>"connection string"</code></td>
+                            <td>Find an exact phrase.</td>
+                        </tr>
+                        <tr>
+                            <td><code>(invoice OR receipt) AND NOT draft</code></td>
+                            <td>Group terms to control operator precedence.</td>
+                        </tr>
+                        <tr>
+                            <td><code>/TODO|FIXME/</code></td>
+                            <td>Use a regex term inside a Boolean expression.</td>
+                        </tr>
+                    </tbody>
+                </table>
+            </div>
+
+            <h2>Regex Notes</h2>
+            <ul class="plain-list">
+                <li>Regex mode uses .NET regular expression syntax.</li>
+                <li>In Boolean mode, a regex term starts and ends with <code>/</code>. Escape a literal slash as <code>\/</code>.</li>
+                <li>Turn on <strong>Match case</strong> when capitalization must match exactly.</li>
+            </ul>
+
+            <h2>Invalid Queries</h2>
+            <p>If a query cannot be parsed, FileSearch does not start scanning. The status bar shows the parser or regex error so you can fix the expression before trying again.</p>
+
+            <div class="next-links">
+                <a href="search.html">Run a Search</a>
+                <a href="results.html">Results and Preview</a>
+                <a href="troubleshooting.html">Troubleshooting</a>
+            </div>
+        </main>
+    </div>
+</body>
+</html>

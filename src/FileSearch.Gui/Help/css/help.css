@@ -1,0 +1,344 @@
+:root {
+    color-scheme: dark;
+    --bg: #111315;
+    --surface: #1a1d21;
+    --surface-2: #22262b;
+    --border: #363c44;
+    --text: #edf1f5;
+    --muted: #aeb7c2;
+    --subtle: #7f8995;
+    --accent: #0f8bdc;
+    --accent-soft: rgba(15, 139, 220, 0.16);
+    --code-bg: #0c0f12;
+    --shadow: 0 20px 54px rgba(0, 0, 0, 0.28);
+}
+
+* {
+    box-sizing: border-box;
+}
+
+html {
+    scroll-behavior: smooth;
+}
+
+body {
+    margin: 0;
+    min-height: 100vh;
+    background: var(--bg);
+    color: var(--text);
+    font: 15px/1.6 "Segoe UI", system-ui, -apple-system, BlinkMacSystemFont, sans-serif;
+}
+
+a {
+    color: #75c8ff;
+    text-decoration: none;
+}
+
+a:hover {
+    text-decoration: underline;
+}
+
+.shell {
+    display: grid;
+    grid-template-columns: 280px minmax(0, 1fr);
+    min-height: 100vh;
+}
+
+.sidebar {
+    position: sticky;
+    top: 0;
+    height: 100vh;
+    padding: 28px 22px;
+    border-right: 1px solid var(--border);
+    background: #15181b;
+}
+
+.brand {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    margin-bottom: 34px;
+}
+
+.brand img {
+    width: 36px;
+    height: 36px;
+}
+
+.brand-title {
+    display: block;
+    font-size: 16px;
+    font-weight: 650;
+    letter-spacing: 0;
+}
+
+.brand-subtitle {
+    display: block;
+    color: var(--subtle);
+    font-size: 12px;
+    margin-top: 1px;
+}
+
+.nav-heading {
+    margin: 24px 0 8px;
+    color: var(--subtle);
+    font-size: 11px;
+    font-weight: 700;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+}
+
+.nav {
+    display: grid;
+    gap: 2px;
+}
+
+.nav a {
+    display: block;
+    padding: 8px 10px;
+    border-radius: 6px;
+    color: var(--muted);
+}
+
+.nav a:hover,
+.nav a.active {
+    background: var(--accent-soft);
+    color: var(--text);
+    text-decoration: none;
+}
+
+.content {
+    max-width: 1120px;
+    width: 100%;
+    padding: 44px 52px 80px;
+}
+
+.hero {
+    max-width: 860px;
+    margin-bottom: 34px;
+}
+
+.eyebrow {
+    color: #77d2ff;
+    font-size: 12px;
+    font-weight: 700;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+}
+
+h1,
+h2,
+h3 {
+    line-height: 1.2;
+    letter-spacing: 0;
+}
+
+h1 {
+    margin: 10px 0 14px;
+    font-size: 42px;
+    font-weight: 720;
+}
+
+h2 {
+    margin: 44px 0 14px;
+    font-size: 25px;
+}
+
+h3 {
+    margin: 24px 0 8px;
+    font-size: 18px;
+}
+
+p {
+    margin: 0 0 14px;
+    color: var(--muted);
+}
+
+.lead {
+    color: #d3dbe4;
+    font-size: 18px;
+    max-width: 760px;
+}
+
+.grid {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 14px;
+}
+
+.grid.two {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.card {
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    background: var(--surface);
+    box-shadow: var(--shadow);
+    padding: 20px;
+}
+
+.card.compact {
+    box-shadow: none;
+}
+
+.card h3 {
+    margin-top: 0;
+}
+
+.step-list,
+.plain-list {
+    margin: 12px 0 0;
+    padding-left: 22px;
+    color: var(--muted);
+}
+
+.step-list li,
+.plain-list li {
+    margin-bottom: 8px;
+}
+
+.callout {
+    margin: 22px 0;
+    padding: 16px 18px;
+    border-left: 3px solid var(--accent);
+    border-radius: 6px;
+    background: var(--accent-soft);
+    color: #dcefff;
+}
+
+.table-wrap {
+    overflow-x: auto;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    background: var(--surface);
+}
+
+table {
+    width: 100%;
+    border-collapse: collapse;
+}
+
+th,
+td {
+    padding: 12px 14px;
+    border-bottom: 1px solid var(--border);
+    text-align: left;
+    vertical-align: top;
+}
+
+th {
+    color: #dce4ec;
+    font-size: 12px;
+    font-weight: 700;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+}
+
+td {
+    color: var(--muted);
+}
+
+tr:last-child td {
+    border-bottom: 0;
+}
+
+code,
+kbd {
+    border: 1px solid #3a424b;
+    border-radius: 5px;
+    background: var(--code-bg);
+    color: #f4f7fb;
+    font-family: "Cascadia Code", Consolas, "Courier New", monospace;
+    font-size: 0.92em;
+    padding: 0.12em 0.36em;
+}
+
+pre {
+    overflow-x: auto;
+    margin: 12px 0 0;
+    padding: 14px;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    background: var(--code-bg);
+}
+
+pre code {
+    border: 0;
+    background: transparent;
+    padding: 0;
+}
+
+.workflow {
+    display: grid;
+    gap: 12px;
+    margin: 20px 0;
+}
+
+.workflow-step {
+    display: grid;
+    grid-template-columns: 34px minmax(0, 1fr);
+    gap: 12px;
+    align-items: start;
+    padding: 16px;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    background: var(--surface);
+}
+
+.step-number {
+    display: inline-grid;
+    place-items: center;
+    width: 28px;
+    height: 28px;
+    border-radius: 999px;
+    background: var(--accent);
+    color: white;
+    font-weight: 700;
+}
+
+.next-links {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 10px;
+    margin-top: 34px;
+}
+
+.next-links a {
+    padding: 10px 12px;
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    background: var(--surface-2);
+    color: var(--text);
+}
+
+.next-links a:hover {
+    border-color: var(--accent);
+    text-decoration: none;
+}
+
+@media (max-width: 860px) {
+    .shell {
+        display: block;
+    }
+
+    .sidebar {
+        position: static;
+        height: auto;
+        border-right: 0;
+        border-bottom: 1px solid var(--border);
+    }
+
+    .content {
+        padding: 32px 22px 60px;
+    }
+
+    h1 {
+        font-size: 34px;
+    }
+
+    .grid,
+    .grid.two {
+        grid-template-columns: 1fr;
+    }
+}

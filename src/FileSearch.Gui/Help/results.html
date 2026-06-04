@@ -1,0 +1,98 @@
+<!doctype html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Results and Preview - FileSearch Help</title>
+    <link rel="stylesheet" href="css/help.css">
+</head>
+<body>
+    <div class="shell">
+        <aside class="sidebar">
+            <a class="brand" href="index.html" aria-label="FileSearch help home">
+                <img src="../Assets/FileSearch-256.png" alt="">
+                <span>
+                    <span class="brand-title">FileSearch</span>
+                    <span class="brand-subtitle">User help</span>
+                </span>
+            </a>
+            <div class="nav-heading">Using FileSearch</div>
+            <nav class="nav">
+                <a href="index.html">Overview</a>
+                <a href="search.html">Run a Search</a>
+                <a href="query-syntax.html">Query Syntax</a>
+                <a class="active" href="results.html">Results and Preview</a>
+                <a href="options.html">Options</a>
+                <a href="troubleshooting.html">Troubleshooting</a>
+            </nav>
+        </aside>
+
+        <main class="content">
+            <section class="hero">
+                <div class="eyebrow">Results</div>
+                <h1>Review, refine, and open matching files.</h1>
+                <p class="lead">Search results are grouped by file. Select a file to see matching lines, use the Filter tab to narrow the current result set, or open files directly from the grid.</p>
+            </section>
+
+            <h2>Results Grid</h2>
+            <div class="table-wrap">
+                <table>
+                    <thead>
+                        <tr>
+                            <th>Column</th>
+                            <th>Description</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <tr>
+                            <td><strong>Name</strong></td>
+                            <td>The matched file name.</td>
+                        </tr>
+                        <tr>
+                            <td><strong>Hits</strong></td>
+                            <td>The number of matching lines or spans found in that file.</td>
+                        </tr>
+                        <tr>
+                            <td><strong>First match</strong></td>
+                            <td>A short preview of the first matching line.</td>
+                        </tr>
+                        <tr>
+                            <td><strong>Location</strong></td>
+                            <td>The folder containing the file.</td>
+                        </tr>
+                    </tbody>
+                </table>
+            </div>
+
+            <h2>Hits Tab</h2>
+            <p>Selecting a file automatically opens the Hits tab. The preview shows matching line numbers and nearby context. For large or binary-backed document formats, the preview may be simplified depending on the extractor.</p>
+
+            <h2>Summary Tab</h2>
+            <p>The Summary tab shows search statistics: files matched, total hits, and elapsed time. The status bar gives additional live progress while a scan is running.</p>
+
+            <h2>Filter Tab</h2>
+            <p>The Filter tab narrows the current results in memory. It matches against file names and hit lines, so it is useful after a broad search.</p>
+            <ul class="plain-list">
+                <li>Filtering does not re-open or rescan files.</li>
+                <li>Clear the filter field to show all results from the search again.</li>
+                <li>Run a new search when you need to change folder, file pattern, query mode, or date and size filters.</li>
+            </ul>
+
+            <h2>Opening and Copying</h2>
+            <p>Double-click a result row to open the file. Right-click a row for more actions:</p>
+            <ul class="plain-list">
+                <li><strong>Open</strong> opens the file with the default Windows application.</li>
+                <li><strong>Reveal in Explorer</strong> opens the containing folder and selects the file.</li>
+                <li><strong>Copy file path</strong> copies the full path to the clipboard.</li>
+                <li><strong>Copy folder path</strong> copies only the containing folder path.</li>
+            </ul>
+
+            <div class="next-links">
+                <a href="search.html">Run a Search</a>
+                <a href="options.html">Options</a>
+                <a href="troubleshooting.html">Troubleshooting</a>
+            </div>
+        </main>
+    </div>
+</body>
+</html>

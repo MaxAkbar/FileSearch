@@ -22,6 +22,10 @@ The script writes outputs to `artifacts\store`:
 - `.appxsym` for public symbols.
 - `.msixupload` for Microsoft Store submission.
 
+The app help bundle is published from `src\FileSearch.Gui\Help` and is included
+in the package root as `Help\index.html`. The packaging script verifies this
+file exists before creating the MSIX.
+
 For local sideload testing, sign the `.msix` by passing `-CertificateThumbprint`
 with a certificate trusted on the test machine. For Microsoft Store submission,
 upload the `.msixupload` file generated with the identity and publisher values

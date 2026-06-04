@@ -24,6 +24,7 @@
   <ItemGroup>
     <Resource Include="Assets\FileSearch.ico" />
     <Content Include="Assets\FileSearch-256.png" />
+    <Content Include="Help\**\*.*" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
   </ItemGroup>
 
 </Project>

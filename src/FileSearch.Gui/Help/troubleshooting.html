@@ -1,0 +1,84 @@
+<!doctype html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Troubleshooting - FileSearch Help</title>
+    <link rel="stylesheet" href="css/help.css">
+</head>
+<body>
+    <div class="shell">
+        <aside class="sidebar">
+            <a class="brand" href="index.html" aria-label="FileSearch help home">
+                <img src="../Assets/FileSearch-256.png" alt="">
+                <span>
+                    <span class="brand-title">FileSearch</span>
+                    <span class="brand-subtitle">User help</span>
+                </span>
+            </a>
+            <div class="nav-heading">Using FileSearch</div>
+            <nav class="nav">
+                <a href="index.html">Overview</a>
+                <a href="search.html">Run a Search</a>
+                <a href="query-syntax.html">Query Syntax</a>
+                <a href="results.html">Results and Preview</a>
+                <a href="options.html">Options</a>
+                <a class="active" href="troubleshooting.html">Troubleshooting</a>
+            </nav>
+        </aside>
+
+        <main class="content">
+            <section class="hero">
+                <div class="eyebrow">Troubleshooting</div>
+                <h1>Fix common search issues.</h1>
+                <p class="lead">Most issues come from scope, query mode, file type filters, or Windows file permissions. The status bar usually tells you where to start.</p>
+            </section>
+
+            <h2>No Results</h2>
+            <ul class="plain-list">
+                <li>Confirm the <strong>Look in</strong> folder exists and contains the files you expect.</li>
+                <li>Turn on <strong>Include subfolders</strong> if the files are below the selected folder.</li>
+                <li>Clear <strong>File name pattern</strong> or broaden it to include the target file types.</li>
+                <li>Check whether <strong>Skip unknown file types</strong> or <strong>Office &amp; PDF documents</strong> is excluding files.</li>
+                <li>Switch to Plain text mode if Boolean operators or regex syntax are not intended.</li>
+            </ul>
+
+            <h2>Invalid Query</h2>
+            <p>If the status bar reports an invalid query, review the selected search mode.</p>
+            <ul class="plain-list">
+                <li>Boolean mode requires balanced quotes and parentheses.</li>
+                <li>Regex mode requires a valid .NET regular expression.</li>
+                <li>Plain text mode is the safest choice for literal text containing punctuation.</li>
+            </ul>
+
+            <h2>Search Is Slow</h2>
+            <ul class="plain-list">
+                <li>Add a file name pattern, such as <code>*.cs;*.xaml</code>, to avoid scanning unrelated files.</li>
+                <li>Disable Office and PDF extraction if you only need text/source files.</li>
+                <li>Enable Skip unknown file types when scanning folders with many binaries.</li>
+                <li>Add date or size filters to avoid very old, very small, or very large files.</li>
+                <li>Cancel the current search if the scope is too broad, then start again with tighter filters.</li>
+            </ul>
+
+            <h2>Preview Fails or Looks Incomplete</h2>
+            <p>The Hits preview loads the selected file after the search. It can fail if the file was moved, deleted, locked, or cannot be decoded as text. For generated document formats, extracted text may not have the same layout as the original document.</p>
+
+            <h2>Windows Integration Does Not Appear</h2>
+            <ul class="plain-list">
+                <li>Use <strong>File &gt; Install Windows integration</strong> again and watch the status bar for errors.</li>
+                <li>Restart File Explorer if the context menu does not refresh immediately.</li>
+                <li>Use <strong>File &gt; Remove Windows integration</strong> before reinstalling if the executable moved.</li>
+            </ul>
+
+            <h2>Store or MSIX Install Notes</h2>
+            <p>For local sideload testing, the MSIX must be signed with a certificate trusted by the test machine. Microsoft Store submission uses the generated <code>.msixupload</code> package with the app identity and publisher reserved in Partner Center.</p>
+
+            <div class="next-links">
+                <a href="index.html">Overview</a>
+                <a href="search.html">Run a Search</a>
+                <a href="options.html">Options</a>
+            </div>
+        </main>
+    </div>
+</body>
+</html>

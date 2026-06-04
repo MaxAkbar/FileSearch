@@ -1,0 +1,100 @@
+<!doctype html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Run a Search - FileSearch Help</title>
+    <link rel="stylesheet" href="css/help.css">
+</head>
+<body>
+    <div class="shell">
+        <aside class="sidebar">
+            <a class="brand" href="index.html" aria-label="FileSearch help home">
+                <img src="../Assets/FileSearch-256.png" alt="">
+                <span>
+                    <span class="brand-title">FileSearch</span>
+                    <span class="brand-subtitle">User help</span>
+                </span>
+            </a>
+            <div class="nav-heading">Using FileSearch</div>
+            <nav class="nav">
+                <a href="index.html">Overview</a>
+                <a class="active" href="search.html">Run a Search</a>
+                <a href="query-syntax.html">Query Syntax</a>
+                <a href="results.html">Results and Preview</a>
+                <a href="options.html">Options</a>
+                <a href="troubleshooting.html">Troubleshooting</a>
+            </nav>
+        </aside>
+
+        <main class="content">
+            <section class="hero">
+                <div class="eyebrow">Search Workflow</div>
+                <h1>Run a focused search.</h1>
+                <p class="lead">Use the Main tab to define the text, file names, folder, and recursion scope. Use Options and Dates only when you need tighter control.</p>
+            </section>
+
+            <h2>Main Tab</h2>
+            <div class="table-wrap">
+                <table>
+                    <thead>
+                        <tr>
+                            <th>Field</th>
+                            <th>What it does</th>
+                            <th>Example</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <tr>
+                            <td><strong>Containing text</strong></td>
+                            <td>The text, regex, or Boolean expression to find. Recent searches are saved in the dropdown.</td>
+                            <td><code>error AND timeout</code></td>
+                        </tr>
+                        <tr>
+                            <td><strong>File name pattern</strong></td>
+                            <td>Optional semicolon- or comma-separated glob patterns. Blank means all supported files.</td>
+                            <td><code>*.cs;*.xaml;*.md</code></td>
+                        </tr>
+                        <tr>
+                            <td><strong>Look in</strong></td>
+                            <td>The folder to search. Recent folders are saved in the dropdown.</td>
+                            <td><code>C:\Source\MyApp</code></td>
+                        </tr>
+                        <tr>
+                            <td><strong>Include subfolders</strong></td>
+                            <td>Searches the selected folder and all child folders when enabled.</td>
+                            <td>On for solution-wide search.</td>
+                        </tr>
+                    </tbody>
+                </table>
+            </div>
+
+            <h2>Search Controls</h2>
+            <ul class="plain-list">
+                <li><strong>Start</strong> runs the search. Pressing <kbd>Enter</kbd> in the Containing text field also starts it.</li>
+                <li><strong>Cancel</strong> stops the current search and keeps any results already found.</li>
+                <li>The status bar shows current progress, skipped files, failed files, total hits, and elapsed time.</li>
+            </ul>
+
+            <h2>File Name Patterns</h2>
+            <p>Patterns are matched against file names, not the full folder path. Use semicolons or commas to separate multiple patterns.</p>
+            <pre><code>*.cs
+*.cs;*.xaml;*.json
+*.md,*.txt</code></pre>
+
+            <div class="callout">
+                If a search returns too many files, narrow the file name pattern first. It reduces the number of files FileSearch has to open and scan.
+            </div>
+
+            <h2>Search History</h2>
+            <p>FileSearch keeps the most recent queries and folders so repeated searches are quick. A search attempt is added to history when it starts, even if it is canceled or fails.</p>
+
+            <div class="next-links">
+                <a href="query-syntax.html">Query Syntax</a>
+                <a href="options.html">Options</a>
+                <a href="results.html">Results and Preview</a>
+            </div>
+        </main>
+    </div>
+</body>
+</html>

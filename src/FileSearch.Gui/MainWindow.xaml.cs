@@ -1,3 +1,6 @@
+using System;
+using System.Diagnostics;
+using System.IO;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Input;
@@ -21,6 +24,35 @@ public partial class MainWindow : Window
             "About FileSearch",
             MessageBoxButton.OK,
             MessageBoxImage.Information);
+
+    private void OnHelpClick(object sender, RoutedEventArgs e)
+    {
+        var helpPath = Path.Combine(AppContext.BaseDirectory, "Help", "index.html");
+        if (!File.Exists(helpPath))
+        {
+            System.Windows.MessageBox.Show(
+                this,
+                $"The FileSearch help files could not be found.\n\nExpected location:\n{helpPath}",
+                "FileSearch Help",
+                MessageBoxButton.OK,
+                MessageBoxImage.Warning);
+            return;
+        }
+
+        try
+        {
+            Process.Start(new ProcessStartInfo(helpPath) { UseShellExecute = true });
+        }
+        catch (Exception ex)
+        {
+            System.Windows.MessageBox.Show(
+                this,
+                $"The FileSearch help files could not be opened.\n\n{ex.Message}",
+                "FileSearch Help",
+                MessageBoxButton.OK,
+                MessageBoxImage.Warning);
+        }
+    }
 
     private void OnResultRowDoubleClick(object sender, MouseButtonEventArgs e)
     {

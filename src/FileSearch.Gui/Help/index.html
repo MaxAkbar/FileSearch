@@ -1,0 +1,117 @@
+<!doctype html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>FileSearch Help</title>
+    <link rel="stylesheet" href="css/help.css">
+</head>
+<body>
+    <div class="shell">
+        <aside class="sidebar">
+            <a class="brand" href="index.html" aria-label="FileSearch help home">
+                <img src="../Assets/FileSearch-256.png" alt="">
+                <span>
+                    <span class="brand-title">FileSearch</span>
+                    <span class="brand-subtitle">User help</span>
+                </span>
+            </a>
+
+            <div class="nav-heading">Using FileSearch</div>
+            <nav class="nav">
+                <a class="active" href="index.html">Overview</a>
+                <a href="search.html">Run a Search</a>
+                <a href="query-syntax.html">Query Syntax</a>
+                <a href="results.html">Results and Preview</a>
+                <a href="options.html">Options</a>
+                <a href="troubleshooting.html">Troubleshooting</a>
+            </nav>
+        </aside>
+
+        <main class="content">
+            <section class="hero">
+                <div class="eyebrow">FileSearch Help</div>
+                <h1>Find text across files quickly and confidently.</h1>
+                <p class="lead">FileSearch searches a folder for files containing text, regular expressions, or Boolean expressions. It can scan source files, text documents, Office files, PDFs, and other common document formats.</p>
+            </section>
+
+            <section class="grid">
+                <article class="card">
+                    <h3>Choose a scope</h3>
+                    <p>Select the folder in <strong>Look in</strong>, decide whether subfolders are included, then optionally narrow the scan with file name patterns like <code>*.cs;*.xaml</code>.</p>
+                </article>
+                <article class="card">
+                    <h3>Pick a query mode</h3>
+                    <p>Use Boolean mode for normal search expressions, Plain text for literal phrases, or Regex when you need a .NET regular expression.</p>
+                </article>
+                <article class="card">
+                    <h3>Review matching files</h3>
+                    <p>The results grid shows every matched file, hit count, first matching line, and folder. Selecting a row opens the Hits tab with matching lines and context.</p>
+                </article>
+            </section>
+
+            <h2>Fast Start</h2>
+            <div class="workflow">
+                <div class="workflow-step">
+                    <span class="step-number">1</span>
+                    <div>
+                        <h3>Enter what you want to find</h3>
+                        <p>Type the text or expression into <strong>Containing text</strong>. Press <kbd>Enter</kbd> or choose <strong>Start</strong> to search.</p>
+                    </div>
+                </div>
+                <div class="workflow-step">
+                    <span class="step-number">2</span>
+                    <div>
+                        <h3>Limit the file set</h3>
+                        <p>Use <strong>File name pattern</strong> for globs such as <code>*.cs</code>, <code>*.txt</code>, or <code>*.cs;*.xaml;*.md</code>. Leave it blank to search every supported file.</p>
+                    </div>
+                </div>
+                <div class="workflow-step">
+                    <span class="step-number">3</span>
+                    <div>
+                        <h3>Choose the folder</h3>
+                        <p>Enter a path in <strong>Look in</strong> or use the folder button. Turn <strong>Include subfolders</strong> on when you want recursive search.</p>
+                    </div>
+                </div>
+                <div class="workflow-step">
+                    <span class="step-number">4</span>
+                    <div>
+                        <h3>Inspect and refine</h3>
+                        <p>Select a result to see matching lines. Open the <strong>Filter</strong> tab to narrow the current results without scanning the files again.</p>
+                    </div>
+                </div>
+            </div>
+
+            <div class="callout">
+                Boolean search is the default. Adjacent words are treated like <code>AND</code>, so <code>error timeout</code> means files must contain both terms.
+            </div>
+
+            <h2>Common Tasks</h2>
+            <div class="grid two">
+                <article class="card compact">
+                    <h3>Search only source files</h3>
+                    <p>Set <strong>File name pattern</strong> to something like <code>*.cs;*.xaml;*.json</code>, then search from your solution folder with subfolders enabled.</p>
+                </article>
+                <article class="card compact">
+                    <h3>Find TODO or FIXME comments</h3>
+                    <p>Use Regex mode with <code>TODO|FIXME</code>, or Boolean mode with <code>TODO OR FIXME</code>.</p>
+                </article>
+                <article class="card compact">
+                    <h3>Search an exact phrase</h3>
+                    <p>Use Plain text mode, or wrap the phrase in quotes in Boolean mode: <code>"connection string"</code>.</p>
+                </article>
+                <article class="card compact">
+                    <h3>Search from Explorer</h3>
+                    <p>Use <strong>File &gt; Install Windows integration</strong> to add a FileSearch command for folders and folder backgrounds.</p>
+                </article>
+            </div>
+
+            <div class="next-links">
+                <a href="search.html">Run a Search</a>
+                <a href="query-syntax.html">Query Syntax</a>
+                <a href="results.html">Results and Preview</a>
+            </div>
+        </main>
+    </div>
+</body>
+</html>

@@ -253,6 +253,11 @@ dotnet publish $projectPath `
     -p:DebugSymbols=true `
     -o $publishDirectory
 
+$helpIndex = Join-Path $publishDirectory "Help\index.html"
+if (-not (Test-Path $helpIndex)) {
+    throw "FileSearch help files were not published. Expected: $helpIndex"
+}
+
 Write-Host "Staging MSIX package root..."
 New-Item -ItemType Directory -Force -Path $packageRoot | Out-Null
 Copy-DirectoryContents $publishDirectory $packageRoot

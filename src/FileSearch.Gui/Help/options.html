@@ -1,0 +1,117 @@
+<!doctype html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Options - FileSearch Help</title>
+    <link rel="stylesheet" href="css/help.css">
+</head>
+<body>
+    <div class="shell">
+        <aside class="sidebar">
+            <a class="brand" href="index.html" aria-label="FileSearch help home">
+                <img src="../Assets/FileSearch-256.png" alt="">
+                <span>
+                    <span class="brand-title">FileSearch</span>
+                    <span class="brand-subtitle">User help</span>
+                </span>
+            </a>
+            <div class="nav-heading">Using FileSearch</div>
+            <nav class="nav">
+                <a href="index.html">Overview</a>
+                <a href="search.html">Run a Search</a>
+                <a href="query-syntax.html">Query Syntax</a>
+                <a href="results.html">Results and Preview</a>
+                <a class="active" href="options.html">Options</a>
+                <a href="troubleshooting.html">Troubleshooting</a>
+            </nav>
+        </aside>
+
+        <main class="content">
+            <section class="hero">
+                <div class="eyebrow">Options</div>
+                <h1>Tune scope, speed, and matching behavior.</h1>
+                <p class="lead">Most searches only need the Main tab. Use Options and Dates when you want stricter query behavior, faster scanning, or file metadata filters.</p>
+            </section>
+
+            <h2>Query Options</h2>
+            <div class="table-wrap">
+                <table>
+                    <thead>
+                        <tr>
+                            <th>Option</th>
+                            <th>Behavior</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <tr>
+                            <td><strong>Search mode</strong></td>
+                            <td>Controls whether the query is parsed as Boolean, Regex, or Plain text.</td>
+                        </tr>
+                        <tr>
+                            <td><strong>Match case</strong></td>
+                            <td>When enabled, uppercase and lowercase letters must match exactly.</td>
+                        </tr>
+                    </tbody>
+                </table>
+            </div>
+
+            <h2>Document Extraction</h2>
+            <div class="table-wrap">
+                <table>
+                    <thead>
+                        <tr>
+                            <th>Option</th>
+                            <th>Behavior</th>
+                            <th>When to use it</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <tr>
+                            <td><strong>Office &amp; PDF documents</strong></td>
+                            <td>When enabled, FileSearch extracts text from supported Office and PDF documents. When disabled, those document types are skipped.</td>
+                            <td>Disable it for faster source-code-only searches.</td>
+                        </tr>
+                        <tr>
+                            <td><strong>Skip unknown file types</strong></td>
+                            <td>When enabled, FileSearch only scans known text/document extensions and any additional extensions you provide.</td>
+                            <td>Enable it when a folder contains many binary or generated files.</td>
+                        </tr>
+                        <tr>
+                            <td><strong>Additional plain-text extensions</strong></td>
+                            <td>Adds custom text-like extensions such as <code>.liquid</code>, <code>.tmpl</code>, or <code>.razor</code>.</td>
+                            <td>Use it with Skip unknown file types when your project has uncommon text files.</td>
+                        </tr>
+                    </tbody>
+                </table>
+            </div>
+
+            <h2>File Size Filters</h2>
+            <p>Minimum and maximum file sizes are entered in kilobytes.</p>
+            <ul class="plain-list">
+                <li><strong>Min</strong> excludes files smaller than the entered size.</li>
+                <li><strong>Max</strong> excludes files larger than the entered size.</li>
+                <li>A maximum of <code>0</code> means no upper size limit.</li>
+            </ul>
+
+            <h2>Date Filters</h2>
+            <p>The Dates tab filters by modified date. Use <strong>After</strong>, <strong>Before</strong>, or both to search only files changed in a specific period.</p>
+            <div class="callout">
+                The Before date is inclusive for the whole selected day, so a file modified at 11:59 PM on that date still qualifies.
+            </div>
+
+            <h2>Themes</h2>
+            <p>Use <strong>View &gt; Theme</strong> to choose Light, Dark, Visual Studio, or System. Theme selection is saved and restored the next time FileSearch starts.</p>
+
+            <h2>Windows Integration</h2>
+            <p>Use <strong>File &gt; Install Windows integration</strong> to add FileSearch to the Windows folder context menu and Start menu. Use <strong>Remove Windows integration</strong> to remove those registrations.</p>
+
+            <div class="next-links">
+                <a href="query-syntax.html">Query Syntax</a>
+                <a href="results.html">Results and Preview</a>
+                <a href="troubleshooting.html">Troubleshooting</a>
+            </div>
+        </main>
+    </div>
+</body>
+</html>
