@@ -27,6 +27,12 @@ public sealed class AppSettings
     /// </summary>
     public List<string> RecentPaths { get; set; } = new();
 
+    /// <summary>
+    /// User-created file-pattern scopes, shown below the built-in scope
+    /// presets in the sidebar.
+    /// </summary>
+    public List<SearchScope> CustomScopes { get; set; } = new();
+
     // ----- legacy fields (pre-history) -----
     // Kept so settings files from older versions can be migrated by the
     // store at load time. After migration these get set to null and

@@ -123,6 +123,14 @@ public partial class App : System.Windows.Application
                 settings.Theme = theme.CurrentTheme;
                 settings.RecentQueries = vm.RecentQueries.ToList();
                 settings.RecentPaths = vm.RecentPaths.ToList();
+                settings.CustomScopes = vm.CustomScopes
+                    .Where(scope => !string.IsNullOrWhiteSpace(scope.Name))
+                    .Select(scope => new SearchScope
+                    {
+                        Name = scope.Name.Trim(),
+                        FileNamePattern = scope.FileNamePattern?.Trim() ?? string.Empty,
+                    })
+                    .ToList();
                 settings.SkipUnknownFileTypes = vm.SkipUnknownFileTypes;
                 store.Save(settings);
                 fileTypeStore.Save(vm.BuildFileTypeOptions());

@@ -74,6 +74,20 @@ public partial class MainWindow : Window
         }
     }
 
+    private void OnAddScopeClick(object sender, RoutedEventArgs e)
+    {
+        if (DataContext is not MainViewModel viewModel)
+            return;
+
+        var scopeWindow = new ScopeWindow(viewModel.FileNamePattern)
+        {
+            Owner = this,
+        };
+
+        if (scopeWindow.ShowDialog() == true)
+            viewModel.SaveCustomScope(scopeWindow.ScopeName, scopeWindow.FileNamePattern);
+    }
+
     // Collapsible sidebar sections: an expanded section's row takes the leftover
     // space (*), a collapsed one shrinks to its header (Auto) and is pushed to
     // the bottom of the sidebar.

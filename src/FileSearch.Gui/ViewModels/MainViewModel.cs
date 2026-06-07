@@ -75,6 +75,19 @@ public sealed partial class MainViewModel : ObservableObject
         var saved = _settingsStore.Load();
         foreach (var q in saved.RecentQueries) RecentQueries.Add(q);
         foreach (var p in saved.RecentPaths) RecentPaths.Add(p);
+        foreach (var scope in saved.CustomScopes.Where(scope => !string.IsNullOrWhiteSpace(scope.Name)))
+        {
+            CustomScopes.Add(new SearchScope
+            {
+                Name = scope.Name.Trim(),
+                FileNamePattern = scope.FileNamePattern?.Trim() ?? string.Empty,
+            });
+        }
+
+        RecentQueries.CollectionChanged += (_, _) => ClearRecentQueriesCommand.NotifyCanExecuteChanged();
+        RecentPaths.CollectionChanged += (_, _) => ClearRecentPathsCommand.NotifyCanExecuteChanged();
+        CustomScopes.CollectionChanged += (_, _) => ClearCustomScopesCommand.NotifyCanExecuteChanged();
+
         if (RecentQueries.Count > 0) QueryText = RecentQueries[0];
         if (RecentPaths.Count > 0) SearchPath = RecentPaths[0];
         SkipUnknownFileTypes = saved.SkipUnknownFileTypes;
@@ -91,6 +104,8 @@ public sealed partial class MainViewModel : ObservableObject
 
     /// <summary>Dropdown for the "Look in" field (most-recent first).</summary>
     public ObservableCollection<string> RecentPaths { get; } = new();
+
+    public ObservableCollection<SearchScope> CustomScopes { get; } = new();
 
     public ObservableCollection<FileResultViewModel> Files { get; } = new();
 
@@ -392,6 +407,98 @@ public sealed partial class MainViewModel : ObservableObject
         FileNamePattern = pattern?.Trim() ?? string.Empty;
 
     [RelayCommand]
+    private void ApplyCustomScope(SearchScope? scope)
+    {
+        if (scope is null)
+            return;
+
+        FileNamePattern = scope.FileNamePattern?.Trim() ?? string.Empty;
+        StatusText = $"Scope set to {scope.Name}.";
+    }
+
+    public void SaveCustomScope(string name, string fileNamePattern)
+    {
+        var trimmedName = name.Trim();
+        if (string.IsNullOrEmpty(trimmedName))
+            return;
+
+        var scope = new SearchScope
+        {
+            Name = trimmedName,
+            FileNamePattern = fileNamePattern.Trim(),
+        };
+
+        var existingIndex = -1;
+        for (var i = 0; i < CustomScopes.Count; i++)
+        {
+            if (string.Equals(CustomScopes[i].Name, trimmedName, StringComparison.OrdinalIgnoreCase))
+            {
+                existingIndex = i;
+                break;
+            }
+        }
+
+        if (existingIndex >= 0)
+            CustomScopes[existingIndex] = scope;
+        else
+            CustomScopes.Add(scope);
+
+        SaveSettings();
+        StatusText = $"Saved scope {trimmedName}.";
+    }
+
+    [RelayCommand]
+    private void RemoveCustomScope(SearchScope? scope)
+    {
+        if (scope is null)
+            return;
+
+        CustomScopes.Remove(scope);
+        SaveSettings();
+    }
+
+    [RelayCommand(CanExecute = nameof(CanClearCustomScopes))]
+    private void ClearCustomScopes()
+    {
+        CustomScopes.Clear();
+        SaveSettings();
+    }
+
+    private bool CanClearCustomScopes() => CustomScopes.Count > 0;
+
+    [RelayCommand]
+    private void RemoveRecentPath(string? path)
+    {
+        RemoveFromList(RecentPaths, path);
+        SaveSettings();
+    }
+
+    [RelayCommand(CanExecute = nameof(CanClearRecentPaths))]
+    private void ClearRecentPaths()
+    {
+        RecentPaths.Clear();
+        SaveSettings();
+    }
+
+    private bool CanClearRecentPaths() => RecentPaths.Count > 0;
+
+    [RelayCommand]
+    private void RemoveRecentQuery(string? query)
+    {
+        RemoveFromList(RecentQueries, query);
+        SaveSettings();
+    }
+
+    [RelayCommand(CanExecute = nameof(CanClearRecentQueries))]
+    private void ClearRecentQueries()
+    {
+        RecentQueries.Clear();
+        SaveSettings();
+    }
+
+    private bool CanClearRecentQueries() => RecentQueries.Count > 0;
+
+    [RelayCommand]
     private void ApplyTheme(string themeName)
     {
         if (Enum.TryParse<AppTheme>(themeName, out var theme))
@@ -538,10 +645,36 @@ public sealed partial class MainViewModel : ObservableObject
         PromoteToFront(RecentPaths, path);
 
         // Persist immediately so history survives a crash.
+        SaveSettings();
+    }
+
+    private void SaveSettings()
+    {
         var settings = _settingsStore.Load();
         settings.RecentQueries = RecentQueries.ToList();
         settings.RecentPaths = RecentPaths.ToList();
+        settings.CustomScopes = CustomScopes
+            .Where(scope => !string.IsNullOrWhiteSpace(scope.Name))
+            .Select(scope => new SearchScope
+            {
+                Name = scope.Name.Trim(),
+                FileNamePattern = scope.FileNamePattern?.Trim() ?? string.Empty,
+            })
+            .ToList();
         _settingsStore.Save(settings);
+    }
+
+    private static void RemoveFromList(ObservableCollection<string> list, string? value)
+    {
+        var trimmed = value?.Trim();
+        if (string.IsNullOrEmpty(trimmed))
+            return;
+
+        for (var i = list.Count - 1; i >= 0; i--)
+        {
+            if (string.Equals(list[i], trimmed, StringComparison.OrdinalIgnoreCase))
+                list.RemoveAt(i);
+        }
     }
 
     private static void PromoteToFront(ObservableCollection<string> list, string value)
