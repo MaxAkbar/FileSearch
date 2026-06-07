@@ -21,13 +21,15 @@ public partial class MainWindow : Window
 
     private void OnExitClick(object sender, RoutedEventArgs e) => Close();
 
-    private void OnAboutClick(object sender, RoutedEventArgs e) =>
-        System.Windows.MessageBox.Show(
-            this,
-            "FileSearch\n\nA file-content search tool built on FileSearch.Core.",
-            "About FileSearch",
-            MessageBoxButton.OK,
-            MessageBoxImage.Information);
+    private void OnAboutClick(object sender, RoutedEventArgs e)
+    {
+        var aboutWindow = new AboutWindow
+        {
+            Owner = this,
+        };
+
+        aboutWindow.ShowDialog();
+    }
 
     private void OnHelpClick(object sender, RoutedEventArgs e)
     {
