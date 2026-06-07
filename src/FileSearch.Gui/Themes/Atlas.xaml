@@ -1,0 +1,48 @@
+<ResourceDictionary xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+                    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+
+    <!--
+        Atlas — the warm "paper" Light theme.
+
+        This overlay maps the Atlas palette onto ModernWpf's SystemControl*
+        brush keys so the built-in controls (ComboBox, DatePicker, CheckBox,
+        ScrollBar, menus, flyouts) pick up the warm look. Our own surfaces are
+        driven by the Atlas.* keys, whose Light defaults live in AppStyles.xaml,
+        so this overlay does not need to redefine them.
+    -->
+
+    <!-- Window / page background -->
+    <SolidColorBrush x:Key="ApplicationPageBackgroundThemeBrush" Color="#F4F1EA"/>
+
+    <!-- Card / panel surfaces -->
+    <SolidColorBrush x:Key="SystemControlBackgroundChromeMediumLowBrush" Color="#FFFDF8"/>
+    <SolidColorBrush x:Key="SystemControlBackgroundChromeMediumBrush"    Color="#FFFDF8"/>
+    <SolidColorBrush x:Key="SystemControlBackgroundChromeHighBrush"      Color="#FFFDF8"/>
+    <SolidColorBrush x:Key="SystemControlBackgroundAltMediumLowBrush"    Color="#FFFDF8"/>
+    <SolidColorBrush x:Key="SystemControlBackgroundAltMediumBrush"       Color="#FAF7F0"/>
+    <SolidColorBrush x:Key="SystemControlBackgroundAltHighBrush"         Color="#FFFDF8"/>
+
+    <!-- List rows / hover -->
+    <SolidColorBrush x:Key="SystemControlBackgroundListLowBrush"    Color="#FAF7F0"/>
+    <SolidColorBrush x:Key="SystemControlBackgroundListMediumBrush" Color="#11000000"/>
+
+    <!-- Accent (green) -->
+    <SolidColorBrush x:Key="SystemControlBackgroundAccentBrush"       Color="#2F7D57"/>
+    <SolidColorBrush x:Key="SystemControlHighlightAccentBrush"        Color="#2F7D57"/>
+    <SolidColorBrush x:Key="SystemControlHighlightAltAccentBrush"     Color="#37926A"/>
+    <SolidColorBrush x:Key="SystemControlHighlightListAccentLowBrush"    Color="#1F2F7D57"/>
+    <SolidColorBrush x:Key="SystemControlHighlightListAccentMediumBrush" Color="#332F7D57"/>
+
+    <!-- Text -->
+    <SolidColorBrush x:Key="SystemControlForegroundBaseHighBrush"       Color="#23261F"/>
+    <SolidColorBrush x:Key="SystemControlForegroundBaseMediumHighBrush" Color="#3F4339"/>
+    <SolidColorBrush x:Key="SystemControlForegroundBaseMediumBrush"     Color="#8E9286"/>
+    <SolidColorBrush x:Key="SystemControlForegroundBaseLowBrush"        Color="#29000000"/>
+    <SolidColorBrush x:Key="SystemControlForegroundChromeWhiteBrush"    Color="#FFFFFF"/>
+    <SolidColorBrush x:Key="SystemControlForegroundChromeHighBrush"     Color="#23261F"/>
+
+    <!-- Accent color resources (some ModernWpf controls bind these directly) -->
+    <Color           x:Key="SystemAccentColor">#2F7D57</Color>
+    <SolidColorBrush x:Key="SystemAccentColorBrush" Color="#2F7D57"/>
+
+</ResourceDictionary>

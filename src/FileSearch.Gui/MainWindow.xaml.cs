@@ -1,8 +1,10 @@
 using System;
+using System.ComponentModel;
 using System.Diagnostics;
 using System.IO;
 using System.Windows;
 using System.Windows.Controls;
+using System.Windows.Controls.Primitives;
 using System.Windows.Input;
 using FileSearch.Gui.ViewModels;
 
@@ -13,6 +15,9 @@ public partial class MainWindow : Window
     public MainWindow()
     {
         InitializeComponent();
+        UpdateNavSectionRows();
+        DataContextChanged += OnDataContextChanged;
+        SizeChanged += OnWindowSizeChanged;
     }
 
     private void OnExitClick(object sender, RoutedEventArgs e) => Close();
@@ -54,47 +59,132 @@ public partial class MainWindow : Window
         }
     }
 
-    private void OnResultRowDoubleClick(object sender, MouseButtonEventArgs e)
+    private void OnCopyMenuButtonClick(object sender, RoutedEventArgs e)
     {
-        if (sender is DataGridRow { DataContext: FileResultViewModel file })
+        if (sender is System.Windows.Controls.Button { ContextMenu: { } menu } button)
+        {
+            menu.PlacementTarget = button;
+            menu.IsOpen = true;
+        }
+    }
+
+    // Collapsible sidebar sections: an expanded section's row takes the leftover
+    // space (*), a collapsed one shrinks to its header (Auto) and is pushed to
+    // the bottom of the sidebar.
+    private void OnNavSectionToggled(object sender, RoutedEventArgs e) => UpdateNavSectionRows();
+
+    private void UpdateNavSectionRows()
+    {
+        // Expanded/Collapsed can fire mid-XAML-load (the style sets IsExpanded)
+        // before every named element is wired up; wait until they all exist.
+        if (ScopesSection is null || RecentSection is null || SavedSection is null ||
+            ScopesRow is null || RecentRow is null || SavedRow is null)
+            return;
+
+        // Only the LAST expanded section grows to fill the leftover space; the
+        // others size to their content. This keeps fixed sections (Scopes) from
+        // being stretched and clipped, while pushing collapsed sections — which
+        // sit below the filler — down to the bottom of the sidebar.
+        var sections = new[]
+        {
+            (Section: ScopesSection, Row: ScopesRow),
+            (Section: RecentSection, Row: RecentRow),
+            (Section: SavedSection, Row: SavedRow),
+        };
+
+        var fillIndex = -1;
+        for (var i = 0; i < sections.Length; i++)
+            if (sections[i].Section.IsExpanded)
+                fillIndex = i;
+
+        for (var i = 0; i < sections.Length; i++)
+            sections[i].Row.Height = i == fillIndex
+                ? new GridLength(1, GridUnitType.Star)
+                : GridLength.Auto;
+    }
+
+    private void OnResultCardDoubleClick(object sender, MouseButtonEventArgs e)
+    {
+        if (sender is ListBoxItem { DataContext: FileResultViewModel file })
         {
             file.OpenCommand.Execute(null);
             e.Handled = true;
         }
     }
 
-    /// <summary>
-    /// Editable ComboBox + history dropdown.
-    ///
-    /// We bind <c>Text</c> with <c>UpdateSourceTrigger=LostFocus</c> so that
-    /// the transient empty <c>Text</c> WPF emits during a dropdown
-    /// transition never reaches the bound model property. Since LostFocus
-    /// doesn't fire when the user picks from the dropdown, we commit the
-    /// binding ourselves here once <c>Text</c> has settled to the picked
-    /// value.
-    /// </summary>
-    private void OnHistoryComboBoxSelectionChanged(object sender, SelectionChangedEventArgs e)
+    private void OnPreviewSplitterDragDelta(object sender, DragDeltaEventArgs e)
     {
-        if (sender is not System.Windows.Controls.ComboBox cb) return;
-        if (e.AddedItems.Count == 0) return;
+        if (DataContext is not MainViewModel viewModel || !viewModel.IsPreviewPaneVisible)
+            return;
 
-        // Defer until after WPF finishes synchronising Text with the new
-        // SelectedItem — otherwise we'd commit a stale value.
-        cb.Dispatcher.BeginInvoke(() =>
-        {
-            cb.GetBindingExpression(System.Windows.Controls.ComboBox.TextProperty)?.UpdateSource();
-        }, System.Windows.Threading.DispatcherPriority.ContextIdle);
+        viewModel.PreviewPaneWidth = Math.Clamp(
+            viewModel.PreviewPaneWidth - e.HorizontalChange,
+            MainViewModel.MinimumPreviewPaneWidth,
+            GetAvailablePreviewPaneWidth());
+
+        e.Handled = true;
     }
 
-    /// <summary>
-    /// With <c>LostFocus</c> source-update, pressing Enter inside the
-    /// ComboBox would run the search before <c>Text</c> reaches the
-    /// model. Commit the binding first so the SearchCommand sees the
-    /// current text the user is looking at.
-    /// </summary>
-    private void OnHistoryComboBoxPreviewKeyDown(object sender, System.Windows.Input.KeyEventArgs e)
+    private void OnDataContextChanged(object sender, DependencyPropertyChangedEventArgs e)
     {
-        if (e.Key == Key.Enter && sender is System.Windows.Controls.ComboBox cb)
-            cb.GetBindingExpression(System.Windows.Controls.ComboBox.TextProperty)?.UpdateSource();
+        if (e.OldValue is MainViewModel oldViewModel)
+            oldViewModel.PropertyChanged -= OnViewModelPropertyChanged;
+
+        if (e.NewValue is MainViewModel newViewModel)
+        {
+            newViewModel.PropertyChanged += OnViewModelPropertyChanged;
+            UpdatePreviewColumn(newViewModel);
+        }
+    }
+
+    private void OnViewModelPropertyChanged(object? sender, PropertyChangedEventArgs e)
+    {
+        if (sender is not MainViewModel viewModel)
+            return;
+
+        if (e.PropertyName is nameof(MainViewModel.IsPreviewPaneVisible) or nameof(MainViewModel.PreviewPaneWidth))
+            UpdatePreviewColumn(viewModel);
+    }
+
+    private void OnWindowSizeChanged(object sender, SizeChangedEventArgs e)
+    {
+        if (DataContext is MainViewModel viewModel)
+            UpdatePreviewColumn(viewModel);
+    }
+
+    private void UpdatePreviewColumn(MainViewModel viewModel)
+    {
+        if (!viewModel.IsPreviewPaneVisible)
+        {
+            PreviewColumn.MinWidth = 0;
+            PreviewColumn.MaxWidth = 0;
+            PreviewColumn.Width = new GridLength(0);
+            return;
+        }
+
+        var width = Math.Clamp(
+            viewModel.PreviewPaneWidth,
+            MainViewModel.MinimumPreviewPaneWidth,
+            GetAvailablePreviewPaneWidth());
+
+        PreviewColumn.MinWidth = MainViewModel.MinimumPreviewPaneWidth;
+        PreviewColumn.MaxWidth = GetAvailablePreviewPaneWidth();
+        PreviewColumn.Width = new GridLength(width);
+    }
+
+    private double GetAvailablePreviewPaneWidth()
+    {
+        if (ShellRoot.ActualWidth <= 0)
+            return MainViewModel.MaximumPreviewPaneWidth;
+
+        var navigationWidth = ShellRoot.ColumnDefinitions[0].ActualWidth;
+        var resultsMinWidth = ShellRoot.ColumnDefinitions[1].MinWidth;
+        var splitterWidth = ShellRoot.ColumnDefinitions[2].ActualWidth;
+        var available = ShellRoot.ActualWidth - navigationWidth - resultsMinWidth - splitterWidth;
+
+        return Math.Clamp(
+            available,
+            MainViewModel.MinimumPreviewPaneWidth,
+            MainViewModel.MaximumPreviewPaneWidth);
     }
 }

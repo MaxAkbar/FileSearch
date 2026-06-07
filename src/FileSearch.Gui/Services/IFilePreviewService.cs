@@ -16,4 +16,10 @@ public interface IFilePreviewService
         IReadOnlyList<int> hitLineNumbers,
         int contextLines,
         CancellationToken cancellationToken);
+
+    /// <summary>
+    /// Returns the full extracted text of the file (the same text the search
+    /// sees), or an empty string if no extractor handles the file type.
+    /// </summary>
+    Task<string> LoadFullTextAsync(string path, CancellationToken cancellationToken);
 }

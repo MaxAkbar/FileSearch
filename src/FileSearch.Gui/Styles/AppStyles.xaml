@@ -2,167 +2,316 @@
                     xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
                     xmlns:ui="http://schemas.modernwpf.com/2019">
 
-    <!-- ===== Shell / surfaces ===== -->
+    <!-- =====================================================================
+         Atlas design system.
+
+         The Atlas.* brushes below are the LIGHT (paper) defaults. Dark / VS
+         overlays (added at runtime by ThemeService) redefine the same keys, so
+         our surfaces follow the theme. Built-in ModernWpf controls follow the
+         SystemControl* keys, which the same overlays also recolor.
+         ===================================================================== -->
+
+    <!-- ===== Palette (Light / paper defaults) ===== -->
+    <SolidColorBrush x:Key="Atlas.PaperBrush"      Color="#F4F1EA"/>
+    <SolidColorBrush x:Key="Atlas.SurfaceBrush"    Color="#FFFDF8"/>
+    <SolidColorBrush x:Key="Atlas.Surface2Brush"   Color="#FAF7F0"/>
+    <SolidColorBrush x:Key="Atlas.SidebarBrush"    Color="#EDE8DF"/>
+    <SolidColorBrush x:Key="Atlas.InkBrush"        Color="#23261F"/>
+    <SolidColorBrush x:Key="Atlas.Ink2Brush"       Color="#5B5F54"/>
+    <SolidColorBrush x:Key="Atlas.Ink3Brush"       Color="#8E9286"/>
+    <SolidColorBrush x:Key="Atlas.LineBrush"       Color="#17000000"/>
+    <SolidColorBrush x:Key="Atlas.Line2Brush"      Color="#29000000"/>
+    <SolidColorBrush x:Key="Atlas.HoverBrush"      Color="#0A23261F"/>
+    <SolidColorBrush x:Key="Atlas.SelBrush"        Color="#1F2F7D57"/>
+    <SolidColorBrush x:Key="Atlas.AccentBrush"     Color="#2F7D57"/>
+    <SolidColorBrush x:Key="Atlas.Accent2Brush"    Color="#37926A"/>
+    <SolidColorBrush x:Key="Atlas.AccentTintBrush" Color="#1A2F7D57"/>
+    <SolidColorBrush x:Key="Atlas.AccentSoftBrush" Color="#0F2F7D57"/>
+    <SolidColorBrush x:Key="Atlas.OnAccentBrush"   Color="#FFFFFF"/>
+    <SolidColorBrush x:Key="Atlas.WarmBrush"       Color="#C4722E"/>
+    <SolidColorBrush x:Key="Atlas.WarmTintBrush"   Color="#1FC4722E"/>
+    <SolidColorBrush x:Key="Atlas.HitBrush"        Color="#8CFFCE54"/>
+    <SolidColorBrush x:Key="Atlas.HitInkBrush"     Color="#23261F"/>
+
+    <!-- ===== Typography (Windows fallbacks for the Atlas web fonts) ===== -->
+    <FontFamily x:Key="Atlas.SansFont">Segoe UI</FontFamily>
+    <FontFamily x:Key="Atlas.SerifFont">Cambria, Georgia, Times New Roman</FontFamily>
+    <FontFamily x:Key="Atlas.MonoFont">Cascadia Code, Consolas, Courier New</FontFamily>
+
+    <!-- =====================================================================
+         Shell
+         ===================================================================== -->
     <Style x:Key="AppRootStyle" TargetType="DockPanel">
-        <Setter Property="Background" Value="{DynamicResource ApplicationPageBackgroundThemeBrush}"/>
+        <Setter Property="Background" Value="{DynamicResource Atlas.PaperBrush}"/>
     </Style>
 
-    <Style x:Key="CommandBandStyle" TargetType="Border">
-        <Setter Property="Background" Value="{DynamicResource SystemControlBackgroundAltMediumLowBrush}"/>
-        <Setter Property="BorderBrush" Value="{DynamicResource SystemControlForegroundBaseLowBrush}"/>
+    <Style x:Key="ShellStyle" TargetType="Grid">
+        <Setter Property="Background" Value="{DynamicResource Atlas.PaperBrush}"/>
+        <Setter Property="ClipToBounds" Value="True"/>
+    </Style>
+
+    <!-- ===== Title bar ===== -->
+    <Style x:Key="TitleBarStyle" TargetType="Border">
+        <Setter Property="Background" Value="{DynamicResource Atlas.PaperBrush}"/>
+        <Setter Property="BorderBrush" Value="{DynamicResource Atlas.LineBrush}"/>
         <Setter Property="BorderThickness" Value="0,0,0,1"/>
-        <Setter Property="Padding" Value="22,16,22,18"/>
+        <Setter Property="Padding" Value="12,6"/>
+        <Setter Property="MinHeight" Value="44"/>
     </Style>
 
-    <Style x:Key="StatusBarShellStyle" TargetType="Border">
-        <Setter Property="Background" Value="{DynamicResource SystemControlBackgroundAltMediumLowBrush}"/>
-        <Setter Property="BorderBrush" Value="{DynamicResource SystemControlForegroundBaseLowBrush}"/>
-        <Setter Property="BorderThickness" Value="0,1,0,0"/>
-        <Setter Property="Padding" Value="16,6"/>
-    </Style>
-
-    <!-- ===== Cards / surfaces ===== -->
-    <Style x:Key="CardStyle" TargetType="Border">
-        <Setter Property="Background" Value="{DynamicResource SystemControlBackgroundChromeMediumLowBrush}"/>
-        <Setter Property="BorderBrush" Value="{DynamicResource SystemControlForegroundBaseLowBrush}"/>
-        <Setter Property="BorderThickness" Value="1"/>
-        <Setter Property="CornerRadius" Value="6"/>
-        <Setter Property="Padding" Value="18"/>
-    </Style>
-
-    <Style x:Key="SubtleCardStyle" TargetType="Border" BasedOn="{StaticResource CardStyle}">
-        <Setter Property="Background" Value="{DynamicResource SystemControlBackgroundAltMediumLowBrush}"/>
-        <Setter Property="Padding" Value="16,14"/>
-    </Style>
-
-    <Style x:Key="MetricCardStyle" TargetType="Border" BasedOn="{StaticResource SubtleCardStyle}">
-        <Setter Property="MinHeight" Value="86"/>
-        <Setter Property="VerticalAlignment" Value="Stretch"/>
-    </Style>
-
-    <!-- ===== Typography ===== -->
-    <Style x:Key="PageTitleStyle" TargetType="TextBlock">
-        <Setter Property="FontSize" Value="20"/>
-        <Setter Property="FontWeight" Value="SemiBold"/>
-        <Setter Property="VerticalAlignment" Value="Center"/>
-    </Style>
-
-    <Style x:Key="PanelTitleStyle" TargetType="TextBlock">
-        <Setter Property="FontSize" Value="14"/>
-        <Setter Property="FontWeight" Value="SemiBold"/>
-        <Setter Property="VerticalAlignment" Value="Center"/>
-    </Style>
-
-    <Style x:Key="SectionHeaderStyle" TargetType="TextBlock">
-        <Setter Property="FontSize" Value="11"/>
-        <Setter Property="FontWeight" Value="SemiBold"/>
-        <Setter Property="Margin" Value="0,0,0,10"/>
-        <Setter Property="Opacity" Value="0.6"/>
-    </Style>
-
-    <Style x:Key="FieldLabelStyle" TargetType="TextBlock">
+    <Style x:Key="TitleTextStyle" TargetType="TextBlock">
         <Setter Property="FontSize" Value="13"/>
         <Setter Property="FontWeight" Value="SemiBold"/>
-        <Setter Property="Margin" Value="0,0,0,4"/>
-    </Style>
-
-    <Style x:Key="HintLabelStyle" TargetType="TextBlock">
-        <Setter Property="FontSize" Value="12"/>
-        <Setter Property="Opacity" Value="0.6"/>
-        <Setter Property="Margin" Value="0,2,0,0"/>
-    </Style>
-
-    <!-- ===== Statistics ===== -->
-    <Style x:Key="StatLabelStyle" TargetType="TextBlock">
-        <Setter Property="FontSize" Value="12"/>
-        <Setter Property="Opacity" Value="0.7"/>
-        <Setter Property="Margin" Value="0,0,0,4"/>
-    </Style>
-
-    <Style x:Key="StatValueStyle" TargetType="TextBlock">
-        <Setter Property="FontSize" Value="26"/>
-        <Setter Property="FontWeight" Value="SemiBold"/>
-    </Style>
-
-    <!-- ===== Hit count pill =====
-         Fixed Height + centered text gives consistent vertical alignment
-         regardless of digit count or surrounding row height. -->
-    <Style x:Key="HitPillStyle" TargetType="Border">
-        <Setter Property="Background" Value="{DynamicResource SystemControlBackgroundAccentBrush}"/>
-        <Setter Property="CornerRadius" Value="10"/>
-        <Setter Property="Padding" Value="10,0"/>
-        <Setter Property="Height" Value="20"/>
-        <Setter Property="HorizontalAlignment" Value="Center"/>
         <Setter Property="VerticalAlignment" Value="Center"/>
-        <Setter Property="MinWidth" Value="36"/>
+        <Setter Property="Foreground" Value="{DynamicResource Atlas.Ink2Brush}"/>
     </Style>
 
-    <Style x:Key="HitPillTextStyle" TargetType="TextBlock">
-        <Setter Property="Foreground" Value="{DynamicResource SystemControlForegroundChromeWhiteBrush}"/>
-        <Setter Property="FontSize" Value="12"/>
-        <Setter Property="FontWeight" Value="SemiBold"/>
-        <Setter Property="HorizontalAlignment" Value="Center"/>
+    <Style x:Key="TitleMenuStyle" TargetType="Menu" BasedOn="{StaticResource {x:Type Menu}}">
+        <Setter Property="Background" Value="Transparent"/>
+        <Setter Property="Foreground" Value="{DynamicResource Atlas.Ink2Brush}"/>
         <Setter Property="VerticalAlignment" Value="Center"/>
-        <Setter Property="TextAlignment" Value="Center"/>
+        <Setter Property="FontSize" Value="13"/>
+        <Setter Property="Padding" Value="0"/>
     </Style>
 
-    <!-- ===== Icon buttons (square w/ icon) ===== -->
-    <Style x:Key="IconButtonStyle" TargetType="Button" BasedOn="{StaticResource {x:Type Button}}">
-        <Setter Property="Padding" Value="10,7"/>
-        <Setter Property="MinWidth" Value="0"/>
-        <Setter Property="Height" Value="32"/>
+    <!-- ===== Status bar ===== -->
+    <Style x:Key="StatusBarStyle" TargetType="Border">
+        <Setter Property="Background" Value="{DynamicResource Atlas.PaperBrush}"/>
+        <Setter Property="BorderBrush" Value="{DynamicResource Atlas.LineBrush}"/>
+        <Setter Property="BorderThickness" Value="0,1,0,0"/>
+        <Setter Property="Padding" Value="18,5"/>
     </Style>
 
-    <Style x:Key="PrimaryCommandButtonStyle" TargetType="Button" BasedOn="{StaticResource AccentButtonStyle}">
-        <Setter Property="Height" Value="36"/>
-        <Setter Property="MinWidth" Value="112"/>
-        <Setter Property="Padding" Value="14,7"/>
+    <Style x:Key="StatusTextStyle" TargetType="TextBlock">
+        <Setter Property="FontFamily" Value="{DynamicResource Atlas.MonoFont}"/>
+        <Setter Property="FontSize" Value="11"/>
+        <Setter Property="Foreground" Value="{DynamicResource Atlas.Ink3Brush}"/>
+        <Setter Property="VerticalAlignment" Value="Center"/>
+        <Setter Property="TextTrimming" Value="CharacterEllipsis"/>
+    </Style>
+
+    <Style x:Key="StatusStrongStyle" TargetType="TextBlock" BasedOn="{StaticResource StatusTextStyle}">
+        <Setter Property="Foreground" Value="{DynamicResource Atlas.Ink2Brush}"/>
         <Setter Property="FontWeight" Value="SemiBold"/>
     </Style>
 
-    <Style x:Key="SecondaryCommandButtonStyle" TargetType="Button" BasedOn="{StaticResource {x:Type Button}}">
-        <Setter Property="Height" Value="36"/>
-        <Setter Property="MinWidth" Value="96"/>
-        <Setter Property="Padding" Value="14,7"/>
+    <!-- =====================================================================
+         Sidebar
+         ===================================================================== -->
+    <Style x:Key="SidebarStyle" TargetType="Border">
+        <Setter Property="Background" Value="{DynamicResource Atlas.SidebarBrush}"/>
+        <Setter Property="BorderBrush" Value="{DynamicResource Atlas.LineBrush}"/>
+        <Setter Property="BorderThickness" Value="0,0,1,0"/>
+        <Setter Property="Padding" Value="12,14"/>
     </Style>
 
-    <!-- ===== Tabs ===== -->
-    <Style x:Key="HeaderTabItemStyle" TargetType="TabItem">
-        <Setter Property="Foreground" Value="{DynamicResource SystemControlForegroundBaseMediumBrush}"/>
+    <Style x:Key="LogoTextStyle" TargetType="TextBlock">
+        <Setter Property="FontFamily" Value="{DynamicResource Atlas.SerifFont}"/>
+        <Setter Property="FontSize" Value="19"/>
         <Setter Property="FontWeight" Value="SemiBold"/>
-        <Setter Property="MinHeight" Value="34"/>
-        <Setter Property="Padding" Value="10,0"/>
-        <Setter Property="Margin" Value="0,0,6,0"/>
-        <Setter Property="HorizontalContentAlignment" Value="Stretch"/>
-        <Setter Property="VerticalContentAlignment" Value="Stretch"/>
+        <Setter Property="Foreground" Value="{DynamicResource Atlas.InkBrush}"/>
+        <Setter Property="VerticalAlignment" Value="Center"/>
+    </Style>
+
+    <Style x:Key="NavSectionLabelStyle" TargetType="TextBlock">
+        <Setter Property="FontSize" Value="10.5"/>
+        <Setter Property="FontWeight" Value="Bold"/>
+        <Setter Property="Foreground" Value="{DynamicResource Atlas.Ink3Brush}"/>
+        <Setter Property="Margin" Value="9,14,0,7"/>
+    </Style>
+
+    <!-- Sidebar command rows (Scopes presets, footer actions) -->
+    <Style x:Key="NavItemButtonStyle" TargetType="Button">
+        <Setter Property="HorizontalContentAlignment" Value="Left"/>
+        <Setter Property="HorizontalAlignment" Value="Stretch"/>
+        <Setter Property="Background" Value="Transparent"/>
+        <Setter Property="Foreground" Value="{DynamicResource Atlas.Ink2Brush}"/>
+        <Setter Property="Padding" Value="9,8"/>
+        <Setter Property="Margin" Value="0,1"/>
+        <Setter Property="FontSize" Value="13.5"/>
+        <Setter Property="Cursor" Value="Hand"/>
         <Setter Property="FocusVisualStyle" Value="{x:Null}"/>
         <Setter Property="Template">
             <Setter.Value>
-                <ControlTemplate TargetType="TabItem">
-                    <Border x:Name="Chrome"
-                            MinHeight="{TemplateBinding MinHeight}"
-                            Padding="{TemplateBinding Padding}"
-                            Background="Transparent"
-                            BorderBrush="Transparent"
-                            BorderThickness="0,0,0,2"
-                            CornerRadius="4,4,0,0"
-                            ClipToBounds="False"
-                            SnapsToDevicePixels="True">
-                        <ContentPresenter ContentSource="Header"
-                                          HorizontalAlignment="Center"
-                                          VerticalAlignment="Center"
-                                          RecognizesAccessKey="True"
-                                          ClipToBounds="False"/>
+                <ControlTemplate TargetType="Button">
+                    <Border x:Name="bg" Background="{TemplateBinding Background}" CornerRadius="8"
+                            Padding="{TemplateBinding Padding}" SnapsToDevicePixels="True"
+                            TextElement.Foreground="{TemplateBinding Foreground}">
+                        <ContentPresenter HorizontalAlignment="Left" VerticalAlignment="Center"
+                                          RecognizesAccessKey="True"/>
                     </Border>
                     <ControlTemplate.Triggers>
                         <Trigger Property="IsMouseOver" Value="True">
-                            <Setter TargetName="Chrome" Property="Background"
-                                    Value="{DynamicResource SystemControlBackgroundListLowBrush}"/>
+                            <Setter TargetName="bg" Property="Background" Value="{DynamicResource Atlas.HoverBrush}"/>
+                            <Setter Property="Foreground" Value="{DynamicResource Atlas.InkBrush}"/>
+                        </Trigger>
+                        <Trigger Property="IsEnabled" Value="False">
+                            <Setter Property="Opacity" Value="0.5"/>
+                        </Trigger>
+                    </ControlTemplate.Triggers>
+                </ControlTemplate>
+            </Setter.Value>
+        </Setter>
+    </Style>
+
+    <!-- Recent folders / Saved finds lists -->
+    <Style x:Key="NavListBoxStyle" TargetType="ListBox" BasedOn="{StaticResource {x:Type ListBox}}">
+        <Setter Property="Background" Value="Transparent"/>
+        <Setter Property="BorderThickness" Value="0"/>
+        <Setter Property="Padding" Value="0"/>
+        <Setter Property="ScrollViewer.HorizontalScrollBarVisibility" Value="Disabled"/>
+        <!-- Each section owns a weighted row; let the list scroll within it when
+             its items exceed the space the row was given. -->
+        <Setter Property="ScrollViewer.VerticalScrollBarVisibility" Value="Auto"/>
+    </Style>
+
+    <Style x:Key="NavListBoxItemStyle" TargetType="ListBoxItem">
+        <Setter Property="Background" Value="Transparent"/>
+        <Setter Property="Foreground" Value="{DynamicResource Atlas.Ink2Brush}"/>
+        <Setter Property="Padding" Value="9,7"/>
+        <Setter Property="Margin" Value="0,1"/>
+        <Setter Property="FontSize" Value="13"/>
+        <Setter Property="HorizontalContentAlignment" Value="Stretch"/>
+        <Setter Property="FocusVisualStyle" Value="{x:Null}"/>
+        <!-- Full value (path / query) on hover, since rows can be truncated. -->
+        <Setter Property="ToolTip" Value="{Binding}"/>
+        <Setter Property="Template">
+            <Setter.Value>
+                <ControlTemplate TargetType="ListBoxItem">
+                    <Border x:Name="bg" Background="{TemplateBinding Background}" CornerRadius="8"
+                            Padding="{TemplateBinding Padding}" SnapsToDevicePixels="True"
+                            TextElement.Foreground="{TemplateBinding Foreground}">
+                        <ContentPresenter HorizontalAlignment="Left" VerticalAlignment="Center"/>
+                    </Border>
+                    <ControlTemplate.Triggers>
+                        <Trigger Property="IsMouseOver" Value="True">
+                            <Setter TargetName="bg" Property="Background" Value="{DynamicResource Atlas.HoverBrush}"/>
+                            <Setter Property="Foreground" Value="{DynamicResource Atlas.InkBrush}"/>
                         </Trigger>
                         <Trigger Property="IsSelected" Value="True">
-                            <Setter Property="Foreground" Value="{DynamicResource SystemControlForegroundBaseHighBrush}"/>
-                            <Setter TargetName="Chrome" Property="BorderBrush"
-                                    Value="{DynamicResource SystemControlBackgroundAccentBrush}"/>
+                            <Setter TargetName="bg" Property="Background" Value="{DynamicResource Atlas.SelBrush}"/>
+                            <Setter Property="Foreground" Value="{DynamicResource Atlas.AccentBrush}"/>
+                        </Trigger>
+                    </ControlTemplate.Triggers>
+                </ControlTemplate>
+            </Setter.Value>
+        </Setter>
+    </Style>
+
+    <!-- Collapsible sidebar section header (SCOPES / RECENT FOLDERS / SAVED FINDS).
+         Minimal Atlas styling: an uppercase label that toggles a chevron and
+         shows/hides its content; no Expander chrome. -->
+    <Style x:Key="NavSectionExpanderStyle" TargetType="Expander">
+        <Setter Property="IsExpanded" Value="True"/>
+        <Setter Property="Margin" Value="0,6,0,0"/>
+        <Setter Property="Template">
+            <Setter.Value>
+                <ControlTemplate TargetType="Expander">
+                    <DockPanel>
+                        <ToggleButton x:Name="HeaderToggle"
+                                      DockPanel.Dock="Top"
+                                      Content="{TemplateBinding Header}"
+                                      IsChecked="{Binding IsExpanded, Mode=TwoWay, RelativeSource={RelativeSource TemplatedParent}}"
+                                      Focusable="False"
+                                      Cursor="Hand"
+                                      HorizontalAlignment="Stretch"
+                                      HorizontalContentAlignment="Stretch"
+                                      FocusVisualStyle="{x:Null}">
+                            <ToggleButton.Template>
+                                <ControlTemplate TargetType="ToggleButton">
+                                    <Border x:Name="HeaderBg" Background="Transparent" CornerRadius="8"
+                                            Padding="9,6" SnapsToDevicePixels="True"
+                                            TextElement.FontSize="10.5" TextElement.FontWeight="Bold"
+                                            TextElement.Foreground="{DynamicResource Atlas.Ink3Brush}">
+                                        <Grid>
+                                            <Grid.ColumnDefinitions>
+                                                <ColumnDefinition Width="*"/>
+                                                <ColumnDefinition Width="Auto"/>
+                                            </Grid.ColumnDefinitions>
+                                            <ContentPresenter VerticalAlignment="Center"/>
+                                            <ui:FontIcon x:Name="Chevron" Grid.Column="1" Glyph="&#xE70D;"
+                                                         FontSize="9" VerticalAlignment="Center"
+                                                         Foreground="{DynamicResource Atlas.Ink3Brush}"/>
+                                        </Grid>
+                                    </Border>
+                                    <ControlTemplate.Triggers>
+                                        <Trigger Property="IsMouseOver" Value="True">
+                                            <Setter TargetName="HeaderBg" Property="Background" Value="{DynamicResource Atlas.HoverBrush}"/>
+                                        </Trigger>
+                                        <Trigger Property="IsChecked" Value="False">
+                                            <Setter TargetName="Chevron" Property="Glyph" Value="&#xE76C;"/>
+                                        </Trigger>
+                                    </ControlTemplate.Triggers>
+                                </ControlTemplate>
+                            </ToggleButton.Template>
+                        </ToggleButton>
+                        <ContentPresenter x:Name="SectionContent" Visibility="Collapsed" Margin="0,2,0,2"/>
+                    </DockPanel>
+                    <ControlTemplate.Triggers>
+                        <Trigger Property="IsExpanded" Value="True">
+                            <Setter TargetName="SectionContent" Property="Visibility" Value="Visible"/>
+                        </Trigger>
+                    </ControlTemplate.Triggers>
+                </ControlTemplate>
+            </Setter.Value>
+        </Setter>
+    </Style>
+
+    <Style x:Key="ThemeMiniButtonStyle" TargetType="Button">
+        <Setter Property="Height" Value="28"/>
+        <Setter Property="Background" Value="{DynamicResource Atlas.SurfaceBrush}"/>
+        <Setter Property="Foreground" Value="{DynamicResource Atlas.Ink2Brush}"/>
+        <Setter Property="FontSize" Value="11"/>
+        <Setter Property="Cursor" Value="Hand"/>
+        <Setter Property="FocusVisualStyle" Value="{x:Null}"/>
+        <Setter Property="Template">
+            <Setter.Value>
+                <ControlTemplate TargetType="Button">
+                    <Border x:Name="bg" Background="{TemplateBinding Background}"
+                            BorderBrush="{DynamicResource Atlas.Line2Brush}" BorderThickness="1"
+                            CornerRadius="7" SnapsToDevicePixels="True"
+                            TextElement.Foreground="{TemplateBinding Foreground}">
+                        <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                    </Border>
+                    <ControlTemplate.Triggers>
+                        <Trigger Property="IsMouseOver" Value="True">
+                            <Setter TargetName="bg" Property="Background" Value="{DynamicResource Atlas.Surface2Brush}"/>
+                            <Setter TargetName="bg" Property="BorderBrush" Value="{DynamicResource Atlas.AccentBrush}"/>
+                            <Setter Property="Foreground" Value="{DynamicResource Atlas.AccentBrush}"/>
+                        </Trigger>
+                    </ControlTemplate.Triggers>
+                </ControlTemplate>
+            </Setter.Value>
+        </Setter>
+    </Style>
+
+    <!-- =====================================================================
+         Buttons (omni / command bar)
+         ===================================================================== -->
+    <Style x:Key="PrimaryButtonStyle" TargetType="Button">
+        <Setter Property="Height" Value="36"/>
+        <Setter Property="MinWidth" Value="92"/>
+        <Setter Property="Padding" Value="16,0"/>
+        <Setter Property="Background" Value="{DynamicResource Atlas.AccentBrush}"/>
+        <Setter Property="Foreground" Value="{DynamicResource Atlas.OnAccentBrush}"/>
+        <Setter Property="FontSize" Value="13"/>
+        <Setter Property="FontWeight" Value="SemiBold"/>
+        <Setter Property="Cursor" Value="Hand"/>
+        <Setter Property="FocusVisualStyle" Value="{x:Null}"/>
+        <Setter Property="Template">
+            <Setter.Value>
+                <ControlTemplate TargetType="Button">
+                    <Border x:Name="bg" Background="{TemplateBinding Background}" CornerRadius="9"
+                            SnapsToDevicePixels="True" TextElement.Foreground="{TemplateBinding Foreground}">
+                        <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center"
+                                          Margin="{TemplateBinding Padding}" RecognizesAccessKey="True"/>
+                    </Border>
+                    <ControlTemplate.Triggers>
+                        <Trigger Property="IsMouseOver" Value="True">
+                            <Setter TargetName="bg" Property="Background" Value="{DynamicResource Atlas.Accent2Brush}"/>
+                        </Trigger>
+                        <Trigger Property="IsPressed" Value="True">
+                            <Setter TargetName="bg" Property="Opacity" Value="0.9"/>
                         </Trigger>
                         <Trigger Property="IsEnabled" Value="False">
                             <Setter Property="Opacity" Value="0.45"/>
@@ -173,81 +322,433 @@
         </Setter>
     </Style>
 
-    <!-- ===== DataGrid polish =====
-         Theme-aware overrides. WPF's default DataGrid has hard-coded white
-         backgrounds on its internal ScrollViewer and cells that ignore the
-         ModernWpf theme; we have to explicitly bind them to theme resources
-         (Background, Foreground, CellStyle, RowStyle, ColumnHeaderStyle)
-         or they stay white in dark mode. -->
-    <Style x:Key="ResultsDataGridCellStyle" TargetType="DataGridCell">
-        <Setter Property="Background" Value="Transparent"/>
-        <Setter Property="Foreground" Value="{DynamicResource SystemControlForegroundBaseHighBrush}"/>
-        <Setter Property="BorderThickness" Value="0"/>
-        <Setter Property="Padding" Value="10,4"/>
+    <Style x:Key="SecondaryButtonStyle" TargetType="Button">
+        <Setter Property="Height" Value="36"/>
+        <Setter Property="MinWidth" Value="80"/>
+        <Setter Property="Padding" Value="14,0"/>
+        <Setter Property="Background" Value="{DynamicResource Atlas.SurfaceBrush}"/>
+        <Setter Property="Foreground" Value="{DynamicResource Atlas.Ink2Brush}"/>
+        <Setter Property="FontSize" Value="13"/>
+        <Setter Property="Cursor" Value="Hand"/>
+        <Setter Property="FocusVisualStyle" Value="{x:Null}"/>
         <Setter Property="Template">
             <Setter.Value>
-                <ControlTemplate TargetType="DataGridCell">
-                    <Border Background="{TemplateBinding Background}"
-                            BorderBrush="{TemplateBinding BorderBrush}"
-                            BorderThickness="{TemplateBinding BorderThickness}"
-                            Padding="{TemplateBinding Padding}"
-                            SnapsToDevicePixels="True">
-                        <ContentPresenter VerticalAlignment="Center"
-                                          SnapsToDevicePixels="{TemplateBinding SnapsToDevicePixels}"/>
+                <ControlTemplate TargetType="Button">
+                    <Border x:Name="bg" Background="{TemplateBinding Background}"
+                            BorderBrush="{DynamicResource Atlas.Line2Brush}" BorderThickness="1"
+                            CornerRadius="9" SnapsToDevicePixels="True"
+                            TextElement.Foreground="{TemplateBinding Foreground}">
+                        <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center"
+                                          Margin="{TemplateBinding Padding}" RecognizesAccessKey="True"/>
                     </Border>
+                    <ControlTemplate.Triggers>
+                        <Trigger Property="IsMouseOver" Value="True">
+                            <Setter TargetName="bg" Property="Background" Value="{DynamicResource Atlas.Surface2Brush}"/>
+                            <Setter TargetName="bg" Property="BorderBrush" Value="{DynamicResource Atlas.AccentBrush}"/>
+                            <Setter Property="Foreground" Value="{DynamicResource Atlas.InkBrush}"/>
+                        </Trigger>
+                        <Trigger Property="IsEnabled" Value="False">
+                            <Setter Property="Opacity" Value="0.45"/>
+                        </Trigger>
+                    </ControlTemplate.Triggers>
                 </ControlTemplate>
             </Setter.Value>
         </Setter>
-        <Style.Triggers>
-            <Trigger Property="IsSelected" Value="True">
-                <Setter Property="Background" Value="{DynamicResource SystemControlBackgroundAccentBrush}"/>
-                <Setter Property="Foreground" Value="{DynamicResource SystemControlForegroundChromeWhiteBrush}"/>
-            </Trigger>
-        </Style.Triggers>
     </Style>
 
-    <Style x:Key="ResultsDataGridRowStyle" TargetType="DataGridRow" BasedOn="{StaticResource {x:Type DataGridRow}}">
+    <Style x:Key="IconButtonStyle" TargetType="Button">
+        <Setter Property="Width" Value="34"/>
+        <Setter Property="Height" Value="34"/>
         <Setter Property="Background" Value="Transparent"/>
-        <Setter Property="Foreground" Value="{DynamicResource SystemControlForegroundBaseHighBrush}"/>
-        <Style.Triggers>
-            <Trigger Property="AlternationIndex" Value="1">
-                <Setter Property="Background" Value="{DynamicResource SystemControlBackgroundListLowBrush}"/>
-            </Trigger>
-            <Trigger Property="IsMouseOver" Value="True">
-                <Setter Property="Background" Value="{DynamicResource SystemControlBackgroundListMediumBrush}"/>
-            </Trigger>
-        </Style.Triggers>
+        <Setter Property="Foreground" Value="{DynamicResource Atlas.Ink2Brush}"/>
+        <Setter Property="Cursor" Value="Hand"/>
+        <Setter Property="FocusVisualStyle" Value="{x:Null}"/>
+        <Setter Property="Template">
+            <Setter.Value>
+                <ControlTemplate TargetType="Button">
+                    <Border x:Name="bg" Background="{TemplateBinding Background}" CornerRadius="8"
+                            SnapsToDevicePixels="True" TextElement.Foreground="{TemplateBinding Foreground}">
+                        <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                    </Border>
+                    <ControlTemplate.Triggers>
+                        <Trigger Property="IsMouseOver" Value="True">
+                            <Setter TargetName="bg" Property="Background" Value="{DynamicResource Atlas.HoverBrush}"/>
+                            <Setter Property="Foreground" Value="{DynamicResource Atlas.InkBrush}"/>
+                        </Trigger>
+                        <Trigger Property="IsEnabled" Value="False">
+                            <Setter Property="Opacity" Value="0.4"/>
+                        </Trigger>
+                    </ControlTemplate.Triggers>
+                </ControlTemplate>
+            </Setter.Value>
+        </Setter>
     </Style>
 
-    <Style x:Key="ResultsDataGridColumnHeaderStyle" TargetType="DataGridColumnHeader"
-           BasedOn="{StaticResource {x:Type DataGridColumnHeader}}">
-        <Setter Property="Background" Value="Transparent"/>
-        <Setter Property="Foreground" Value="{DynamicResource SystemControlForegroundBaseMediumBrush}"/>
-        <Setter Property="FontSize" Value="12"/>
-        <Setter Property="FontWeight" Value="SemiBold"/>
-        <Setter Property="Padding" Value="10,9"/>
-        <Setter Property="BorderThickness" Value="0,0,0,1"/>
-        <Setter Property="BorderBrush" Value="{DynamicResource SystemControlForegroundBaseLowBrush}"/>
+    <!-- =====================================================================
+         Omni bar + filters
+         ===================================================================== -->
+    <Style x:Key="OmniBarStyle" TargetType="Border">
+        <Setter Property="Background" Value="{DynamicResource Atlas.SurfaceBrush}"/>
+        <Setter Property="BorderBrush" Value="{DynamicResource Atlas.Line2Brush}"/>
+        <Setter Property="BorderThickness" Value="1"/>
+        <Setter Property="CornerRadius" Value="9"/>
+        <Setter Property="Padding" Value="12,0"/>
+        <Setter Property="Height" Value="38"/>
     </Style>
 
-    <Style x:Key="ResultsDataGridStyle" TargetType="DataGrid" BasedOn="{StaticResource {x:Type DataGrid}}">
-        <Setter Property="GridLinesVisibility" Value="None"/>
-        <Setter Property="HeadersVisibility" Value="Column"/>
-        <Setter Property="RowHeight" Value="34"/>
-        <Setter Property="FontSize" Value="13"/>
+    <Style x:Key="OmniPathBoxStyle" TargetType="TextBox" BasedOn="{StaticResource {x:Type TextBox}}">
         <Setter Property="BorderThickness" Value="0"/>
         <Setter Property="Background" Value="Transparent"/>
-        <Setter Property="Foreground" Value="{DynamicResource SystemControlForegroundBaseHighBrush}"/>
-        <Setter Property="RowBackground" Value="Transparent"/>
-        <Setter Property="AlternatingRowBackground" Value="Transparent"/>
-        <Setter Property="AlternationCount" Value="2"/>
-        <Setter Property="CellStyle" Value="{StaticResource ResultsDataGridCellStyle}"/>
-        <Setter Property="ColumnHeaderStyle" Value="{StaticResource ResultsDataGridColumnHeaderStyle}"/>
+        <Setter Property="Foreground" Value="{DynamicResource Atlas.Ink2Brush}"/>
+        <Setter Property="FontFamily" Value="{DynamicResource Atlas.MonoFont}"/>
+        <Setter Property="FontSize" Value="12"/>
+        <Setter Property="VerticalContentAlignment" Value="Center"/>
+        <Setter Property="VerticalAlignment" Value="Center"/>
+        <Setter Property="Padding" Value="0"/>
+    </Style>
+
+    <Style x:Key="OmniQueryBoxStyle" TargetType="TextBox" BasedOn="{StaticResource {x:Type TextBox}}">
+        <Setter Property="BorderThickness" Value="0"/>
+        <Setter Property="Background" Value="Transparent"/>
+        <Setter Property="Foreground" Value="{DynamicResource Atlas.InkBrush}"/>
+        <Setter Property="FontSize" Value="14"/>
+        <Setter Property="VerticalContentAlignment" Value="Center"/>
+        <Setter Property="VerticalAlignment" Value="Center"/>
+        <Setter Property="Padding" Value="0"/>
+    </Style>
+
+    <Style x:Key="OmniDividerStyle" TargetType="Border">
+        <Setter Property="Width" Value="1"/>
+        <Setter Property="Height" Value="18"/>
+        <Setter Property="Background" Value="{DynamicResource Atlas.Line2Brush}"/>
+        <Setter Property="Margin" Value="10,0"/>
+        <Setter Property="VerticalAlignment" Value="Center"/>
+    </Style>
+
+    <Style x:Key="FilterChipStyle" TargetType="Border">
+        <Setter Property="Background" Value="{DynamicResource Atlas.SurfaceBrush}"/>
+        <Setter Property="BorderBrush" Value="{DynamicResource Atlas.LineBrush}"/>
+        <Setter Property="BorderThickness" Value="1"/>
+        <Setter Property="CornerRadius" Value="8"/>
+        <Setter Property="Padding" Value="11,6"/>
+        <Setter Property="Margin" Value="0,0,8,8"/>
+        <Setter Property="MinHeight" Value="34"/>
+    </Style>
+
+    <Style x:Key="ChipLabelStyle" TargetType="TextBlock">
+        <Setter Property="FontSize" Value="12"/>
+        <Setter Property="Foreground" Value="{DynamicResource Atlas.Ink3Brush}"/>
+        <Setter Property="VerticalAlignment" Value="Center"/>
+        <Setter Property="Margin" Value="0,0,8,0"/>
+    </Style>
+
+    <Style x:Key="MutedValueStyle" TargetType="TextBlock">
+        <Setter Property="FontSize" Value="12.5"/>
+        <Setter Property="Foreground" Value="{DynamicResource Atlas.Ink3Brush}"/>
+        <Setter Property="TextTrimming" Value="CharacterEllipsis"/>
+        <Setter Property="VerticalAlignment" Value="Center"/>
+    </Style>
+
+    <Style x:Key="AdvancedExpanderStyle" TargetType="Expander" BasedOn="{StaticResource {x:Type Expander}}">
+        <Setter Property="Foreground" Value="{DynamicResource Atlas.Ink2Brush}"/>
+        <Setter Property="FontSize" Value="12.5"/>
+        <Setter Property="Margin" Value="0,0,8,8"/>
+    </Style>
+
+    <Style x:Key="AdvancedFlyoutCardStyle" TargetType="Border">
+        <Setter Property="Background" Value="{DynamicResource Atlas.SurfaceBrush}"/>
+        <Setter Property="BorderBrush" Value="{DynamicResource Atlas.LineBrush}"/>
+        <Setter Property="BorderThickness" Value="1"/>
+        <Setter Property="CornerRadius" Value="10"/>
+        <Setter Property="Padding" Value="16"/>
+        <Setter Property="MinWidth" Value="560"/>
+        <Setter Property="Margin" Value="0,6,0,0"/>
+    </Style>
+
+    <Style x:Key="SectionHeaderStyle" TargetType="TextBlock">
+        <Setter Property="FontSize" Value="11"/>
+        <Setter Property="FontWeight" Value="Bold"/>
+        <Setter Property="Foreground" Value="{DynamicResource Atlas.Ink3Brush}"/>
+        <Setter Property="Margin" Value="0,0,0,10"/>
+    </Style>
+
+    <Style x:Key="FieldLabelStyle" TargetType="TextBlock">
+        <Setter Property="FontSize" Value="13"/>
+        <Setter Property="FontWeight" Value="SemiBold"/>
+        <Setter Property="Foreground" Value="{DynamicResource Atlas.Ink2Brush}"/>
+        <Setter Property="Margin" Value="0,0,0,4"/>
+    </Style>
+
+    <Style x:Key="HintLabelStyle" TargetType="TextBlock">
+        <Setter Property="FontSize" Value="12"/>
+        <Setter Property="Foreground" Value="{DynamicResource Atlas.Ink3Brush}"/>
+        <Setter Property="Margin" Value="0,4,0,0"/>
+        <Setter Property="TextWrapping" Value="Wrap"/>
+    </Style>
+
+    <!-- =====================================================================
+         Results area
+         ===================================================================== -->
+    <Style x:Key="ResultsSurfaceStyle" TargetType="Border">
+        <Setter Property="Background" Value="Transparent"/>
+    </Style>
+
+    <Style x:Key="CtxTitleStyle" TargetType="TextBlock">
+        <Setter Property="FontFamily" Value="{DynamicResource Atlas.SerifFont}"/>
+        <Setter Property="FontSize" Value="17"/>
+        <Setter Property="FontWeight" Value="SemiBold"/>
+        <Setter Property="Foreground" Value="{DynamicResource Atlas.InkBrush}"/>
+        <Setter Property="VerticalAlignment" Value="Center"/>
+        <Setter Property="TextTrimming" Value="CharacterEllipsis"/>
+    </Style>
+
+    <Style x:Key="ResultsListStyle" TargetType="ListBox" BasedOn="{StaticResource {x:Type ListBox}}">
+        <Setter Property="Background" Value="Transparent"/>
+        <Setter Property="BorderThickness" Value="0"/>
+        <Setter Property="Padding" Value="0,2,4,8"/>
+        <Setter Property="HorizontalContentAlignment" Value="Stretch"/>
+        <Setter Property="ScrollViewer.HorizontalScrollBarVisibility" Value="Disabled"/>
+        <Setter Property="ScrollViewer.VerticalScrollBarVisibility" Value="Auto"/>
         <Setter Property="VirtualizingPanel.IsVirtualizing" Value="True"/>
         <Setter Property="VirtualizingPanel.VirtualizationMode" Value="Recycling"/>
-        <Setter Property="EnableRowVirtualization" Value="True"/>
-        <Setter Property="EnableColumnVirtualization" Value="True"/>
-        <Setter Property="SelectionUnit" Value="FullRow"/>
+    </Style>
+
+    <!-- Result card = ListBoxItem chrome; the DataTemplate fills the inside. -->
+    <Style x:Key="ResultCardContainerStyle" TargetType="ListBoxItem">
+        <Setter Property="Margin" Value="0,0,0,8"/>
+        <Setter Property="Padding" Value="0"/>
+        <Setter Property="HorizontalContentAlignment" Value="Stretch"/>
+        <Setter Property="FocusVisualStyle" Value="{x:Null}"/>
+        <Setter Property="Template">
+            <Setter.Value>
+                <ControlTemplate TargetType="ListBoxItem">
+                    <Border x:Name="card" Background="{DynamicResource Atlas.SurfaceBrush}"
+                            BorderBrush="{DynamicResource Atlas.LineBrush}" BorderThickness="1"
+                            CornerRadius="12" SnapsToDevicePixels="True">
+                        <ContentPresenter/>
+                    </Border>
+                    <ControlTemplate.Triggers>
+                        <Trigger Property="IsMouseOver" Value="True">
+                            <Setter TargetName="card" Property="BorderBrush" Value="{DynamicResource Atlas.Line2Brush}"/>
+                        </Trigger>
+                        <Trigger Property="IsSelected" Value="True">
+                            <Setter TargetName="card" Property="BorderBrush" Value="{DynamicResource Atlas.AccentBrush}"/>
+                        </Trigger>
+                    </ControlTemplate.Triggers>
+                </ControlTemplate>
+            </Setter.Value>
+        </Setter>
+    </Style>
+
+    <Style x:Key="ResultNameStyle" TargetType="TextBlock">
+        <Setter Property="FontSize" Value="14"/>
+        <Setter Property="FontWeight" Value="SemiBold"/>
+        <Setter Property="Foreground" Value="{DynamicResource Atlas.InkBrush}"/>
+        <Setter Property="TextTrimming" Value="CharacterEllipsis"/>
+    </Style>
+
+    <Style x:Key="ResultPathStyle" TargetType="TextBlock">
+        <Setter Property="FontFamily" Value="{DynamicResource Atlas.MonoFont}"/>
+        <Setter Property="FontSize" Value="11"/>
+        <Setter Property="Foreground" Value="{DynamicResource Atlas.Ink3Brush}"/>
+        <Setter Property="TextTrimming" Value="CharacterEllipsis"/>
+        <Setter Property="Margin" Value="0,1,0,0"/>
+    </Style>
+
+    <!-- Type badge (the little coloured square). Background is bound per item
+         via the file-type converter; this just sets shape + label typography. -->
+    <Style x:Key="TypeBadgeStyle" TargetType="Border">
+        <Setter Property="Width" Value="30"/>
+        <Setter Property="Height" Value="30"/>
+        <Setter Property="CornerRadius" Value="8"/>
+        <Setter Property="VerticalAlignment" Value="Center"/>
+    </Style>
+
+    <Style x:Key="TypeBadgeTextStyle" TargetType="TextBlock">
+        <Setter Property="FontFamily" Value="{DynamicResource Atlas.MonoFont}"/>
+        <Setter Property="FontSize" Value="10"/>
+        <Setter Property="FontWeight" Value="SemiBold"/>
+        <Setter Property="Foreground" Value="#FFFFFF"/>
+        <Setter Property="HorizontalAlignment" Value="Center"/>
+        <Setter Property="VerticalAlignment" Value="Center"/>
+    </Style>
+
+    <Style x:Key="HitsPillStyle" TargetType="Border">
+        <Setter Property="Background" Value="{DynamicResource Atlas.AccentTintBrush}"/>
+        <Setter Property="CornerRadius" Value="20"/>
+        <Setter Property="Padding" Value="10,3"/>
+        <Setter Property="VerticalAlignment" Value="Center"/>
+    </Style>
+
+    <Style x:Key="HitsPillTextStyle" TargetType="TextBlock">
+        <Setter Property="FontFamily" Value="{DynamicResource Atlas.MonoFont}"/>
+        <Setter Property="FontSize" Value="11"/>
+        <Setter Property="FontWeight" Value="SemiBold"/>
+        <Setter Property="Foreground" Value="{DynamicResource Atlas.AccentBrush}"/>
+    </Style>
+
+    <Style x:Key="LineNoStyle" TargetType="TextBlock">
+        <Setter Property="FontFamily" Value="{DynamicResource Atlas.MonoFont}"/>
+        <Setter Property="FontSize" Value="12"/>
+        <Setter Property="Foreground" Value="{DynamicResource Atlas.Ink3Brush}"/>
+        <Setter Property="Width" Value="46"/>
+        <Setter Property="TextAlignment" Value="Right"/>
+        <Setter Property="Margin" Value="0,0,14,0"/>
+    </Style>
+
+    <Style x:Key="LineTextStyle" TargetType="TextBlock">
+        <Setter Property="FontFamily" Value="{DynamicResource Atlas.MonoFont}"/>
+        <Setter Property="FontSize" Value="12"/>
+        <Setter Property="Foreground" Value="{DynamicResource Atlas.Ink2Brush}"/>
+        <Setter Property="TextWrapping" Value="NoWrap"/>
+        <Setter Property="TextTrimming" Value="CharacterEllipsis"/>
+    </Style>
+
+    <Style x:Key="MoreLinkStyle" TargetType="Button">
+        <Setter Property="HorizontalContentAlignment" Value="Left"/>
+        <Setter Property="HorizontalAlignment" Value="Stretch"/>
+        <Setter Property="Background" Value="Transparent"/>
+        <Setter Property="Foreground" Value="{DynamicResource Atlas.AccentBrush}"/>
+        <Setter Property="FontSize" Value="11.5"/>
+        <Setter Property="Padding" Value="15,7"/>
+        <Setter Property="Cursor" Value="Hand"/>
+        <Setter Property="FocusVisualStyle" Value="{x:Null}"/>
+        <Setter Property="Template">
+            <Setter.Value>
+                <ControlTemplate TargetType="Button">
+                    <Border x:Name="bg" Background="{TemplateBinding Background}"
+                            Padding="{TemplateBinding Padding}" SnapsToDevicePixels="True"
+                            TextElement.Foreground="{TemplateBinding Foreground}">
+                        <ContentPresenter HorizontalAlignment="Left" VerticalAlignment="Center"/>
+                    </Border>
+                    <ControlTemplate.Triggers>
+                        <Trigger Property="IsMouseOver" Value="True">
+                            <Setter TargetName="bg" Property="Background" Value="{DynamicResource Atlas.AccentSoftBrush}"/>
+                        </Trigger>
+                    </ControlTemplate.Triggers>
+                </ControlTemplate>
+            </Setter.Value>
+        </Setter>
+    </Style>
+
+    <Style x:Key="EmptyTitleStyle" TargetType="TextBlock">
+        <Setter Property="FontFamily" Value="{DynamicResource Atlas.SerifFont}"/>
+        <Setter Property="FontSize" Value="17"/>
+        <Setter Property="FontWeight" Value="SemiBold"/>
+        <Setter Property="Foreground" Value="{DynamicResource Atlas.Ink2Brush}"/>
+        <Setter Property="HorizontalAlignment" Value="Center"/>
+        <Setter Property="Margin" Value="0,0,0,6"/>
+    </Style>
+
+    <Style x:Key="EmptyBodyStyle" TargetType="TextBlock">
+        <Setter Property="FontSize" Value="13"/>
+        <Setter Property="Foreground" Value="{DynamicResource Atlas.Ink3Brush}"/>
+        <Setter Property="HorizontalAlignment" Value="Center"/>
+        <Setter Property="TextAlignment" Value="Center"/>
+        <Setter Property="TextWrapping" Value="Wrap"/>
+        <Setter Property="MaxWidth" Value="320"/>
+    </Style>
+
+    <!-- =====================================================================
+         Preview pane
+         ===================================================================== -->
+    <Style x:Key="PreviewPaneStyle" TargetType="Border">
+        <Setter Property="Background" Value="{DynamicResource Atlas.Surface2Brush}"/>
+        <Setter Property="BorderBrush" Value="{DynamicResource Atlas.LineBrush}"/>
+        <Setter Property="BorderThickness" Value="1,0,0,0"/>
+    </Style>
+
+    <Style x:Key="UpperPanelLabelStyle" TargetType="TextBlock">
+        <Setter Property="FontSize" Value="12"/>
+        <Setter Property="FontWeight" Value="Bold"/>
+        <Setter Property="Foreground" Value="{DynamicResource Atlas.Ink3Brush}"/>
+        <Setter Property="VerticalAlignment" Value="Center"/>
+    </Style>
+
+    <Style x:Key="PreviewBadgeStyle" TargetType="Border">
+        <Setter Property="Width" Value="60"/>
+        <Setter Property="Height" Value="60"/>
+        <Setter Property="CornerRadius" Value="14"/>
+        <Setter Property="HorizontalAlignment" Value="Center"/>
+    </Style>
+
+    <Style x:Key="PreviewBadgeTextStyle" TargetType="TextBlock">
+        <Setter Property="FontFamily" Value="{DynamicResource Atlas.MonoFont}"/>
+        <Setter Property="FontSize" Value="15"/>
+        <Setter Property="FontWeight" Value="SemiBold"/>
+        <Setter Property="Foreground" Value="#FFFFFF"/>
+        <Setter Property="HorizontalAlignment" Value="Center"/>
+        <Setter Property="VerticalAlignment" Value="Center"/>
+    </Style>
+
+    <Style x:Key="PreviewNameStyle" TargetType="TextBlock">
+        <Setter Property="FontFamily" Value="{DynamicResource Atlas.SerifFont}"/>
+        <Setter Property="FontSize" Value="15"/>
+        <Setter Property="FontWeight" Value="SemiBold"/>
+        <Setter Property="Foreground" Value="{DynamicResource Atlas.InkBrush}"/>
+        <Setter Property="HorizontalAlignment" Value="Center"/>
+        <Setter Property="TextAlignment" Value="Center"/>
+        <Setter Property="TextWrapping" Value="Wrap"/>
+        <Setter Property="Margin" Value="0,10,0,0"/>
+    </Style>
+
+    <Style x:Key="MetaKeyStyle" TargetType="TextBlock">
+        <Setter Property="FontSize" Value="12"/>
+        <Setter Property="Foreground" Value="{DynamicResource Atlas.Ink3Brush}"/>
+        <Setter Property="VerticalAlignment" Value="Center"/>
+    </Style>
+
+    <Style x:Key="MetaValueStyle" TargetType="TextBlock">
+        <Setter Property="FontFamily" Value="{DynamicResource Atlas.MonoFont}"/>
+        <Setter Property="FontSize" Value="11"/>
+        <Setter Property="Foreground" Value="{DynamicResource Atlas.InkBrush}"/>
+        <Setter Property="TextAlignment" Value="Right"/>
+        <Setter Property="TextWrapping" Value="Wrap"/>
+    </Style>
+
+    <Style x:Key="PreviewCodeBoxStyle" TargetType="TextBox" BasedOn="{StaticResource {x:Type TextBox}}">
+        <Setter Property="IsReadOnly" Value="True"/>
+        <Setter Property="FontFamily" Value="{DynamicResource Atlas.MonoFont}"/>
+        <Setter Property="FontSize" Value="11.5"/>
+        <Setter Property="Foreground" Value="{DynamicResource Atlas.Ink2Brush}"/>
+        <Setter Property="VerticalScrollBarVisibility" Value="Auto"/>
+        <Setter Property="HorizontalScrollBarVisibility" Value="Auto"/>
+        <Setter Property="TextWrapping" Value="NoWrap"/>
+        <Setter Property="AcceptsReturn" Value="True"/>
+        <Setter Property="BorderThickness" Value="1"/>
+        <Setter Property="BorderBrush" Value="{DynamicResource Atlas.LineBrush}"/>
+        <Setter Property="Background" Value="{DynamicResource Atlas.SurfaceBrush}"/>
+        <Setter Property="Padding" Value="10"/>
+    </Style>
+
+    <Style x:Key="PreviewActionButtonStyle" TargetType="Button" BasedOn="{StaticResource PrimaryButtonStyle}">
+        <Setter Property="Height" Value="36"/>
+        <Setter Property="MinWidth" Value="0"/>
+    </Style>
+
+    <Style x:Key="SecondaryPreviewActionButtonStyle" TargetType="Button" BasedOn="{StaticResource SecondaryButtonStyle}">
+        <Setter Property="Height" Value="36"/>
+        <Setter Property="MinWidth" Value="0"/>
+    </Style>
+
+    <!-- ===== Preview splitter ===== -->
+    <Style x:Key="PreviewGridSplitterStyle" TargetType="GridSplitter">
+        <Setter Property="Width" Value="6"/>
+        <Setter Property="HorizontalAlignment" Value="Stretch"/>
+        <Setter Property="VerticalAlignment" Value="Stretch"/>
+        <Setter Property="Background" Value="Transparent"/>
+        <Setter Property="ResizeBehavior" Value="PreviousAndNext"/>
+        <Setter Property="ResizeDirection" Value="Columns"/>
+        <Setter Property="ShowsPreview" Value="False"/>
+        <Setter Property="Cursor" Value="SizeWE"/>
+        <Setter Property="ToolTip" Value="Drag to resize preview"/>
+        <Style.Triggers>
+            <DataTrigger Binding="{Binding IsPreviewPaneVisible}" Value="False">
+                <Setter Property="Width" Value="0"/>
+                <Setter Property="Visibility" Value="Collapsed"/>
+                <Setter Property="IsHitTestVisible" Value="False"/>
+            </DataTrigger>
+        </Style.Triggers>
     </Style>
 
 </ResourceDictionary>

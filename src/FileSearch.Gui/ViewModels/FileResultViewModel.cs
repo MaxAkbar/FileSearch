@@ -1,5 +1,7 @@
+using System;
 using System.Collections.Generic;
 using System.IO;
+using System.Linq;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 using FileSearch.Core.Engine;
@@ -14,24 +16,60 @@ namespace FileSearch.Gui.ViewModels;
 /// </summary>
 public sealed partial class FileResultViewModel : ObservableObject
 {
+    /// <summary>How many hit lines a result card shows before "+N more".</summary>
+    public const int CollapsedHitLimit = 3;
+
     private readonly List<Hit> _hits = new();
     private readonly IFileLauncher _launcher;
+
+    private string? _sizeText;
+    private string? _modifiedText;
 
     public FileResultViewModel(string fullPath, IFileLauncher launcher)
     {
         FullPath = fullPath;
         FileName = Path.GetFileName(fullPath);
         Directory = Path.GetDirectoryName(fullPath) ?? string.Empty;
+        Extension = Path.GetExtension(fullPath).TrimStart('.').ToLowerInvariant();
         _launcher = launcher;
     }
 
     public string FullPath { get; }
     public string FileName { get; }
     public string Directory { get; }
+
+    /// <summary>Lower-cased extension without the leading dot (e.g. "cs").</summary>
+    public string Extension { get; }
+
     public IReadOnlyList<Hit> Hits => _hits;
 
     [ObservableProperty] private int _hitCount;
     [ObservableProperty] private string _firstMatch = string.Empty;
+
+    /// <summary>
+    /// Whether the card is showing every hit or just the first
+    /// <see cref="CollapsedHitLimit"/>. Toggled by <see cref="ToggleExpandCommand"/>.
+    /// </summary>
+    [ObservableProperty] private bool _isExpanded;
+
+    /// <summary>The hit lines the card should currently render.</summary>
+    public IEnumerable<Hit> VisibleHits =>
+        IsExpanded ? _hits : _hits.Take(CollapsedHitLimit);
+
+    public bool HasMoreHits => _hits.Count > CollapsedHitLimit;
+
+    public int ExtraHitCount => Math.Max(0, _hits.Count - CollapsedHitLimit);
+
+    public string MoreText =>
+        IsExpanded
+            ? "Show fewer"
+            : $"+ {ExtraHitCount} more match{(ExtraHitCount == 1 ? string.Empty : "es")} in this file";
+
+    /// <summary>Human-readable file size, loaded lazily on first access.</summary>
+    public string SizeText => _sizeText ??= ComputeSizeText();
+
+    /// <summary>Last-modified timestamp, loaded lazily on first access.</summary>
+    public string ModifiedText => _modifiedText ??= ComputeModifiedText();
 
     public void AddHit(Hit hit)
     {
@@ -39,12 +77,62 @@ public sealed partial class FileResultViewModel : ObservableObject
         HitCount = _hits.Count;
         if (_hits.Count == 1)
             FirstMatch = hit.LineContent.Trim();
+
+        // Refresh the rendered lines only while they can still change:
+        // collapsed cards freeze at the first few, expanded cards keep growing.
+        if (IsExpanded || _hits.Count <= CollapsedHitLimit)
+            OnPropertyChanged(nameof(VisibleHits));
+        OnPropertyChanged(nameof(HasMoreHits));
+        OnPropertyChanged(nameof(ExtraHitCount));
+        OnPropertyChanged(nameof(MoreText));
+    }
+
+    partial void OnIsExpandedChanged(bool value)
+    {
+        OnPropertyChanged(nameof(VisibleHits));
+        OnPropertyChanged(nameof(MoreText));
     }
 
     // ----- row-level commands -----
 
+    [RelayCommand] private void ToggleExpand() => IsExpanded = !IsExpanded;
     [RelayCommand] private void Open() => _launcher.Open(FullPath);
     [RelayCommand] private void RevealInExplorer() => _launcher.RevealInExplorer(FullPath);
     [RelayCommand] private void CopyPath() => _launcher.CopyToClipboard(FullPath);
     [RelayCommand] private void CopyFolderPath() => _launcher.CopyToClipboard(Directory);
+
+    // ----- lazy file metadata (best-effort; never throws into the UI) -----
+
+    private string ComputeSizeText()
+    {
+        try
+        {
+            return FormatSize(new FileInfo(FullPath).Length);
+        }
+        catch
+        {
+            return "—";
+        }
+    }
+
+    private string ComputeModifiedText()
+    {
+        try
+        {
+            return File.GetLastWriteTime(FullPath).ToString("yyyy-MM-dd HH:mm");
+        }
+        catch
+        {
+            return "—";
+        }
+    }
+
+    private static string FormatSize(long bytes)
+    {
+        if (bytes <= 0) return "—";
+        if (bytes < 1024) return $"{bytes} B";
+        if (bytes < 1024 * 1024) return $"{bytes / 1024.0:0} KB";
+        if (bytes < 1024L * 1024 * 1024) return $"{bytes / (1024.0 * 1024):0.0} MB";
+        return $"{bytes / (1024.0 * 1024 * 1024):0.00} GB";
+    }
 }

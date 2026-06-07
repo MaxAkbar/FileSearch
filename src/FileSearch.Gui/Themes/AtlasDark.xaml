@@ -1,0 +1,63 @@
+<ResourceDictionary xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+                    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+
+    <!--
+        Atlas Dark — a warm, low-glare dark variant that keeps the green accent.
+
+        Overrides both the ModernWpf SystemControl* keys (for built-in controls)
+        and the Atlas.* keys (for our own surfaces, whose Light defaults live in
+        AppStyles.xaml). Removing this overlay restores the Light defaults.
+    -->
+
+    <!-- ===== Our surfaces (Atlas.*) ===== -->
+    <SolidColorBrush x:Key="Atlas.PaperBrush"      Color="#1B1D18"/>
+    <SolidColorBrush x:Key="Atlas.SurfaceBrush"    Color="#24261F"/>
+    <SolidColorBrush x:Key="Atlas.Surface2Brush"   Color="#2B2D25"/>
+    <SolidColorBrush x:Key="Atlas.SidebarBrush"    Color="#201F1A"/>
+    <SolidColorBrush x:Key="Atlas.InkBrush"        Color="#ECE9DF"/>
+    <SolidColorBrush x:Key="Atlas.Ink2Brush"       Color="#B7B4A7"/>
+    <SolidColorBrush x:Key="Atlas.Ink3Brush"       Color="#87897C"/>
+    <SolidColorBrush x:Key="Atlas.LineBrush"       Color="#1FFFFFFF"/>
+    <SolidColorBrush x:Key="Atlas.Line2Brush"      Color="#33FFFFFF"/>
+    <SolidColorBrush x:Key="Atlas.HoverBrush"      Color="#14FFFFFF"/>
+    <SolidColorBrush x:Key="Atlas.SelBrush"        Color="#332F7D57"/>
+    <SolidColorBrush x:Key="Atlas.AccentBrush"     Color="#37926A"/>
+    <SolidColorBrush x:Key="Atlas.Accent2Brush"    Color="#43A87B"/>
+    <SolidColorBrush x:Key="Atlas.AccentTintBrush" Color="#332F7D57"/>
+    <SolidColorBrush x:Key="Atlas.AccentSoftBrush" Color="#242F7D57"/>
+    <SolidColorBrush x:Key="Atlas.OnAccentBrush"   Color="#FFFFFF"/>
+    <SolidColorBrush x:Key="Atlas.WarmBrush"       Color="#D98A45"/>
+    <SolidColorBrush x:Key="Atlas.WarmTintBrush"   Color="#33C4722E"/>
+    <SolidColorBrush x:Key="Atlas.HitBrush"        Color="#99FFCE54"/>
+    <SolidColorBrush x:Key="Atlas.HitInkBrush"     Color="#23261F"/>
+
+    <!-- ===== Built-in controls (ModernWpf SystemControl*) ===== -->
+    <SolidColorBrush x:Key="ApplicationPageBackgroundThemeBrush" Color="#1B1D18"/>
+
+    <SolidColorBrush x:Key="SystemControlBackgroundChromeMediumLowBrush" Color="#24261F"/>
+    <SolidColorBrush x:Key="SystemControlBackgroundChromeMediumBrush"    Color="#24261F"/>
+    <SolidColorBrush x:Key="SystemControlBackgroundChromeHighBrush"      Color="#24261F"/>
+    <SolidColorBrush x:Key="SystemControlBackgroundAltMediumLowBrush"    Color="#24261F"/>
+    <SolidColorBrush x:Key="SystemControlBackgroundAltMediumBrush"       Color="#2B2D25"/>
+    <SolidColorBrush x:Key="SystemControlBackgroundAltHighBrush"         Color="#24261F"/>
+
+    <SolidColorBrush x:Key="SystemControlBackgroundListLowBrush"    Color="#2B2D25"/>
+    <SolidColorBrush x:Key="SystemControlBackgroundListMediumBrush" Color="#14FFFFFF"/>
+
+    <SolidColorBrush x:Key="SystemControlBackgroundAccentBrush"       Color="#37926A"/>
+    <SolidColorBrush x:Key="SystemControlHighlightAccentBrush"        Color="#37926A"/>
+    <SolidColorBrush x:Key="SystemControlHighlightAltAccentBrush"     Color="#43A87B"/>
+    <SolidColorBrush x:Key="SystemControlHighlightListAccentLowBrush"    Color="#332F7D57"/>
+    <SolidColorBrush x:Key="SystemControlHighlightListAccentMediumBrush" Color="#4D2F7D57"/>
+
+    <SolidColorBrush x:Key="SystemControlForegroundBaseHighBrush"       Color="#ECE9DF"/>
+    <SolidColorBrush x:Key="SystemControlForegroundBaseMediumHighBrush" Color="#CFCCBF"/>
+    <SolidColorBrush x:Key="SystemControlForegroundBaseMediumBrush"     Color="#87897C"/>
+    <SolidColorBrush x:Key="SystemControlForegroundBaseLowBrush"        Color="#33FFFFFF"/>
+    <SolidColorBrush x:Key="SystemControlForegroundChromeWhiteBrush"    Color="#FFFFFF"/>
+    <SolidColorBrush x:Key="SystemControlForegroundChromeHighBrush"     Color="#ECE9DF"/>
+
+    <Color           x:Key="SystemAccentColor">#37926A</Color>
+    <SolidColorBrush x:Key="SystemAccentColorBrush" Color="#37926A"/>
+
+</ResourceDictionary>

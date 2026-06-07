@@ -4,10 +4,11 @@
     <!--
         Visual Studio Dark palette.
 
-        Applied as an overlay on top of ModernWpf's Dark theme — we only
-        override the brush keys we care about (window/panel backgrounds,
-        accent, text). Any brush we don't list here falls through to the
-        underlying Dark theme, so this is additive, not a full replacement.
+        Applied as an overlay on top of ModernWpf's Dark theme. It overrides
+        the ModernWpf SystemControl* keys (for built-in controls) and the
+        Atlas.* keys (for our own surfaces) with a VS-inspired blue/grey
+        palette. Removing this overlay restores the Atlas Light defaults from
+        AppStyles.xaml.
     -->
 
     <!-- Palette -->
@@ -23,27 +24,45 @@
     <Color x:Key="VsTextSecondaryColor">#FFC9CBD1</Color>
     <Color x:Key="VsTextMutedColor">#FF8F949E</Color>
 
-    <!-- Window / page background -->
+    <!-- ===== Our surfaces (Atlas.*) ===== -->
+    <SolidColorBrush x:Key="Atlas.PaperBrush"      Color="{StaticResource VsWindowColor}"/>
+    <SolidColorBrush x:Key="Atlas.SurfaceBrush"    Color="{StaticResource VsPanelColor}"/>
+    <SolidColorBrush x:Key="Atlas.Surface2Brush"   Color="{StaticResource VsListAltColor}"/>
+    <SolidColorBrush x:Key="Atlas.SidebarBrush"    Color="#FF1C1D20"/>
+    <SolidColorBrush x:Key="Atlas.InkBrush"        Color="{StaticResource VsTextColor}"/>
+    <SolidColorBrush x:Key="Atlas.Ink2Brush"       Color="{StaticResource VsTextSecondaryColor}"/>
+    <SolidColorBrush x:Key="Atlas.Ink3Brush"       Color="{StaticResource VsTextMutedColor}"/>
+    <SolidColorBrush x:Key="Atlas.LineBrush"       Color="#1FFFFFFF"/>
+    <SolidColorBrush x:Key="Atlas.Line2Brush"      Color="{StaticResource VsBorderColor}"/>
+    <SolidColorBrush x:Key="Atlas.HoverBrush"      Color="#14FFFFFF"/>
+    <SolidColorBrush x:Key="Atlas.SelBrush"        Color="{StaticResource VsSelectionColor}"/>
+    <SolidColorBrush x:Key="Atlas.AccentBrush"     Color="{StaticResource VsAccentColor}"/>
+    <SolidColorBrush x:Key="Atlas.Accent2Brush"    Color="{StaticResource VsAccentHoverColor}"/>
+    <SolidColorBrush x:Key="Atlas.AccentTintBrush" Color="#330E8DDA"/>
+    <SolidColorBrush x:Key="Atlas.AccentSoftBrush" Color="#220E8DDA"/>
+    <SolidColorBrush x:Key="Atlas.OnAccentBrush"   Color="#FFFFFFFF"/>
+    <SolidColorBrush x:Key="Atlas.WarmBrush"       Color="#FFD98A45"/>
+    <SolidColorBrush x:Key="Atlas.WarmTintBrush"   Color="#33D98A45"/>
+    <SolidColorBrush x:Key="Atlas.HitBrush"        Color="#99FFCE54"/>
+    <SolidColorBrush x:Key="Atlas.HitInkBrush"     Color="{StaticResource VsWindowColor}"/>
+
+    <!-- ===== Built-in controls (ModernWpf SystemControl*) ===== -->
     <SolidColorBrush x:Key="ApplicationPageBackgroundThemeBrush" Color="{StaticResource VsWindowColor}"/>
 
-    <!-- Panel & card backgrounds (used by our Card / SubtleCard styles) -->
     <SolidColorBrush x:Key="SystemControlBackgroundChromeMediumLowBrush" Color="{StaticResource VsPanelColor}"/>
     <SolidColorBrush x:Key="SystemControlBackgroundChromeMediumBrush"    Color="{StaticResource VsPanelColor}"/>
     <SolidColorBrush x:Key="SystemControlBackgroundChromeHighBrush"      Color="{StaticResource VsPanelColor}"/>
     <SolidColorBrush x:Key="SystemControlBackgroundAltMediumLowBrush"    Color="{StaticResource VsWindowColor}"/>
     <SolidColorBrush x:Key="SystemControlBackgroundAltMediumBrush"       Color="{StaticResource VsListAltColor}"/>
 
-    <!-- List rows / hover -->
     <SolidColorBrush x:Key="SystemControlBackgroundListLowBrush"    Color="{StaticResource VsListAltColor}"/>
     <SolidColorBrush x:Key="SystemControlBackgroundListMediumBrush" Color="{StaticResource VsHoverColor}"/>
 
-    <!-- Accent (Start button, hit pills, selection) -->
     <SolidColorBrush x:Key="SystemControlBackgroundAccentBrush"      Color="{StaticResource VsAccentColor}"/>
     <SolidColorBrush x:Key="SystemControlHighlightAccentBrush"       Color="{StaticResource VsAccentColor}"/>
     <SolidColorBrush x:Key="SystemControlHighlightAltAccentBrush"    Color="{StaticResource VsAccentHoverColor}"/>
     <SolidColorBrush x:Key="SystemControlHighlightListAccentLowBrush" Color="{StaticResource VsSelectionColor}"/>
 
-    <!-- Text -->
     <SolidColorBrush x:Key="SystemControlForegroundBaseHighBrush"     Color="{StaticResource VsTextColor}"/>
     <SolidColorBrush x:Key="SystemControlForegroundBaseMediumBrush"   Color="{StaticResource VsTextSecondaryColor}"/>
     <SolidColorBrush x:Key="SystemControlForegroundBaseMediumHighBrush" Color="{StaticResource VsTextColor}"/>

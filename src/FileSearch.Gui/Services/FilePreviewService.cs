@@ -65,6 +65,22 @@ public sealed class FilePreviewService : IFilePreviewService
         return sb.ToString();
     }
 
+    public async Task<string> LoadFullTextAsync(string path, CancellationToken cancellationToken)
+    {
+        var extractor = _extractorRegistry.GetFor(path);
+        if (extractor is null)
+            return string.Empty;
+
+        var sb = new StringBuilder();
+        await foreach (var line in extractor.ExtractAsync(path, cancellationToken).ConfigureAwait(false))
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            sb.AppendLine(line.Content);
+        }
+
+        return sb.ToString();
+    }
+
     /// <summary>
     /// Expand each hit to [hit-N, hit+N] and merge overlapping/adjacent ranges
     /// so we walk the file exactly once and don't print duplicate lines.

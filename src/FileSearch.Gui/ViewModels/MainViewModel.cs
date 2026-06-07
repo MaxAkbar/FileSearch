@@ -23,6 +23,8 @@ public sealed partial class MainViewModel : ObservableObject
 {
     private const int MaxHistoryEntries = 15;
     private const int HitsTabIndex = 1;
+    public const double MinimumPreviewPaneWidth = 300;
+    public const double MaximumPreviewPaneWidth = 720;
 
     private readonly ISearcher _searcher;
     private readonly IExtractorRegistry _extractorRegistry;
@@ -141,6 +143,8 @@ public sealed partial class MainViewModel : ObservableObject
     [ObservableProperty] private int _filesMatched;
     [ObservableProperty] private string _elapsedText = "—";
     [ObservableProperty] private string _previewContent = string.Empty;
+    [ObservableProperty] private bool _isPreviewPaneVisible = true;
+    [ObservableProperty] private double _previewPaneWidth = 360;
     [ObservableProperty] private int _selectedDetailsTabIndex;
 
     // --- in-memory filter over the results ("search the search") ---
@@ -175,15 +179,110 @@ public sealed partial class MainViewModel : ObservableObject
 
     public bool HasSelectedFile => SelectedFile is not null;
 
+    public string PreviewPaneToggleText => "Preview";
+
+    public string ResultsSummaryText => $"{FilesMatched:n0} files · {TotalHits:n0} hits";
+
+    /// <summary>Heading above the results list ("Find …" once a query is set).</summary>
+    public string ResultsContextText =>
+        string.IsNullOrWhiteSpace(QueryText) ? "Results" : $"Find “{QueryText.Trim()}”";
+
+    public string FilePatternSummary =>
+        string.IsNullOrWhiteSpace(FileNamePattern) ? "All files" : FileNamePattern;
+
+    public string MatchCaseSummary => MatchCase ? "Match case on" : "Match case off";
+
+    public string SubfoldersSummary => IncludeSubfolders ? "Subfolders on" : "Subfolders off";
+
+    public string DocumentExtractionSummary =>
+        EnableDocumentExtraction ? "Office/PDF on" : "Office/PDF off";
+
+    public string UnknownFileTypesSummary =>
+        SkipUnknownFileTypes ? "Known types only" : "Unknown text allowed";
+
+    public string DateSummary
+    {
+        get
+        {
+            if (ModifiedAfterEnabled && ModifiedBeforeEnabled)
+                return $"{ModifiedAfter:MMM d} - {ModifiedBefore:MMM d}";
+            if (ModifiedAfterEnabled)
+                return $"After {ModifiedAfter:MMM d}";
+            if (ModifiedBeforeEnabled)
+                return $"Before {ModifiedBefore:MMM d}";
+            return "Modified any time";
+        }
+    }
+
     partial void OnSelectedFileChanged(FileResultViewModel? value)
     {
         OnPropertyChanged(nameof(HasSelectedFile));
+        CopyFileContentCommand.NotifyCanExecuteChanged();
         if (value is not null)
             SelectedDetailsTabIndex = HitsTabIndex;
         _ = LoadPreviewAsync(value);
     }
 
+    partial void OnPreviewContentChanged(string value) =>
+        CopyPreviewCommand.NotifyCanExecuteChanged();
+
+    partial void OnIsPreviewPaneVisibleChanged(bool value)
+    {
+        OnPropertyChanged(nameof(PreviewPaneToggleText));
+    }
+
+    partial void OnPreviewPaneWidthChanged(double value)
+    {
+        var clamped = Math.Clamp(value, MinimumPreviewPaneWidth, MaximumPreviewPaneWidth);
+        if (Math.Abs(value - clamped) > 0.1)
+        {
+            PreviewPaneWidth = clamped;
+        }
+    }
+
     // ----- commands -----
+
+    [RelayCommand]
+    private void TogglePreviewPane() => IsPreviewPaneVisible = !IsPreviewPaneVisible;
+
+    [RelayCommand(CanExecute = nameof(CanCopyPreview))]
+    private void CopyPreview()
+    {
+        _fileLauncher.CopyToClipboard(PreviewContent);
+        StatusText = "Copied preview to clipboard.";
+    }
+
+    private bool CanCopyPreview() => !string.IsNullOrEmpty(PreviewContent);
+
+    [RelayCommand(CanExecute = nameof(CanCopyFileContent))]
+    private async Task CopyFileContentAsync()
+    {
+        var file = SelectedFile;
+        if (file is null) return;
+
+        try
+        {
+            StatusText = "Reading file content...";
+            var text = await _previewService
+                .LoadFullTextAsync(file.FullPath, CancellationToken.None)
+                .ConfigureAwait(true);
+
+            if (string.IsNullOrEmpty(text))
+            {
+                StatusText = "No extractable text content for this file type.";
+                return;
+            }
+
+            _fileLauncher.CopyToClipboard(text);
+            StatusText = $"Copied file content ({text.Length:n0} characters) to clipboard.";
+        }
+        catch (Exception ex)
+        {
+            StatusText = $"Couldn't copy content: {ex.Message}";
+        }
+    }
+
+    private bool CanCopyFileContent() => HasSelectedFile;
 
     [RelayCommand]
     private void Browse()
@@ -287,6 +386,10 @@ public sealed partial class MainViewModel : ObservableObject
     private void Cancel() => _searchCts?.Cancel();
 
     private bool CanCancel() => IsSearching;
+
+    [RelayCommand]
+    private void ApplyFilePatternPreset(string? pattern) =>
+        FileNamePattern = pattern?.Trim() ?? string.Empty;
 
     [RelayCommand]
     private void ApplyTheme(string themeName)
@@ -481,4 +584,40 @@ public sealed partial class MainViewModel : ObservableObject
         while (list.Count > MaxHistoryEntries)
             list.RemoveAt(list.Count - 1);
     }
+
+    partial void OnFileNamePatternChanged(string value) =>
+        OnPropertyChanged(nameof(FilePatternSummary));
+
+    partial void OnIncludeSubfoldersChanged(bool value) =>
+        OnPropertyChanged(nameof(SubfoldersSummary));
+
+    partial void OnMatchCaseChanged(bool value) =>
+        OnPropertyChanged(nameof(MatchCaseSummary));
+
+    partial void OnEnableDocumentExtractionChanged(bool value) =>
+        OnPropertyChanged(nameof(DocumentExtractionSummary));
+
+    partial void OnSkipUnknownFileTypesChanged(bool value) =>
+        OnPropertyChanged(nameof(UnknownFileTypesSummary));
+
+    partial void OnModifiedAfterEnabledChanged(bool value) =>
+        OnPropertyChanged(nameof(DateSummary));
+
+    partial void OnModifiedAfterChanged(DateTime value) =>
+        OnPropertyChanged(nameof(DateSummary));
+
+    partial void OnModifiedBeforeEnabledChanged(bool value) =>
+        OnPropertyChanged(nameof(DateSummary));
+
+    partial void OnModifiedBeforeChanged(DateTime value) =>
+        OnPropertyChanged(nameof(DateSummary));
+
+    partial void OnQueryTextChanged(string value) =>
+        OnPropertyChanged(nameof(ResultsContextText));
+
+    partial void OnFilesMatchedChanged(int value) =>
+        OnPropertyChanged(nameof(ResultsSummaryText));
+
+    partial void OnTotalHitsChanged(int value) =>
+        OnPropertyChanged(nameof(ResultsSummaryText));
 }
