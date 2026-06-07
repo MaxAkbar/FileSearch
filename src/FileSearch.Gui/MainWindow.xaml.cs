@@ -1,6 +1,5 @@
 using System;
 using System.ComponentModel;
-using System.Diagnostics;
 using System.IO;
 using System.Windows;
 using System.Windows.Controls;
@@ -17,7 +16,7 @@ public partial class MainWindow : Window
         InitializeComponent();
         UpdateNavSectionRows();
         DataContextChanged += OnDataContextChanged;
-        SizeChanged += OnWindowSizeChanged;
+        ShellRoot.SizeChanged += OnShellRootSizeChanged;
     }
 
     private void OnExitClick(object sender, RoutedEventArgs e) => Close();
@@ -46,7 +45,12 @@ public partial class MainWindow : Window
 
         try
         {
-            Process.Start(new ProcessStartInfo(helpPath) { UseShellExecute = true });
+            var helpWindow = new HelpWindow(helpPath)
+            {
+                Owner = this,
+            };
+
+            helpWindow.ShowDialog();
         }
         catch (Exception ex)
         {
@@ -117,10 +121,13 @@ public partial class MainWindow : Window
         if (DataContext is not MainViewModel viewModel || !viewModel.IsPreviewPaneVisible)
             return;
 
+        var availableWidth = GetAvailablePreviewPaneWidth();
+        var minimumWidth = Math.Min(MainViewModel.MinimumPreviewPaneWidth, availableWidth);
+
         viewModel.PreviewPaneWidth = Math.Clamp(
             viewModel.PreviewPaneWidth - e.HorizontalChange,
-            MainViewModel.MinimumPreviewPaneWidth,
-            GetAvailablePreviewPaneWidth());
+            minimumWidth,
+            availableWidth);
 
         e.Handled = true;
     }
@@ -146,7 +153,7 @@ public partial class MainWindow : Window
             UpdatePreviewColumn(viewModel);
     }
 
-    private void OnWindowSizeChanged(object sender, SizeChangedEventArgs e)
+    private void OnShellRootSizeChanged(object sender, SizeChangedEventArgs e)
     {
         if (DataContext is MainViewModel viewModel)
             UpdatePreviewColumn(viewModel);
@@ -162,13 +169,12 @@ public partial class MainWindow : Window
             return;
         }
 
-        var width = Math.Clamp(
-            viewModel.PreviewPaneWidth,
-            MainViewModel.MinimumPreviewPaneWidth,
-            GetAvailablePreviewPaneWidth());
+        var availableWidth = GetAvailablePreviewPaneWidth();
+        var minimumWidth = Math.Min(MainViewModel.MinimumPreviewPaneWidth, availableWidth);
+        var width = Math.Clamp(viewModel.PreviewPaneWidth, minimumWidth, availableWidth);
 
-        PreviewColumn.MinWidth = MainViewModel.MinimumPreviewPaneWidth;
-        PreviewColumn.MaxWidth = GetAvailablePreviewPaneWidth();
+        PreviewColumn.MinWidth = minimumWidth;
+        PreviewColumn.MaxWidth = availableWidth;
         PreviewColumn.Width = new GridLength(width);
     }
 
@@ -182,9 +188,6 @@ public partial class MainWindow : Window
         var splitterWidth = ShellRoot.ColumnDefinitions[2].ActualWidth;
         var available = ShellRoot.ActualWidth - navigationWidth - resultsMinWidth - splitterWidth;
 
-        return Math.Clamp(
-            available,
-            MainViewModel.MinimumPreviewPaneWidth,
-            MainViewModel.MaximumPreviewPaneWidth);
+        return Math.Clamp(available, 0, MainViewModel.MaximumPreviewPaneWidth);
     }
 }
