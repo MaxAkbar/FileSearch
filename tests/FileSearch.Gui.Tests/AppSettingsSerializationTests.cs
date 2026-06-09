@@ -32,6 +32,10 @@ public sealed class AppSettingsSerializationTests
                     LastIndexedUtcTicks = 638851392000000000,
                     FileCount = 42,
                     LineCount = 1_234,
+                    IsIndexing = true,
+                    IsQueued = true,
+                    IsIndexingPaused = true,
+                    QueuedWorkCount = 2,
                 },
             ],
         };
@@ -41,6 +45,15 @@ public sealed class AppSettingsSerializationTests
 
         Assert.DoesNotContain(nameof(IndexedLocationSettings.DisplayName), json);
         Assert.DoesNotContain(nameof(IndexedLocationSettings.Summary), json);
+        Assert.DoesNotContain(nameof(IndexedLocationSettings.WatchSummary), json);
+        Assert.DoesNotContain(nameof(IndexedLocationSettings.RecursionSummary), json);
+        Assert.DoesNotContain(nameof(IndexedLocationSettings.TypeSummary), json);
+        Assert.DoesNotContain(nameof(IndexedLocationSettings.LastIndexedSummary), json);
+        Assert.DoesNotContain(nameof(IndexedLocationSettings.IsIndexing), json);
+        Assert.DoesNotContain(nameof(IndexedLocationSettings.IsQueued), json);
+        Assert.DoesNotContain(nameof(IndexedLocationSettings.IsIndexingPaused), json);
+        Assert.DoesNotContain(nameof(IndexedLocationSettings.QueuedWorkCount), json);
+        Assert.DoesNotContain(nameof(IndexedLocationSettings.RuntimeStatusSummary), json);
         Assert.NotNull(loaded);
         var location = Assert.Single(loaded.IndexedLocations);
         Assert.Equal(@"C:\Work", location.Root);

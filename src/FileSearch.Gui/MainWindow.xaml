@@ -49,19 +49,12 @@
                         <MenuItem Header="_Cancel" Command="{Binding CancelCommand}" InputGestureText="Esc"/>
                     </MenuItem>
                     <MenuItem Header="_Index">
-                        <MenuItem Header="_Add current folder to index"
-                                  Command="{Binding AddCurrentFolderToIndexCommand}"/>
+                        <MenuItem Header="_Manage indexed locations..."
+                                  Click="OnManageIndexesClick"/>
                         <MenuItem Header="_Pause background indexing"
                                   Command="{Binding PauseBackgroundIndexingCommand}"/>
                         <MenuItem Header="_Resume background indexing"
                                   Command="{Binding ResumeBackgroundIndexingCommand}"/>
-                        <Separator/>
-                        <MenuItem Header="_Rebuild selected index"
-                                  Command="{Binding RebuildSelectedIndexCommand}"/>
-                        <MenuItem Header="_Remove selected index"
-                                  Command="{Binding RemoveSelectedIndexCommand}"/>
-                        <MenuItem Header="_Clear index for current folder"
-                                  Command="{Binding ClearIndexForCurrentFolderCommand}"/>
                         <Separator/>
                         <MenuItem Header="_Open index location"
                                   Command="{Binding OpenIndexLocationCommand}"/>
@@ -310,29 +303,14 @@
                                       Header="INDEXED LOCATIONS" Style="{StaticResource NavSectionExpanderStyle}"
                                       Expanded="OnNavSectionToggled" Collapsed="OnNavSectionToggled">
                                 <DockPanel>
-                                    <StackPanel DockPanel.Dock="Bottom">
-                                        <Button Command="{Binding AddCurrentFolderToIndexCommand}"
-                                                Style="{StaticResource NavItemButtonStyle}">
-                                            <StackPanel Orientation="Horizontal">
-                                                <ui:FontIcon Glyph="&#xE710;" FontSize="14" Margin="0,0,11,0"/>
-                                                <TextBlock Text="Add current folder" VerticalAlignment="Center"/>
-                                            </StackPanel>
-                                        </Button>
-                                        <Button Command="{Binding RebuildSelectedIndexCommand}"
-                                                Style="{StaticResource NavItemButtonStyle}">
-                                            <StackPanel Orientation="Horizontal">
-                                                <ui:FontIcon Glyph="&#xE72C;" FontSize="14" Margin="0,0,11,0"/>
-                                                <TextBlock Text="Rebuild selected" VerticalAlignment="Center"/>
-                                            </StackPanel>
-                                        </Button>
-                                        <Button Command="{Binding RemoveSelectedIndexCommand}"
-                                                Style="{StaticResource NavItemButtonStyle}">
-                                            <StackPanel Orientation="Horizontal">
-                                                <ui:FontIcon Glyph="&#xE74D;" FontSize="14" Margin="0,0,11,0"/>
-                                                <TextBlock Text="Remove selected" VerticalAlignment="Center"/>
-                                            </StackPanel>
-                                        </Button>
-                                    </StackPanel>
+                                    <Button DockPanel.Dock="Bottom"
+                                            Click="OnManageIndexesClick"
+                                            Style="{StaticResource NavItemButtonStyle}">
+                                        <StackPanel Orientation="Horizontal">
+                                            <ui:FontIcon Glyph="&#xE713;" FontSize="14" Margin="0,0,11,0"/>
+                                            <TextBlock Text="Manage locations" VerticalAlignment="Center"/>
+                                        </StackPanel>
+                                    </Button>
                                     <ListBox ItemsSource="{Binding IndexedLocations}"
                                              SelectedItem="{Binding SelectedIndexedLocation, Mode=TwoWay}"
                                              Style="{StaticResource NavListBoxStyle}"
@@ -349,6 +327,16 @@
                                                                  VerticalAlignment="Center"/>
                                                     <StackPanel Grid.Column="1">
                                                         <TextBlock Text="{Binding DisplayName}" TextTrimming="CharacterEllipsis"/>
+                                                        <WrapPanel>
+                                                            <Border Style="{StaticResource IndexStatusBadgeStyle}" Margin="0,3,4,3">
+                                                                <TextBlock Text="{Binding RuntimeStatusSummary}"
+                                                                           Style="{StaticResource IndexStatusBadgeTextStyle}"/>
+                                                            </Border>
+                                                            <Border Style="{StaticResource WatchStatusBadgeStyle}" Margin="0,3,0,3">
+                                                                <TextBlock Text="{Binding WatchSummary}"
+                                                                           Style="{StaticResource IndexStatusBadgeTextStyle}"/>
+                                                            </Border>
+                                                        </WrapPanel>
                                                         <TextBlock Text="{Binding Summary}" Style="{StaticResource MutedValueStyle}"/>
                                                     </StackPanel>
                                                 </Grid>

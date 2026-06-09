@@ -11,6 +11,8 @@ public interface IIndexQueue
 
     Task<IndexQueueItem> DequeueAsync(CancellationToken cancellationToken);
 
+    IReadOnlyDictionary<string, int> GetQueuedRootCounts();
+
     Task LoadPendingAsync(
         System.Collections.Generic.IReadOnlyDictionary<string, IndexedLocation> locations,
         CancellationToken cancellationToken);

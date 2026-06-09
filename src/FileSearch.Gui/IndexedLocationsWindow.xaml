@@ -1,0 +1,286 @@
+<Window x:Class="FileSearch.Gui.IndexedLocationsWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:ui="http://schemas.modernwpf.com/2019"
+        ui:WindowHelper.UseModernWindowStyle="True"
+        Icon="Assets/FileSearch.ico"
+        Background="{DynamicResource Atlas.PaperBrush}"
+        Foreground="{DynamicResource Atlas.InkBrush}"
+        FontFamily="{DynamicResource Atlas.SansFont}"
+        TextOptions.TextFormattingMode="Display"
+        TextOptions.TextRenderingMode="ClearType"
+        Title="Indexed Locations"
+        Height="560"
+        Width="860"
+        MinHeight="500"
+        MinWidth="760"
+        ResizeMode="CanResizeWithGrip"
+        WindowStartupLocation="CenterOwner">
+
+    <DockPanel Style="{StaticResource AppRootStyle}">
+        <Border DockPanel.Dock="Top"
+                Background="{DynamicResource Atlas.PaperBrush}"
+                BorderBrush="{DynamicResource Atlas.LineBrush}"
+                BorderThickness="0,0,0,1"
+                Padding="18,11">
+            <Grid>
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="*"/>
+                    <ColumnDefinition Width="Auto"/>
+                </Grid.ColumnDefinitions>
+                <StackPanel>
+                    <TextBlock Text="Indexed locations" Style="{StaticResource CtxTitleStyle}"/>
+                    <TextBlock Text="{Binding IndexedLocationCountText}" Style="{StaticResource MutedValueStyle}" Margin="0,3,0,0"/>
+                </StackPanel>
+                <CheckBox Grid.Column="1"
+                          Content="Use index for covered searches"
+                          IsChecked="{Binding UseIndex, Mode=TwoWay}"
+                          VerticalAlignment="Center"/>
+            </Grid>
+        </Border>
+
+        <Grid Margin="20">
+            <Grid.RowDefinitions>
+                <RowDefinition Height="*"/>
+                <RowDefinition Height="Auto"/>
+            </Grid.RowDefinitions>
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="320"/>
+                <ColumnDefinition Width="16"/>
+                <ColumnDefinition Width="*"/>
+            </Grid.ColumnDefinitions>
+
+            <Border Grid.Column="0"
+                    Background="{DynamicResource Atlas.SurfaceBrush}"
+                    BorderBrush="{DynamicResource Atlas.LineBrush}"
+                    BorderThickness="1"
+                    CornerRadius="8"
+                    Padding="10">
+                <DockPanel>
+                    <StackPanel DockPanel.Dock="Top" Margin="4,2,4,10">
+                        <Button Command="{Binding AddCurrentFolderToIndexCommand}"
+                                Style="{StaticResource SecondaryButtonStyle}"
+                                Height="34"
+                                HorizontalAlignment="Stretch"
+                                HorizontalContentAlignment="Center"
+                                Margin="0,0,0,8">
+                            <StackPanel Orientation="Horizontal">
+                                <ui:FontIcon Glyph="&#xE710;" FontSize="13" Margin="0,0,7,0"/>
+                                <TextBlock Text="{Binding CurrentFolderIndexActionText}"/>
+                            </StackPanel>
+                        </Button>
+                        <Button Click="OnAddFolderClick"
+                                Style="{StaticResource SecondaryButtonStyle}"
+                                Height="34"
+                                HorizontalAlignment="Stretch"
+                                HorizontalContentAlignment="Center">
+                            <StackPanel Orientation="Horizontal">
+                                <ui:FontIcon Glyph="&#xE8B7;" FontSize="13" Margin="0,0,7,0"/>
+                                <TextBlock Text="Add folder..."/>
+                            </StackPanel>
+                        </Button>
+                    </StackPanel>
+
+                    <ListBox ItemsSource="{Binding IndexedLocations}"
+                             SelectedItem="{Binding SelectedIndexedLocation, Mode=TwoWay}"
+                             Style="{StaticResource NavListBoxStyle}"
+                             ItemContainerStyle="{StaticResource NavListBoxItemStyle}">
+                        <ListBox.ItemTemplate>
+                            <DataTemplate>
+                                <Grid ToolTip="{Binding Root}">
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="Auto"/>
+                                        <ColumnDefinition Width="*"/>
+                                    </Grid.ColumnDefinitions>
+                                    <ui:FontIcon Glyph="&#xE8B7;" FontSize="14" Margin="0,0,10,0"
+                                                 Foreground="{DynamicResource Atlas.AccentBrush}"
+                                                 VerticalAlignment="Center"/>
+                                    <StackPanel Grid.Column="1">
+                                        <TextBlock Text="{Binding DisplayName}" TextTrimming="CharacterEllipsis"/>
+                                        <WrapPanel>
+                                            <Border Style="{StaticResource IndexStatusBadgeStyle}" Margin="0,3,4,3">
+                                                <TextBlock Text="{Binding RuntimeStatusSummary}"
+                                                           Style="{StaticResource IndexStatusBadgeTextStyle}"/>
+                                            </Border>
+                                            <Border Style="{StaticResource WatchStatusBadgeStyle}" Margin="0,3,0,3">
+                                                <TextBlock Text="{Binding WatchSummary}"
+                                                           Style="{StaticResource IndexStatusBadgeTextStyle}"/>
+                                            </Border>
+                                        </WrapPanel>
+                                        <TextBlock Text="{Binding Summary}" Style="{StaticResource MutedValueStyle}"/>
+                                    </StackPanel>
+                                </Grid>
+                            </DataTemplate>
+                        </ListBox.ItemTemplate>
+                    </ListBox>
+                </DockPanel>
+            </Border>
+
+            <Border Grid.Column="2"
+                    Style="{StaticResource WatchAwareSurfaceStyle}">
+                <Grid>
+                    <StackPanel>
+                        <StackPanel.Style>
+                            <Style TargetType="StackPanel">
+                                <Setter Property="Visibility" Value="Visible"/>
+                                <Style.Triggers>
+                                    <DataTrigger Binding="{Binding SelectedIndexedLocation}" Value="{x:Null}">
+                                        <Setter Property="Visibility" Value="Collapsed"/>
+                                    </DataTrigger>
+                                </Style.Triggers>
+                            </Style>
+                        </StackPanel.Style>
+
+                        <TextBlock Text="{Binding SelectedIndexedLocation.DisplayName}"
+                                   FontSize="20"
+                                   FontWeight="SemiBold"
+                                   Foreground="{DynamicResource Atlas.InkBrush}"
+                                   TextTrimming="CharacterEllipsis"/>
+                        <TextBlock Text="{Binding SelectedIndexedLocation.Root}"
+                                   ToolTip="{Binding SelectedIndexedLocation.Root}"
+                                   Style="{StaticResource MetaValueStyle}"
+                                   TextAlignment="Left"
+                                   TextTrimming="CharacterEllipsis"
+                                   Margin="0,4,0,18"/>
+
+                        <Grid Margin="0,0,0,18">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="140"/>
+                                <ColumnDefinition Width="*"/>
+                            </Grid.ColumnDefinitions>
+                            <Grid.RowDefinitions>
+                                <RowDefinition Height="Auto"/>
+                                <RowDefinition Height="Auto"/>
+                                <RowDefinition Height="Auto"/>
+                                <RowDefinition Height="Auto"/>
+                                <RowDefinition Height="Auto"/>
+                                <RowDefinition Height="Auto"/>
+                            </Grid.RowDefinitions>
+
+                            <TextBlock Grid.Row="0" Text="Status" Style="{StaticResource MetaKeyStyle}" Margin="0,0,0,8"/>
+                            <Border Grid.Row="0" Grid.Column="1"
+                                    DataContext="{Binding SelectedIndexedLocation}"
+                                    Style="{StaticResource IndexStatusBadgeStyle}"
+                                    Margin="0,0,0,8">
+                                <TextBlock Text="{Binding RuntimeStatusSummary}"
+                                           Style="{StaticResource IndexStatusBadgeTextStyle}"/>
+                            </Border>
+
+                            <TextBlock Grid.Row="1" Text="Files" Style="{StaticResource MetaKeyStyle}" Margin="0,0,0,8"/>
+                            <TextBlock Grid.Row="1" Grid.Column="1" Text="{Binding SelectedIndexedLocation.FileCount, StringFormat={}{0:n0}}" Style="{StaticResource MetaValueStyle}" TextAlignment="Left" Margin="0,0,0,8"/>
+
+                            <TextBlock Grid.Row="2" Text="Lines" Style="{StaticResource MetaKeyStyle}" Margin="0,0,0,8"/>
+                            <TextBlock Grid.Row="2" Grid.Column="1" Text="{Binding SelectedIndexedLocation.LineCount, StringFormat={}{0:n0}}" Style="{StaticResource MetaValueStyle}" TextAlignment="Left" Margin="0,0,0,8"/>
+
+                            <TextBlock Grid.Row="3" Text="Refresh" Style="{StaticResource MetaKeyStyle}" Margin="0,0,0,8"/>
+                            <TextBlock Grid.Row="3" Grid.Column="1" Text="{Binding SelectedIndexedLocation.LastIndexedSummary}" Style="{StaticResource MetaValueStyle}" TextAlignment="Left" Margin="0,0,0,8"/>
+
+                            <TextBlock Grid.Row="4" Text="Coverage" Style="{StaticResource MetaKeyStyle}" Margin="0,0,0,8"/>
+                            <TextBlock Grid.Row="4" Grid.Column="1" Text="{Binding SelectedIndexedLocation.RecursionSummary}" Style="{StaticResource MetaValueStyle}" TextAlignment="Left" Margin="0,0,0,8"/>
+
+                            <TextBlock Grid.Row="5" Text="Watcher" Style="{StaticResource MetaKeyStyle}"/>
+                            <Border Grid.Row="5" Grid.Column="1"
+                                    DataContext="{Binding SelectedIndexedLocation}"
+                                    Style="{StaticResource WatchStatusBadgeStyle}">
+                                <TextBlock Text="{Binding WatchSummary}"
+                                           Style="{StaticResource IndexStatusBadgeTextStyle}"/>
+                            </Border>
+                        </Grid>
+
+                        <Border Height="1" Background="{DynamicResource Atlas.LineBrush}" Margin="0,0,0,18"/>
+
+                        <TextBlock Text="Indexed with" Style="{StaticResource FieldLabelStyle}"/>
+                        <TextBlock Text="{Binding SelectedIndexedLocation.TypeSummary}"
+                                   Style="{StaticResource MetaValueStyle}"
+                                   TextAlignment="Left"
+                                   Margin="0,2,0,18"/>
+
+                        <WrapPanel>
+                            <Button Command="{Binding RebuildSelectedIndexCommand}"
+                                    Style="{StaticResource PrimaryButtonStyle}"
+                                    Height="34"
+                                    MinWidth="142"
+                                    Margin="0,0,8,8">
+                                <StackPanel Orientation="Horizontal">
+                                    <ui:FontIcon Glyph="&#xE72C;" FontSize="13" Margin="0,0,7,0"/>
+                                    <TextBlock Text="Rebuild selected"/>
+                                </StackPanel>
+                            </Button>
+                            <Button Command="{Binding RemoveSelectedIndexCommand}"
+                                    Style="{StaticResource SecondaryButtonStyle}"
+                                    Height="34"
+                                    MinWidth="138"
+                                    Margin="0,0,8,8">
+                                <StackPanel Orientation="Horizontal">
+                                    <ui:FontIcon Glyph="&#xE74D;" FontSize="13" Margin="0,0,7,0"/>
+                                    <TextBlock Text="Remove selected"/>
+                                </StackPanel>
+                            </Button>
+                            <Button Command="{Binding OpenIndexLocationCommand}"
+                                    Style="{StaticResource SecondaryButtonStyle}"
+                                    Height="34"
+                                    MinWidth="132"
+                                    Margin="0,0,8,8">
+                                <StackPanel Orientation="Horizontal">
+                                    <ui:FontIcon Glyph="&#xE838;" FontSize="13" Margin="0,0,7,0"/>
+                                    <TextBlock Text="Open database"/>
+                                </StackPanel>
+                            </Button>
+                        </WrapPanel>
+                    </StackPanel>
+
+                    <StackPanel HorizontalAlignment="Center" VerticalAlignment="Center" MaxWidth="280">
+                        <StackPanel.Style>
+                            <Style TargetType="StackPanel">
+                                <Setter Property="Visibility" Value="Collapsed"/>
+                                <Style.Triggers>
+                                    <DataTrigger Binding="{Binding SelectedIndexedLocation}" Value="{x:Null}">
+                                        <Setter Property="Visibility" Value="Visible"/>
+                                    </DataTrigger>
+                                </Style.Triggers>
+                            </Style>
+                        </StackPanel.Style>
+                        <ui:FontIcon Glyph="&#xE8B7;" FontSize="38" Opacity="0.22" HorizontalAlignment="Center" Margin="0,0,0,12"/>
+                        <TextBlock Text="No indexed location selected" Style="{StaticResource EmptyTitleStyle}"/>
+                    </StackPanel>
+                </Grid>
+            </Border>
+
+            <StackPanel Grid.Row="1" Grid.ColumnSpan="3"
+                        Orientation="Horizontal"
+                        HorizontalAlignment="Right"
+                        Margin="0,16,0,0">
+                <Button Command="{Binding PauseBackgroundIndexingCommand}"
+                        Style="{StaticResource SecondaryButtonStyle}"
+                        Height="34"
+                        MinWidth="86"
+                        Margin="0,0,8,0">
+                    <StackPanel Orientation="Horizontal">
+                        <ui:FontIcon Glyph="&#xE769;" FontSize="13" Margin="0,0,7,0"/>
+                        <TextBlock Text="Pause"/>
+                    </StackPanel>
+                </Button>
+                <Button Command="{Binding ResumeBackgroundIndexingCommand}"
+                        Style="{StaticResource SecondaryButtonStyle}"
+                        Height="34"
+                        MinWidth="92"
+                        Margin="0,0,8,0">
+                    <StackPanel Orientation="Horizontal">
+                        <ui:FontIcon Glyph="&#xE768;" FontSize="13" Margin="0,0,7,0"/>
+                        <TextBlock Text="Resume"/>
+                    </StackPanel>
+                </Button>
+                <Button Click="OnCloseClick"
+                        IsDefault="True"
+                        Style="{StaticResource PrimaryButtonStyle}"
+                        Height="34"
+                        MinWidth="92">
+                    <StackPanel Orientation="Horizontal">
+                        <ui:FontIcon Glyph="&#xE711;" FontSize="12" Margin="0,0,7,0"/>
+                        <TextBlock Text="Close"/>
+                    </StackPanel>
+                </Button>
+            </StackPanel>
+        </Grid>
+    </DockPanel>
+</Window>

@@ -199,6 +199,73 @@
         </Setter>
     </Style>
 
+    <Style x:Key="IndexStatusBadgeStyle" TargetType="Border">
+        <Setter Property="HorizontalAlignment" Value="Left"/>
+        <Setter Property="Background" Value="{DynamicResource Atlas.Surface2Brush}"/>
+        <Setter Property="BorderBrush" Value="{DynamicResource Atlas.Line2Brush}"/>
+        <Setter Property="BorderThickness" Value="1"/>
+        <Setter Property="CornerRadius" Value="6"/>
+        <Setter Property="Padding" Value="6,2"/>
+        <Setter Property="Margin" Value="0,3,0,3"/>
+        <Setter Property="TextElement.Foreground" Value="{DynamicResource Atlas.Ink2Brush}"/>
+        <Style.Triggers>
+            <DataTrigger Binding="{Binding IsQueued}" Value="True">
+                <Setter Property="Background" Value="{DynamicResource Atlas.WarmTintBrush}"/>
+                <Setter Property="BorderBrush" Value="{DynamicResource Atlas.WarmBrush}"/>
+                <Setter Property="TextElement.Foreground" Value="{DynamicResource Atlas.WarmBrush}"/>
+            </DataTrigger>
+            <DataTrigger Binding="{Binding IsIndexing}" Value="True">
+                <Setter Property="Background" Value="{DynamicResource Atlas.AccentTintBrush}"/>
+                <Setter Property="BorderBrush" Value="{DynamicResource Atlas.AccentBrush}"/>
+                <Setter Property="TextElement.Foreground" Value="{DynamicResource Atlas.AccentBrush}"/>
+            </DataTrigger>
+            <DataTrigger Binding="{Binding IsIndexingPaused}" Value="True">
+                <Setter Property="Background" Value="{DynamicResource Atlas.Surface2Brush}"/>
+                <Setter Property="BorderBrush" Value="{DynamicResource Atlas.Ink3Brush}"/>
+                <Setter Property="TextElement.Foreground" Value="{DynamicResource Atlas.Ink2Brush}"/>
+            </DataTrigger>
+        </Style.Triggers>
+    </Style>
+
+    <Style x:Key="IndexStatusBadgeTextStyle" TargetType="TextBlock">
+        <Setter Property="FontSize" Value="11"/>
+        <Setter Property="FontWeight" Value="SemiBold"/>
+        <Setter Property="TextTrimming" Value="CharacterEllipsis"/>
+    </Style>
+
+    <Style x:Key="WatchStatusBadgeStyle" TargetType="Border">
+        <Setter Property="HorizontalAlignment" Value="Left"/>
+        <Setter Property="Background" Value="{DynamicResource Atlas.Surface2Brush}"/>
+        <Setter Property="BorderBrush" Value="{DynamicResource Atlas.Line2Brush}"/>
+        <Setter Property="BorderThickness" Value="1"/>
+        <Setter Property="CornerRadius" Value="6"/>
+        <Setter Property="Padding" Value="6,2"/>
+        <Setter Property="Margin" Value="0,3,0,3"/>
+        <Setter Property="TextElement.Foreground" Value="{DynamicResource Atlas.Ink3Brush}"/>
+        <Style.Triggers>
+            <DataTrigger Binding="{Binding WatchEnabled}" Value="True">
+                <Setter Property="Background" Value="{DynamicResource Atlas.AccentSoftBrush}"/>
+                <Setter Property="BorderBrush" Value="{DynamicResource Atlas.AccentBrush}"/>
+                <Setter Property="TextElement.Foreground" Value="{DynamicResource Atlas.AccentBrush}"/>
+            </DataTrigger>
+        </Style.Triggers>
+    </Style>
+
+    <Style x:Key="WatchAwareSurfaceStyle" TargetType="Border">
+        <Setter Property="Background" Value="{DynamicResource Atlas.SurfaceBrush}"/>
+        <Setter Property="BorderBrush" Value="{DynamicResource Atlas.LineBrush}"/>
+        <Setter Property="BorderThickness" Value="1"/>
+        <Setter Property="CornerRadius" Value="8"/>
+        <Setter Property="Padding" Value="20"/>
+        <Style.Triggers>
+            <DataTrigger Binding="{Binding SelectedIndexedLocation.WatchEnabled}" Value="True">
+                <Setter Property="Background" Value="{DynamicResource Atlas.AccentSoftBrush}"/>
+                <Setter Property="BorderBrush" Value="{DynamicResource Atlas.AccentBrush}"/>
+                <Setter Property="BorderThickness" Value="2"/>
+            </DataTrigger>
+        </Style.Triggers>
+    </Style>
+
     <!-- Collapsible sidebar section header (SCOPES / RECENT FOLDERS / SAVED FINDS).
          Minimal Atlas styling: an uppercase label that toggles a chevron and
          shows/hides its content; no Expander chrome. -->

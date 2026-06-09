@@ -5,4 +5,7 @@ public sealed record IndexingStatus(
     bool IsPaused,
     bool IsProcessing,
     int QueueLength,
-    string Message);
+    string Message,
+    string? ActiveRoot = null,
+    IndexChangeKind? ActiveKind = null,
+    IReadOnlyDictionary<string, int>? QueuedRootCounts = null);

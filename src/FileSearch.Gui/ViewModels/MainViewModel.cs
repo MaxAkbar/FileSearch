@@ -47,6 +47,7 @@ public sealed partial class MainViewModel : ObservableObject
 
     private CancellationTokenSource? _searchCts;
     private CancellationTokenSource? _previewCts;
+    private IndexingStatus? _lastIndexingStatus;
     private bool _isInitialized;
 
     public MainViewModel(
@@ -100,6 +101,7 @@ public sealed partial class MainViewModel : ObservableObject
         RecentQueries.CollectionChanged += (_, _) => ClearRecentQueriesCommand.NotifyCanExecuteChanged();
         RecentPaths.CollectionChanged += (_, _) => ClearRecentPathsCommand.NotifyCanExecuteChanged();
         CustomScopes.CollectionChanged += (_, _) => ClearCustomScopesCommand.NotifyCanExecuteChanged();
+        IndexedLocations.CollectionChanged += (_, _) => NotifyIndexCommandStateChanged();
 
         if (RecentQueries.Count > 0) QueryText = RecentQueries[0];
         if (RecentPaths.Count > 0) SearchPath = RecentPaths[0];
@@ -175,6 +177,7 @@ public sealed partial class MainViewModel : ObservableObject
     [ObservableProperty] private bool _isIndexing;
     [ObservableProperty] private bool _isIndexingPaused;
     [ObservableProperty] private int _indexQueueLength;
+    [ObservableProperty] private string _activeIndexingRoot = string.Empty;
     [ObservableProperty] private int _totalHits;
     [ObservableProperty] private int _filesMatched;
     [ObservableProperty] private string _elapsedText = "—";
@@ -242,9 +245,21 @@ public sealed partial class MainViewModel : ObservableObject
     public string IndexActivityText =>
         IsIndexingPaused
             ? "Indexing paused"
+            : !string.IsNullOrWhiteSpace(ActiveIndexingRoot)
+                ? $"Indexing {GetDisplayName(ActiveIndexingRoot)}"
             : IndexQueueLength > 0
                 ? $"Indexing {IndexQueueLength:n0} queued"
                 : "Index ready";
+
+    public bool IsCurrentFolderIndexed => GetIndexedLocation(SearchPath) is not null;
+
+    public string CurrentFolderIndexActionText =>
+        IsCurrentFolderIndexed ? "Current folder already indexed" : "Add current folder";
+
+    public string IndexedLocationCountText =>
+        IndexedLocations.Count == 1
+            ? "1 indexed location"
+            : $"{IndexedLocations.Count:n0} indexed locations";
 
     public string DateSummary
     {
@@ -464,7 +479,31 @@ public sealed partial class MainViewModel : ObservableObject
             return;
         }
 
-        var location = CreateCurrentIndexedLocationSettings();
+        if (IsCurrentFolderIndexed)
+        {
+            StatusText = "Current folder is already indexed.";
+            return;
+        }
+
+        await AddFolderToIndexAsync(SearchPath).ConfigureAwait(true);
+    }
+
+    public async Task AddFolderToIndexAsync(string folder)
+    {
+        if (string.IsNullOrWhiteSpace(folder) || !Directory.Exists(folder))
+        {
+            StatusText = "Choose an existing folder before adding an index.";
+            return;
+        }
+
+        if (GetIndexedLocation(folder) is { } existing)
+        {
+            SelectedIndexedLocation = existing;
+            StatusText = "Selected folder is already indexed.";
+            return;
+        }
+
+        var location = CreateIndexedLocationSettings(folder);
         AddOrReplaceIndexedLocation(location);
         SelectedIndexedLocation = location;
 
@@ -477,7 +516,7 @@ public sealed partial class MainViewModel : ObservableObject
     }
 
     private bool CanAddCurrentFolderToIndex() =>
-        !string.IsNullOrWhiteSpace(SearchPath) && Directory.Exists(SearchPath);
+        !string.IsNullOrWhiteSpace(SearchPath) && Directory.Exists(SearchPath) && !IsCurrentFolderIndexed;
 
     private bool CanBuildOrRefreshIndex() => CanAddCurrentFolderToIndex();
 
@@ -536,7 +575,7 @@ public sealed partial class MainViewModel : ObservableObject
 
     private bool CanRemoveSelectedIndex() => SelectedIndexedLocation is not null;
 
-    [RelayCommand]
+    [RelayCommand(CanExecute = nameof(CanPauseBackgroundIndexing))]
     private void PauseBackgroundIndexing()
     {
         _indexingService.Pause();
@@ -544,13 +583,17 @@ public sealed partial class MainViewModel : ObservableObject
         OnPropertyChanged(nameof(IndexActivityText));
     }
 
-    [RelayCommand]
+    private bool CanPauseBackgroundIndexing() => !IsIndexingPaused;
+
+    [RelayCommand(CanExecute = nameof(CanResumeBackgroundIndexing))]
     private void ResumeBackgroundIndexing()
     {
         _indexingService.Resume();
         IsIndexingPaused = false;
         OnPropertyChanged(nameof(IndexActivityText));
     }
+
+    private bool CanResumeBackgroundIndexing() => IsIndexingPaused;
 
     [RelayCommand]
     private void OpenIndexLocation()
@@ -736,10 +779,10 @@ public sealed partial class MainViewModel : ObservableObject
         }
     }
 
-    private IndexedLocationSettings CreateCurrentIndexedLocationSettings() =>
+    private IndexedLocationSettings CreateIndexedLocationSettings(string root) =>
         new()
         {
-            Root = IndexPath.NormalizeRoot(SearchPath),
+            Root = IndexPath.NormalizeRoot(root),
             Recursive = IncludeSubfolders,
             IncludeHidden = false,
             EnableDocumentExtraction = EnableDocumentExtraction,
@@ -759,6 +802,25 @@ public sealed partial class MainViewModel : ObservableObject
         }
 
         IndexedLocations.Add(location);
+    }
+
+    private IndexedLocationSettings? GetIndexedLocation(string root)
+    {
+        if (string.IsNullOrWhiteSpace(root))
+            return null;
+
+        string normalizedRoot;
+        try
+        {
+            normalizedRoot = IndexPath.NormalizeRoot(root);
+        }
+        catch
+        {
+            return null;
+        }
+
+        return IndexedLocations.FirstOrDefault(location =>
+            string.Equals(location.Root, normalizedRoot, StringComparison.OrdinalIgnoreCase));
     }
 
     private void RemoveIndexedLocation(string root)
@@ -888,6 +950,7 @@ public sealed partial class MainViewModel : ObservableObject
 
     private void OnIndexingStatusChanged(object? sender, IndexingStatus status)
     {
+        _lastIndexingStatus = status;
         var dispatcher = System.Windows.Application.Current?.Dispatcher;
         if (dispatcher is null)
             return;
@@ -897,6 +960,8 @@ public sealed partial class MainViewModel : ObservableObject
             IsIndexing = status.IsProcessing || status.QueueLength > 0;
             IsIndexingPaused = status.IsPaused;
             IndexQueueLength = status.QueueLength;
+            ActiveIndexingRoot = status.ActiveRoot ?? string.Empty;
+            ApplyIndexingRuntimeStatus(status);
             OnPropertyChanged(nameof(IndexActivityText));
 
             if (!IsSearching)
@@ -936,6 +1001,8 @@ public sealed partial class MainViewModel : ObservableObject
         IndexedLocations.Clear();
         foreach (var location in LoadIndexedLocations(_settingsStore.Load()))
             IndexedLocations.Add(location);
+        if (_lastIndexingStatus is not null)
+            ApplyIndexingRuntimeStatus(_lastIndexingStatus);
         if (selected is not null)
             SelectedIndexedLocation = IndexedLocations.FirstOrDefault(x =>
                 string.Equals(x.Root, selected.Root, StringComparison.OrdinalIgnoreCase));
@@ -1076,6 +1143,9 @@ public sealed partial class MainViewModel : ObservableObject
     partial void OnFileNamePatternChanged(string value) =>
         OnPropertyChanged(nameof(FilePatternSummary));
 
+    partial void OnSearchPathChanged(string value) =>
+        NotifyIndexCommandStateChanged();
+
     partial void OnIncludeSubfoldersChanged(bool value) =>
         OnPropertyChanged(nameof(SubfoldersSummary));
 
@@ -1106,6 +1176,9 @@ public sealed partial class MainViewModel : ObservableObject
         OnPropertyChanged(nameof(IndexActivityText));
 
     partial void OnIsIndexingPausedChanged(bool value) =>
+        NotifyIndexingPauseStateChanged();
+
+    partial void OnActiveIndexingRootChanged(string value) =>
         OnPropertyChanged(nameof(IndexActivityText));
 
     partial void OnSelectedIndexedLocationChanged(IndexedLocationSettings? value)
@@ -1134,4 +1207,44 @@ public sealed partial class MainViewModel : ObservableObject
 
     partial void OnTotalHitsChanged(int value) =>
         OnPropertyChanged(nameof(ResultsSummaryText));
+
+    private void NotifyIndexCommandStateChanged()
+    {
+        OnPropertyChanged(nameof(IsCurrentFolderIndexed));
+        OnPropertyChanged(nameof(CurrentFolderIndexActionText));
+        OnPropertyChanged(nameof(IndexedLocationCountText));
+        AddCurrentFolderToIndexCommand.NotifyCanExecuteChanged();
+        BuildOrRefreshIndexCommand.NotifyCanExecuteChanged();
+        ClearIndexForCurrentFolderCommand.NotifyCanExecuteChanged();
+    }
+
+    private void ApplyIndexingRuntimeStatus(IndexingStatus status)
+    {
+        var queued = status.QueuedRootCounts ?? new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
+        foreach (var location in IndexedLocations)
+        {
+            var isActive = !string.IsNullOrWhiteSpace(status.ActiveRoot) &&
+                string.Equals(location.Root, status.ActiveRoot, StringComparison.OrdinalIgnoreCase);
+            var queuedCount = queued.TryGetValue(location.Root, out var count) ? count : 0;
+
+            location.IsIndexing = status.IsProcessing && isActive;
+            location.QueuedWorkCount = queuedCount;
+            location.IsQueued = queuedCount > 0;
+            location.IsIndexingPaused = status.IsPaused && (location.IsIndexing || location.IsQueued);
+        }
+    }
+
+    private static string GetDisplayName(string root)
+    {
+        var trimmed = root.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
+        var name = Path.GetFileName(trimmed);
+        return string.IsNullOrWhiteSpace(name) ? root : name;
+    }
+
+    private void NotifyIndexingPauseStateChanged()
+    {
+        OnPropertyChanged(nameof(IndexActivityText));
+        PauseBackgroundIndexingCommand.NotifyCanExecuteChanged();
+        ResumeBackgroundIndexingCommand.NotifyCanExecuteChanged();
+    }
 }

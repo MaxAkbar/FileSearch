@@ -111,6 +111,16 @@ public sealed class IndexQueue : IIndexQueue
         }
     }
 
+    public IReadOnlyDictionary<string, int> GetQueuedRootCounts()
+    {
+        lock (_sync)
+        {
+            return _items.Values
+                .GroupBy(item => item.Root, StringComparer.OrdinalIgnoreCase)
+                .ToDictionary(group => group.Key, group => group.Count(), StringComparer.OrdinalIgnoreCase);
+        }
+    }
+
     public async Task LoadPendingAsync(
         IReadOnlyDictionary<string, IndexedLocation> locations,
         CancellationToken cancellationToken)

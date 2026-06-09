@@ -29,24 +29,24 @@ The database stores:
 ## Using Indexed Search
 
 1. Choose a folder in **Look in**.
-2. Use **Index > Add current folder to index**.
-3. Leave **Use index** enabled in the search chips.
-4. Run searches as usual.
+2. Use **Index > Manage indexed locations...**.
+3. Add the current folder or choose another folder from the dialog.
+4. Leave **Use index** enabled in the search chips.
+5. Run searches as usual.
 
 If the current search is broader than the indexed profile, FileSearch reports that the index does not cover the search and safely falls back to the live scanner. If the index is stale or missing, FileSearch uses live scan results and schedules background indexing for the covered root.
 
 ## Indexed Locations
 
-The sidebar includes an **Indexed locations** view. Use it to add the current folder, rebuild a selected location, or remove a selected location. Removing a location stops its watcher and clears that root from the index.
+The sidebar includes an **Indexed locations** view with a compact list and a **Manage locations** action. The management dialog shows every indexed root, its stats, watcher state, and indexing options. Use it to add the current folder, add another folder, rebuild a selected location, or remove a selected location. Removing a location stops its watcher and clears that root from the index.
+
+Each indexed location shows a runtime status badge: **Indexing now**, **Queued**, **Paused**, or **Ready**. A separate **Watching changes** badge indicates that FileSearch is actively watching that folder while the app is open. The status bar also shows the active indexed folder when a background job is running.
 
 The **Index** menu includes:
 
-- **Add current folder to index**
+- **Manage indexed locations...**
 - **Pause background indexing**
 - **Resume background indexing**
-- **Rebuild selected index**
-- **Remove selected index**
-- **Clear index for current folder**
 - **Open index location**
 
 ## Background Indexing
@@ -83,9 +83,9 @@ Indexed search preserves the existing plain text, regex, and Boolean query behav
 
 ## Maintenance
 
-Use **Index > Clear index for current folder** to remove the selected folder from the database.
+Use **Index > Manage indexed locations...** to remove a selected folder from the database.
 
-Use **Index > Rebuild selected index** for manual recovery when a location looks stale or unhealthy.
+Use **Rebuild selected** in the indexed locations dialog for manual recovery when a location looks stale or unhealthy.
 
 Use **Index > Pause background indexing** when you want indexing to stop temporarily while keeping indexed search available.
 

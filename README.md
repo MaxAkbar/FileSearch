@@ -157,7 +157,7 @@ dotnet test .\FileSearch.slnx
 
 ## Indexed search
 
-Use **Index > Add current folder to index** to opt a folder into background indexing. The app watches indexed locations while it is open, batches file changes, and updates the local CSharpDB index without blocking searches. **Use index** controls whether a search may use covered indexed locations; live scan remains the fallback when the index is missing, stale, or does not cover the current options.
+Use **Index > Manage indexed locations...** to opt folders into background indexing. The app watches indexed locations while it is open, batches file changes, and updates the local CSharpDB index without blocking searches. **Use index** controls whether a search may use covered indexed locations; live scan remains the fallback when the index is missing, stale, or does not cover the current options.
 
 Background indexing can be paused or resumed from the **Index** menu. Details are documented in [README.Indexing.md](README.Indexing.md).
 

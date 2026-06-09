@@ -88,6 +88,17 @@ public partial class MainWindow : Window
             viewModel.SaveCustomScope(scopeWindow.ScopeName, scopeWindow.FileNamePattern);
     }
 
+    private void OnManageIndexesClick(object sender, RoutedEventArgs e)
+    {
+        var window = new IndexedLocationsWindow
+        {
+            Owner = this,
+            DataContext = DataContext,
+        };
+
+        window.ShowDialog();
+    }
+
     // Collapsible sidebar sections: an expanded section's row takes the leftover
     // space (*), a collapsed one shrinks to its header (Auto) and is pushed to
     // the bottom of the sidebar.

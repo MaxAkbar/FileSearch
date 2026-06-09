@@ -347,12 +347,16 @@ public sealed class IndexingService : IIndexingService
 
     private void Publish(bool isProcessing, string message)
     {
+        var activeItem = isProcessing ? _currentItem : null;
         _status = new IndexingStatus(
             IsRunning: _worker is not null,
             IsPaused: _paused,
             IsProcessing: isProcessing,
             QueueLength: _queue.Count,
-            Message: message);
+            Message: message,
+            ActiveRoot: activeItem?.Root,
+            ActiveKind: activeItem?.Kind,
+            QueuedRootCounts: _queue.GetQueuedRootCounts());
         StatusChanged?.Invoke(this, _status);
     }
 
