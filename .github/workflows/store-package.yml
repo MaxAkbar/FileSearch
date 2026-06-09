@@ -1,0 +1,114 @@
+name: Store package
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: MSIX version, for example 1.0.0.0
+        required: true
+        default: 1.0.0.0
+      runtime:
+        description: Runtime identifier
+        required: true
+        type: choice
+        options:
+          - win-x64
+          - win-x86
+          - win-arm64
+        default: win-x64
+      configuration:
+        description: Build configuration
+        required: true
+        type: choice
+        options:
+          - Release
+          - Debug
+        default: Release
+      package_identity_name:
+        description: Partner Center package identity name
+        required: true
+        default: FileSearch
+      publisher:
+        description: Publisher value, for example CN=...
+        required: true
+        default: CN=FileSearch
+      publisher_display_name:
+        description: Publisher display name
+        required: true
+        default: FileSearch
+
+permissions:
+  contents: read
+
+concurrency:
+  group: store-package-${{ github.ref }}
+  cancel-in-progress: false
+
+env:
+  DOTNET_CLI_TELEMETRY_OPTOUT: "1"
+  DOTNET_NOLOGO: "1"
+
+jobs:
+  package:
+    name: Create MSIX package
+    runs-on: windows-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 10.0.x
+
+      - name: Restore
+        run: dotnet restore .\FileSearch.slnx
+
+      - name: Import signing certificate
+        id: signing
+        shell: pwsh
+        env:
+          WINDOWS_SIGNING_PFX_BASE64: ${{ secrets.WINDOWS_SIGNING_PFX_BASE64 }}
+          WINDOWS_SIGNING_PFX_PASSWORD: ${{ secrets.WINDOWS_SIGNING_PFX_PASSWORD }}
+        run: |
+          if ([string]::IsNullOrWhiteSpace($env:WINDOWS_SIGNING_PFX_BASE64)) {
+            "thumbprint=" >> $env:GITHUB_OUTPUT
+            Write-Host "No signing certificate secret configured; package will be unsigned."
+            return
+          }
+
+          $certPath = Join-Path $env:RUNNER_TEMP "filesearch-signing.pfx"
+          [IO.File]::WriteAllBytes($certPath, [Convert]::FromBase64String($env:WINDOWS_SIGNING_PFX_BASE64))
+          $password = ConvertTo-SecureString $env:WINDOWS_SIGNING_PFX_PASSWORD -AsPlainText -Force
+          $cert = Import-PfxCertificate -FilePath $certPath -CertStoreLocation Cert:\CurrentUser\My -Password $password
+
+          if ($null -eq $cert) {
+            throw "Failed to import signing certificate."
+          }
+
+          "thumbprint=$($cert.Thumbprint)" >> $env:GITHUB_OUTPUT
+          Write-Host "Imported signing certificate with thumbprint $($cert.Thumbprint)."
+
+      - name: Create Store package
+        shell: pwsh
+        run: |
+          powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\New-StorePackage.ps1 `
+            -Configuration "${{ inputs.configuration }}" `
+            -RuntimeIdentifier "${{ inputs.runtime }}" `
+            -Version "${{ inputs.version }}" `
+            -PackageIdentityName "${{ inputs.package_identity_name }}" `
+            -Publisher "${{ inputs.publisher }}" `
+            -PublisherDisplayName "${{ inputs.publisher_display_name }}" `
+            -CertificateThumbprint "${{ steps.signing.outputs.thumbprint }}"
+
+      - name: Upload Store artifacts
+        uses: actions/upload-artifact@v7
+        with:
+          name: filesearch-store-${{ inputs.version }}-${{ inputs.runtime }}
+          path: |
+            artifacts/store/*.msix
+            artifacts/store/*.appxsym
+            artifacts/store/*.msixupload
+          if-no-files-found: error
+          retention-days: 30

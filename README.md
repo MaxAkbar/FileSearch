@@ -408,6 +408,8 @@ Directly loading `FileSearch.Core` from PowerShell is possible, but it is not th
 
 FileSearch is packaged as an MSIX for Store distribution. The repository includes a PowerShell packaging script that publishes the app self-contained, creates the MSIX layout, generates tile assets, and emits a Partner Center upload file.
 
+CI builds, tests, CLI smoke tests, GUI publish smoke tests, dependency review, and manual Store packaging are configured with GitHub Actions. Release steps are documented in [docs/RELEASE_CHECKLIST.md](docs/RELEASE_CHECKLIST.md).
+
 Run from the repository root:
 
 ```powershell
@@ -434,6 +436,8 @@ For sideload testing, pass `-CertificateThumbprint` with a certificate trusted o
 - Tests use xUnit and `Microsoft.NET.Test.Sdk`.
 - The core search pipeline is designed around dependency injection so extractors and options can be swapped or extended.
 - Indexed search and background watcher behavior are documented in [README.Indexing.md](README.Indexing.md).
+- The competitive roadmap refresh is documented in [README.Roadmap.md](README.Roadmap.md).
+- Security and privacy posture are documented in [SECURITY.md](SECURITY.md) and [PRIVACY.md](PRIVACY.md).
 
 ## Contributing
 
