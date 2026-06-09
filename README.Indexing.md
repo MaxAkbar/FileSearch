@@ -89,4 +89,6 @@ Use **Rebuild selected** in the indexed locations dialog for manual recovery whe
 
 Use **Index > Pause background indexing** when you want indexing to stop temporarily while keeping indexed search available.
 
+The CLI can inspect and refresh the same CSharpDB database with `index locations`, `index stats`, `index build`, `index rebuild`, and `index clear`.
+
 Use **Index > Open index location** to inspect or delete the database manually.

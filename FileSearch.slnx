@@ -1,5 +1,6 @@
 <Solution>
   <Folder Name="/src/">
+    <Project Path="src/FileSearch.Cli/FileSearch.Cli.csproj" />
     <Project Path="src/FileSearch.Core/FileSearch.Core.csproj" />
     <Project Path="src/FileSearch.Gui/FileSearch.Gui.csproj" />
   </Folder>

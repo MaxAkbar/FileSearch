@@ -5,6 +5,7 @@ FileSearch is a Windows desktop application for searching text across files and 
 ## Features
 
 - Search for text in files from a selected folder.
+- Use either the WPF desktop app or the Spectre.Console-powered interactive CLI.
 - Include or exclude subfolders.
 - Filter by file name glob patterns such as `*.cs;*.txt`.
 - Choose query modes:
@@ -50,6 +51,7 @@ Document extraction can be disabled in the UI for Office and PDF documents when 
 │   │   ├── Extractors   # File text extraction by extension/content type
 │   │   ├── Queries      # Query parsing and matching
 │   │   └── Walker       # File traversal and filtering
+│   ├── FileSearch.Cli   # Interactive Spectre.Console REPL
 │   └── FileSearch.Gui   # WPF desktop application
 ├── tests
 │   ├── FileSearch.Core.Tests
@@ -86,6 +88,15 @@ WPF front end for the core search library. It targets `net10.0-windows` and uses
 - `ModernWpfUI` for modern Windows styling.
 
 The app provides the main search form, result grid, match preview panel, result refinement, settings, themes, and Windows integration menu actions.
+
+### `FileSearch.Cli`
+
+Interactive REPL front end for the core search library. It targets `net10.0` and uses:
+
+- `Spectre.Console` for rich terminal prompts, status spinners, tables, panels, and highlighted match output.
+- `Microsoft.Extensions.DependencyInjection` for the same core service registration used by the GUI.
+
+The CLI supports live search, covered indexed search, query mode switching, file filters, CSharpDB index build/clear/stats commands, and direct query entry from the prompt.
 
 ### `FileSearch.Core.Tests`
 
@@ -128,6 +139,12 @@ Run the WPF app:
 dotnet run --project .\src\FileSearch.Gui\FileSearch.Gui.csproj
 ```
 
+Run the interactive CLI:
+
+```powershell
+dotnet run --project .\src\FileSearch.Cli\FileSearch.Cli.csproj
+```
+
 Run tests:
 
 ```powershell
@@ -154,6 +171,33 @@ dotnet test .\FileSearch.slnx
 6. Click **Start** or press Enter.
 7. Select a result to preview matching lines.
 8. Use the **Filter** tab to narrow the result set without rescanning.
+
+## Using the CLI
+
+The CLI opens as a REPL. Type `help` to see available commands, or type a query directly to search the current folder.
+
+Useful commands:
+
+```text
+path C:\src\project
+mode plain
+mode regex
+mode boolean
+case on
+recursive off
+include *.cs;*.xaml
+exclude bin;obj
+ext .cs,.md
+limit 25
+search connection string
+index build
+index on
+index stats
+index locations
+exit
+```
+
+The CLI uses the same `FileSearch.Core` search pipeline and CSharpDB index database as the desktop app. Indexed search is opt-in with `index on`; when the current search is not covered by the index, the CLI falls back to live scan.
 
 ## Indexed search
 
@@ -213,7 +257,152 @@ var provider = services.BuildServiceProvider();
 var searcher = provider.GetRequiredService<ISearcher>();
 ```
 
+### Basic live search
+
+```csharp
+using FileSearch.Core;
+using FileSearch.Core.Engine;
+using FileSearch.Core.Queries;
+using FileSearch.Core.Walker;
+using Microsoft.Extensions.DependencyInjection;
+
+var services = new ServiceCollection();
+services.AddFileSearchCore();
+
+await using var provider = services.BuildServiceProvider();
+var searcher = provider.GetRequiredService<ISearcher>();
+var queryFactory = provider.GetRequiredService<IQueryFactory>();
+
+var root = @"C:\src\project";
+var query = queryFactory.Build(
+    "connection string",
+    QueryMode.PlainText,
+    caseSensitive: false);
+
+var request = new SearchRequest(
+    query,
+    [root],
+    new WalkerOptions
+    {
+        Recursive = true,
+        IncludeHidden = false,
+        IncludeGlobs = ["*.cs", "*.json"],
+        ExcludeGlobs = ["bin", "obj"],
+        MaxFileSizeBytes = 25L * 1024 * 1024,
+    },
+    Progress: progress =>
+    {
+        Console.WriteLine(
+            $"Processed {progress.FilesProcessed:n0}/{progress.FilesEnumerated:n0} files");
+    });
+
+await foreach (var hit in searcher.SearchAsync(request, CancellationToken.None))
+{
+    Console.WriteLine($"{hit.Path}:{hit.LineNumber}: {hit.LineContent}");
+}
+```
+
+### Regex or Boolean search
+
+```csharp
+var regexQuery = queryFactory.Build(
+    "TODO|FIXME",
+    QueryMode.Regex,
+    caseSensitive: false);
+
+var booleanQuery = queryFactory.Build(
+    "(invoice OR receipt) AND NOT draft",
+    QueryMode.Boolean,
+    caseSensitive: false);
+```
+
+### Indexed search
+
+```csharp
+using FileSearch.Core.Indexing;
+
+var index = provider.GetRequiredService<IFileIndex>();
+var root = @"C:\src\project";
+var walkerOptions = new WalkerOptions
+{
+    Recursive = true,
+    IncludeHidden = false,
+    IncludeGlobs = ["*.cs", "*.xaml", "*.md"],
+};
+
+await index.RefreshRootAsync(
+    new IndexRequest(
+        root,
+        walkerOptions,
+        Progress: progress =>
+        {
+            Console.WriteLine(
+                $"Indexed {progress.FilesIndexed:n0}, skipped {progress.FilesSkippedUnchanged:n0}, lines {progress.LinesIndexed:n0}");
+        }),
+    IndexRefreshMode.Incremental,
+    CancellationToken.None);
+
+var query = queryFactory.Build("FileSearch", QueryMode.PlainText, caseSensitive: false);
+var request = new SearchRequest(
+    query,
+    [root],
+    walkerOptions,
+    UseIndex: true,
+    Status: Console.WriteLine);
+
+await foreach (var hit in searcher.SearchAsync(request, CancellationToken.None))
+{
+    Console.WriteLine($"{hit.Path}:{hit.LineNumber}: {hit.LineContent}");
+}
+```
+
+`UseIndex: true` is safe to use with the registered `ISearcher`. The coordinating searcher uses the CSharpDB index when the current root and filters are covered, and falls back to live scan when the index is missing or incompatible.
+
+### Custom extractors
+
 You can register additional `ITextExtractor` implementations before resolving `ISearcher` if you need support for custom file types.
+
+```csharp
+using FileSearch.Core.Extractors;
+
+services.AddSingleton<ITextExtractor, MyCustomExtractor>();
+services.AddFileSearchCore();
+```
+
+## PowerShell usage
+
+No PowerShell extension is required for normal use. The CLI can be launched directly from PowerShell:
+
+```powershell
+dotnet run --project .\src\FileSearch.Cli\FileSearch.Cli.csproj
+```
+
+PowerShell can also drive the REPL non-interactively by piping commands:
+
+```powershell
+@(
+  'path C:\src\project'
+  'mode boolean'
+  'case off'
+  'limit 25'
+  'search error AND timeout'
+  'exit'
+) | dotnet run --project .\src\FileSearch.Cli\FileSearch.Cli.csproj
+```
+
+Index maintenance works the same way:
+
+```powershell
+@(
+  'path C:\src\project'
+  'index build'
+  'index on'
+  'search TODO'
+  'exit'
+) | dotnet run --project .\src\FileSearch.Cli\FileSearch.Cli.csproj
+```
+
+Directly loading `FileSearch.Core` from PowerShell is possible, but it is not the recommended path because PowerShell has to resolve the full dependency graph and consume async streams. For automation, use the CLI. A future PowerShell module would mainly be useful if we want structured objects, JSON output, pipeline input, or native commands such as `Search-FileContent` and `Update-FileSearchIndex`.
 
 ## Packaging for Microsoft Store
 
