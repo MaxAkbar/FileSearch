@@ -9,4 +9,7 @@ public sealed record SearchRequest(
     Query Expression,
     IReadOnlyList<string> Roots,
     WalkerOptions WalkerOptions,
-    Action<SearchProgress>? Progress = null);
+    Action<SearchProgress>? Progress = null,
+    bool UseIndex = false,
+    Action<string>? Status = null,
+    Action<string>? IndexCandidate = null);

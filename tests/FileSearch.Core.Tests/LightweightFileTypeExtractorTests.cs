@@ -1,5 +1,4 @@
 using System.Linq;
-using System.Threading;
 using System.Threading.Tasks;
 using FileSearch.Core.Extractors;
 
@@ -24,7 +23,7 @@ public sealed class LightweightFileTypeExtractorTests : IDisposable
     public async Task XmlTextExtractor_ExtractsSvgXamlAndResxText()
     {
         var path = Path.Combine(_directory, "image.svg");
-        await File.WriteAllTextAsync(path, "<svg><title>Diagram title</title><text>needle &amp; label</text></svg>");
+        await File.WriteAllTextAsync(path, "<svg><title>Diagram title</title><text>needle &amp; label</text></svg>", TestContext.Current.CancellationToken);
 
         var lines = await ReadAllAsync(new XmlTextExtractor(), path);
         var extractor = new XmlTextExtractor();
@@ -41,7 +40,8 @@ public sealed class LightweightFileTypeExtractorTests : IDisposable
         var path = Path.Combine(_directory, "event.ics");
         await File.WriteAllTextAsync(
             path,
-            "BEGIN:VCALENDAR\r\nVERSION:2.0\r\nSUMMARY:Planning needle\r\nDESCRIPTION:First line\\nsecond line with\r\n continuation\r\nEND:VCALENDAR\r\n");
+            "BEGIN:VCALENDAR\r\nVERSION:2.0\r\nSUMMARY:Planning needle\r\nDESCRIPTION:First line\\nsecond line with\r\n continuation\r\nEND:VCALENDAR\r\n",
+            TestContext.Current.CancellationToken);
 
         var lines = await ReadAllAsync(new CalendarContactExtractor(), path);
         var extractor = new CalendarContactExtractor();
@@ -57,7 +57,8 @@ public sealed class LightweightFileTypeExtractorTests : IDisposable
         var path = Path.Combine(_directory, "contact.vcf");
         await File.WriteAllTextAsync(
             path,
-            "BEGIN:VCARD\r\nVERSION:3.0\r\nFN:Jane Needle\r\nEMAIL:jane@example.com\r\nNOTE:Uses escaped\\, comma\r\nEND:VCARD\r\n");
+            "BEGIN:VCARD\r\nVERSION:3.0\r\nFN:Jane Needle\r\nEMAIL:jane@example.com\r\nNOTE:Uses escaped\\, comma\r\nEND:VCARD\r\n",
+            TestContext.Current.CancellationToken);
 
         var lines = await ReadAllAsync(new CalendarContactExtractor(), path);
 
@@ -92,7 +93,7 @@ public sealed class LightweightFileTypeExtractorTests : IDisposable
     private static async Task<List<TextLine>> ReadAllAsync(ITextExtractor extractor, string path)
     {
         var lines = new List<TextLine>();
-        await foreach (var line in extractor.ExtractAsync(path, CancellationToken.None))
+        await foreach (var line in extractor.ExtractAsync(path, TestContext.Current.CancellationToken))
             lines.Add(line);
         return lines;
     }

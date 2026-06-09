@@ -1,6 +1,7 @@
 using System.Linq;
 using FileSearch.Core.Engine;
 using FileSearch.Core.Extractors;
+using FileSearch.Core.Indexing;
 using FileSearch.Core.Queries;
 using FileSearch.Core.Walker;
 using Microsoft.Extensions.DependencyInjection;
@@ -44,10 +45,27 @@ public static class ServiceCollectionExtensions
             return new ExtractorRegistry(extractors, fallback);
         });
 
-        services.TryAddSingleton<ISearcher>(sp => new Searcher(
+        services.TryAddSingleton<FileIndexOptions>();
+        services.TryAddSingleton<IFileIndex>(sp => new CSharpDbFileIndex(
+            sp.GetService<FileIndexOptions>(),
             sp.GetRequiredService<IFileWalker>(),
             sp.GetRequiredService<IExtractorRegistry>(),
             sp.GetService<SearchOptions>()));
+        services.TryAddSingleton<IIndexQueue, IndexQueue>();
+        services.TryAddSingleton<IIndexWatcherService, IndexWatcherService>();
+        services.TryAddSingleton<IIndexingService, IndexingService>();
+        services.TryAddSingleton<IndexCoverageService>();
+
+        services.TryAddSingleton(sp => new Searcher(
+            sp.GetRequiredService<IFileWalker>(),
+            sp.GetRequiredService<IExtractorRegistry>(),
+            sp.GetService<SearchOptions>()));
+
+        services.TryAddSingleton<ISearcher>(sp => new IndexedSearcher(
+            sp.GetRequiredService<Searcher>(),
+            sp.GetRequiredService<IFileIndex>(),
+            sp.GetRequiredService<IndexCoverageService>(),
+            sp.GetService<IIndexingService>()));
 
         return services;
     }

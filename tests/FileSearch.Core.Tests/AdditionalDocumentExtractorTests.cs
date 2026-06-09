@@ -1,6 +1,5 @@
 using System.IO.Compression;
 using System.Linq;
-using System.Threading;
 using System.Threading.Tasks;
 using DocumentFormat.OpenXml;
 using DocumentFormat.OpenXml.Packaging;
@@ -70,7 +69,7 @@ public sealed class AdditionalDocumentExtractorTests : IDisposable
     public async Task RtfExtractor_StripsControlWords()
     {
         var path = Path.Combine(_directory, "note.rtf");
-        await File.WriteAllTextAsync(path, @"{\rtf1\ansi This is \b bold\b0  needle text.}");
+        await File.WriteAllTextAsync(path, @"{\rtf1\ansi This is \b bold\b0  needle text.}", TestContext.Current.CancellationToken);
 
         var lines = await ReadAllAsync(new RtfExtractor(), path);
 
@@ -82,7 +81,7 @@ public sealed class AdditionalDocumentExtractorTests : IDisposable
     public async Task HtmlExtractor_ExtractsVisibleTextOnly()
     {
         var path = Path.Combine(_directory, "page.html");
-        await File.WriteAllTextAsync(path, "<html><head><style>.x{}</style><script>hidden()</script></head><body><h1>Visible</h1><p>needle &amp; text</p></body></html>");
+        await File.WriteAllTextAsync(path, "<html><head><style>.x{}</style><script>hidden()</script></head><body><h1>Visible</h1><p>needle &amp; text</p></body></html>", TestContext.Current.CancellationToken);
 
         var lines = await ReadAllAsync(new HtmlExtractor(), path);
 
@@ -96,7 +95,8 @@ public sealed class AdditionalDocumentExtractorTests : IDisposable
         var path = Path.Combine(_directory, "message.eml");
         await File.WriteAllTextAsync(
             path,
-            "Subject: Test needle\r\nFrom: sender@example.com\r\nContent-Type: text/plain\r\n\r\nBody has needle text.");
+            "Subject: Test needle\r\nFrom: sender@example.com\r\nContent-Type: text/plain\r\n\r\nBody has needle text.",
+            TestContext.Current.CancellationToken);
 
         var lines = await ReadAllAsync(new EmlExtractor(), path);
 
@@ -108,7 +108,7 @@ public sealed class AdditionalDocumentExtractorTests : IDisposable
     private static async Task<List<TextLine>> ReadAllAsync(ITextExtractor extractor, string path)
     {
         var lines = new List<TextLine>();
-        await foreach (var line in extractor.ExtractAsync(path, CancellationToken.None))
+        await foreach (var line in extractor.ExtractAsync(path, TestContext.Current.CancellationToken))
             lines.Add(line);
         return lines;
     }

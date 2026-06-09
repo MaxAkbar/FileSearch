@@ -1,0 +1,8 @@
+namespace FileSearch.Core.Indexing;
+
+public sealed record IndexingStatus(
+    bool IsRunning,
+    bool IsPaused,
+    bool IsProcessing,
+    int QueueLength,
+    string Message);

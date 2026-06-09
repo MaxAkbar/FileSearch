@@ -13,6 +13,13 @@ public sealed class AppSettings
 
     public bool SkipUnknownFileTypes { get; set; } = false;
 
+    public bool UseIndex { get; set; } = false;
+
+    public List<IndexedLocationSettings> IndexedLocations { get; set; } = new();
+
+    // Legacy single-root field retained for migration into IndexedLocations.
+    public string LastIndexedRoot { get; set; } = string.Empty;
+
     public string AdditionalPlainTextExtensions { get; set; } = string.Empty;
 
     /// <summary>

@@ -52,6 +52,7 @@ public partial class App : System.Windows.Application
 
         window.DataContext = viewModel;
         window.Show();
+        _ = viewModel.StartBackgroundIndexingAsync();
 
         CreateTrayIcon(window, viewModel);
     }
@@ -132,8 +133,26 @@ public partial class App : System.Windows.Application
                     })
                     .ToList();
                 settings.SkipUnknownFileTypes = vm.SkipUnknownFileTypes;
+                settings.UseIndex = vm.UseIndex;
+                settings.IndexedLocations = vm.IndexedLocations
+                    .Where(location => !string.IsNullOrWhiteSpace(location.Root))
+                    .Select(location => new IndexedLocationSettings
+                    {
+                        Root = location.Root,
+                        Recursive = location.Recursive,
+                        IncludeHidden = location.IncludeHidden,
+                        EnableDocumentExtraction = location.EnableDocumentExtraction,
+                        SkipUnknownFileTypes = location.SkipUnknownFileTypes,
+                        WatchEnabled = location.WatchEnabled,
+                        LastIndexedUtcTicks = location.LastIndexedUtcTicks,
+                        FileCount = location.FileCount,
+                        LineCount = location.LineCount,
+                    })
+                    .ToList();
+                settings.LastIndexedRoot = string.Empty;
                 store.Save(settings);
                 fileTypeStore.Save(vm.BuildFileTypeOptions());
+                vm.StopBackgroundIndexingAsync().GetAwaiter().GetResult();
             }
             catch
             {

@@ -3,14 +3,17 @@ using System.Collections.Generic;
 using System.Collections.ObjectModel;
 using System.ComponentModel;
 using System.Diagnostics;
+using System.IO;
 using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
+using System.Windows;
 using System.Windows.Data;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 using FileSearch.Core.Engine;
 using FileSearch.Core.Extractors;
+using FileSearch.Core.Indexing;
 using FileSearch.Core.Queries;
 using FileSearch.Core.Walker;
 using FileSearch.Gui.Services;
@@ -35,6 +38,8 @@ public sealed partial class MainViewModel : ObservableObject
     private readonly ISettingsStore _settingsStore;
     private readonly IFileTypeOptionsStore _fileTypeOptionsStore;
     private readonly FileTypeOptions _fileTypeOptions;
+    private readonly IFileIndex _fileIndex;
+    private readonly IIndexingService _indexingService;
     private readonly IShellIntegrationService _shellIntegrationService;
 
     private readonly Dictionary<string, FileResultViewModel> _filesByPath =
@@ -42,6 +47,7 @@ public sealed partial class MainViewModel : ObservableObject
 
     private CancellationTokenSource? _searchCts;
     private CancellationTokenSource? _previewCts;
+    private bool _isInitialized;
 
     public MainViewModel(
         ISearcher searcher,
@@ -52,6 +58,8 @@ public sealed partial class MainViewModel : ObservableObject
         IFileLauncher fileLauncher,
         ISettingsStore settingsStore,
         IFileTypeOptionsStore fileTypeOptionsStore,
+        IFileIndex fileIndex,
+        IIndexingService indexingService,
         IShellIntegrationService shellIntegrationService)
     {
         _searcher = searcher;
@@ -63,7 +71,10 @@ public sealed partial class MainViewModel : ObservableObject
         _settingsStore = settingsStore;
         _fileTypeOptionsStore = fileTypeOptionsStore;
         _fileTypeOptions = _fileTypeOptionsStore.Load();
+        _fileIndex = fileIndex;
+        _indexingService = indexingService;
         _shellIntegrationService = shellIntegrationService;
+        _indexingService.StatusChanged += OnIndexingStatusChanged;
 
         // Set up the filtered view used by the "Filter" tab.
         FilesView = CollectionViewSource.GetDefaultView(Files);
@@ -83,6 +94,8 @@ public sealed partial class MainViewModel : ObservableObject
                 FileNamePattern = scope.FileNamePattern?.Trim() ?? string.Empty,
             });
         }
+        foreach (var location in LoadIndexedLocations(saved))
+            IndexedLocations.Add(location);
 
         RecentQueries.CollectionChanged += (_, _) => ClearRecentQueriesCommand.NotifyCanExecuteChanged();
         RecentPaths.CollectionChanged += (_, _) => ClearRecentPathsCommand.NotifyCanExecuteChanged();
@@ -91,12 +104,14 @@ public sealed partial class MainViewModel : ObservableObject
         if (RecentQueries.Count > 0) QueryText = RecentQueries[0];
         if (RecentPaths.Count > 0) SearchPath = RecentPaths[0];
         SkipUnknownFileTypes = saved.SkipUnknownFileTypes;
+        UseIndex = saved.UseIndex;
         if (_fileTypeOptions.AdditionalPlainTextExtensions.Count == 0 && !string.IsNullOrWhiteSpace(saved.AdditionalPlainTextExtensions))
         {
             _fileTypeOptions.AdditionalPlainTextExtensions = ParseExtensions(saved.AdditionalPlainTextExtensions).ToList();
             _fileTypeOptionsStore.Save(_fileTypeOptions);
         }
         AdditionalPlainTextExtensions = string.Join("; ", _fileTypeOptions.AdditionalPlainTextExtensions);
+        _isInitialized = true;
     }
 
     /// <summary>Dropdown for the "Containing text" field (most-recent first).</summary>
@@ -106,6 +121,8 @@ public sealed partial class MainViewModel : ObservableObject
     public ObservableCollection<string> RecentPaths { get; } = new();
 
     public ObservableCollection<SearchScope> CustomScopes { get; } = new();
+
+    public ObservableCollection<IndexedLocationSettings> IndexedLocations { get; } = new();
 
     public ObservableCollection<FileResultViewModel> Files { get; } = new();
 
@@ -135,6 +152,7 @@ public sealed partial class MainViewModel : ObservableObject
     [ObservableProperty] private bool _matchCase;
     [ObservableProperty] private bool _enableDocumentExtraction = true;
     [ObservableProperty] private bool _skipUnknownFileTypes;
+    [ObservableProperty] private bool _useIndex;
     [ObservableProperty] private int _minSizeKB;
     [ObservableProperty] private int _maxSizeKB;
     private string _additionalPlainTextExtensions = string.Empty;
@@ -154,6 +172,9 @@ public sealed partial class MainViewModel : ObservableObject
     // --- runtime state ---
     [ObservableProperty] private string _statusText = "Ready.";
     [ObservableProperty] private bool _isSearching;
+    [ObservableProperty] private bool _isIndexing;
+    [ObservableProperty] private bool _isIndexingPaused;
+    [ObservableProperty] private int _indexQueueLength;
     [ObservableProperty] private int _totalHits;
     [ObservableProperty] private int _filesMatched;
     [ObservableProperty] private string _elapsedText = "—";
@@ -161,6 +182,7 @@ public sealed partial class MainViewModel : ObservableObject
     [ObservableProperty] private bool _isPreviewPaneVisible = true;
     [ObservableProperty] private double _previewPaneWidth = 360;
     [ObservableProperty] private int _selectedDetailsTabIndex;
+    [ObservableProperty] private IndexedLocationSettings? _selectedIndexedLocation;
 
     // --- in-memory filter over the results ("search the search") ---
     [ObservableProperty] private string _refinementQuery = string.Empty;
@@ -214,6 +236,15 @@ public sealed partial class MainViewModel : ObservableObject
 
     public string UnknownFileTypesSummary =>
         SkipUnknownFileTypes ? "Known types only" : "Unknown text allowed";
+
+    public string IndexSummaryText => UseIndex ? "Use index on" : "Use index off";
+
+    public string IndexActivityText =>
+        IsIndexingPaused
+            ? "Indexing paused"
+            : IndexQueueLength > 0
+                ? $"Indexing {IndexQueueLength:n0} queued"
+                : "Index ready";
 
     public string DateSummary
     {
@@ -351,10 +382,21 @@ public sealed partial class MainViewModel : ObservableObject
         CancelCommand.NotifyCanExecuteChanged();
 
         var stopwatch = Stopwatch.StartNew();
+        var routeStatus = string.Empty;
         try
         {
             IProgress<SearchProgress> progress = new Progress<SearchProgress>(UpdateProgressStatus);
-            var request = new SearchRequest(query, new[] { SearchPath }, BuildWalkerOptions(), progress.Report);
+            var request = new SearchRequest(
+                query,
+                new[] { SearchPath },
+                BuildWalkerOptions(),
+                progress.Report,
+                UseIndex,
+                message =>
+                {
+                    routeStatus = message;
+                    StatusText = message;
+                });
 
             await foreach (var hit in _searcher.SearchAsync(request, token).ConfigureAwait(true))
             {
@@ -374,7 +416,9 @@ public sealed partial class MainViewModel : ObservableObject
 
             stopwatch.Stop();
             ElapsedText = $"{stopwatch.Elapsed.TotalSeconds:0.00}s";
-            StatusText = $"Done — {TotalHits} hits in {FilesMatched} files";
+            StatusText = string.IsNullOrEmpty(routeStatus)
+                ? $"Done — {TotalHits} hits in {FilesMatched} files"
+                : $"{routeStatus}; done — {TotalHits} hits in {FilesMatched} files";
         }
         catch (OperationCanceledException)
         {
@@ -398,9 +442,135 @@ public sealed partial class MainViewModel : ObservableObject
     private bool CanSearch() => !IsSearching;
 
     [RelayCommand(CanExecute = nameof(CanCancel))]
-    private void Cancel() => _searchCts?.Cancel();
+    private void Cancel()
+    {
+        _searchCts?.Cancel();
+    }
 
     private bool CanCancel() => IsSearching;
+
+    [RelayCommand(CanExecute = nameof(CanBuildOrRefreshIndex))]
+    private async Task BuildOrRefreshIndexAsync()
+    {
+        await AddCurrentFolderToIndexAsync().ConfigureAwait(true);
+    }
+
+    [RelayCommand(CanExecute = nameof(CanAddCurrentFolderToIndex))]
+    private async Task AddCurrentFolderToIndexAsync()
+    {
+        if (string.IsNullOrWhiteSpace(SearchPath) || !Directory.Exists(SearchPath))
+        {
+            StatusText = "Choose an existing folder before adding an index.";
+            return;
+        }
+
+        var location = CreateCurrentIndexedLocationSettings();
+        AddOrReplaceIndexedLocation(location);
+        SelectedIndexedLocation = location;
+
+        await _indexingService.AddOrUpdateLocationAsync(ToIndexedLocation(location), queueInitialRefresh: true, CancellationToken.None)
+            .ConfigureAwait(true);
+
+        UseIndex = true;
+        SaveSettings();
+        StatusText = "Index updating in background.";
+    }
+
+    private bool CanAddCurrentFolderToIndex() =>
+        !string.IsNullOrWhiteSpace(SearchPath) && Directory.Exists(SearchPath);
+
+    private bool CanBuildOrRefreshIndex() => CanAddCurrentFolderToIndex();
+
+    [RelayCommand(CanExecute = nameof(CanRebuildSelectedIndex))]
+    private async Task RebuildSelectedIndexAsync()
+    {
+        var location = SelectedIndexedLocation;
+        if (location is null)
+            return;
+
+        await _indexingService.EnqueueRootRefreshAsync(
+            location.Root,
+            ToIndexedLocation(location).WalkerOptions,
+            IndexQueuePriority.High,
+            CancellationToken.None).ConfigureAwait(true);
+
+        StatusText = "Index rebuild queued.";
+    }
+
+    private bool CanRebuildSelectedIndex() => SelectedIndexedLocation is not null;
+
+    [RelayCommand(CanExecute = nameof(CanClearIndexForCurrentFolder))]
+    private async Task ClearIndexForCurrentFolderAsync()
+    {
+        if (string.IsNullOrWhiteSpace(SearchPath))
+            return;
+
+        try
+        {
+            await _fileIndex.ClearAsync(SearchPath, CancellationToken.None).ConfigureAwait(true);
+            RemoveIndexedLocation(SearchPath);
+            StatusText = "Index cleared for current folder.";
+            SaveSettings();
+        }
+        catch (Exception ex)
+        {
+            StatusText = $"Couldn't clear index: {ex.Message}";
+        }
+    }
+
+    private bool CanClearIndexForCurrentFolder() => !string.IsNullOrWhiteSpace(SearchPath);
+
+    [RelayCommand(CanExecute = nameof(CanRemoveSelectedIndex))]
+    private async Task RemoveSelectedIndexAsync()
+    {
+        var location = SelectedIndexedLocation;
+        if (location is null)
+            return;
+
+        await _indexingService.RemoveLocationAsync(location.Root, CancellationToken.None).ConfigureAwait(true);
+        IndexedLocations.Remove(location);
+        SelectedIndexedLocation = IndexedLocations.FirstOrDefault();
+        SaveSettings();
+        StatusText = "Indexed location removed.";
+    }
+
+    private bool CanRemoveSelectedIndex() => SelectedIndexedLocation is not null;
+
+    [RelayCommand]
+    private void PauseBackgroundIndexing()
+    {
+        _indexingService.Pause();
+        IsIndexingPaused = true;
+        OnPropertyChanged(nameof(IndexActivityText));
+    }
+
+    [RelayCommand]
+    private void ResumeBackgroundIndexing()
+    {
+        _indexingService.Resume();
+        IsIndexingPaused = false;
+        OnPropertyChanged(nameof(IndexActivityText));
+    }
+
+    [RelayCommand]
+    private void OpenIndexLocation()
+    {
+        var path = _fileIndex.DatabasePath;
+        var folder = Path.GetDirectoryName(path);
+        _fileLauncher.RevealInExplorer(File.Exists(path) ? path : folder ?? path);
+    }
+
+    public async Task StartBackgroundIndexingAsync()
+    {
+        await _indexingService.StartAsync(
+            IndexedLocations.Select(ToIndexedLocation),
+            CancellationToken.None).ConfigureAwait(true);
+    }
+
+    public async Task StopBackgroundIndexingAsync()
+    {
+        await _indexingService.StopAsync(CancellationToken.None).ConfigureAwait(true);
+    }
 
     [RelayCommand]
     private void ApplyFilePatternPreset(string? pattern) =>
@@ -535,6 +705,76 @@ public sealed partial class MainViewModel : ObservableObject
 
     // ----- helpers -----
 
+    private static IEnumerable<IndexedLocationSettings> LoadIndexedLocations(AppSettings settings)
+    {
+        var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        foreach (var location in settings.IndexedLocations)
+        {
+            if (string.IsNullOrWhiteSpace(location.Root))
+                continue;
+
+            var normalizedRoot = IndexPath.NormalizeRoot(location.Root);
+            if (!seen.Add(normalizedRoot))
+                continue;
+
+            location.Root = normalizedRoot;
+            yield return location;
+        }
+
+        if (!string.IsNullOrWhiteSpace(settings.LastIndexedRoot))
+        {
+            var legacyRoot = IndexPath.NormalizeRoot(settings.LastIndexedRoot);
+            if (seen.Add(legacyRoot))
+            {
+                yield return new IndexedLocationSettings
+                {
+                    Root = legacyRoot,
+                    Recursive = true,
+                    WatchEnabled = true,
+                };
+            }
+        }
+    }
+
+    private IndexedLocationSettings CreateCurrentIndexedLocationSettings() =>
+        new()
+        {
+            Root = IndexPath.NormalizeRoot(SearchPath),
+            Recursive = IncludeSubfolders,
+            IncludeHidden = false,
+            EnableDocumentExtraction = EnableDocumentExtraction,
+            SkipUnknownFileTypes = SkipUnknownFileTypes,
+            WatchEnabled = true,
+        };
+
+    private void AddOrReplaceIndexedLocation(IndexedLocationSettings location)
+    {
+        for (var i = 0; i < IndexedLocations.Count; i++)
+        {
+            if (string.Equals(IndexedLocations[i].Root, location.Root, StringComparison.OrdinalIgnoreCase))
+            {
+                IndexedLocations[i] = location;
+                return;
+            }
+        }
+
+        IndexedLocations.Add(location);
+    }
+
+    private void RemoveIndexedLocation(string root)
+    {
+        var normalizedRoot = IndexPath.NormalizeRoot(root);
+        for (var i = IndexedLocations.Count - 1; i >= 0; i--)
+            if (string.Equals(IndexedLocations[i].Root, normalizedRoot, StringComparison.OrdinalIgnoreCase))
+                IndexedLocations.RemoveAt(i);
+    }
+
+    private IndexedLocation ToIndexedLocation(IndexedLocationSettings settings) =>
+        new(
+            IndexPath.NormalizeRoot(settings.Root),
+            BuildIndexWalkerOptions(settings),
+            settings.WatchEnabled);
+
     private WalkerOptions BuildWalkerOptions()
     {
         var include = ParsePatterns(FileNamePattern);
@@ -559,6 +799,39 @@ public sealed partial class MainViewModel : ObservableObject
                 : null,
         };
     }
+
+    private WalkerOptions BuildIndexWalkerOptions()
+    {
+        var options = BuildWalkerOptions();
+        return options with
+        {
+            IncludeGlobs = Array.Empty<string>(),
+            ExcludeGlobs = Array.Empty<string>(),
+            MinFileSizeBytes = 0,
+            MaxFileSizeBytes = 0,
+            ModifiedAfterUtc = null,
+            ModifiedBeforeUtc = null,
+        };
+    }
+
+    private WalkerOptions BuildIndexWalkerOptions(IndexedLocationSettings settings) =>
+        new()
+        {
+            IncludeGlobs = Array.Empty<string>(),
+            ExcludeGlobs = Array.Empty<string>(),
+            IncludeExtensions = settings.SkipUnknownFileTypes
+                ? BuildKnownTextExtensions()
+                : new HashSet<string>(StringComparer.OrdinalIgnoreCase),
+            ExcludeExtensions = settings.EnableDocumentExtraction
+                ? new HashSet<string>(StringComparer.OrdinalIgnoreCase)
+                : _fileTypeOptions.DocumentExtensions.ToHashSet(StringComparer.OrdinalIgnoreCase),
+            Recursive = settings.Recursive,
+            IncludeHidden = settings.IncludeHidden,
+            MinFileSizeBytes = 0,
+            MaxFileSizeBytes = 0,
+            ModifiedAfterUtc = null,
+            ModifiedBeforeUtc = null,
+        };
 
     private HashSet<string> BuildKnownTextExtensions()
     {
@@ -602,6 +875,70 @@ public sealed partial class MainViewModel : ObservableObject
         var skipped = progress.FilesSkipped > 0 ? $", {progress.FilesSkipped:n0} skipped" : string.Empty;
         var failed = progress.FilesFailed > 0 ? $", {progress.FilesFailed:n0} failed" : string.Empty;
         StatusText = $"Searching... {TotalHits:n0} hits in {FilesMatched:n0} files; {progress.FilesProcessed:n0}/{progress.FilesEnumerated:n0} scanned{skipped}{failed}";
+    }
+
+    private void UpdateIndexProgressStatus(IndexProgress progress)
+    {
+        if (!IsIndexing) return;
+
+        var failed = progress.FilesFailed > 0 ? $", {progress.FilesFailed:n0} failed" : string.Empty;
+        var removed = progress.FilesRemoved > 0 ? $", {progress.FilesRemoved:n0} removed" : string.Empty;
+        StatusText = $"Indexing... {progress.FilesIndexed:n0} indexed, {progress.FilesSkippedUnchanged:n0} unchanged, {progress.LinesIndexed:n0} lines{removed}{failed}";
+    }
+
+    private void OnIndexingStatusChanged(object? sender, IndexingStatus status)
+    {
+        var dispatcher = System.Windows.Application.Current?.Dispatcher;
+        if (dispatcher is null)
+            return;
+
+        dispatcher.BeginInvoke(() =>
+        {
+            IsIndexing = status.IsProcessing || status.QueueLength > 0;
+            IsIndexingPaused = status.IsPaused;
+            IndexQueueLength = status.QueueLength;
+            OnPropertyChanged(nameof(IndexActivityText));
+
+            if (!IsSearching)
+                StatusText = status.Message;
+
+            if (!status.IsProcessing)
+                _ = RefreshIndexedLocationStatsAsync();
+        });
+    }
+
+    private async Task RefreshIndexedLocationStatsAsync()
+    {
+        IReadOnlyList<IndexedLocationInfo> stats;
+        try
+        {
+            stats = await _fileIndex.GetLocationsAsync(CancellationToken.None).ConfigureAwait(true);
+        }
+        catch
+        {
+            return;
+        }
+
+        foreach (var stat in stats)
+        {
+            var location = IndexedLocations.FirstOrDefault(x =>
+                string.Equals(x.Root, stat.Root, StringComparison.OrdinalIgnoreCase));
+            if (location is null)
+                continue;
+
+            location.FileCount = stat.FileCount;
+            location.LineCount = stat.LineCount;
+            location.LastIndexedUtcTicks = stat.IndexedUtc?.Ticks ?? 0;
+        }
+
+        SaveSettings();
+        var selected = SelectedIndexedLocation;
+        IndexedLocations.Clear();
+        foreach (var location in LoadIndexedLocations(_settingsStore.Load()))
+            IndexedLocations.Add(location);
+        if (selected is not null)
+            SelectedIndexedLocation = IndexedLocations.FirstOrDefault(x =>
+                string.Equals(x.Root, selected.Root, StringComparison.OrdinalIgnoreCase));
     }
 
     private async Task LoadPreviewAsync(FileResultViewModel? file)
@@ -661,6 +998,24 @@ public sealed partial class MainViewModel : ObservableObject
                 FileNamePattern = scope.FileNamePattern?.Trim() ?? string.Empty,
             })
             .ToList();
+        settings.SkipUnknownFileTypes = SkipUnknownFileTypes;
+        settings.UseIndex = UseIndex;
+        settings.IndexedLocations = IndexedLocations
+            .Where(location => !string.IsNullOrWhiteSpace(location.Root))
+            .Select(location => new IndexedLocationSettings
+            {
+                Root = IndexPath.NormalizeRoot(location.Root),
+                Recursive = location.Recursive,
+                IncludeHidden = location.IncludeHidden,
+                EnableDocumentExtraction = location.EnableDocumentExtraction,
+                SkipUnknownFileTypes = location.SkipUnknownFileTypes,
+                WatchEnabled = location.WatchEnabled,
+                LastIndexedUtcTicks = location.LastIndexedUtcTicks,
+                FileCount = location.FileCount,
+                LineCount = location.LineCount,
+            })
+            .ToList();
+        settings.LastIndexedRoot = string.Empty;
         _settingsStore.Save(settings);
     }
 
@@ -732,6 +1087,32 @@ public sealed partial class MainViewModel : ObservableObject
 
     partial void OnSkipUnknownFileTypesChanged(bool value) =>
         OnPropertyChanged(nameof(UnknownFileTypesSummary));
+
+    partial void OnUseIndexChanged(bool value)
+    {
+        OnPropertyChanged(nameof(IndexSummaryText));
+        if (_isInitialized)
+            SaveSettings();
+    }
+
+    partial void OnIsIndexingChanged(bool value)
+    {
+        CancelCommand.NotifyCanExecuteChanged();
+        BuildOrRefreshIndexCommand.NotifyCanExecuteChanged();
+        ClearIndexForCurrentFolderCommand.NotifyCanExecuteChanged();
+    }
+
+    partial void OnIndexQueueLengthChanged(int value) =>
+        OnPropertyChanged(nameof(IndexActivityText));
+
+    partial void OnIsIndexingPausedChanged(bool value) =>
+        OnPropertyChanged(nameof(IndexActivityText));
+
+    partial void OnSelectedIndexedLocationChanged(IndexedLocationSettings? value)
+    {
+        RebuildSelectedIndexCommand.NotifyCanExecuteChanged();
+        RemoveSelectedIndexCommand.NotifyCanExecuteChanged();
+    }
 
     partial void OnModifiedAfterEnabledChanged(bool value) =>
         OnPropertyChanged(nameof(DateSummary));

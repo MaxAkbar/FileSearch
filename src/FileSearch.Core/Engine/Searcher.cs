@@ -101,6 +101,7 @@ public sealed class Searcher : ISearcher
                         }
                         finally
                         {
+                            request.IndexCandidate?.Invoke(path);
                             PublishProgress();
                         }
                     }).ConfigureAwait(false);

@@ -15,6 +15,7 @@ FileSearch is a Windows desktop application for searching text across files and 
 - Filter by file size and modified date range.
 - Preview matching lines and context for selected results.
 - Refine/filter results in memory without rescanning files.
+- Optional CSharpDB-backed indexing for faster repeat searches across multiple watched locations.
 - Open matched files, reveal them in Explorer, and copy file or folder paths.
 - Light, dark, system, and Visual Studio-inspired themes.
 - Optional Windows shell integration from the app menu.
@@ -78,7 +79,7 @@ Key namespaces/folders:
 
 ### `FileSearch.Gui`
 
-WPF front end for the core search library. It targets `net9.0-windows` and uses:
+WPF front end for the core search library. It targets `net10.0-windows` and uses:
 
 - `CommunityToolkit.Mvvm` for MVVM helpers.
 - `Microsoft.Extensions.Hosting` and dependency injection for app composition.
@@ -97,7 +98,7 @@ Unit tests for GUI-adjacent services such as file preview, startup folder resolu
 ## Requirements
 
 - Windows, for running the WPF desktop app.
-- .NET 9 SDK.
+- .NET 10 SDK.
 - PowerShell, for the packaging script.
 
 ## Getting started
@@ -153,6 +154,12 @@ dotnet test .\FileSearch.slnx
 6. Click **Start** or press Enter.
 7. Select a result to preview matching lines.
 8. Use the **Filter** tab to narrow the result set without rescanning.
+
+## Indexed search
+
+Use **Index > Add current folder to index** to opt a folder into background indexing. The app watches indexed locations while it is open, batches file changes, and updates the local CSharpDB index without blocking searches. **Use index** controls whether a search may use covered indexed locations; live scan remains the fallback when the index is missing, stale, or does not cover the current options.
+
+Background indexing can be paused or resumed from the **Index** menu. Details are documented in [README.Indexing.md](README.Indexing.md).
 
 ## Query modes
 
@@ -237,6 +244,7 @@ For sideload testing, pass `-CertificateThumbprint` with a certificate trusted o
 - The GUI project references the core project directly.
 - Tests use xUnit and `Microsoft.NET.Test.Sdk`.
 - The core search pipeline is designed around dependency injection so extractors and options can be swapped or extended.
+- Indexed search and background watcher behavior are documented in [README.Indexing.md](README.Indexing.md).
 
 ## Contributing
 
