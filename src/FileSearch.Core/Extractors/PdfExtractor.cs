@@ -18,21 +18,26 @@ public sealed class PdfExtractor : ITextExtractor
         string path,
         [EnumeratorCancellation] CancellationToken cancellationToken)
     {
-        await Task.Yield(); // hop off the caller's thread before we do sync I/O
-
-        using var document = PdfDocument.Open(path);
-        int lineNumber = 0;
-
-        foreach (var page in document.GetPages())
+        // PdfPig parses synchronously, so open on the thread pool. Note that
+        // an async iterator still runs between yields on the consumer's
+        // thread (Task.Yield resumes on the captured context, it does NOT
+        // hop off a UI thread) — callers on a dispatcher must consume this
+        // stream from a background task, as FilePreviewService does.
+        var document = await Task.Run(() => PdfDocument.Open(path), cancellationToken).ConfigureAwait(false);
+        using (document)
         {
-            cancellationToken.ThrowIfCancellationRequested();
-            var text = page.Text;
-            if (string.IsNullOrEmpty(text)) continue;
-
-            foreach (var line in text.Split('\n'))
+            int lineNumber = 0;
+            foreach (var page in document.GetPages())
             {
-                lineNumber++;
-                yield return new TextLine(lineNumber, line.TrimEnd('\r'));
+                cancellationToken.ThrowIfCancellationRequested();
+                var text = page.Text;
+                if (string.IsNullOrEmpty(text)) continue;
+
+                foreach (var line in text.Split('\n'))
+                {
+                    lineNumber++;
+                    yield return new TextLine(lineNumber, line.TrimEnd('\r'));
+                }
             }
         }
     }

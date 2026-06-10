@@ -119,7 +119,7 @@ public sealed partial class FileResultViewModel : ObservableObject
     {
         try
         {
-            return File.GetLastWriteTime(FullPath).ToString("yyyy-MM-dd HH:mm");
+            return File.GetLastWriteTime(FullPath).ToString("yyyy-MM-dd HH:mm", System.Globalization.CultureInfo.CurrentCulture);
         }
         catch
         {

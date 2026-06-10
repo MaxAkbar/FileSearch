@@ -7,18 +7,18 @@ using FileSearch.Core.Walker;
 
 namespace FileSearch.Core.Indexing;
 
-public sealed class IndexQueue : IIndexQueue
+public sealed class IndexQueue : IIndexQueue, IDisposable
 {
     private static readonly TimeSpan DefaultDebounce = TimeSpan.FromSeconds(2);
 
     private readonly object _sync = new();
     private readonly Dictionary<string, IndexQueueItem> _items = new(StringComparer.OrdinalIgnoreCase);
     private readonly SemaphoreSlim _signal = new(0);
-    private readonly IFileIndex _index;
+    private readonly IPendingChangeStore _pendingChanges;
 
-    public IndexQueue(IFileIndex index)
+    public IndexQueue(IPendingChangeStore pendingChanges)
     {
-        _index = index;
+        _pendingChanges = pendingChanges;
     }
 
     public int Count
@@ -29,6 +29,8 @@ public sealed class IndexQueue : IIndexQueue
                 return _items.Count;
         }
     }
+
+    public void Dispose() => _signal.Dispose();
 
     public async Task EnqueueAsync(IndexQueueItem item, CancellationToken cancellationToken)
     {
@@ -42,20 +44,61 @@ public sealed class IndexQueue : IIndexQueue
             DueUtc = due,
         };
 
+        bool persist;
         lock (_sync)
         {
+            // A queued root refresh re-walks the tree and diffs every file by
+            // size/mtime when it runs, so per-file changes under that root are
+            // redundant: drop incoming ones (before they're persisted) and
+            // purge queued ones when a refresh arrives. Pending-change rows of
+            // purged items are left behind deliberately — reprocessing them at
+            // next startup is a cheap no-op thanks to the upsert unchanged
+            // check, and processing removes the rows.
+            if (normalized.Kind == IndexChangeKind.RefreshRoot)
+            {
+                RemoveFileItemsForRootLocked(normalized.Root);
+            }
+            else if (_items.ContainsKey(RefreshKey(normalized.Root)))
+            {
+                return;
+            }
+
             var key = BuildKey(normalized);
+            var alreadyPersisted = false;
             if (_items.TryGetValue(key, out var existing))
+            {
+                alreadyPersisted = existing.Persisted;
                 normalized = Coalesce(existing, normalized);
+            }
 
             _items[key] = normalized;
+            persist = normalized.Persisted && !alreadyPersisted && normalized.Path is not null;
         }
 
-        if (normalized.Persisted && normalized.Path is not null)
-            await _index.SavePendingChangeAsync(normalized.Root, normalized.Path, normalized.Kind, cancellationToken)
+        if (persist)
+            await _pendingChanges.SavePendingChangeAsync(normalized.Root, normalized.Path!, normalized.Kind, cancellationToken)
                 .ConfigureAwait(false);
 
         _signal.Release();
+    }
+
+    private void RemoveFileItemsForRootLocked(string root)
+    {
+        List<string>? stale = null;
+        foreach (var (key, queued) in _items)
+        {
+            if (queued.Kind != IndexChangeKind.RefreshRoot &&
+                string.Equals(queued.Root, root, StringComparison.OrdinalIgnoreCase))
+            {
+                (stale ??= new List<string>()).Add(key);
+            }
+        }
+
+        if (stale is null)
+            return;
+
+        foreach (var key in stale)
+            _items.Remove(key);
     }
 
     public async Task<IndexQueueItem> DequeueAsync(CancellationToken cancellationToken)
@@ -125,7 +168,7 @@ public sealed class IndexQueue : IIndexQueue
         IReadOnlyDictionary<string, IndexedLocation> locations,
         CancellationToken cancellationToken)
     {
-        var pending = await _index.GetPendingChangesAsync(cancellationToken).ConfigureAwait(false);
+        var pending = await _pendingChanges.GetPendingChangesAsync(cancellationToken).ConfigureAwait(false);
         foreach (var change in pending)
         {
             if (!locations.TryGetValue(IndexPath.NormalizeRoot(change.Root), out var location))
@@ -158,6 +201,8 @@ public sealed class IndexQueue : IIndexQueue
 
     private static string BuildKey(IndexQueueItem item) =>
         item.Kind == IndexChangeKind.RefreshRoot
-            ? $"R|{item.Root}"
+            ? RefreshKey(item.Root)
             : $"F|{item.Root}|{item.Path}";
+
+    private static string RefreshKey(string root) => $"R|{root}";
 }

@@ -31,6 +31,8 @@ internal sealed class CliState
 
     public HashSet<string> ExcludeExtensions { get; } = new(StringComparer.OrdinalIgnoreCase);
 
+    public HashSet<string> ExcludeDirectories { get; } = new(WalkerOptions.DefaultExcludeDirectories, StringComparer.OrdinalIgnoreCase);
+
     public long MinFileSizeBytes { get; set; }
 
     public long MaxFileSizeBytes { get; set; } = DefaultMaxFileSizeBytes;
@@ -46,6 +48,7 @@ internal sealed class CliState
             ExcludeGlobs = ExcludeGlobs.ToArray(),
             IncludeExtensions = new HashSet<string>(IncludeExtensions, StringComparer.OrdinalIgnoreCase),
             ExcludeExtensions = new HashSet<string>(ExcludeExtensions, StringComparer.OrdinalIgnoreCase),
+            ExcludeDirectories = new HashSet<string>(ExcludeDirectories, StringComparer.OrdinalIgnoreCase),
             Recursive = Recursive,
             IncludeHidden = IncludeHidden,
             MinFileSizeBytes = MinFileSizeBytes,
@@ -60,6 +63,8 @@ internal sealed class CliState
         ExcludeGlobs.Clear();
         IncludeExtensions.Clear();
         ExcludeExtensions.Clear();
+        ExcludeDirectories.Clear();
+        ExcludeDirectories.UnionWith(WalkerOptions.DefaultExcludeDirectories);
         MinFileSizeBytes = 0;
         MaxFileSizeBytes = DefaultMaxFileSizeBytes;
         ModifiedAfterUtc = null;
@@ -69,14 +74,8 @@ internal sealed class CliState
     public static IReadOnlyList<string> SplitList(string input) =>
         input.Split([',', ';', ' '], StringSplitOptions.TrimEntries | StringSplitOptions.RemoveEmptyEntries);
 
-    public static string NormalizeExtension(string extension)
-    {
-        var value = extension.Trim();
-        if (value.Length == 0)
-            return value;
-
-        return value[0] == '.' ? value : $".{value}";
-    }
+    public static string NormalizeExtension(string extension) =>
+        FileSearch.Core.ExtensionList.Normalize(extension);
 
     public static string FormatBytes(long bytes)
     {

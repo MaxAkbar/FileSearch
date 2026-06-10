@@ -6,6 +6,7 @@ using FileSearch.Core.Queries;
 using FileSearch.Core.Walker;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
+using Microsoft.Extensions.Logging;
 
 namespace FileSearch.Core;
 
@@ -50,7 +51,16 @@ public static class ServiceCollectionExtensions
             sp.GetService<FileIndexOptions>(),
             sp.GetRequiredService<IFileWalker>(),
             sp.GetRequiredService<IExtractorRegistry>(),
-            sp.GetService<SearchOptions>()));
+            sp.GetService<SearchOptions>(),
+            sp.GetService<ILogger<CSharpDbFileIndex>>()));
+
+        // Role-interface slices of the index, so consumers can depend on the
+        // narrowest contract they need (ISP).
+        services.TryAddSingleton<IIndexSearch>(sp => sp.GetRequiredService<IFileIndex>());
+        services.TryAddSingleton<IIndexWriter>(sp => sp.GetRequiredService<IFileIndex>());
+        services.TryAddSingleton<IIndexMaintenance>(sp => sp.GetRequiredService<IFileIndex>());
+        services.TryAddSingleton<IPendingChangeStore>(sp => sp.GetRequiredService<IFileIndex>());
+
         services.TryAddSingleton<IIndexQueue, IndexQueue>();
         services.TryAddSingleton<IIndexWatcherService, IndexWatcherService>();
         services.TryAddSingleton<IIndexingService, IndexingService>();
@@ -59,7 +69,8 @@ public static class ServiceCollectionExtensions
         services.TryAddSingleton(sp => new Searcher(
             sp.GetRequiredService<IFileWalker>(),
             sp.GetRequiredService<IExtractorRegistry>(),
-            sp.GetService<SearchOptions>()));
+            sp.GetService<SearchOptions>(),
+            sp.GetService<ILogger<Searcher>>()));
 
         services.TryAddSingleton<ISearcher>(sp => new IndexedSearcher(
             sp.GetRequiredService<Searcher>(),

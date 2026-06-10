@@ -135,6 +135,10 @@ internal sealed class FileSearchRepl
             case "exclude-ext":
                 SetExtensionList(tokens, _state.ExcludeExtensions, "excluded extensions");
                 return true;
+            case "exclude-dir":
+            case "exclude-dirs":
+                SetNameList(tokens, _state.ExcludeDirectories, "excluded folders");
+                return true;
             case "min-size":
                 SetSize(tokens, "minimum file size", value => _state.MinFileSizeBytes = value);
                 return true;
@@ -398,7 +402,7 @@ internal sealed class FileSearchRepl
             .Border(BoxBorder.Rounded));
     }
 
-    private void RenderHits(IReadOnlyList<Hit> hits, int totalHits)
+    private void RenderHits(List<Hit> hits, int totalHits)
     {
         if (hits.Count == 0)
         {
@@ -458,6 +462,7 @@ internal sealed class FileSearchRepl
         table.AddRow("[cyan]exclude[/] GLOB;GLOB", "Set exclude glob filters.");
         table.AddRow("[cyan]ext[/] .cs,.md", "Set included extensions. Use clear to remove.");
         table.AddRow("[cyan]exclude-ext[/] .dll,.exe", "Set excluded extensions. Use clear to remove.");
+        table.AddRow("[cyan]exclude-dir[/] .git;node_modules", "Folders pruned from traversal. Use clear to search everything.");
         table.AddRow("[cyan]min-size 10kb[/] / [cyan]max-size 50mb[/]", "Set file size filters.");
         table.AddRow("[cyan]after yyyy-mm-dd[/] / [cyan]before yyyy-mm-dd[/]", "Set modified date filters.");
         table.AddRow("[cyan]index on|off[/]", "Allow indexed search when the current root is covered.");
@@ -486,6 +491,7 @@ internal sealed class FileSearchRepl
         table.AddRow("Exclude globs", ListOrNone(_state.ExcludeGlobs));
         table.AddRow("Include extensions", ListOrAll(_state.IncludeExtensions));
         table.AddRow("Exclude extensions", ListOrNone(_state.ExcludeExtensions));
+        table.AddRow("Exclude folders", ListOrNone(_state.ExcludeDirectories));
         table.AddRow("Min size", CliState.FormatBytes(_state.MinFileSizeBytes));
         table.AddRow("Max size", _state.MaxFileSizeBytes == 0 ? "unlimited" : CliState.FormatBytes(_state.MaxFileSizeBytes));
         table.AddRow("Modified after", FormatDate(_state.ModifiedAfterUtc));
@@ -621,6 +627,25 @@ internal sealed class FileSearchRepl
         AnsiConsole.MarkupLine($"[green]{Markup.Escape(label)} set to:[/] {ListOrNone(target)}");
     }
 
+    private static void SetNameList(
+        IReadOnlyList<string> tokens,
+        HashSet<string> target,
+        string label)
+    {
+        if (tokens.Count == 1)
+        {
+            AnsiConsole.MarkupLine($"[bold]{Markup.Escape(label)}:[/] {ListOrNone(target)}");
+            return;
+        }
+
+        target.Clear();
+        var raw = CommandLine.JoinArgs(tokens.Skip(1));
+        if (!raw.Equals("clear", StringComparison.OrdinalIgnoreCase))
+            target.UnionWith(CliState.SplitList(raw));
+
+        AnsiConsole.MarkupLine($"[green]{Markup.Escape(label)} set to:[/] {ListOrNone(target)}");
+    }
+
     private static void SetSize(IReadOnlyList<string> tokens, string label, Action<long> set)
     {
         if (tokens.Count < 2)
@@ -669,9 +694,9 @@ internal sealed class FileSearchRepl
             : Path.GetFullPath(raw, _state.Root);
     }
 
-    private void ApplyStartupArgs(IReadOnlyList<string> args)
+    private void ApplyStartupArgs(string[] args)
     {
-        if (args.Count == 0)
+        if (args.Length == 0)
             return;
 
         var candidate = ExpandHome(CommandLine.JoinArgs(args));

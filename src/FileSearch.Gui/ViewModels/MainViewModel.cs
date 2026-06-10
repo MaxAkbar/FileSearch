@@ -11,6 +11,7 @@ using System.Windows;
 using System.Windows.Data;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
+using FileSearch.Core;
 using FileSearch.Core.Engine;
 using FileSearch.Core.Extractors;
 using FileSearch.Core.Indexing;
@@ -22,7 +23,7 @@ using Microsoft.Win32;
 
 namespace FileSearch.Gui.ViewModels;
 
-public sealed partial class MainViewModel : ObservableObject
+public sealed partial class MainViewModel : ObservableObject, IDisposable
 {
     private const int MaxHistoryEntries = 15;
     private const int HitsTabIndex = 1;
@@ -35,7 +36,7 @@ public sealed partial class MainViewModel : ObservableObject
     private readonly IFilePreviewService _previewService;
     private readonly IThemeService _themeService;
     private readonly IFileLauncher _fileLauncher;
-    private readonly ISettingsStore _settingsStore;
+    private readonly ISettingsService _settingsService;
     private readonly IFileTypeOptionsStore _fileTypeOptionsStore;
     private readonly FileTypeOptions _fileTypeOptions;
     private readonly IFileIndex _fileIndex;
@@ -47,7 +48,7 @@ public sealed partial class MainViewModel : ObservableObject
 
     private CancellationTokenSource? _searchCts;
     private CancellationTokenSource? _previewCts;
-    private IndexingStatus? _lastIndexingStatus;
+    private string? _pendingStatsRoot;
     private bool _isInitialized;
 
     public MainViewModel(
@@ -57,7 +58,7 @@ public sealed partial class MainViewModel : ObservableObject
         IFilePreviewService previewService,
         IThemeService themeService,
         IFileLauncher fileLauncher,
-        ISettingsStore settingsStore,
+        ISettingsService settingsService,
         IFileTypeOptionsStore fileTypeOptionsStore,
         IFileIndex fileIndex,
         IIndexingService indexingService,
@@ -69,7 +70,7 @@ public sealed partial class MainViewModel : ObservableObject
         _previewService = previewService;
         _themeService = themeService;
         _fileLauncher = fileLauncher;
-        _settingsStore = settingsStore;
+        _settingsService = settingsService;
         _fileTypeOptionsStore = fileTypeOptionsStore;
         _fileTypeOptions = _fileTypeOptionsStore.Load();
         _fileIndex = fileIndex;
@@ -84,7 +85,7 @@ public sealed partial class MainViewModel : ObservableObject
 
         // Load search history, then seed the input fields with the most
         // recent entry so the user lands back where they left off.
-        var saved = _settingsStore.Load();
+        var saved = _settingsService.Current;
         foreach (var q in saved.RecentQueries) RecentQueries.Add(q);
         foreach (var p in saved.RecentPaths) RecentPaths.Add(p);
         foreach (var scope in saved.CustomScopes.Where(scope => !string.IsNullOrWhiteSpace(scope.Name)))
@@ -413,21 +414,25 @@ public sealed partial class MainViewModel : ObservableObject
                     StatusText = message;
                 });
 
-            await foreach (var hit in _searcher.SearchAsync(request, token).ConfigureAwait(true))
+            // Consume the hit stream on the thread pool and flush to the UI
+            // in timed batches — applying hits one at a time marshalled every
+            // result through the dispatcher and stuttered on large result sets.
+            var pendingHits = new System.Collections.Concurrent.ConcurrentQueue<Hit>();
+            var consumer = Task.Run(async () =>
             {
-                if (!_filesByPath.TryGetValue(hit.Path, out var file))
-                {
-                    file = new FileResultViewModel(hit.Path, _fileLauncher);
-                    _filesByPath[hit.Path] = file;
-                    Files.Add(file);
-                    FilesMatched = Files.Count;
-                }
-                file.AddHit(hit);
-                TotalHits++;
+                await foreach (var hit in _searcher.SearchAsync(request, token).ConfigureAwait(false))
+                    pendingHits.Enqueue(hit);
+            }, token);
 
-                if ((TotalHits & 0x3F) == 0)
-                    StatusText = $"Searching... {TotalHits} hits in {FilesMatched} files";
+            while (true)
+            {
+                DrainPendingHits(pendingHits);
+                if (consumer.IsCompleted && pendingHits.IsEmpty)
+                    break;
+                await Task.Delay(75).ConfigureAwait(true);
             }
+
+            await consumer.ConfigureAwait(true); // surface cancellation/errors
 
             stopwatch.Stop();
             ElapsedText = $"{stopwatch.Elapsed.TotalSeconds:0.00}s";
@@ -455,6 +460,38 @@ public sealed partial class MainViewModel : ObservableObject
     }
 
     private bool CanSearch() => !IsSearching;
+
+    /// <summary>
+    /// Applies queued hits to the UI collections. Runs on the UI thread; the
+    /// per-drain cap keeps a huge backlog from freezing a frame.
+    /// </summary>
+    private void DrainPendingHits(System.Collections.Concurrent.ConcurrentQueue<Hit> pendingHits)
+    {
+        const int maxPerDrain = 2000;
+        var total = TotalHits;
+        var drained = 0;
+
+        while (drained < maxPerDrain && pendingHits.TryDequeue(out var hit))
+        {
+            if (!_filesByPath.TryGetValue(hit.Path, out var file))
+            {
+                file = new FileResultViewModel(hit.Path, _fileLauncher);
+                _filesByPath[hit.Path] = file;
+                Files.Add(file);
+            }
+
+            file.AddHit(hit);
+            total++;
+            drained++;
+        }
+
+        if (drained == 0)
+            return;
+
+        TotalHits = total;
+        FilesMatched = Files.Count;
+        StatusText = $"Searching... {TotalHits:n0} hits in {FilesMatched:n0} files";
+    }
 
     [RelayCommand(CanExecute = nameof(CanCancel))]
     private void Cancel()
@@ -601,6 +638,13 @@ public sealed partial class MainViewModel : ObservableObject
         var path = _fileIndex.DatabasePath;
         var folder = Path.GetDirectoryName(path);
         _fileLauncher.RevealInExplorer(File.Exists(path) ? path : folder ?? path);
+    }
+
+    public void Dispose()
+    {
+        _indexingService.StatusChanged -= OnIndexingStatusChanged;
+        _searchCts?.Dispose();
+        _previewCts?.Dispose();
     }
 
     public async Task StartBackgroundIndexingAsync()
@@ -862,20 +906,6 @@ public sealed partial class MainViewModel : ObservableObject
         };
     }
 
-    private WalkerOptions BuildIndexWalkerOptions()
-    {
-        var options = BuildWalkerOptions();
-        return options with
-        {
-            IncludeGlobs = Array.Empty<string>(),
-            ExcludeGlobs = Array.Empty<string>(),
-            MinFileSizeBytes = 0,
-            MaxFileSizeBytes = 0,
-            ModifiedAfterUtc = null,
-            ModifiedBeforeUtc = null,
-        };
-    }
-
     private WalkerOptions BuildIndexWalkerOptions(IndexedLocationSettings settings) =>
         new()
         {
@@ -909,26 +939,7 @@ public sealed partial class MainViewModel : ObservableObject
         return _fileTypeOptions;
     }
 
-    internal static string[] ParseExtensions(string raw)
-    {
-        if (string.IsNullOrWhiteSpace(raw)) return Array.Empty<string>();
-
-        return raw.Split(new[] { ';', ',', ' ', '\r', '\n', '\t' }, StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
-            .Select(NormalizeExtension)
-            .Where(extension => extension.Length > 1)
-            .Distinct(StringComparer.OrdinalIgnoreCase)
-            .ToArray();
-    }
-
-    private static string NormalizeExtension(string value)
-    {
-        var extension = value.Trim();
-        if (extension.StartsWith("*.", StringComparison.Ordinal))
-            extension = extension[1..];
-        if (!extension.StartsWith(".", StringComparison.Ordinal))
-            extension = "." + extension;
-        return extension.ToLowerInvariant();
-    }
+    internal static string[] ParseExtensions(string raw) => ExtensionList.Parse(raw);
 
     private void UpdateProgressStatus(SearchProgress progress)
     {
@@ -950,7 +961,6 @@ public sealed partial class MainViewModel : ObservableObject
 
     private void OnIndexingStatusChanged(object? sender, IndexingStatus status)
     {
-        _lastIndexingStatus = status;
         var dispatcher = System.Windows.Application.Current?.Dispatcher;
         if (dispatcher is null)
             return;
@@ -967,45 +977,43 @@ public sealed partial class MainViewModel : ObservableObject
             if (!IsSearching)
                 StatusText = status.Message;
 
-            if (!status.IsProcessing)
-                _ = RefreshIndexedLocationStatsAsync();
+            // Refresh stats only for a root that just finished processing —
+            // the previous behavior re-counted every root (a full scan of the
+            // lines table per root) on every idle status and rebuilt the
+            // whole IndexedLocations collection.
+            if (status.IsProcessing && !string.IsNullOrWhiteSpace(status.ActiveRoot))
+            {
+                _pendingStatsRoot = status.ActiveRoot;
+            }
+            else if (!status.IsProcessing && _pendingStatsRoot is { } completedRoot)
+            {
+                _pendingStatsRoot = null;
+                _ = RefreshIndexedLocationStatsAsync(completedRoot);
+            }
         });
     }
 
-    private async Task RefreshIndexedLocationStatsAsync()
+    private async Task RefreshIndexedLocationStatsAsync(string root)
     {
-        IReadOnlyList<IndexedLocationInfo> stats;
+        IndexStats stats;
         try
         {
-            stats = await _fileIndex.GetLocationsAsync(CancellationToken.None).ConfigureAwait(true);
+            stats = await _fileIndex.GetStatsAsync(root, CancellationToken.None).ConfigureAwait(true);
         }
         catch
         {
             return;
         }
 
-        foreach (var stat in stats)
-        {
-            var location = IndexedLocations.FirstOrDefault(x =>
-                string.Equals(x.Root, stat.Root, StringComparison.OrdinalIgnoreCase));
-            if (location is null)
-                continue;
+        var location = IndexedLocations.FirstOrDefault(x =>
+            string.Equals(x.Root, stats.Root, StringComparison.OrdinalIgnoreCase));
+        if (location is null)
+            return;
 
-            location.FileCount = stat.FileCount;
-            location.LineCount = stat.LineCount;
-            location.LastIndexedUtcTicks = stat.IndexedUtc?.Ticks ?? 0;
-        }
-
+        location.FileCount = stats.FileCount;
+        location.LineCount = stats.LineCount;
+        location.LastIndexedUtcTicks = stats.IndexedUtc?.Ticks ?? 0;
         SaveSettings();
-        var selected = SelectedIndexedLocation;
-        IndexedLocations.Clear();
-        foreach (var location in LoadIndexedLocations(_settingsStore.Load()))
-            IndexedLocations.Add(location);
-        if (_lastIndexingStatus is not null)
-            ApplyIndexingRuntimeStatus(_lastIndexingStatus);
-        if (selected is not null)
-            SelectedIndexedLocation = IndexedLocations.FirstOrDefault(x =>
-                string.Equals(x.Root, selected.Root, StringComparison.OrdinalIgnoreCase));
     }
 
     private async Task LoadPreviewAsync(FileResultViewModel? file)
@@ -1035,10 +1043,12 @@ public sealed partial class MainViewModel : ObservableObject
         }
     }
 
+    private static readonly char[] s_patternSeparators = { ';', ',' };
+
     private static string[] ParsePatterns(string raw)
     {
         if (string.IsNullOrWhiteSpace(raw)) return Array.Empty<string>();
-        return raw.Split(new[] { ';', ',' }, StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+        return raw.Split(s_patternSeparators, StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
     }
 
     // ----- search history -----
@@ -1052,38 +1062,43 @@ public sealed partial class MainViewModel : ObservableObject
         SaveSettings();
     }
 
+    /// <summary>Snapshots view-model state into the shared settings. Called
+    /// eagerly on changes and once more by the app on exit.</summary>
+    public void PersistSettings() => SaveSettings();
+
     private void SaveSettings()
     {
-        var settings = _settingsStore.Load();
-        settings.RecentQueries = RecentQueries.ToList();
-        settings.RecentPaths = RecentPaths.ToList();
-        settings.CustomScopes = CustomScopes
-            .Where(scope => !string.IsNullOrWhiteSpace(scope.Name))
-            .Select(scope => new SearchScope
-            {
-                Name = scope.Name.Trim(),
-                FileNamePattern = scope.FileNamePattern?.Trim() ?? string.Empty,
-            })
-            .ToList();
-        settings.SkipUnknownFileTypes = SkipUnknownFileTypes;
-        settings.UseIndex = UseIndex;
-        settings.IndexedLocations = IndexedLocations
-            .Where(location => !string.IsNullOrWhiteSpace(location.Root))
-            .Select(location => new IndexedLocationSettings
-            {
-                Root = IndexPath.NormalizeRoot(location.Root),
-                Recursive = location.Recursive,
-                IncludeHidden = location.IncludeHidden,
-                EnableDocumentExtraction = location.EnableDocumentExtraction,
-                SkipUnknownFileTypes = location.SkipUnknownFileTypes,
-                WatchEnabled = location.WatchEnabled,
-                LastIndexedUtcTicks = location.LastIndexedUtcTicks,
-                FileCount = location.FileCount,
-                LineCount = location.LineCount,
-            })
-            .ToList();
-        settings.LastIndexedRoot = string.Empty;
-        _settingsStore.Save(settings);
+        _settingsService.Update(settings =>
+        {
+            settings.RecentQueries = RecentQueries.ToList();
+            settings.RecentPaths = RecentPaths.ToList();
+            settings.CustomScopes = CustomScopes
+                .Where(scope => !string.IsNullOrWhiteSpace(scope.Name))
+                .Select(scope => new SearchScope
+                {
+                    Name = scope.Name.Trim(),
+                    FileNamePattern = scope.FileNamePattern?.Trim() ?? string.Empty,
+                })
+                .ToList();
+            settings.SkipUnknownFileTypes = SkipUnknownFileTypes;
+            settings.UseIndex = UseIndex;
+            settings.IndexedLocations = IndexedLocations
+                .Where(location => !string.IsNullOrWhiteSpace(location.Root))
+                .Select(location => new IndexedLocationSettings
+                {
+                    Root = IndexPath.NormalizeRoot(location.Root),
+                    Recursive = location.Recursive,
+                    IncludeHidden = location.IncludeHidden,
+                    EnableDocumentExtraction = location.EnableDocumentExtraction,
+                    SkipUnknownFileTypes = location.SkipUnknownFileTypes,
+                    WatchEnabled = location.WatchEnabled,
+                    LastIndexedUtcTicks = location.LastIndexedUtcTicks,
+                    FileCount = location.FileCount,
+                    LineCount = location.LineCount,
+                })
+                .ToList();
+            settings.LastIndexedRoot = string.Empty;
+        });
     }
 
     private static void RemoveFromList(ObservableCollection<string> list, string? value)

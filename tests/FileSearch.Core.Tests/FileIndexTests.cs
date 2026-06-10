@@ -119,6 +119,94 @@ public sealed class FileIndexTests : IDisposable
     }
 
     [Fact]
+    public async Task OverlappingRootsIndexIndependently()
+    {
+        var nested = Path.Combine(_root, "nested");
+        Directory.CreateDirectory(nested);
+        File.WriteAllText(Path.Combine(nested, "shared.txt"), "overlap needle\n");
+
+        await BuildAsync();
+        await _index.BuildOrRefreshAsync(new IndexRequest(nested, new WalkerOptions()), TestContext.Current.CancellationToken);
+
+        var outerStats = await _index.GetStatsAsync(_root, TestContext.Current.CancellationToken);
+        var nestedStats = await _index.GetStatsAsync(nested, TestContext.Current.CancellationToken);
+        Assert.Equal(1, outerStats.FileCount);
+        Assert.Equal(1, nestedStats.FileCount);
+
+        var request = new SearchRequest(new TermQuery("needle"), new[] { nested }, new WalkerOptions(), UseIndex: true);
+        var nestedHits = new List<Hit>();
+        await foreach (var hit in _indexedSearcher.SearchAsync(request, TestContext.Current.CancellationToken))
+            nestedHits.Add(hit);
+
+        var found = Assert.Single(nestedHits);
+        Assert.EndsWith("shared.txt", found.Path);
+    }
+
+    [Fact]
+    public async Task BuildStripsSearchOnlyFiltersSoCoverageStaysTruthful()
+    {
+        File.WriteAllText(Path.Combine(_root, "big.txt"), "filtered needle\n");
+
+        // Globs and size caps are per-search filters the index profile can't
+        // record; a build must ignore them or later searches would claim
+        // coverage while silently missing files.
+        await BuildAsync(new WalkerOptions
+        {
+            IncludeGlobs = new[] { "*.md" },
+            MaxFileSizeBytes = 1,
+        });
+
+        var hit = Assert.Single(await IndexedSearchAsync(new TermQuery("needle")));
+        Assert.EndsWith("big.txt", hit.Path);
+    }
+
+    [Fact]
+    public async Task IndexedSearchAppliesDirectoryExcludesAtQueryTime()
+    {
+        var vendor = Directory.CreateDirectory(Path.Combine(_root, "vendor")).FullName;
+        File.WriteAllText(Path.Combine(_root, "app.txt"), "dir needle\n");
+        File.WriteAllText(Path.Combine(vendor, "lib.txt"), "dir needle\n");
+
+        // Build with no directory excludes so both files are indexed; a
+        // search that excludes more directories than the build is covered and
+        // must filter the extra ones per query.
+        var noDirExcludes = new WalkerOptions
+        {
+            ExcludeDirectories = new HashSet<string>(StringComparer.OrdinalIgnoreCase),
+        };
+        await BuildAsync(noDirExcludes);
+
+        var both = await IndexedSearchAsync(new TermQuery("needle"), noDirExcludes);
+        Assert.Equal(2, both.Count);
+
+        var filtered = await IndexedSearchAsync(new TermQuery("needle"), noDirExcludes with
+        {
+            ExcludeDirectories = new HashSet<string>(StringComparer.OrdinalIgnoreCase) { "vendor" },
+        });
+        var hit = Assert.Single(filtered);
+        Assert.EndsWith("app.txt", hit.Path);
+    }
+
+    [Fact]
+    public async Task CoverageRequiresSearchToExcludeAtLeastIndexedDirectories()
+    {
+        File.WriteAllText(Path.Combine(_root, "a.txt"), "needle\n");
+        await BuildAsync(); // default excludes (.git, .vs, node_modules)
+
+        // A search that wants pruned directories back can't be served by the
+        // index — those subtrees were never indexed.
+        var coverage = await _index.GetCoverageAsync(
+            new SearchRequest(
+                new TermQuery("needle"),
+                new[] { _root },
+                new WalkerOptions { ExcludeDirectories = new HashSet<string>(StringComparer.OrdinalIgnoreCase) },
+                UseIndex: true),
+            TestContext.Current.CancellationToken);
+
+        Assert.Equal(IndexCoverageStatus.Incompatible, coverage.Status);
+    }
+
+    [Fact]
     public async Task MultiRootIndexReturnsOnlyMatchingRootResults()
     {
         var otherRoot = Path.Combine(Path.GetDirectoryName(_root)!, "other");
@@ -155,6 +243,121 @@ public sealed class FileIndexTests : IDisposable
         var dequeued = await queue.DequeueAsync(TestContext.Current.CancellationToken);
         Assert.Equal(IndexChangeKind.UpsertFile, dequeued.Kind);
         Assert.Equal(0, queue.Count);
+    }
+
+    [Fact]
+    public async Task IndexQueueDropsFileChangesSubsumedByPendingRootRefresh()
+    {
+        var queue = new IndexQueue(_index);
+        var refresh = new IndexQueueItem(
+            _root,
+            null,
+            new WalkerOptions(),
+            IndexChangeKind.RefreshRoot,
+            IndexQueuePriority.Low,
+            DateTime.UtcNow,
+            Persisted: false);
+        var upsert = new IndexQueueItem(
+            _root,
+            Path.Combine(_root, "subsumed.txt"),
+            new WalkerOptions(),
+            IndexChangeKind.UpsertFile,
+            IndexQueuePriority.Normal,
+            DateTime.UtcNow,
+            Persisted: true);
+
+        await queue.EnqueueAsync(refresh, TestContext.Current.CancellationToken);
+        await queue.EnqueueAsync(upsert, TestContext.Current.CancellationToken);
+
+        // The pending refresh covers the file change, so the upsert is dropped
+        // before it is queued or persisted.
+        Assert.Equal(1, queue.Count);
+        Assert.Empty(await _index.GetPendingChangesAsync(TestContext.Current.CancellationToken));
+
+        var dequeued = await queue.DequeueAsync(TestContext.Current.CancellationToken);
+        Assert.Equal(IndexChangeKind.RefreshRoot, dequeued.Kind);
+        Assert.Equal(0, queue.Count);
+    }
+
+    [Fact]
+    public async Task IndexQueuePurgesQueuedFileChangesWhenRootRefreshArrives()
+    {
+        var otherRoot = Path.Combine(Path.GetDirectoryName(_root)!, "other-root");
+        var queue = new IndexQueue(_index);
+
+        await queue.EnqueueAsync(
+            new IndexQueueItem(_root, Path.Combine(_root, "a.txt"), new WalkerOptions(), IndexChangeKind.UpsertFile, IndexQueuePriority.Normal, DateTime.UtcNow, Persisted: false),
+            TestContext.Current.CancellationToken);
+        await queue.EnqueueAsync(
+            new IndexQueueItem(_root, Path.Combine(_root, "b.txt"), new WalkerOptions(), IndexChangeKind.DeleteFile, IndexQueuePriority.Normal, DateTime.UtcNow, Persisted: false),
+            TestContext.Current.CancellationToken);
+        await queue.EnqueueAsync(
+            new IndexQueueItem(otherRoot, Path.Combine(otherRoot, "c.txt"), new WalkerOptions(), IndexChangeKind.UpsertFile, IndexQueuePriority.Normal, DateTime.UtcNow, Persisted: false),
+            TestContext.Current.CancellationToken);
+
+        await queue.EnqueueAsync(
+            new IndexQueueItem(_root, null, new WalkerOptions(), IndexChangeKind.RefreshRoot, IndexQueuePriority.Low, DateTime.UtcNow, Persisted: false),
+            TestContext.Current.CancellationToken);
+
+        // The refresh replaces both file items under _root; the other root's
+        // item is untouched.
+        Assert.Equal(2, queue.Count);
+
+        var dequeued = new List<IndexQueueItem>
+        {
+            await queue.DequeueAsync(TestContext.Current.CancellationToken),
+            await queue.DequeueAsync(TestContext.Current.CancellationToken),
+        };
+
+        Assert.Contains(dequeued, item => item.Kind == IndexChangeKind.RefreshRoot && IndexPath.EqualsPath(item.Root, IndexPath.NormalizeRoot(_root)));
+        Assert.Contains(dequeued, item => item.Kind == IndexChangeKind.UpsertFile && IndexPath.EqualsPath(item.Root, IndexPath.NormalizeRoot(otherRoot)));
+    }
+
+    [Fact]
+    public async Task IndexQueuePersistsCoalescedFileChangeOnlyOnce()
+    {
+        var index = new RecordingFileIndex();
+        var queue = new IndexQueue(index);
+        var item = new IndexQueueItem(
+            _root,
+            Path.Combine(_root, "burst.txt"),
+            new WalkerOptions(),
+            IndexChangeKind.UpsertFile,
+            IndexQueuePriority.Normal,
+            DateTime.UtcNow,
+            Persisted: true);
+
+        await queue.EnqueueAsync(item, TestContext.Current.CancellationToken);
+        await queue.EnqueueAsync(item with { DueUtc = DateTime.UtcNow.AddSeconds(1) }, TestContext.Current.CancellationToken);
+        await queue.EnqueueAsync(item with { DueUtc = DateTime.UtcNow.AddSeconds(2) }, TestContext.Current.CancellationToken);
+
+        Assert.Equal(1, queue.Count);
+        Assert.Equal(1, index.SavedPendingChanges);
+    }
+
+    [Fact]
+    public async Task UpsertSkipsReextractionWhenSizeAndTimestampUnchanged()
+    {
+        var file = Path.Combine(_root, "stable.txt");
+        File.WriteAllText(file, "first needle\n");
+        await _index.UpsertFileAsync(_root, file, new WalkerOptions(), TestContext.Current.CancellationToken);
+        var indexedWriteTime = File.GetLastWriteTimeUtc(file);
+
+        // Same byte length and timestamp, different content: the upsert must
+        // treat the file as unchanged and keep serving the indexed lines.
+        File.WriteAllText(file, "fresh needle\n");
+        File.SetLastWriteTimeUtc(file, indexedWriteTime);
+        await _index.UpsertFileAsync(_root, file, new WalkerOptions(), TestContext.Current.CancellationToken);
+
+        Assert.Single(await IndexedSearchAsync(new TermQuery("first")));
+        Assert.Empty(await IndexedSearchAsync(new TermQuery("fresh")));
+
+        // A newer timestamp is a real change and gets re-extracted.
+        File.SetLastWriteTimeUtc(file, indexedWriteTime.AddSeconds(2));
+        await _index.UpsertFileAsync(_root, file, new WalkerOptions(), TestContext.Current.CancellationToken);
+
+        Assert.Single(await IndexedSearchAsync(new TermQuery("fresh")));
+        Assert.Empty(await IndexedSearchAsync(new TermQuery("first")));
     }
 
     [Fact]
@@ -239,7 +442,6 @@ public sealed class FileIndexTests : IDisposable
         Assert.EndsWith("processing.txt", found.Path);
         Assert.Contains("using live scan", status, StringComparison.OrdinalIgnoreCase);
         Assert.True(indexingService.ForegroundSearchWasSet);
-        Assert.True(indexingService.FileChangesQueued > 0);
     }
 
     [Fact]
@@ -385,8 +587,6 @@ public sealed class FileIndexTests : IDisposable
 
         public bool ForegroundSearchWasSet { get; private set; }
 
-        public int FileChangesQueued { get; private set; }
-
         public Task StartAsync(IEnumerable<IndexedLocation> locations, CancellationToken cancellationToken) => Task.CompletedTask;
 
         public Task StopAsync(CancellationToken cancellationToken) => Task.CompletedTask;
@@ -396,14 +596,6 @@ public sealed class FileIndexTests : IDisposable
         public Task RemoveLocationAsync(string root, CancellationToken cancellationToken) => Task.CompletedTask;
 
         public Task EnqueueRootRefreshAsync(string root, WalkerOptions options, IndexQueuePriority priority, CancellationToken cancellationToken) => Task.CompletedTask;
-
-        public Task EnqueueFileChangedAsync(string root, string path, WalkerOptions options, CancellationToken cancellationToken)
-        {
-            FileChangesQueued++;
-            return Task.CompletedTask;
-        }
-
-        public Task EnqueueFileDeletedAsync(string root, string path, WalkerOptions options, CancellationToken cancellationToken) => Task.CompletedTask;
 
         public void SetForegroundSearchActive(bool isActive)
         {
@@ -417,6 +609,49 @@ public sealed class FileIndexTests : IDisposable
         public void Pause() { }
 
         public void Resume() { }
+    }
+
+    private sealed class RecordingFileIndex : IFileIndex
+    {
+        public int SavedPendingChanges { get; private set; }
+
+        public string DatabasePath => string.Empty;
+
+        public Task BuildOrRefreshAsync(IndexRequest request, CancellationToken cancellationToken) => Task.CompletedTask;
+
+        public Task RefreshRootAsync(IndexRequest request, IndexRefreshMode mode, CancellationToken cancellationToken) => Task.CompletedTask;
+
+        public Task UpsertFileAsync(string root, string path, WalkerOptions options, CancellationToken cancellationToken) => Task.CompletedTask;
+
+        public Task DeleteFileAsync(string root, string path, CancellationToken cancellationToken) => Task.CompletedTask;
+
+        public async IAsyncEnumerable<Hit> SearchAsync(SearchRequest request, [System.Runtime.CompilerServices.EnumeratorCancellation] CancellationToken cancellationToken)
+        {
+            await Task.CompletedTask;
+            yield break;
+        }
+
+        public Task<IndexCoverage> GetCoverageAsync(SearchRequest request, CancellationToken cancellationToken) =>
+            Task.FromResult(new IndexCoverage(IndexCoverageStatus.Missing, "Not indexed"));
+
+        public Task<IndexStats> GetStatsAsync(string root, CancellationToken cancellationToken) =>
+            Task.FromResult(new IndexStats(root, 0, 0, null, Exists: false));
+
+        public Task<IReadOnlyList<IndexedLocationInfo>> GetLocationsAsync(CancellationToken cancellationToken) =>
+            Task.FromResult<IReadOnlyList<IndexedLocationInfo>>(Array.Empty<IndexedLocationInfo>());
+
+        public Task ClearAsync(string root, CancellationToken cancellationToken) => Task.CompletedTask;
+
+        public Task SavePendingChangeAsync(string root, string path, IndexChangeKind kind, CancellationToken cancellationToken)
+        {
+            SavedPendingChanges++;
+            return Task.CompletedTask;
+        }
+
+        public Task<IReadOnlyList<PendingIndexChange>> GetPendingChangesAsync(CancellationToken cancellationToken) =>
+            Task.FromResult<IReadOnlyList<PendingIndexChange>>(Array.Empty<PendingIndexChange>());
+
+        public Task RemovePendingChangeAsync(string root, string path, IndexChangeKind kind, CancellationToken cancellationToken) => Task.CompletedTask;
     }
 
     private sealed class ThrowIfUsedFileIndex : IFileIndex

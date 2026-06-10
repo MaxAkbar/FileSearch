@@ -1,4 +1,5 @@
 using System;
+using System.Globalization;
 using System.IO;
 using System.Reflection;
 using System.Runtime.InteropServices;
@@ -90,15 +91,16 @@ public sealed class ShellIntegrationService : IShellIntegrationService
                 BindingFlags.InvokeMethod,
                 binder: null,
                 target: shell,
-                args: new object[] { shortcutPath })
+                args: new object[] { shortcutPath },
+                culture: CultureInfo.InvariantCulture)
                 ?? throw new InvalidOperationException("Could not create Start Menu shortcut.");
 
             var shortcutType = shortcut.GetType();
-            shortcutType.InvokeMember("TargetPath", BindingFlags.SetProperty, null, shortcut, new object[] { executablePath });
-            shortcutType.InvokeMember("WorkingDirectory", BindingFlags.SetProperty, null, shortcut, new object[] { Path.GetDirectoryName(executablePath) ?? string.Empty });
-            shortcutType.InvokeMember("IconLocation", BindingFlags.SetProperty, null, shortcut, new object[] { executablePath });
-            shortcutType.InvokeMember("Description", BindingFlags.SetProperty, null, shortcut, new object[] { "Search files with FileSearch" });
-            shortcutType.InvokeMember("Save", BindingFlags.InvokeMethod, null, shortcut, Array.Empty<object>());
+            shortcutType.InvokeMember("TargetPath", BindingFlags.SetProperty, null, shortcut, new object[] { executablePath }, CultureInfo.InvariantCulture);
+            shortcutType.InvokeMember("WorkingDirectory", BindingFlags.SetProperty, null, shortcut, new object[] { Path.GetDirectoryName(executablePath) ?? string.Empty }, CultureInfo.InvariantCulture);
+            shortcutType.InvokeMember("IconLocation", BindingFlags.SetProperty, null, shortcut, new object[] { executablePath }, CultureInfo.InvariantCulture);
+            shortcutType.InvokeMember("Description", BindingFlags.SetProperty, null, shortcut, new object[] { "Search files with FileSearch" }, CultureInfo.InvariantCulture);
+            shortcutType.InvokeMember("Save", BindingFlags.InvokeMethod, null, shortcut, Array.Empty<object>(), CultureInfo.InvariantCulture);
         }
         finally
         {

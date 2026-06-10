@@ -11,9 +11,9 @@ public sealed class AppSettings
 {
     public AppTheme Theme { get; set; } = AppTheme.System;
 
-    public bool SkipUnknownFileTypes { get; set; } = false;
+    public bool SkipUnknownFileTypes { get; set; }
 
-    public bool UseIndex { get; set; } = false;
+    public bool UseIndex { get; set; }
 
     public List<IndexedLocationSettings> IndexedLocations { get; set; } = new();
 

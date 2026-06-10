@@ -1,0 +1,27 @@
+root = true
+
+[*]
+charset = utf-8
+insert_final_newline = true
+indent_style = space
+indent_size = 4
+trim_trailing_whitespace = true
+
+[*.{json,yml,yaml,xml,csproj,props,targets,slnx}]
+indent_size = 2
+
+[*.cs]
+csharp_style_namespace_declarations = file_scoped:suggestion
+csharp_style_var_for_built_in_types = true:suggestion
+csharp_style_var_when_type_is_apparent = true:suggestion
+dotnet_sort_system_directives_first = true
+
+# LoggerMessage source-gen ceremony isn't worth it at this app's log volume.
+dotnet_diagnostic.CA1848.severity = none
+dotnet_diagnostic.CA1873.severity = none
+# IndexQueue is literally a queue; the suffix is accurate.
+dotnet_diagnostic.CA1711.severity = none
+# VB keyword-collision interop (Resume) is irrelevant for this app.
+dotnet_diagnostic.CA1716.severity = none
+# Make-member-static is wrong for XAML-bound view-model properties.
+dotnet_diagnostic.CA1822.severity = suggestion

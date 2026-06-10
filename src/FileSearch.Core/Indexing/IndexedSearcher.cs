@@ -8,14 +8,14 @@ namespace FileSearch.Core.Indexing;
 
 public sealed class IndexedSearcher : ISearcher
 {
-    private readonly Searcher _liveSearcher;
-    private readonly IFileIndex _index;
+    private readonly ISearcher _liveSearcher;
+    private readonly IIndexSearch _index;
     private readonly IndexCoverageService _coverageService;
     private readonly IIndexingService? _indexingService;
 
     public IndexedSearcher(
-        Searcher liveSearcher,
-        IFileIndex index,
+        ISearcher liveSearcher,
+        IIndexSearch index,
         IndexCoverageService coverageService,
         IIndexingService? indexingService = null)
     {
@@ -41,13 +41,11 @@ public sealed class IndexedSearcher : ISearcher
 
             if (_indexingService?.CurrentStatus.IsProcessing == true)
             {
+                // The writer is actively rebuilding; reads could see a
+                // half-built index, so fall back to a live scan and let the
+                // in-flight indexing finish on its own.
                 request.Status?.Invoke("Index updating in background; using live scan");
-                var liveRequest = request with
-                {
-                    UseIndex = false,
-                    IndexCandidate = path => QueueFileChanged(request, path),
-                };
-                await foreach (var hit in _liveSearcher.SearchAsync(liveRequest, cancellationToken).ConfigureAwait(false))
+                await foreach (var hit in _liveSearcher.SearchAsync(request with { UseIndex = false }, cancellationToken).ConfigureAwait(false))
                     yield return hit;
                 yield break;
             }
@@ -55,22 +53,19 @@ public sealed class IndexedSearcher : ISearcher
             var coverage = await _coverageService.GetCoverageAsync(request, cancellationToken).ConfigureAwait(false);
             if (!coverage.IsCovered)
             {
+                // One queued root refresh brings the index up to date; it
+                // re-walks the tree and diffs by size/mtime, so feeding it
+                // per-file candidates from the live scan would only duplicate
+                // that work (and hammer the database with per-file writes).
                 request.Status?.Invoke($"{coverage.Message}; using live scan; indexing scheduled");
                 QueueRootRefresh(request);
 
-                var liveRequest = request with
-                {
-                    UseIndex = false,
-                    IndexCandidate = path => QueueFileChanged(request, path),
-                };
-                await foreach (var hit in _liveSearcher.SearchAsync(liveRequest, cancellationToken).ConfigureAwait(false))
+                await foreach (var hit in _liveSearcher.SearchAsync(request with { UseIndex = false }, cancellationToken).ConfigureAwait(false))
                     yield return hit;
                 yield break;
             }
 
-            request.Status?.Invoke(_indexingService?.CurrentStatus.IsProcessing == true
-                ? "Index updating in background; using indexed search"
-                : coverage.Message);
+            request.Status?.Invoke(coverage.Message);
             await foreach (var hit in _index.SearchAsync(request, cancellationToken).ConfigureAwait(false))
                 yield return hit;
         }
@@ -89,18 +84,6 @@ public sealed class IndexedSearcher : ISearcher
             request.Roots[0],
             request.WalkerOptions,
             IndexQueuePriority.Low,
-            CancellationToken.None);
-    }
-
-    private void QueueFileChanged(SearchRequest request, string path)
-    {
-        if (_indexingService is null || request.Roots.Count != 1)
-            return;
-
-        _ = _indexingService.EnqueueFileChangedAsync(
-            request.Roots[0],
-            path,
-            request.WalkerOptions,
             CancellationToken.None);
     }
 }

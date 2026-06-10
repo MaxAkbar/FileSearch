@@ -10,6 +10,9 @@ public sealed class IndexedLocationSettings : INotifyPropertyChanged
     private bool _isQueued;
     private bool _isIndexingPaused;
     private int _queuedWorkCount;
+    private long _lastIndexedUtcTicks;
+    private long _fileCount;
+    private long _lineCount;
 
     public event PropertyChangedEventHandler? PropertyChanged;
 
@@ -17,19 +20,45 @@ public sealed class IndexedLocationSettings : INotifyPropertyChanged
 
     public bool Recursive { get; set; } = true;
 
-    public bool IncludeHidden { get; set; } = false;
+    public bool IncludeHidden { get; set; }
 
     public bool EnableDocumentExtraction { get; set; } = true;
 
-    public bool SkipUnknownFileTypes { get; set; } = false;
+    public bool SkipUnknownFileTypes { get; set; }
 
     public bool WatchEnabled { get; set; } = true;
 
-    public long LastIndexedUtcTicks { get; set; }
+    // Stats notify so the indexed-locations list can be updated in place
+    // after a background refresh instead of being rebuilt.
+    public long LastIndexedUtcTicks
+    {
+        get => _lastIndexedUtcTicks;
+        set
+        {
+            if (SetProperty(ref _lastIndexedUtcTicks, value))
+                OnPropertyChanged(nameof(LastIndexedSummary));
+        }
+    }
 
-    public long FileCount { get; set; }
+    public long FileCount
+    {
+        get => _fileCount;
+        set
+        {
+            if (SetProperty(ref _fileCount, value))
+                OnPropertyChanged(nameof(Summary));
+        }
+    }
 
-    public long LineCount { get; set; }
+    public long LineCount
+    {
+        get => _lineCount;
+        set
+        {
+            if (SetProperty(ref _lineCount, value))
+                OnPropertyChanged(nameof(Summary));
+        }
+    }
 
     [JsonIgnore]
     public string DisplayName

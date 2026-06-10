@@ -20,25 +20,28 @@ public sealed class ExcelExtractor : ITextExtractor
         string path,
         [EnumeratorCancellation] CancellationToken cancellationToken)
     {
-        await Task.Yield();
-
-        using var workbook = new XLWorkbook(path);
-        int lineNumber = 0;
-
-        foreach (var sheet in workbook.Worksheets)
+        // ClosedXML loads synchronously, so open on the thread pool. The
+        // iterator still runs between yields on the consumer's thread — UI
+        // callers must consume from a background task (FilePreviewService does).
+        var workbook = await Task.Run(() => new XLWorkbook(path), cancellationToken).ConfigureAwait(false);
+        using (workbook)
         {
-            cancellationToken.ThrowIfCancellationRequested();
-            string sheetName = sheet.Name;
-
-            foreach (var row in sheet.RowsUsed())
+            int lineNumber = 0;
+            foreach (var sheet in workbook.Worksheets)
             {
                 cancellationToken.ThrowIfCancellationRequested();
-                var cells = row.CellsUsed().Select(c => c.GetString());
-                var joined = string.Join('\t', cells);
-                if (string.IsNullOrEmpty(joined)) continue;
+                string sheetName = sheet.Name;
 
-                lineNumber++;
-                yield return new TextLine(lineNumber, $"[{sheetName}] {joined}");
+                foreach (var row in sheet.RowsUsed())
+                {
+                    cancellationToken.ThrowIfCancellationRequested();
+                    var cells = row.CellsUsed().Select(c => c.GetString());
+                    var joined = string.Join('\t', cells);
+                    if (string.IsNullOrEmpty(joined)) continue;
+
+                    lineNumber++;
+                    yield return new TextLine(lineNumber, $"[{sheetName}] {joined}");
+                }
             }
         }
     }

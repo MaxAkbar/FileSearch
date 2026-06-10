@@ -5,6 +5,8 @@ using System.IO;
 using System.Threading;
 using System.Threading.Tasks;
 using FileSearch.Core.Walker;
+using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Logging.Abstractions;
 
 namespace FileSearch.Core.Indexing;
 
@@ -29,14 +31,18 @@ public sealed class IndexingService : IIndexingService
     private bool _foregroundRefreshYieldRequested;
     private IndexingStatus _status = new(false, false, false, 0, "Indexing idle.");
 
+    private readonly ILogger _logger;
+
     public IndexingService(
         IFileIndex index,
         IIndexQueue queue,
-        IIndexWatcherService watchers)
+        IIndexWatcherService watchers,
+        ILogger<IndexingService>? logger = null)
     {
         _index = index;
         _queue = queue;
         _watchers = watchers;
+        _logger = logger ?? NullLogger<IndexingService>.Instance;
     }
 
     public event EventHandler<IndexingStatus>? StatusChanged;
@@ -91,8 +97,9 @@ public sealed class IndexingService : IIndexingService
             {
                 await worker.WaitAsync(TimeSpan.FromSeconds(2), cancellationToken).ConfigureAwait(false);
             }
-            catch
+            catch (Exception ex)
             {
+                _logger.LogDebug(ex, "Indexing worker did not stop within the grace period.");
             }
         }
 
@@ -149,36 +156,6 @@ public sealed class IndexingService : IIndexingService
             Persisted: false),
             cancellationToken);
 
-    public Task EnqueueFileChangedAsync(
-        string root,
-        string path,
-        WalkerOptions options,
-        CancellationToken cancellationToken) =>
-        EnqueueAsync(new IndexQueueItem(
-            root,
-            path,
-            options,
-            IndexChangeKind.UpsertFile,
-            IndexQueuePriority.Normal,
-            DateTime.UtcNow.AddSeconds(2),
-            Persisted: true),
-            cancellationToken);
-
-    public Task EnqueueFileDeletedAsync(
-        string root,
-        string path,
-        WalkerOptions options,
-        CancellationToken cancellationToken) =>
-        EnqueueAsync(new IndexQueueItem(
-            root,
-            path,
-            options,
-            IndexChangeKind.DeleteFile,
-            IndexQueuePriority.Normal,
-            DateTime.UtcNow.AddSeconds(2),
-            Persisted: true),
-            cancellationToken);
-
     public void SetForegroundSearchActive(bool isActive)
     {
         _foregroundSearchActive = isActive;
@@ -214,57 +191,75 @@ public sealed class IndexingService : IIndexingService
 
         while (!cancellationToken.IsCancellationRequested)
         {
-            var item = await _queue.DequeueAsync(cancellationToken).ConfigureAwait(false);
-
-            while (_paused && !cancellationToken.IsCancellationRequested)
-            {
-                Publish(false, $"Background indexing paused; {_queue.Count + 1:n0} queued.");
-                await Task.Delay(TimeSpan.FromSeconds(1), cancellationToken).ConfigureAwait(false);
-            }
-
-            if (_foregroundSearchActive && item.Kind == IndexChangeKind.RefreshRoot)
-            {
-                await EnqueueAsync(item with { DueUtc = DateTime.UtcNow.Add(ForegroundRefreshDelay) }, cancellationToken)
-                    .ConfigureAwait(false);
-                continue;
-            }
-
-            if (burst.Elapsed >= MaxBurst)
-            {
-                Publish(false, "Background indexing resting.");
-                await Task.Delay(BurstRest, cancellationToken).ConfigureAwait(false);
-                burst.Restart();
-            }
-
-            using var itemCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
-            lock (_sync)
-            {
-                _currentItem = item;
-                _currentItemCts = itemCts;
-                _foregroundRefreshYieldRequested = false;
-            }
-
             try
             {
-                await ProcessAsync(item, itemCts.Token).ConfigureAwait(false);
+                await RunIterationAsync(burst, cancellationToken).ConfigureAwait(false);
             }
-            catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested && WasRefreshYieldRequested(item))
+            catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
             {
-                await EnqueueAsync(
-                    item with { DueUtc = DateTime.UtcNow.Add(ForegroundRefreshDelay) },
-                    cancellationToken).ConfigureAwait(false);
-                Publish(false, "Index update deferred while search is active.");
+                break;
             }
-            finally
+            catch (Exception ex)
             {
-                lock (_sync)
+                // The worker is the only consumer of the queue — an unhandled
+                // exception here used to kill background indexing silently.
+                _logger.LogError(ex, "Indexing worker iteration failed; continuing.");
+            }
+        }
+    }
+
+    private async Task RunIterationAsync(Stopwatch burst, CancellationToken cancellationToken)
+    {
+        var item = await _queue.DequeueAsync(cancellationToken).ConfigureAwait(false);
+
+        while (_paused && !cancellationToken.IsCancellationRequested)
+        {
+            Publish(false, $"Background indexing paused; {_queue.Count + 1:n0} queued.");
+            await Task.Delay(TimeSpan.FromSeconds(1), cancellationToken).ConfigureAwait(false);
+        }
+
+        if (_foregroundSearchActive && item.Kind == IndexChangeKind.RefreshRoot)
+        {
+            await EnqueueAsync(item with { DueUtc = DateTime.UtcNow.Add(ForegroundRefreshDelay) }, cancellationToken)
+                .ConfigureAwait(false);
+            return;
+        }
+
+        if (burst.Elapsed >= MaxBurst)
+        {
+            Publish(false, "Background indexing resting.");
+            await Task.Delay(BurstRest, cancellationToken).ConfigureAwait(false);
+            burst.Restart();
+        }
+
+        using var itemCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+        lock (_sync)
+        {
+            _currentItem = item;
+            _currentItemCts = itemCts;
+            _foregroundRefreshYieldRequested = false;
+        }
+
+        try
+        {
+            await ProcessAsync(item, itemCts.Token).ConfigureAwait(false);
+        }
+        catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested && WasRefreshYieldRequested(item))
+        {
+            await EnqueueAsync(
+                item with { DueUtc = DateTime.UtcNow.Add(ForegroundRefreshDelay) },
+                cancellationToken).ConfigureAwait(false);
+            Publish(false, "Index update deferred while search is active.");
+        }
+        finally
+        {
+            lock (_sync)
+            {
+                if (ReferenceEquals(_currentItemCts, itemCts))
                 {
-                    if (ReferenceEquals(_currentItemCts, itemCts))
-                    {
-                        _currentItem = null;
-                        _currentItemCts = null;
-                        _foregroundRefreshYieldRequested = false;
-                    }
+                    _currentItem = null;
+                    _currentItemCts = null;
+                    _foregroundRefreshYieldRequested = false;
                 }
             }
         }
@@ -311,11 +306,12 @@ public sealed class IndexingService : IIndexingService
         }
         catch (Exception ex)
         {
+            _logger.LogError(ex, "Indexing {Kind} failed for {Root}.", item.Kind, item.Root);
             Publish(false, $"Indexing error: {ex.Message}");
         }
     }
 
-    private IReadOnlyList<IndexedLocation> SnapshotLocations()
+    private List<IndexedLocation> SnapshotLocations()
     {
         lock (_sync)
             return _locations.Values.ToList();
@@ -339,7 +335,7 @@ public sealed class IndexingService : IIndexingService
             return item.Kind == IndexChangeKind.RefreshRoot && _foregroundRefreshYieldRequested;
     }
 
-    private IReadOnlyDictionary<string, IndexedLocation> SnapshotLocationMap()
+    private Dictionary<string, IndexedLocation> SnapshotLocationMap()
     {
         lock (_sync)
             return new Dictionary<string, IndexedLocation>(_locations, StringComparer.OrdinalIgnoreCase);

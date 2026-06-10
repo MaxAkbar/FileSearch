@@ -16,7 +16,7 @@ public sealed class ThemeService : IThemeService
     private static readonly Uri s_atlasDarkTheme = new("Themes/AtlasDark.xaml", UriKind.Relative);
     private static readonly Uri s_visualStudioTheme = new("Themes/VisualStudio.xaml", UriKind.Relative);
 
-    private readonly ISettingsStore _settingsStore;
+    private readonly ISettingsService _settingsService;
 
     /// <summary>Currently-merged overlay dictionary; tracked so we can swap it.</summary>
     private ResourceDictionary? _activeOverlay;
@@ -24,9 +24,9 @@ public sealed class ThemeService : IThemeService
     /// <summary>True while we're subscribed to OS theme changes (System mode).</summary>
     private bool _listeningToOs;
 
-    public ThemeService(ISettingsStore settingsStore)
+    public ThemeService(ISettingsService settingsService)
     {
-        _settingsStore = settingsStore;
+        _settingsService = settingsService;
     }
 
     public AppTheme CurrentTheme { get; private set; } = AppTheme.System;
@@ -50,9 +50,7 @@ public sealed class ThemeService : IThemeService
         SetOsListening(theme == AppTheme.System);
 
         // Persist the choice immediately so it survives a crash.
-        var settings = _settingsStore.Load();
-        settings.Theme = theme;
-        _settingsStore.Save(settings);
+        _settingsService.Update(settings => settings.Theme = theme);
     }
 
     private static Uri ResolveOverlay(AppTheme theme) => theme switch

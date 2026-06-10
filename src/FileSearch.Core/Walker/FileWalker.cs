@@ -18,8 +18,8 @@ public sealed class FileWalker : IFileWalker
         WalkerOptions options,
         CancellationToken cancellationToken)
     {
-        if (roots is null) throw new ArgumentNullException(nameof(roots));
-        if (options is null) throw new ArgumentNullException(nameof(options));
+        ArgumentNullException.ThrowIfNull(roots);
+        ArgumentNullException.ThrowIfNull(options);
 
         foreach (var root in roots)
         {
@@ -40,6 +40,12 @@ public sealed class FileWalker : IFileWalker
                 })
             {
                 ShouldIncludePredicate = (ref FileSystemEntry e) => ShouldInclude(ref e, options),
+                // Prune excluded directories entirely — their subtrees are
+                // never enumerated, which is what makes skipping .git or
+                // node_modules cheap instead of a per-file filter.
+                ShouldRecursePredicate = (ref FileSystemEntry e) =>
+                    options.ExcludeDirectories.Count == 0 ||
+                    !options.ExcludeDirectories.Contains(e.FileName.ToString()),
             };
 
             foreach (var path in enumerable)
@@ -60,9 +66,13 @@ public sealed class FileWalker : IFileWalker
         if (options.ModifiedAfterUtc is { } after && e.LastWriteTimeUtc < after) return false;
         if (options.ModifiedBeforeUtc is { } before && e.LastWriteTimeUtc > before) return false;
 
-        var extension = Path.GetExtension(e.FileName.ToString());
-        if (options.IncludeExtensions.Count > 0 && !options.IncludeExtensions.Contains(extension)) return false;
-        if (options.ExcludeExtensions.Count > 0 && options.ExcludeExtensions.Contains(extension)) return false;
+        if (options.IncludeExtensions.Count > 0 || options.ExcludeExtensions.Count > 0)
+        {
+            // Only materialize the extension string when a filter needs it.
+            var extension = Path.GetExtension(e.FileName).ToString();
+            if (options.IncludeExtensions.Count > 0 && !options.IncludeExtensions.Contains(extension)) return false;
+            if (options.ExcludeExtensions.Count > 0 && options.ExcludeExtensions.Contains(extension)) return false;
+        }
 
         if (!MatchesGlobs(e.FileName, options.IncludeGlobs, defaultIfEmpty: true)) return false;
         if (MatchesGlobs(e.FileName, options.ExcludeGlobs, defaultIfEmpty: false)) return false;

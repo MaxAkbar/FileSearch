@@ -2,6 +2,8 @@ using System;
 using System.IO;
 using System.Text.Json;
 using System.Text.Json.Serialization;
+using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Logging.Abstractions;
 
 namespace FileSearch.Gui.Settings;
 
@@ -20,14 +22,16 @@ public sealed class JsonSettingsStore : ISettingsStore
     };
 
     private readonly string _path;
+    private readonly ILogger _logger;
 
-    public JsonSettingsStore()
+    public JsonSettingsStore(ILogger<JsonSettingsStore>? logger = null)
     {
         var folder = Path.Combine(
             Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData),
             "FileSearch");
         Directory.CreateDirectory(folder);
         _path = Path.Combine(folder, "settings.json");
+        _logger = logger ?? NullLogger<JsonSettingsStore>.Instance;
     }
 
     public AppSettings Load()
@@ -40,8 +44,9 @@ public sealed class JsonSettingsStore : ISettingsStore
             MigrateLegacyFields(settings);
             return settings;
         }
-        catch
+        catch (Exception ex)
         {
+            _logger.LogWarning(ex, "Could not load settings; using defaults.");
             return new AppSettings();
         }
     }
@@ -66,12 +71,16 @@ public sealed class JsonSettingsStore : ISettingsStore
     {
         try
         {
+            // Write-then-move so a crash mid-write can't truncate the file.
             var json = JsonSerializer.Serialize(settings, s_options);
-            File.WriteAllText(_path, json);
+            var temp = _path + ".tmp";
+            File.WriteAllText(temp, json);
+            File.Move(temp, _path, overwrite: true);
         }
-        catch
+        catch (Exception ex)
         {
             // Persisted settings are a convenience — never crash on save.
+            _logger.LogWarning(ex, "Could not save settings.");
         }
     }
 }

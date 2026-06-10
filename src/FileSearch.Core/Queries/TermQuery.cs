@@ -22,7 +22,7 @@ public sealed class TermQuery : Query
     public bool CaseSensitive => _comparison == StringComparison.Ordinal;
 
     public override bool IsMatch(string line) =>
-        line.IndexOf(_term, _comparison) >= 0;
+        line.Contains(_term, _comparison);
 
     public override void CollectHighlights(string line, List<MatchSpan> sink)
     {

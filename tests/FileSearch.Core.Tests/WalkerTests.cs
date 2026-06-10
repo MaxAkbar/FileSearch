@@ -101,6 +101,36 @@ public sealed class WalkerTests : IDisposable
     }
 
     [Fact]
+    public void Enumerate_PrunesDefaultExcludedDirectories()
+    {
+        File.WriteAllText(Path.Combine(_root, "app.txt"), "alpha");
+        var modules = Directory.CreateDirectory(Path.Combine(_root, "node_modules", "dep")).FullName;
+        File.WriteAllText(Path.Combine(modules, "index.js"), "bravo");
+
+        var walker = new FileWalker();
+        var result = walker.Enumerate(new[] { _root }, new WalkerOptions(), CancellationToken.None).ToList();
+
+        Assert.Single(result);
+        Assert.EndsWith("app.txt", result[0]);
+    }
+
+    [Fact]
+    public void Enumerate_WalksExcludedDirectoriesWhenCleared()
+    {
+        var modules = Directory.CreateDirectory(Path.Combine(_root, "node_modules")).FullName;
+        File.WriteAllText(Path.Combine(modules, "index.js"), "bravo");
+
+        var walker = new FileWalker();
+        var result = walker.Enumerate(
+            new[] { _root },
+            new WalkerOptions { ExcludeDirectories = new HashSet<string>(StringComparer.OrdinalIgnoreCase) },
+            CancellationToken.None).ToList();
+
+        Assert.Single(result);
+        Assert.EndsWith("index.js", result[0]);
+    }
+
+    [Fact]
     public void Enumerate_SkipsFilesLargerThanMax()
     {
         File.WriteAllText(Path.Combine(_root, "small.txt"), "x");

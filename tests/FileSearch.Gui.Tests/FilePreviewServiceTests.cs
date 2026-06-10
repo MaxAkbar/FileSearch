@@ -44,6 +44,64 @@ public sealed class FilePreviewServiceTests : IDisposable
         Assert.DoesNotContain("raw document bytes", preview);
     }
 
+    [Fact]
+    public async Task ExtractionNeverRunsOnCallerSynchronizationContext()
+    {
+        // Simulates the WPF dispatcher: if any part of the extraction loop
+        // executes while the caller's SynchronizationContext is current, a
+        // PDF/Excel parse would be running on the UI thread.
+        var observed = new List<SynchronizationContext?>();
+        var extractor = new ContextRecordingExtractor(observed);
+        var registry = new ExtractorRegistry(new[] { extractor });
+        var service = new FilePreviewService(registry);
+
+        var previous = SynchronizationContext.Current;
+        var uiLikeContext = new SynchronizationContext();
+        SynchronizationContext.SetSynchronizationContext(uiLikeContext);
+        try
+        {
+            await service.LoadHitsPreviewAsync(_path, new[] { 1 }, contextLines: 1, CancellationToken.None);
+            await service.LoadFullTextAsync(_path, CancellationToken.None);
+        }
+        finally
+        {
+            SynchronizationContext.SetSynchronizationContext(previous);
+        }
+
+        Assert.NotEmpty(observed);
+        Assert.DoesNotContain(uiLikeContext, observed);
+    }
+
+    private sealed class ContextRecordingExtractor : ITextExtractor
+    {
+        private readonly List<SynchronizationContext?> _observed;
+
+        public ContextRecordingExtractor(List<SynchronizationContext?> observed)
+        {
+            _observed = observed;
+        }
+
+        public IReadOnlyCollection<string> SupportedExtensions { get; } = new[] { ".docx" };
+
+        public async IAsyncEnumerable<TextLine> ExtractAsync(
+            string path,
+            [EnumeratorCancellation] CancellationToken cancellationToken)
+        {
+            // The segment before the first await runs synchronously on the
+            // consumer's thread — exactly where PdfDocument.Open would run.
+            lock (_observed)
+                _observed.Add(SynchronizationContext.Current);
+
+            await Task.Delay(1, cancellationToken);
+            yield return new TextLine(1, "alpha");
+
+            lock (_observed)
+                _observed.Add(SynchronizationContext.Current);
+
+            yield return new TextLine(2, "beta");
+        }
+    }
+
     private sealed class StubExtractor : ITextExtractor
     {
         private readonly IReadOnlyList<TextLine> _lines;

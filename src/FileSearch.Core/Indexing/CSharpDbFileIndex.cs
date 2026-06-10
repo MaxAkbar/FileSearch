@@ -11,15 +11,28 @@ using FileSearch.Core.Engine;
 using FileSearch.Core.Extractors;
 using FileSearch.Core.Queries;
 using FileSearch.Core.Walker;
+using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Logging.Abstractions;
 
 namespace FileSearch.Core.Indexing;
 
-public sealed class CSharpDbFileIndex : IFileIndex
+public sealed class CSharpDbFileIndex : IFileIndex, IDisposable
 {
-    private const string SchemaVersion = "2";
+    private const string SchemaVersion = "3";
     private const string FullTextIndexName = "fts_lines";
     private const int LineInsertBatchSize = 250;
     private const int IdQueryBatchSize = 500;
+
+    private static readonly string[] s_fullTextColumns = { "content" };
+
+    /// <summary>Values stored in the files.status column.</summary>
+    private static class FileStatus
+    {
+        public const string Ok = "ok";
+        public const string Indexing = "indexing";
+        public const string Skipped = "skipped";
+        public const string Error = "error";
+    }
 
     private readonly FileIndexOptions _options;
     private readonly IFileWalker _walker;
@@ -27,19 +40,32 @@ public sealed class CSharpDbFileIndex : IFileIndex
     private readonly SearchOptions _searchOptions;
     private readonly SemaphoreSlim _writeGate = new(1, 1);
 
+    /// <summary>
+    /// True once this process has run the schema DDL against the current
+    /// database file; lets subsequent opens skip the schema work. Only read
+    /// and written while holding <see cref="_writeGate"/>.
+    /// </summary>
+    private bool _schemaEnsured;
+
+    private readonly ILogger _logger;
+
     public CSharpDbFileIndex(
         FileIndexOptions? options,
         IFileWalker walker,
         IExtractorRegistry extractors,
-        SearchOptions? searchOptions = null)
+        SearchOptions? searchOptions = null,
+        ILogger<CSharpDbFileIndex>? logger = null)
     {
         _options = options ?? new FileIndexOptions();
         _walker = walker ?? throw new ArgumentNullException(nameof(walker));
         _extractors = extractors ?? throw new ArgumentNullException(nameof(extractors));
         _searchOptions = searchOptions ?? new SearchOptions();
+        _logger = logger ?? NullLogger<CSharpDbFileIndex>.Instance;
     }
 
     public string DatabasePath => _options.DatabasePath;
+
+    public void Dispose() => _writeGate.Dispose();
 
     public Task BuildOrRefreshAsync(IndexRequest request, CancellationToken cancellationToken) =>
         RefreshRootAsync(request, IndexRefreshMode.Full, cancellationToken);
@@ -49,26 +75,13 @@ public sealed class CSharpDbFileIndex : IFileIndex
         IndexRefreshMode mode,
         CancellationToken cancellationToken)
     {
-        if (request is null) throw new ArgumentNullException(nameof(request));
+        ArgumentNullException.ThrowIfNull(request);
         if (string.IsNullOrWhiteSpace(request.Root)) throw new ArgumentException("Root is required.", nameof(request));
         if (!Directory.Exists(request.Root)) throw new DirectoryNotFoundException(request.Root);
 
-        await _writeGate.WaitAsync(cancellationToken).ConfigureAwait(false);
-        Database? db = null;
-        try
-        {
-            db = await OpenInitializedAsync(cancellationToken).ConfigureAwait(false);
-            await RefreshRootCoreAsync(db, request, mode, cancellationToken).ConfigureAwait(false);
-        }
-        finally
-        {
-            if (db is not null)
-            {
-                await TryCheckpointAsync(db).ConfigureAwait(false);
-                await DisposeDatabaseAsync(db).ConfigureAwait(false);
-            }
-            _writeGate.Release();
-        }
+        await RunExclusiveWriteAsync(
+            db => RefreshRootCoreAsync(db, request, mode, cancellationToken),
+            cancellationToken).ConfigureAwait(false);
     }
 
     public async Task UpsertFileAsync(
@@ -80,18 +93,16 @@ public sealed class CSharpDbFileIndex : IFileIndex
         if (string.IsNullOrWhiteSpace(root) || string.IsNullOrWhiteSpace(path))
             return;
 
-        await _writeGate.WaitAsync(cancellationToken).ConfigureAwait(false);
-        Database? db = null;
-        try
+        await RunExclusiveWriteAsync(async db =>
         {
-            db = await OpenInitializedAsync(cancellationToken).ConfigureAwait(false);
+            var indexingOptions = IndexWalkerOptions.ForIndexing(options);
             var normalizedRoot = IndexPath.NormalizeRoot(root);
             var normalizedPath = IndexPath.NormalizeFile(path);
 
             if (!IsUnderRoot(normalizedRoot, normalizedPath))
                 return;
 
-            var profile = IndexProfile.FromWalkerOptions(options).ToStorageString();
+            var profile = IndexProfile.FromWalkerOptions(indexingOptions).ToStorageString();
             var rootId = await EnsureRootAsync(db, normalizedRoot, profile, cancellationToken).ConfigureAwait(false);
 
             if (!File.Exists(normalizedPath))
@@ -101,21 +112,20 @@ public sealed class CSharpDbFileIndex : IFileIndex
             }
 
             var info = new FileInfo(normalizedPath);
-            if (ShouldSkipSingleFile(info, options))
+            if (ShouldSkipSingleFile(info, indexingOptions))
             {
                 await DeleteFileCoreAsync(db, rootId, normalizedPath, cancellationToken).ConfigureAwait(false);
                 return;
             }
 
+            // Same short-circuit as the root refresh: don't re-extract a file
+            // whose size and timestamp match what's already indexed.
+            var existingRow = await GetFileRowAsync(db, rootId, normalizedPath, cancellationToken).ConfigureAwait(false);
+            if (existingRow is not null && IsUnchanged(existingRow, info))
+                return;
+
             await IndexSingleFileAsync(db, rootId, normalizedPath, info, cancellationToken).ConfigureAwait(false);
-            await db.CheckpointAsync(cancellationToken).ConfigureAwait(false);
-        }
-        finally
-        {
-            if (db is not null)
-                await DisposeDatabaseAsync(db).ConfigureAwait(false);
-            _writeGate.Release();
-        }
+        }, cancellationToken).ConfigureAwait(false);
     }
 
     public async Task DeleteFileAsync(string root, string path, CancellationToken cancellationToken)
@@ -123,24 +133,14 @@ public sealed class CSharpDbFileIndex : IFileIndex
         if (string.IsNullOrWhiteSpace(root) || string.IsNullOrWhiteSpace(path))
             return;
 
-        await _writeGate.WaitAsync(cancellationToken).ConfigureAwait(false);
-        Database? db = null;
-        try
+        await RunExclusiveWriteAsync(async db =>
         {
-            db = await OpenInitializedAsync(cancellationToken).ConfigureAwait(false);
             var rootId = await GetRootIdAsync(db, IndexPath.NormalizeRoot(root), cancellationToken).ConfigureAwait(false);
             if (rootId is null)
                 return;
 
             await DeleteFileCoreAsync(db, rootId.Value, IndexPath.NormalizeFile(path), cancellationToken).ConfigureAwait(false);
-            await db.CheckpointAsync(cancellationToken).ConfigureAwait(false);
-        }
-        finally
-        {
-            if (db is not null)
-                await DisposeDatabaseAsync(db).ConfigureAwait(false);
-            _writeGate.Release();
-        }
+        }, cancellationToken).ConfigureAwait(false);
     }
 
     public async IAsyncEnumerable<Hit> SearchAsync(
@@ -161,6 +161,7 @@ public sealed class CSharpDbFileIndex : IFileIndex
 
             var highlightBuffer = new List<MatchSpan>(4);
             var hitsByPath = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
+            var fileFilterVerdicts = new Dictionary<string, bool>(StringComparer.OrdinalIgnoreCase);
             var ftsQueries = QueryFtsTerms.BuildCandidateQueries(request.Expression);
 
             if (ftsQueries.Count > 0)
@@ -180,7 +181,7 @@ public sealed class CSharpDbFileIndex : IFileIndex
                     var sql = SelectLinesSql(rootId.Value, $"AND l.id IN ({idList})");
                     await foreach (var line in ReadLinesAsync(db, sql, cancellationToken).ConfigureAwait(false))
                     {
-                        if (TryCreateHit(line, request.Expression, request.WalkerOptions, hitsByPath, highlightBuffer, out var hit))
+                        if (TryCreateHit(line, request.Expression, request.WalkerOptions, hitsByPath, fileFilterVerdicts, highlightBuffer, out var hit))
                             yield return hit;
                     }
                 }
@@ -190,7 +191,7 @@ public sealed class CSharpDbFileIndex : IFileIndex
                 var sql = SelectLinesSql(rootId.Value, string.Empty);
                 await foreach (var line in ReadLinesAsync(db, sql, cancellationToken).ConfigureAwait(false))
                 {
-                    if (TryCreateHit(line, request.Expression, request.WalkerOptions, hitsByPath, highlightBuffer, out var hit))
+                    if (TryCreateHit(line, request.Expression, request.WalkerOptions, hitsByPath, fileFilterVerdicts, highlightBuffer, out var hit))
                         yield return hit;
                 }
             }
@@ -237,6 +238,7 @@ public sealed class CSharpDbFileIndex : IFileIndex
         }
         catch (Exception ex)
         {
+            _logger.LogWarning(ex, "Index coverage check failed for {Root}.", request.Roots.Count > 0 ? request.Roots[0] : "(none)");
             return new IndexCoverage(IndexCoverageStatus.Error, $"Index unavailable: {ex.Message}");
         }
     }
@@ -294,11 +296,8 @@ public sealed class CSharpDbFileIndex : IFileIndex
 
     public async Task ClearAsync(string root, CancellationToken cancellationToken)
     {
-        await _writeGate.WaitAsync(cancellationToken).ConfigureAwait(false);
-        Database? db = null;
-        try
+        await RunExclusiveWriteAsync(async db =>
         {
-            db = await OpenInitializedAsync(cancellationToken).ConfigureAwait(false);
             var normalizedRoot = IndexPath.NormalizeRoot(root);
             var rootId = await GetRootIdAsync(db, normalizedRoot, cancellationToken).ConfigureAwait(false);
             if (rootId is null)
@@ -314,14 +313,7 @@ public sealed class CSharpDbFileIndex : IFileIndex
             await db.ExecuteAsync($"DELETE FROM files WHERE root_id = {rootId.Value}", cancellationToken).ConfigureAwait(false);
             await db.ExecuteAsync($"DELETE FROM index_roots WHERE id = {rootId.Value}", cancellationToken).ConfigureAwait(false);
             await db.ExecuteAsync($"DELETE FROM pending_changes WHERE root_path = {SqlText(normalizedRoot)}", cancellationToken).ConfigureAwait(false);
-            await db.CheckpointAsync(cancellationToken).ConfigureAwait(false);
-        }
-        finally
-        {
-            if (db is not null)
-                await DisposeDatabaseAsync(db).ConfigureAwait(false);
-            _writeGate.Release();
-        }
+        }, cancellationToken).ConfigureAwait(false);
     }
 
     public async Task SavePendingChangeAsync(
@@ -330,11 +322,8 @@ public sealed class CSharpDbFileIndex : IFileIndex
         IndexChangeKind kind,
         CancellationToken cancellationToken)
     {
-        await _writeGate.WaitAsync(cancellationToken).ConfigureAwait(false);
-        Database? db = null;
-        try
+        await RunExclusiveWriteAsync(async db =>
         {
-            db = await OpenInitializedAsync(cancellationToken).ConfigureAwait(false);
             var normalizedRoot = IndexPath.NormalizeRoot(root);
             var normalizedPath = IndexPath.NormalizeFile(path);
             await db.ExecuteAsync(
@@ -346,14 +335,7 @@ public sealed class CSharpDbFileIndex : IFileIndex
                 "INSERT INTO pending_changes VALUES (" +
                 $"{id}, {SqlText(normalizedRoot)}, {SqlText(normalizedPath)}, {(long)kind}, {DateTime.UtcNow.Ticks})",
                 cancellationToken).ConfigureAwait(false);
-            await db.CheckpointAsync(cancellationToken).ConfigureAwait(false);
-        }
-        finally
-        {
-            if (db is not null)
-                await DisposeDatabaseAsync(db).ConfigureAwait(false);
-            _writeGate.Release();
-        }
+        }, cancellationToken).ConfigureAwait(false);
     }
 
     public async Task<IReadOnlyList<PendingIndexChange>> GetPendingChangesAsync(CancellationToken cancellationToken)
@@ -392,23 +374,71 @@ public sealed class CSharpDbFileIndex : IFileIndex
         IndexChangeKind kind,
         CancellationToken cancellationToken)
     {
-        await _writeGate.WaitAsync(cancellationToken).ConfigureAwait(false);
-        Database? db = null;
-        try
+        await RunExclusiveWriteAsync(async db =>
         {
-            db = await OpenInitializedAsync(cancellationToken).ConfigureAwait(false);
             await db.ExecuteAsync(
                 "DELETE FROM pending_changes WHERE " +
                 $"root_path = {SqlText(IndexPath.NormalizeRoot(root))} AND " +
                 $"path = {SqlText(IndexPath.NormalizeFile(path))} AND kind = {(long)kind}",
                 cancellationToken).ConfigureAwait(false);
-            await db.CheckpointAsync(cancellationToken).ConfigureAwait(false);
+        }, cancellationToken).ConfigureAwait(false);
+    }
+
+    /// <summary>
+    /// Runs a write operation with exclusive access: serialized against other
+    /// writers in this process (<see cref="_writeGate"/>) and in other
+    /// processes (a sibling .lock file held with no sharing — the GUI and CLI
+    /// share the same database). IDs are allocated with MAX(id)+1, which is
+    /// only safe because every allocation happens inside this exclusion.
+    /// The OS releases the file lock if the process dies, so a crash can't
+    /// strand other writers.
+    /// </summary>
+    private async Task RunExclusiveWriteAsync(Func<Database, Task> action, CancellationToken cancellationToken)
+    {
+        await _writeGate.WaitAsync(cancellationToken).ConfigureAwait(false);
+        try
+        {
+            var folder = Path.GetDirectoryName(DatabasePath);
+            if (!string.IsNullOrEmpty(folder))
+                Directory.CreateDirectory(folder);
+
+            using var crossProcessLock = await AcquireCrossProcessLockAsync(cancellationToken).ConfigureAwait(false);
+            var db = await OpenInitializedAsync(cancellationToken).ConfigureAwait(false);
+            try
+            {
+                await action(db).ConfigureAwait(false);
+            }
+            finally
+            {
+                await TryCheckpointAsync(db).ConfigureAwait(false);
+                await DisposeDatabaseAsync(db).ConfigureAwait(false);
+            }
         }
         finally
         {
-            if (db is not null)
-                await DisposeDatabaseAsync(db).ConfigureAwait(false);
             _writeGate.Release();
+        }
+    }
+
+    private async Task<FileStream> AcquireCrossProcessLockAsync(CancellationToken cancellationToken)
+    {
+        var lockPath = DatabasePath + ".lock";
+        while (true)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            try
+            {
+                return new FileStream(lockPath, FileMode.OpenOrCreate, FileAccess.ReadWrite, FileShare.None);
+            }
+            catch (IOException)
+            {
+                // Another process is writing; poll until it finishes.
+                await Task.Delay(150, cancellationToken).ConfigureAwait(false);
+            }
+            catch (UnauthorizedAccessException)
+            {
+                await Task.Delay(150, cancellationToken).ConfigureAwait(false);
+            }
         }
     }
 
@@ -419,7 +449,8 @@ public sealed class CSharpDbFileIndex : IFileIndex
         CancellationToken cancellationToken)
     {
         var root = IndexPath.NormalizeRoot(request.Root);
-        var profile = IndexProfile.FromWalkerOptions(request.WalkerOptions).ToStorageString();
+        var walkerOptions = IndexWalkerOptions.ForIndexing(request.WalkerOptions);
+        var profile = IndexProfile.FromWalkerOptions(walkerOptions).ToStorageString();
         var rootId = await EnsureRootAsync(db, root, profile, cancellationToken).ConfigureAwait(false);
         var existing = await LoadExistingFilesAsync(db, rootId, cancellationToken).ConfigureAwait(false);
 
@@ -439,7 +470,7 @@ public sealed class CSharpDbFileIndex : IFileIndex
             filesFailed,
             linesIndexed));
 
-        foreach (var path in _walker.Enumerate(new[] { root }, request.WalkerOptions, cancellationToken))
+        foreach (var path in _walker.Enumerate(new[] { root }, walkerOptions, cancellationToken))
         {
             cancellationToken.ThrowIfCancellationRequested();
             filesEnumerated++;
@@ -458,10 +489,7 @@ public sealed class CSharpDbFileIndex : IFileIndex
 
                 var info = new FileInfo(normalizedPath);
                 var existingFile = existing.TryGetValue(normalizedPath, out var row) ? row : null;
-                if (existingFile is not null &&
-                    existingFile.SizeBytes == info.Length &&
-                    existingFile.ModifiedUtcTicks == info.LastWriteTimeUtc.Ticks &&
-                    string.Equals(existingFile.Status, "ok", StringComparison.OrdinalIgnoreCase))
+                if (existingFile is not null && IsUnchanged(existingFile, info))
                 {
                     filesSkipped++;
                     Publish();
@@ -498,7 +526,6 @@ public sealed class CSharpDbFileIndex : IFileIndex
         await db.ExecuteAsync(
             $"UPDATE index_roots SET indexed_utc_ticks = {DateTime.UtcNow.Ticks}, options_hash = {SqlText(profile)} WHERE id = {rootId}",
             cancellationToken).ConfigureAwait(false);
-        await db.CheckpointAsync(cancellationToken).ConfigureAwait(false);
         Publish();
     }
 
@@ -509,13 +536,13 @@ public sealed class CSharpDbFileIndex : IFileIndex
         FileInfo info,
         CancellationToken cancellationToken)
     {
-        var fileId = await EnsureFileRowAsync(db, rootId, path, info, "indexing", null, cancellationToken).ConfigureAwait(false);
+        var fileId = await EnsureFileRowAsync(db, rootId, path, info, FileStatus.Indexing, null, cancellationToken).ConfigureAwait(false);
         await DeleteLinesAsync(db, fileId, cancellationToken).ConfigureAwait(false);
 
         var extractor = _extractors.GetFor(path);
         if (extractor is null)
         {
-            await SetFileStatusAsync(db, fileId, "skipped", "No extractor registered.", cancellationToken).ConfigureAwait(false);
+            await SetFileStatusAsync(db, fileId, FileStatus.Skipped, "No extractor registered.", cancellationToken).ConfigureAwait(false);
             return 0;
         }
 
@@ -538,7 +565,7 @@ public sealed class CSharpDbFileIndex : IFileIndex
             }
 
             await FlushBatchAsync(batch, cancellationToken).ConfigureAwait(false);
-            await SetFileStatusAsync(db, fileId, "ok", null, cancellationToken).ConfigureAwait(false);
+            await SetFileStatusAsync(db, fileId, FileStatus.Ok, null, cancellationToken).ConfigureAwait(false);
             return linesIndexed;
         }
         catch (OperationCanceledException)
@@ -547,11 +574,19 @@ public sealed class CSharpDbFileIndex : IFileIndex
         }
         catch (Exception ex)
         {
+            // The failure is recorded on the file row; log at Debug since
+            // unreadable files are routine during background indexing.
+            _logger.LogDebug(ex, "Indexing failed for file {Path}.", path);
             await DeleteLinesAsync(db, fileId, cancellationToken).ConfigureAwait(false);
-            await SetFileStatusAsync(db, fileId, "error", ex.Message, cancellationToken).ConfigureAwait(false);
+            await SetFileStatusAsync(db, fileId, FileStatus.Error, ex.Message, cancellationToken).ConfigureAwait(false);
             return 0;
         }
     }
+
+    private static bool IsUnchanged(ExistingFileRow row, FileInfo info) =>
+        row.SizeBytes == info.Length &&
+        row.ModifiedUtcTicks == info.LastWriteTimeUtc.Ticks &&
+        string.Equals(row.Status, FileStatus.Ok, StringComparison.OrdinalIgnoreCase);
 
     private static bool ShouldSkipSingleFile(FileInfo info, WalkerOptions options)
     {
@@ -559,6 +594,7 @@ public sealed class CSharpDbFileIndex : IFileIndex
             return true;
 
         return !IndexedFileFilter.Matches(
+            info.FullName,
             info.Name,
             info.Extension.ToLowerInvariant(),
             info.Length,
@@ -571,12 +607,23 @@ public sealed class CSharpDbFileIndex : IFileIndex
         Query query,
         WalkerOptions options,
         Dictionary<string, int> hitsByPath,
+        Dictionary<string, bool> fileFilterVerdicts,
         List<MatchSpan> highlightBuffer,
         out Hit hit)
     {
         hit = null!;
 
-        if (!IndexedFileFilter.Matches(line.FileName, line.Extension, line.SizeBytes, line.ModifiedUtcTicks, options))
+        // All of IndexedFileFilter's checks are per-file, and result rows are
+        // ordered by path, so memoize the verdict instead of re-running the
+        // glob/extension/directory checks for every line of the same file.
+        if (!fileFilterVerdicts.TryGetValue(line.Path, out var fileAllowed))
+        {
+            fileAllowed = IndexedFileFilter.Matches(
+                line.Path, line.FileName, line.Extension, line.SizeBytes, line.ModifiedUtcTicks, options);
+            fileFilterVerdicts[line.Path] = fileAllowed;
+        }
+
+        if (!fileAllowed)
             return false;
 
         if (!query.IsMatch(line.Content))
@@ -596,14 +643,16 @@ public sealed class CSharpDbFileIndex : IFileIndex
 
     private async ValueTask<Database> OpenInitializedAsync(CancellationToken cancellationToken)
     {
-        var folder = Path.GetDirectoryName(DatabasePath);
-        if (!string.IsNullOrEmpty(folder))
-            Directory.CreateDirectory(folder);
-
         var db = await Database.OpenAsync(DatabasePath, cancellationToken).ConfigureAwait(false);
         await EnsureMetaTableAsync(db, cancellationToken).ConfigureAwait(false);
 
+        // The version probe stays on every open so a recreate by another
+        // process is noticed, but the schema DDL (and its meta rewrite) only
+        // runs until it has succeeded once against the current file.
         var version = await GetMetaAsync(db, "schema_version", cancellationToken).ConfigureAwait(false);
+        if (version == SchemaVersion && _schemaEnsured)
+            return db;
+
         if (version is not null && version != SchemaVersion)
         {
             await DisposeDatabaseAsync(db).ConfigureAwait(false);
@@ -613,6 +662,7 @@ public sealed class CSharpDbFileIndex : IFileIndex
         }
 
         await EnsureSchemaAsync(db, cancellationToken).ConfigureAwait(false);
+        _schemaEnsured = true;
         return db;
     }
 
@@ -628,8 +678,9 @@ public sealed class CSharpDbFileIndex : IFileIndex
             if (version == SchemaVersion)
                 return db;
         }
-        catch
+        catch (Exception ex)
         {
+            _logger.LogWarning(ex, "Index schema probe failed; treating index as missing.");
         }
 
         await DisposeDatabaseAsync(db).ConfigureAwait(false);
@@ -660,7 +711,7 @@ public sealed class CSharpDbFileIndex : IFileIndex
         return false;
     }
 
-    private static async Task TryCheckpointAsync(Database db)
+    private async Task TryCheckpointAsync(Database db)
     {
         try
         {
@@ -668,9 +719,11 @@ public sealed class CSharpDbFileIndex : IFileIndex
         }
         catch (Exception ex) when (IsWalCleanupFailure(ex))
         {
+            // Benign WAL-sidecar contention; see DisposeDatabaseAsync.
         }
-        catch
+        catch (Exception ex)
         {
+            _logger.LogWarning(ex, "Index checkpoint failed.");
         }
     }
 
@@ -679,7 +732,7 @@ public sealed class CSharpDbFileIndex : IFileIndex
         await db.ExecuteAsync("CREATE TABLE IF NOT EXISTS meta (name TEXT PRIMARY KEY, value TEXT)", cancellationToken).ConfigureAwait(false);
     }
 
-    private static async Task EnsureSchemaAsync(Database db, CancellationToken cancellationToken)
+    private async Task EnsureSchemaAsync(Database db, CancellationToken cancellationToken)
     {
         await db.ExecuteAsync("CREATE TABLE IF NOT EXISTS index_roots (id INTEGER PRIMARY KEY, root_path TEXT, indexed_utc_ticks INTEGER, options_hash TEXT)", cancellationToken).ConfigureAwait(false);
         await db.ExecuteAsync("CREATE TABLE IF NOT EXISTS files (id INTEGER PRIMARY KEY, root_id INTEGER, path TEXT, file_name TEXT, extension TEXT, size_bytes INTEGER, modified_utc_ticks INTEGER, indexed_utc_ticks INTEGER, status TEXT, error TEXT)", cancellationToken).ConfigureAwait(false);
@@ -687,8 +740,10 @@ public sealed class CSharpDbFileIndex : IFileIndex
         await db.ExecuteAsync("CREATE TABLE IF NOT EXISTS pending_changes (id INTEGER PRIMARY KEY, root_path TEXT, path TEXT, kind INTEGER, queued_utc_ticks INTEGER)", cancellationToken).ConfigureAwait(false);
 
         await TryExecuteAsync(db, "CREATE UNIQUE INDEX IF NOT EXISTS idx_index_roots_path ON index_roots(root_path)", cancellationToken).ConfigureAwait(false);
-        await TryExecuteAsync(db, "CREATE INDEX IF NOT EXISTS idx_files_path ON files(path)", cancellationToken).ConfigureAwait(false);
-        await TryExecuteAsync(db, "CREATE UNIQUE INDEX IF NOT EXISTS idx_files_path_unique ON files(path)", cancellationToken).ConfigureAwait(false);
+        // Paths are unique per root, not globally: overlapping indexed roots
+        // (e.g. C:\Code and C:\Code\ProjectA) each keep their own row for the
+        // same file instead of silently failing to index the nested root.
+        await TryExecuteAsync(db, "CREATE UNIQUE INDEX IF NOT EXISTS idx_files_root_path ON files(root_id, path)", cancellationToken).ConfigureAwait(false);
         await TryExecuteAsync(db, "CREATE INDEX IF NOT EXISTS idx_files_ext ON files(extension)", cancellationToken).ConfigureAwait(false);
         await TryExecuteAsync(db, "CREATE INDEX IF NOT EXISTS idx_files_modified ON files(modified_utc_ticks)", cancellationToken).ConfigureAwait(false);
         await TryExecuteAsync(db, "CREATE INDEX IF NOT EXISTS idx_lines_file_line ON lines(file_id, line_number)", cancellationToken).ConfigureAwait(false);
@@ -699,19 +754,27 @@ public sealed class CSharpDbFileIndex : IFileIndex
         await db.EnsureFullTextIndexAsync(
             FullTextIndexName,
             "lines",
-            new[] { "content" },
+            s_fullTextColumns,
             new FullTextIndexOptions { StorePositions = true },
             cancellationToken).ConfigureAwait(false);
     }
 
-    private static async Task TryExecuteAsync(Database db, string sql, CancellationToken cancellationToken)
+    private async Task TryExecuteAsync(Database db, string sql, CancellationToken cancellationToken)
     {
         try
         {
             await db.ExecuteAsync(sql, cancellationToken).ConfigureAwait(false);
         }
-        catch
+        catch (OperationCanceledException)
         {
+            throw;
+        }
+        catch (Exception ex)
+        {
+            // Index DDL is best-effort (queries still work, just slower), but
+            // a failure here must be visible — a silently missing unique
+            // index has masked real bugs before.
+            _logger.LogWarning(ex, "Index DDL failed: {Sql}", sql);
         }
     }
 
@@ -722,15 +785,16 @@ public sealed class CSharpDbFileIndex : IFileIndex
         TryDelete(DatabasePath + ".shm");
     }
 
-    private static void TryDelete(string path)
+    private void TryDelete(string path)
     {
         try
         {
             if (File.Exists(path))
                 File.Delete(path);
         }
-        catch
+        catch (Exception ex)
         {
+            _logger.LogWarning(ex, "Could not delete stale index file {Path}.", path);
         }
     }
 
@@ -793,16 +857,37 @@ public sealed class CSharpDbFileIndex : IFileIndex
         if (rootRow is null)
             return null;
 
-        var fileCount = await GetCountAsync(db, $"SELECT COUNT(*) FROM files WHERE root_id = {rootRow.Id} AND status = 'ok'", cancellationToken).ConfigureAwait(false);
+        var fileCount = await GetCountAsync(db, $"SELECT COUNT(*) FROM files WHERE root_id = {rootRow.Id} AND status = '{FileStatus.Ok}'", cancellationToken).ConfigureAwait(false);
         var lineCount = await GetCountAsync(
             db,
-            $"SELECT COUNT(*) FROM lines l INNER JOIN files f ON f.id = l.file_id WHERE f.root_id = {rootRow.Id} AND f.status = 'ok'",
+            $"SELECT COUNT(*) FROM lines l INNER JOIN files f ON f.id = l.file_id WHERE f.root_id = {rootRow.Id} AND f.status = '{FileStatus.Ok}'",
             cancellationToken).ConfigureAwait(false);
         var indexedUtc = rootRow.IndexedUtcTicks > 0
             ? new DateTime(rootRow.IndexedUtcTicks, DateTimeKind.Utc)
             : (DateTime?)null;
 
         return new IndexedLocationInfo(root, fileCount, lineCount, indexedUtc, rootRow.OptionsHash, Exists: true);
+    }
+
+    private static async Task<ExistingFileRow?> GetFileRowAsync(
+        Database db,
+        long rootId,
+        string path,
+        CancellationToken cancellationToken)
+    {
+        await using var result = await db.ExecuteAsync(
+            $"SELECT id, path, size_bytes, modified_utc_ticks, status FROM files WHERE root_id = {rootId} AND path = {SqlText(path)}",
+            cancellationToken).ConfigureAwait(false);
+
+        if (!await result.MoveNextAsync(cancellationToken).ConfigureAwait(false))
+            return null;
+
+        return new ExistingFileRow(
+            result.Current[0].AsInteger,
+            result.Current[1].AsText,
+            result.Current[2].AsInteger,
+            result.Current[3].AsInteger,
+            result.Current[4].AsText);
     }
 
     private static async Task<Dictionary<string, ExistingFileRow>> LoadExistingFilesAsync(
@@ -886,12 +971,12 @@ public sealed class CSharpDbFileIndex : IFileIndex
         if (ids.Count == 0)
             return;
 
+        // Hard delete — tombstone rows ('deleted' status) accumulated forever
+        // for transient files in watched folders and were never queried.
         foreach (var id in ids)
         {
             await DeleteLinesAsync(db, id, cancellationToken).ConfigureAwait(false);
-            await db.ExecuteAsync(
-                $"UPDATE files SET status = 'deleted', indexed_utc_ticks = {DateTime.UtcNow.Ticks} WHERE id = {id}",
-                cancellationToken).ConfigureAwait(false);
+            await db.ExecuteAsync($"DELETE FROM files WHERE id = {id}", cancellationToken).ConfigureAwait(false);
         }
     }
 
@@ -938,7 +1023,7 @@ public sealed class CSharpDbFileIndex : IFileIndex
     private static string SelectLinesSql(long rootId, string linePredicate) =>
         "SELECT f.path, f.file_name, f.extension, f.size_bytes, f.modified_utc_ticks, l.line_number, l.content " +
         "FROM lines l INNER JOIN files f ON f.id = l.file_id " +
-        $"WHERE f.root_id = {rootId} AND f.status = 'ok' {linePredicate} " +
+        $"WHERE f.root_id = {rootId} AND f.status = '{FileStatus.Ok}' {linePredicate} " +
         "ORDER BY f.path, l.line_number";
 
     private static async IAsyncEnumerable<IndexedLine> ReadLinesAsync(

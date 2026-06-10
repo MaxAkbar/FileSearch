@@ -31,18 +31,6 @@ public interface IIndexingService
         IndexQueuePriority priority,
         CancellationToken cancellationToken);
 
-    Task EnqueueFileChangedAsync(
-        string root,
-        string path,
-        WalkerOptions options,
-        CancellationToken cancellationToken);
-
-    Task EnqueueFileDeletedAsync(
-        string root,
-        string path,
-        WalkerOptions options,
-        CancellationToken cancellationToken);
-
     void SetForegroundSearchActive(bool isActive);
 
     void Pause();

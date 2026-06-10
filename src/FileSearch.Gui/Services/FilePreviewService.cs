@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Globalization;
 using System.Linq;
 using System.Text;
 using System.Threading;
@@ -17,19 +18,35 @@ public sealed class FilePreviewService : IFilePreviewService
         _extractorRegistry = extractorRegistry ?? throw new ArgumentNullException(nameof(extractorRegistry));
     }
 
-    public async Task<string> LoadHitsPreviewAsync(
+    public Task<string> LoadHitsPreviewAsync(
         string path,
         IReadOnlyList<int> hitLineNumbers,
         int contextLines,
         CancellationToken cancellationToken)
     {
         if (hitLineNumbers.Count == 0)
-            return string.Empty;
+            return Task.FromResult(string.Empty);
 
         var extractor = _extractorRegistry.GetFor(path);
         if (extractor is null)
-            return string.Empty;
+            return Task.FromResult(string.Empty);
 
+        // Async iterators execute between yields on whichever thread consumes
+        // them, so run the whole extraction loop on the thread pool — this
+        // service is called from the UI thread, and document parsers
+        // (PDF/Excel/Word) do heavy synchronous work per line batch.
+        return Task.Run(
+            () => BuildHitsPreviewAsync(extractor, path, hitLineNumbers, contextLines, cancellationToken),
+            cancellationToken);
+    }
+
+    private static async Task<string> BuildHitsPreviewAsync(
+        ITextExtractor extractor,
+        string path,
+        IReadOnlyList<int> hitLineNumbers,
+        int contextLines,
+        CancellationToken cancellationToken)
+    {
         var sortedHits = hitLineNumbers.Distinct().OrderBy(x => x).ToList();
         var hitSet = new HashSet<int>(sortedHits);
         var windows = MergeWindows(sortedHits, contextLines);
@@ -57,7 +74,7 @@ public sealed class FilePreviewService : IFilePreviewService
 
             char marker = hitSet.Contains(line.Number) ? '►' : ' ';
             sb.Append(marker).Append(' ')
-              .Append(line.Number.ToString().PadLeft(6))
+              .Append(line.Number.ToString(CultureInfo.InvariantCulture).PadLeft(6))
               .Append("  ")
               .AppendLine(line.Content);
         }
@@ -65,20 +82,23 @@ public sealed class FilePreviewService : IFilePreviewService
         return sb.ToString();
     }
 
-    public async Task<string> LoadFullTextAsync(string path, CancellationToken cancellationToken)
+    public Task<string> LoadFullTextAsync(string path, CancellationToken cancellationToken)
     {
         var extractor = _extractorRegistry.GetFor(path);
         if (extractor is null)
-            return string.Empty;
+            return Task.FromResult(string.Empty);
 
-        var sb = new StringBuilder();
-        await foreach (var line in extractor.ExtractAsync(path, cancellationToken).ConfigureAwait(false))
+        return Task.Run(async () =>
         {
-            cancellationToken.ThrowIfCancellationRequested();
-            sb.AppendLine(line.Content);
-        }
+            var sb = new StringBuilder();
+            await foreach (var line in extractor.ExtractAsync(path, cancellationToken).ConfigureAwait(false))
+            {
+                cancellationToken.ThrowIfCancellationRequested();
+                sb.AppendLine(line.Content);
+            }
 
-        return sb.ToString();
+            return sb.ToString();
+        }, cancellationToken);
     }
 
     /// <summary>

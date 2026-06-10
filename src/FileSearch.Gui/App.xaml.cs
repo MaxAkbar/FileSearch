@@ -4,15 +4,20 @@ using System.Linq;
 using System.IO;
 using System.Windows;
 using FileSearch.Core;
+using FileSearch.Core.Logging;
 using FileSearch.Gui.Services;
 using FileSearch.Gui.Settings;
 using FileSearch.Gui.ViewModels;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
+using Microsoft.Extensions.Logging;
 using Forms = System.Windows.Forms;
 
 namespace FileSearch.Gui;
 
+[System.Diagnostics.CodeAnalysis.SuppressMessage(
+    "Design", "CA1001:Types that own disposable fields should be disposable",
+    Justification = "WPF Application instances live for the whole process; the tray icon is disposed in OnExit.")]
 public partial class App : System.Windows.Application
 {
     private IHost? _host;
@@ -24,9 +29,15 @@ public partial class App : System.Windows.Application
         base.OnStartup(e);
 
         _host = Host.CreateDefaultBuilder()
+            .ConfigureLogging(logging => logging.AddProvider(new FileLoggerProvider(
+                Path.Combine(
+                    Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
+                    "FileSearch", "logs"),
+                "filesearch-gui")))
             .ConfigureServices(services =>
             {
                 services.AddSingleton<ISettingsStore, JsonSettingsStore>();
+                services.AddSingleton<ISettingsService, SettingsService>();
                 services.AddSingleton<IFileTypeOptionsStore, JsonFileTypeOptionsStore>();
                 services.AddFileSearchCore();
                 services.AddSingleton<IFilePreviewService, FilePreviewService>();
@@ -40,8 +51,8 @@ public partial class App : System.Windows.Application
 
         // Apply persisted theme before showing the window so there's no flash.
         // MainViewModel loads its own recent-queries/paths from the same
-        // store, so we don't need to push them in here.
-        var savedTheme = _host.Services.GetRequiredService<ISettingsStore>().Load().Theme;
+        // shared settings instance, so we don't need to push them in here.
+        var savedTheme = _host.Services.GetRequiredService<ISettingsService>().Current.Theme;
         _host.Services.GetRequiredService<IThemeService>().SetTheme(savedTheme);
 
         var window = _host.Services.GetRequiredService<MainWindow>();
@@ -108,49 +119,16 @@ public partial class App : System.Windows.Application
         _trayIconImage?.Dispose();
 
         // Snapshot current state on the way out as a safety net. Theme and
-        // history are also saved eagerly whenever they change, so this is
-        // really just defensive against in-memory changes that never
-        // triggered an eager save.
+        // history are saved eagerly whenever they change; the view model's
+        // PersistSettings covers anything that never triggered an eager save.
         if (_host is not null)
         {
             try
             {
-                var store = _host.Services.GetRequiredService<ISettingsStore>();
                 var fileTypeStore = _host.Services.GetRequiredService<IFileTypeOptionsStore>();
-                var theme = _host.Services.GetRequiredService<IThemeService>();
                 var vm = _host.Services.GetRequiredService<MainViewModel>();
 
-                var settings = store.Load();
-                settings.Theme = theme.CurrentTheme;
-                settings.RecentQueries = vm.RecentQueries.ToList();
-                settings.RecentPaths = vm.RecentPaths.ToList();
-                settings.CustomScopes = vm.CustomScopes
-                    .Where(scope => !string.IsNullOrWhiteSpace(scope.Name))
-                    .Select(scope => new SearchScope
-                    {
-                        Name = scope.Name.Trim(),
-                        FileNamePattern = scope.FileNamePattern?.Trim() ?? string.Empty,
-                    })
-                    .ToList();
-                settings.SkipUnknownFileTypes = vm.SkipUnknownFileTypes;
-                settings.UseIndex = vm.UseIndex;
-                settings.IndexedLocations = vm.IndexedLocations
-                    .Where(location => !string.IsNullOrWhiteSpace(location.Root))
-                    .Select(location => new IndexedLocationSettings
-                    {
-                        Root = location.Root,
-                        Recursive = location.Recursive,
-                        IncludeHidden = location.IncludeHidden,
-                        EnableDocumentExtraction = location.EnableDocumentExtraction,
-                        SkipUnknownFileTypes = location.SkipUnknownFileTypes,
-                        WatchEnabled = location.WatchEnabled,
-                        LastIndexedUtcTicks = location.LastIndexedUtcTicks,
-                        FileCount = location.FileCount,
-                        LineCount = location.LineCount,
-                    })
-                    .ToList();
-                settings.LastIndexedRoot = string.Empty;
-                store.Save(settings);
+                vm.PersistSettings();
                 fileTypeStore.Save(vm.BuildFileTypeOptions());
                 vm.StopBackgroundIndexingAsync().GetAwaiter().GetResult();
             }

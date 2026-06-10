@@ -19,7 +19,7 @@ public sealed class ExtractorRegistry : IExtractorRegistry
     /// </param>
     public ExtractorRegistry(IEnumerable<ITextExtractor> extractors, ITextExtractor? fallback = null)
     {
-        if (extractors is null) throw new ArgumentNullException(nameof(extractors));
+        ArgumentNullException.ThrowIfNull(extractors);
         _fallback = fallback;
         _byExtension = new Dictionary<string, ITextExtractor>(StringComparer.OrdinalIgnoreCase);
         foreach (var extractor in extractors)

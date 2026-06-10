@@ -7,6 +7,8 @@ using System.Threading.Tasks;
 using FileSearch.Core.Extractors;
 using FileSearch.Core.Queries;
 using FileSearch.Core.Walker;
+using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Logging.Abstractions;
 
 namespace FileSearch.Core.Engine;
 
@@ -21,22 +23,25 @@ public sealed class Searcher : ISearcher
     private readonly IFileWalker _walker;
     private readonly IExtractorRegistry _extractors;
     private readonly SearchOptions _options;
+    private readonly ILogger _logger;
 
     public Searcher(
         IFileWalker walker,
         IExtractorRegistry extractors,
-        SearchOptions? options = null)
+        SearchOptions? options = null,
+        ILogger<Searcher>? logger = null)
     {
         _walker = walker ?? throw new ArgumentNullException(nameof(walker));
         _extractors = extractors ?? throw new ArgumentNullException(nameof(extractors));
         _options = options ?? new SearchOptions();
+        _logger = logger ?? NullLogger<Searcher>.Instance;
     }
 
     public async IAsyncEnumerable<Hit> SearchAsync(
         SearchRequest request,
         [EnumeratorCancellation] CancellationToken cancellationToken)
     {
-        if (request is null) throw new ArgumentNullException(nameof(request));
+        ArgumentNullException.ThrowIfNull(request);
 
         var channel = Channel.CreateBounded<Hit>(new BoundedChannelOptions(_options.ChannelCapacity)
         {
@@ -50,10 +55,28 @@ public sealed class Searcher : ISearcher
         long filesMatched = 0;
         long filesSkipped = 0;
         long filesFailed = 0;
+        long lastProgressTimestamp = 0;
+        const long ProgressIntervalMs = 100;
 
-        void PublishProgress()
+        void PublishProgress(bool force = false)
         {
-            request.Progress?.Invoke(new SearchProgress(
+            if (request.Progress is null)
+                return;
+
+            // Per-file callbacks marshal to the caller (often a UI thread);
+            // throttle to ~10/s and publish exact totals once at the end.
+            if (!force)
+            {
+                var now = Environment.TickCount64;
+                var last = Interlocked.Read(ref lastProgressTimestamp);
+                if (now - last < ProgressIntervalMs ||
+                    Interlocked.CompareExchange(ref lastProgressTimestamp, now, last) != last)
+                {
+                    return;
+                }
+            }
+
+            request.Progress(new SearchProgress(
                 Interlocked.Read(ref filesEnumerated),
                 Interlocked.Read(ref filesProcessed),
                 Interlocked.Read(ref filesMatched),
@@ -93,18 +116,20 @@ public sealed class Searcher : ISearcher
                                 Interlocked.Increment(ref filesMatched);
                         }
                         catch (OperationCanceledException) { throw; }
-                        catch
+                        catch (Exception ex)
                         {
+                            // Per-file errors must not kill the run; locked or
+                            // malformed files are routine, so log at Debug.
                             Interlocked.Increment(ref filesFailed);
-                            // Swallow per-file errors so one bad file doesn't kill the run.
-                            // A logging hook could be added here.
+                            _logger.LogDebug(ex, "Search failed for file {Path}.", path);
                         }
                         finally
                         {
-                            request.IndexCandidate?.Invoke(path);
                             PublishProgress();
                         }
                     }).ConfigureAwait(false);
+
+                PublishProgress(force: true);
             }
             finally
             {

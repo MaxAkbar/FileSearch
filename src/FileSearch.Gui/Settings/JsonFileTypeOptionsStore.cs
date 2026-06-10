@@ -1,6 +1,8 @@
 using System;
 using System.IO;
 using System.Text.Json;
+using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Logging.Abstractions;
 
 namespace FileSearch.Gui.Settings;
 
@@ -12,15 +14,17 @@ public sealed class JsonFileTypeOptionsStore : IFileTypeOptionsStore
     };
 
     private readonly string _path;
+    private readonly ILogger _logger;
 
-    public JsonFileTypeOptionsStore()
-        : this(GetDefaultPath())
+    public JsonFileTypeOptionsStore(ILogger<JsonFileTypeOptionsStore>? logger = null)
+        : this(GetDefaultPath(), logger)
     {
     }
 
-    internal JsonFileTypeOptionsStore(string path)
+    internal JsonFileTypeOptionsStore(string path, ILogger<JsonFileTypeOptionsStore>? logger = null)
     {
         _path = path;
+        _logger = logger ?? NullLogger<JsonFileTypeOptionsStore>.Instance;
     }
 
     public FileTypeOptions Load()
@@ -39,8 +43,9 @@ public sealed class JsonFileTypeOptionsStore : IFileTypeOptionsStore
             Normalize(options);
             return options;
         }
-        catch
+        catch (Exception ex)
         {
+            _logger.LogWarning(ex, "Could not load file-type options; using defaults.");
             return new FileTypeOptions();
         }
     }
@@ -54,12 +59,16 @@ public sealed class JsonFileTypeOptionsStore : IFileTypeOptionsStore
             if (!string.IsNullOrEmpty(directory))
                 Directory.CreateDirectory(directory);
 
+            // Write-then-move so a crash mid-write can't truncate the file.
             var json = JsonSerializer.Serialize(options, s_options);
-            File.WriteAllText(_path, json);
+            var temp = _path + ".tmp";
+            File.WriteAllText(temp, json);
+            File.Move(temp, _path, overwrite: true);
         }
-        catch
+        catch (Exception ex)
         {
             // File-type configuration is user-editable convenience; never crash on save.
+            _logger.LogWarning(ex, "Could not save file-type options.");
         }
     }
 
@@ -76,7 +85,7 @@ public sealed class JsonFileTypeOptionsStore : IFileTypeOptionsStore
         {
             foreach (var value in values)
             {
-                foreach (var extension in MainViewModelsExtensionParser.Parse(value))
+                foreach (var extension in FileSearch.Core.ExtensionList.Parse(value))
                     result.Add(extension);
             }
         }
@@ -90,25 +99,5 @@ public sealed class JsonFileTypeOptionsStore : IFileTypeOptionsStore
             Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData),
             "FileSearch");
         return Path.Combine(folder, "file-types.json");
-    }
-
-    private static class MainViewModelsExtensionParser
-    {
-        public static IEnumerable<string> Parse(string raw)
-        {
-            if (string.IsNullOrWhiteSpace(raw)) yield break;
-
-            foreach (var value in raw.Split(new[] { ';', ',', ' ', '\r', '\n', '\t' }, StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))
-            {
-                var extension = value.Trim();
-                if (extension.StartsWith("*.", StringComparison.Ordinal))
-                    extension = extension[1..];
-                if (!extension.StartsWith(".", StringComparison.Ordinal))
-                    extension = "." + extension;
-                extension = extension.ToLowerInvariant();
-                if (extension.Length > 1)
-                    yield return extension;
-            }
-        }
     }
 }

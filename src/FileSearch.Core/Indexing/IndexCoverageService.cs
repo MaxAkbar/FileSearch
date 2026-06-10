@@ -6,9 +6,9 @@ namespace FileSearch.Core.Indexing;
 
 public sealed class IndexCoverageService
 {
-    private readonly IFileIndex _index;
+    private readonly IIndexSearch _index;
 
-    public IndexCoverageService(IFileIndex index)
+    public IndexCoverageService(IIndexSearch index)
     {
         _index = index;
     }

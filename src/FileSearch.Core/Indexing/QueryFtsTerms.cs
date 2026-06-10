@@ -73,7 +73,7 @@ internal static partial class QueryFtsTerms
         }
     }
 
-    private static IReadOnlySet<string> ExtractTokens(string value)
+    private static HashSet<string> ExtractTokens(string value)
     {
         var tokens = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         foreach (Match match in TokenRegex().Matches(value))
