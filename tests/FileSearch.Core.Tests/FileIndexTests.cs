@@ -689,9 +689,9 @@ public sealed class FileIndexTests : IDisposable
         {
             await Task.CompletedTask;
             throw new InvalidOperationException("Indexed search should not be used while background indexing is processing.");
-            #pragma warning disable CS0162
+#pragma warning disable CS0162
             yield break;
-            #pragma warning restore CS0162
+#pragma warning restore CS0162
         }
 
         public Task<IndexCoverage> GetCoverageAsync(SearchRequest request, CancellationToken cancellationToken) =>

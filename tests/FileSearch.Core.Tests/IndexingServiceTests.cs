@@ -32,6 +32,33 @@ public sealed class IndexingServiceTests
         }
     }
 
+    [Fact]
+    public async Task PauseDefersProcessingUntilResume()
+    {
+        var index = new BlockingFileIndex();
+        var queue = new IndexQueue(index);
+        var service = new IndexingService(index, queue, new IndexWatcherService(queue));
+        var root = Path.Combine(Path.GetTempPath(), "filesearch-pause-" + Guid.NewGuid().ToString("N"));
+
+        await service.StartAsync(Array.Empty<IndexedLocation>(), TestContext.Current.CancellationToken);
+        try
+        {
+            service.Pause();
+            await service.EnqueueRootRefreshAsync(root, new WalkerOptions(), IndexQueuePriority.High, TestContext.Current.CancellationToken);
+
+            // The worker dequeues the item but must hold it in the pause loop.
+            await Task.Delay(500, TestContext.Current.CancellationToken);
+            Assert.False(index.RefreshStarted.Task.IsCompleted);
+
+            service.Resume();
+            await index.RefreshStarted.Task.WaitAsync(TimeSpan.FromSeconds(10), TestContext.Current.CancellationToken);
+        }
+        finally
+        {
+            await service.StopAsync(TestContext.Current.CancellationToken);
+        }
+    }
+
     private static async Task WaitUntilAsync(Func<bool> condition, CancellationToken cancellationToken)
     {
         using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(5));

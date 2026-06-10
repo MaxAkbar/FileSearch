@@ -1,7 +1,7 @@
 using System;
 using System.Drawing;
-using System.Linq;
 using System.IO;
+using System.Linq;
 using System.Windows;
 using FileSearch.Core;
 using FileSearch.Core.Logging;
