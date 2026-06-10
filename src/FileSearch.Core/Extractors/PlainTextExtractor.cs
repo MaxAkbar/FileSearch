@@ -13,29 +13,7 @@ namespace FileSearch.Core.Extractors;
 /// </summary>
 public sealed class PlainTextExtractor : ITextExtractor
 {
-    private static readonly string[] s_extensions =
-    {
-        ".txt", ".text", ".md", ".markdown", ".rst", ".log", ".csv", ".tsv",
-        ".jsonl", ".ndjson",
-        ".json", ".jsonc", ".xml", ".yaml", ".yml", ".toml", ".ini", ".cfg", ".conf",
-        ".properties", ".lock", ".sln", ".slnx", ".csproj", ".vbproj", ".fsproj",
-        ".css", ".scss", ".less",
-        ".html", ".htm", ".cshtml", ".vbhtml", ".asp", ".aspx", ".ascx", ".ashx", ".asmx", ".master",
-        ".razor", ".jsp", ".jspx", ".ejs", ".hbs", ".handlebars", ".mustache", ".vue", ".svelte", ".astro",
-        ".js", ".jsx", ".mjs", ".cjs", ".ts", ".tsx",
-        ".cs", ".csx", ".fs", ".fsx", ".vb",
-        ".c", ".h", ".cpp", ".hpp", ".cc", ".cxx",
-        ".py", ".rb", ".go", ".rs", ".java", ".kt", ".kts", ".swift", ".php", ".pl", ".pm",
-        ".lua", ".r", ".m", ".mm", ".scala", ".sc", ".groovy", ".gvy", ".dart", ".ex", ".exs",
-        ".erl", ".hrl", ".clj", ".cljs", ".cljc", ".zig", ".nim", ".hs", ".lhs", ".ml", ".mli",
-        ".pas", ".pp", ".inc",
-        ".sh", ".bash", ".zsh", ".ps1", ".psm1", ".bat", ".cmd",
-        ".sql", ".graphql", ".gql", ".proto", ".http", ".rest",
-        ".dockerfile", ".gradle", ".tf", ".tfvars", ".bicep",
-        ".env", ".gitignore", ".gitattributes", ".editorconfig",
-    };
-
-    public IReadOnlyCollection<string> SupportedExtensions => s_extensions;
+    public IReadOnlyCollection<string> SupportedExtensions => TextFileExtensions.All;
 
     private const int BinarySniffBytes = 8192;
 

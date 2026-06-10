@@ -6,10 +6,14 @@ namespace FileSearch.Core.Extractors;
 
 internal static class MarkupText
 {
-    private static readonly Regex s_blockTagRegex = new(@"<\s*(br|p|div|li|tr|td|th|h[1-6]|section|article|header|footer)\b[^>]*>", RegexOptions.IgnoreCase | RegexOptions.CultureInvariant);
-    private static readonly Regex s_tagRegex = new("<[^>]+>", RegexOptions.CultureInvariant);
-    private static readonly Regex s_scriptAndStyleRegex = new(@"<\s*(script|style)\b[^>]*>.*?<\s*/\s*\1\s*>", RegexOptions.IgnoreCase | RegexOptions.Singleline | RegexOptions.CultureInvariant);
-    private static readonly Regex s_commentRegex = new(@"<!--.*?-->", RegexOptions.Singleline | RegexOptions.CultureInvariant);
+    // These run over untrusted document content; time-box them like
+    // RegexQuery does so a pathological input can't stall a worker.
+    private static readonly TimeSpan s_regexTimeout = TimeSpan.FromSeconds(2);
+
+    private static readonly Regex s_blockTagRegex = new(@"<\s*(br|p|div|li|tr|td|th|h[1-6]|section|article|header|footer)\b[^>]*>", RegexOptions.IgnoreCase | RegexOptions.CultureInvariant, s_regexTimeout);
+    private static readonly Regex s_tagRegex = new("<[^>]+>", RegexOptions.CultureInvariant, s_regexTimeout);
+    private static readonly Regex s_scriptAndStyleRegex = new(@"<\s*(script|style)\b[^>]*>.*?<\s*/\s*\1\s*>", RegexOptions.IgnoreCase | RegexOptions.Singleline | RegexOptions.CultureInvariant, s_regexTimeout);
+    private static readonly Regex s_commentRegex = new(@"<!--.*?-->", RegexOptions.Singleline | RegexOptions.CultureInvariant, s_regexTimeout);
 
     public static string FromXml(string value)
     {

@@ -105,6 +105,54 @@ public sealed class AdditionalDocumentExtractorTests : IDisposable
         Assert.Contains(lines, line => line.Content == "Body has needle text.");
     }
 
+    [Fact]
+    public async Task EmlExtractor_DecodesQuotedPrintableUtf8Body()
+    {
+        var path = Path.Combine(_directory, "qp.eml");
+        await File.WriteAllTextAsync(
+            path,
+            "Subject: QP test\r\nContent-Type: text/plain; charset=\"utf-8\"\r\nContent-Transfer-Encoding: quoted-printable\r\n\r\nna=C3=AFve needle caf=C3=A9",
+            TestContext.Current.CancellationToken);
+
+        var lines = await ReadAllAsync(new EmlExtractor(), path);
+
+        // The old char-per-byte decoder produced "naÃ¯ve" mojibake.
+        Assert.Contains(lines, line => line.Content == "naïve needle café");
+    }
+
+    [Fact]
+    public async Task EmlExtractor_SplitsBodyIntoSeparateLines()
+    {
+        var path = Path.Combine(_directory, "multiline.eml");
+        await File.WriteAllTextAsync(
+            path,
+            "Subject: Lines\r\n\r\nfirst body line\r\nsecond body line",
+            TestContext.Current.CancellationToken);
+
+        var lines = await ReadAllAsync(new EmlExtractor(), path);
+
+        Assert.Contains(lines, line => line.Content == "first body line");
+        Assert.Contains(lines, line => line.Content == "second body line");
+    }
+
+    [Fact]
+    public async Task RtfExtractor_SplitsParagraphsIntoLines()
+    {
+        var path = Path.Combine(_directory, "paragraphs.rtf");
+        await File.WriteAllTextAsync(
+            path,
+            @"{\rtf1\ansi First paragraph needle.\par Second paragraph text.}",
+            TestContext.Current.CancellationToken);
+
+        var lines = await ReadAllAsync(new RtfExtractor(), path);
+
+        Assert.Equal(2, lines.Count);
+        Assert.Equal("First paragraph needle.", lines[0].Content);
+        Assert.Equal(1, lines[0].Number);
+        Assert.Equal("Second paragraph text.", lines[1].Content);
+        Assert.Equal(2, lines[1].Number);
+    }
+
     private static async Task<List<TextLine>> ReadAllAsync(ITextExtractor extractor, string path)
     {
         var lines = new List<TextLine>();

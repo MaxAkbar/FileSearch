@@ -6,6 +6,14 @@ namespace FileSearch.Core.Walker;
 public sealed record WalkerOptions
 {
     /// <summary>
+    /// The default file-size cap shared by every front end (GUI, CLI, core),
+    /// so the same query can't return different results per surface. Large
+    /// files are rarely useful search targets and whole-file extractors
+    /// would balloon on them; users override per search.
+    /// </summary>
+    public const long DefaultMaxFileSizeBytes = 100L * 1024 * 1024;
+
+    /// <summary>
     /// Directory names whose entire subtrees are pruned from traversal.
     /// Defaults to folders that are huge and almost never the search target;
     /// pass an empty set to walk everything. Note: bin/obj are deliberately
@@ -28,7 +36,7 @@ public sealed record WalkerOptions
     public long MinFileSizeBytes { get; init; }
 
     /// <summary>Files larger than this are skipped. 0 disables the filter.</summary>
-    public long MaxFileSizeBytes { get; init; } = 50L * 1024 * 1024;
+    public long MaxFileSizeBytes { get; init; } = DefaultMaxFileSizeBytes;
 
     /// <summary>Only include files modified at or after this UTC time.</summary>
     public DateTime? ModifiedAfterUtc { get; init; }

@@ -7,7 +7,6 @@ namespace FileSearch.Cli;
 internal sealed class CliState
 {
     public const int DefaultResultLimit = 50;
-    private const long DefaultMaxFileSizeBytes = 50L * 1024 * 1024;
 
     public string Root { get; set; } = Directory.GetCurrentDirectory();
 
@@ -35,7 +34,7 @@ internal sealed class CliState
 
     public long MinFileSizeBytes { get; set; }
 
-    public long MaxFileSizeBytes { get; set; } = DefaultMaxFileSizeBytes;
+    public long MaxFileSizeBytes { get; set; } = WalkerOptions.DefaultMaxFileSizeBytes;
 
     public DateTime? ModifiedAfterUtc { get; set; }
 
@@ -66,7 +65,7 @@ internal sealed class CliState
         ExcludeDirectories.Clear();
         ExcludeDirectories.UnionWith(WalkerOptions.DefaultExcludeDirectories);
         MinFileSizeBytes = 0;
-        MaxFileSizeBytes = DefaultMaxFileSizeBytes;
+        MaxFileSizeBytes = WalkerOptions.DefaultMaxFileSizeBytes;
         ModifiedAfterUtc = null;
         ModifiedBeforeUtc = null;
     }

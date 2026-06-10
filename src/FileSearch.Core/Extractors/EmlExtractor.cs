@@ -1,3 +1,4 @@
+using System;
 using System.Collections.Generic;
 using System.Runtime.CompilerServices;
 using System.Text;
@@ -12,10 +13,16 @@ namespace FileSearch.Core.Extractors;
 /// </summary>
 public sealed class EmlExtractor : ITextExtractor
 {
-    private static readonly Regex s_boundaryRegex = new(@"boundary=(?:(""[^""\r\n]+"")|([^;\r\n]+))", RegexOptions.IgnoreCase | RegexOptions.CultureInvariant);
-    private static readonly Regex s_headerFoldRegex = new("\n[\t ]+", RegexOptions.CultureInvariant);
-    private static readonly Regex s_encodedWordRegex = new(@"=\?([^?]+)\?([bqBQ])\?([^?]+)\?=", RegexOptions.CultureInvariant);
-    private static readonly Regex s_quotedPrintableHexRegex = new("=([0-9A-Fa-f]{2})", RegexOptions.CultureInvariant);
+    /// <summary>Cap on how much of a message is read; the rest isn't searched.</summary>
+    private const int MaxContentChars = 10 * 1024 * 1024;
+
+    // Time-boxed like RegexQuery — these run over untrusted message content.
+    private static readonly TimeSpan s_regexTimeout = TimeSpan.FromSeconds(2);
+
+    private static readonly Regex s_boundaryRegex = new(@"boundary=(?:(""[^""\r\n]+"")|([^;\r\n]+))", RegexOptions.IgnoreCase | RegexOptions.CultureInvariant, s_regexTimeout);
+    private static readonly Regex s_headerFoldRegex = new("\n[\t ]+", RegexOptions.CultureInvariant, s_regexTimeout);
+    private static readonly Regex s_encodedWordRegex = new(@"=\?([^?]+)\?([bqBQ])\?([^?]+)\?=", RegexOptions.CultureInvariant, s_regexTimeout);
+    private static readonly Regex s_charsetRegex = new(@"charset=""?([^"";\s]+)""?", RegexOptions.IgnoreCase | RegexOptions.CultureInvariant, s_regexTimeout);
 
     public IReadOnlyCollection<string> SupportedExtensions { get; } = new[] { ".eml" };
 
@@ -23,18 +30,22 @@ public sealed class EmlExtractor : ITextExtractor
         string path,
         [EnumeratorCancellation] CancellationToken cancellationToken)
     {
-        var content = await File.ReadAllTextAsync(path, cancellationToken).ConfigureAwait(false);
-        var lines = ExtractMessageText(content);
+        var content = await BoundedFileReader.ReadTextAsync(path, MaxContentChars, cancellationToken).ConfigureAwait(false);
 
         int lineNumber = 0;
-        foreach (var line in lines)
+        foreach (var block in ExtractMessageText(content))
         {
-            cancellationToken.ThrowIfCancellationRequested();
-            var normalized = MarkupText.Normalize(line);
-            if (string.IsNullOrEmpty(normalized)) continue;
+            // Split before normalizing — Normalize collapses newlines, which
+            // used to flatten an entire body into one giant line.
+            foreach (var raw in block.Split('\n'))
+            {
+                cancellationToken.ThrowIfCancellationRequested();
+                var normalized = MarkupText.Normalize(raw);
+                if (string.IsNullOrEmpty(normalized)) continue;
 
-            lineNumber++;
-            yield return new TextLine(lineNumber, normalized);
+                lineNumber++;
+                yield return new TextLine(lineNumber, normalized);
+            }
         }
     }
 
@@ -61,7 +72,7 @@ public sealed class EmlExtractor : ITextExtractor
 
     private static (string Headers, string Body) SplitHeadersAndBody(string content)
     {
-        var normalized = content.Replace("\r\n", "\n");
+        var normalized = content.Replace("\r\n", "\n", StringComparison.Ordinal);
         var separator = normalized.IndexOf("\n\n", StringComparison.Ordinal);
         return separator < 0
             ? (normalized, string.Empty)
@@ -101,7 +112,7 @@ public sealed class EmlExtractor : ITextExtractor
     private static string DecodeBody(string body, string headers)
     {
         var decoded = headers.Contains("Content-Transfer-Encoding: quoted-printable", StringComparison.OrdinalIgnoreCase)
-            ? DecodeQuotedPrintable(body)
+            ? GetCharset(headers).GetString(DecodeQuotedPrintableBytes(body))
             : body;
 
         return headers.Contains("Content-Type: text/html", StringComparison.OrdinalIgnoreCase)
@@ -109,19 +120,35 @@ public sealed class EmlExtractor : ITextExtractor
             : decoded;
     }
 
+    private static Encoding GetCharset(string headers)
+    {
+        var match = s_charsetRegex.Match(headers);
+        if (!match.Success)
+            return Encoding.UTF8;
+
+        try
+        {
+            return Encoding.GetEncoding(match.Groups[1].Value);
+        }
+        catch (ArgumentException)
+        {
+            return Encoding.UTF8;
+        }
+    }
+
     private static string DecodeHeader(string value)
     {
         return s_encodedWordRegex.Replace(value, match =>
         {
             var charset = match.Groups[1].Value;
-            var encoding = match.Groups[2].Value;
+            var encodingKind = match.Groups[2].Value;
             var encoded = match.Groups[3].Value;
 
             try
             {
-                var bytes = encoding.Equals("B", StringComparison.OrdinalIgnoreCase)
+                var bytes = encodingKind.Equals("B", StringComparison.OrdinalIgnoreCase)
                     ? Convert.FromBase64String(encoded)
-                    : Encoding.ASCII.GetBytes(DecodeQuotedPrintable(encoded.Replace('_', ' ')));
+                    : DecodeQuotedPrintableBytes(encoded.Replace('_', ' '));
                 return Encoding.GetEncoding(charset).GetString(bytes);
             }
             catch
@@ -131,10 +158,34 @@ public sealed class EmlExtractor : ITextExtractor
         });
     }
 
-    private static string DecodeQuotedPrintable(string value)
+    /// <summary>
+    /// Decodes =XX escapes into raw bytes so multi-byte encodings survive —
+    /// the old char-per-byte version mangled any non-ASCII text into
+    /// unsearchable mojibake.
+    /// </summary>
+    private static byte[] DecodeQuotedPrintableBytes(string value)
     {
-        var softLineBreaksRemoved = value.Replace("=\r\n", string.Empty).Replace("=\n", string.Empty);
-        return s_quotedPrintableHexRegex.Replace(softLineBreaksRemoved, match =>
-            ((char)Convert.ToByte(match.Groups[1].Value, 16)).ToString());
+        var withoutSoftBreaks = value
+            .Replace("=\r\n", string.Empty, StringComparison.Ordinal)
+            .Replace("=\n", string.Empty, StringComparison.Ordinal);
+
+        var bytes = new List<byte>(withoutSoftBreaks.Length);
+        for (int i = 0; i < withoutSoftBreaks.Length; i++)
+        {
+            var ch = withoutSoftBreaks[i];
+            if (ch == '=' && i + 2 < withoutSoftBreaks.Length &&
+                Uri.IsHexDigit(withoutSoftBreaks[i + 1]) && Uri.IsHexDigit(withoutSoftBreaks[i + 2]))
+            {
+                bytes.Add(Convert.ToByte(withoutSoftBreaks.Substring(i + 1, 2), 16));
+                i += 2;
+            }
+            else
+            {
+                // Quoted-printable text outside escapes is ASCII by spec.
+                bytes.Add((byte)ch);
+            }
+        }
+
+        return bytes.ToArray();
     }
 }

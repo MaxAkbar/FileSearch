@@ -898,9 +898,11 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
                 : _fileTypeOptions.DocumentExtensions.ToHashSet(StringComparer.OrdinalIgnoreCase),
             Recursive = IncludeSubfolders,
             MinFileSizeBytes = (long)Math.Max(0, MinSizeKB) * 1024,
+            // No explicit max falls back to the shared default cap so GUI and
+            // CLI searches agree; enter a larger value to raise it.
             MaxFileSizeBytes = MaxSizeKB > 0
                 ? (long)MaxSizeKB * 1024
-                : 0, // 0 = no max
+                : WalkerOptions.DefaultMaxFileSizeBytes,
             ModifiedAfterUtc = ModifiedAfterEnabled ? ModifiedAfter.ToUniversalTime() : null,
             ModifiedBeforeUtc = ModifiedBeforeEnabled
                 ? ModifiedBefore.AddDays(1).AddSeconds(-1).ToUniversalTime() // inclusive end-of-day

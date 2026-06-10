@@ -12,16 +12,30 @@ namespace FileSearch.Core.Extractors;
 /// </summary>
 public sealed class RtfExtractor : ITextExtractor
 {
+    /// <summary>Cap on how much of a document is read; the rest isn't searched.</summary>
+    private const int MaxContentChars = 10 * 1024 * 1024;
+
     public IReadOnlyCollection<string> SupportedExtensions { get; } = new[] { ".rtf" };
 
     public async IAsyncEnumerable<TextLine> ExtractAsync(
         string path,
         [EnumeratorCancellation] CancellationToken cancellationToken)
     {
-        var content = await File.ReadAllTextAsync(path, cancellationToken).ConfigureAwait(false);
-        var text = MarkupText.Normalize(StripRtf(content));
-        if (!string.IsNullOrEmpty(text))
-            yield return new TextLine(1, text);
+        var content = await BoundedFileReader.ReadTextAsync(path, MaxContentChars, cancellationToken).ConfigureAwait(false);
+        var text = StripRtf(content);
+
+        // One TextLine per paragraph — emitting the whole document as a
+        // single line broke line numbers and collapsed MaxHitsPerFile to 1.
+        int lineNumber = 0;
+        foreach (var raw in text.Split('\n'))
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            var line = MarkupText.Normalize(raw);
+            if (string.IsNullOrEmpty(line)) continue;
+
+            lineNumber++;
+            yield return new TextLine(lineNumber, line);
+        }
     }
 
     private static string StripRtf(string value)
@@ -99,7 +113,9 @@ public sealed class RtfExtractor : ITextExtractor
                     sb.Append(char.ConvertFromUtf32(codePoint < 0 ? codePoint + 65536 : codePoint));
             }
 
-            if (controlWord is "par" or "line" or "tab")
+            if (controlWord is "par" or "line")
+                sb.Append('\n');
+            else if (controlWord == "tab")
                 sb.Append(' ');
 
             if (i < value.Length && value[i] != ' ')
