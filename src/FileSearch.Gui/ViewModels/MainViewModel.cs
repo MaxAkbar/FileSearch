@@ -693,7 +693,7 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
 
     public async Task StopBackgroundIndexingAsync()
     {
-        await _indexingService.StopAsync(CancellationToken.None).ConfigureAwait(true);
+        await _indexingService.StopAsync(CancellationToken.None).ConfigureAwait(false);
     }
 
     [RelayCommand]

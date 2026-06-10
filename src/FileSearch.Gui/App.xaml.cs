@@ -132,7 +132,17 @@ public partial class App : System.Windows.Application
 
                 vm.PersistSettings();
                 fileTypeStore.Save(vm.BuildFileTypeOptions());
-                vm.StopBackgroundIndexingAsync().GetAwaiter().GetResult();
+
+                // Stop indexing off the dispatcher and with a hard bound:
+                // blocking the UI thread on a dispatcher-resuming task
+                // deadlocked shutdown, and exit must never hang even if a
+                // background write is wedged.
+                if (!Task.Run(vm.StopBackgroundIndexingAsync).Wait(TimeSpan.FromSeconds(5)))
+                {
+                    _host.Services.GetService<Microsoft.Extensions.Logging.ILoggerFactory>()
+                        ?.CreateLogger<App>()
+                        .LogWarning("Background indexing did not stop within the exit grace period.");
+                }
             }
             catch
             {
