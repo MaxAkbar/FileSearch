@@ -44,6 +44,8 @@ public partial class App : System.Windows.Application
                 services.AddSingleton<IThemeService, ThemeService>();
                 services.AddSingleton<IFileLauncher, FileLauncher>();
                 services.AddSingleton<IShellIntegrationService, ShellIntegrationService>();
+                services.AddSingleton<IFolderPicker, FolderPicker>();
+                services.AddSingleton<IUiDispatcher, WpfUiDispatcher>();
                 services.AddSingleton<MainViewModel>();
                 services.AddSingleton<MainWindow>();
             })

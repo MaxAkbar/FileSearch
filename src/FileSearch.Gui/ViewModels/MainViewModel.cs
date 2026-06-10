@@ -42,6 +42,8 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
     private readonly IFileIndex _fileIndex;
     private readonly IIndexingService _indexingService;
     private readonly IShellIntegrationService _shellIntegrationService;
+    private readonly IFolderPicker _folderPicker;
+    private readonly IUiDispatcher _dispatcher;
 
     private readonly Dictionary<string, FileResultViewModel> _filesByPath =
         new(StringComparer.OrdinalIgnoreCase);
@@ -62,7 +64,9 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
         IFileTypeOptionsStore fileTypeOptionsStore,
         IFileIndex fileIndex,
         IIndexingService indexingService,
-        IShellIntegrationService shellIntegrationService)
+        IShellIntegrationService shellIntegrationService,
+        IFolderPicker folderPicker,
+        IUiDispatcher dispatcher)
     {
         _searcher = searcher;
         _extractorRegistry = extractorRegistry;
@@ -76,6 +80,8 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
         _fileIndex = fileIndex;
         _indexingService = indexingService;
         _shellIntegrationService = shellIntegrationService;
+        _folderPicker = folderPicker;
+        _dispatcher = dispatcher;
         _indexingService.StatusChanged += OnIndexingStatusChanged;
 
         // Set up the filtered view used by the "Filter" tab.
@@ -349,13 +355,9 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
     [RelayCommand]
     private void Browse()
     {
-        var dialog = new OpenFolderDialog
-        {
-            Title = "Select folder to search",
-            InitialDirectory = string.IsNullOrEmpty(SearchPath) ? Environment.CurrentDirectory : SearchPath,
-        };
-        if (dialog.ShowDialog() == true)
-            SearchPath = dialog.FolderName;
+        var folder = _folderPicker.PickFolder("Select folder to search", SearchPath);
+        if (folder is not null)
+            SearchPath = folder;
     }
 
     [RelayCommand(CanExecute = nameof(CanSearch))]
@@ -726,7 +728,7 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
     [RelayCommand]
     private void RemoveRecentPath(string? path)
     {
-        RemoveFromList(RecentPaths, path);
+        SearchHistory.Remove(RecentPaths, path);
         SaveSettings();
     }
 
@@ -742,7 +744,7 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
     [RelayCommand]
     private void RemoveRecentQuery(string? query)
     {
-        RemoveFromList(RecentQueries, query);
+        SearchHistory.Remove(RecentQueries, query);
         SaveSettings();
     }
 
@@ -961,11 +963,7 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
 
     private void OnIndexingStatusChanged(object? sender, IndexingStatus status)
     {
-        var dispatcher = System.Windows.Application.Current?.Dispatcher;
-        if (dispatcher is null)
-            return;
-
-        dispatcher.BeginInvoke(() =>
+        _dispatcher.Post(() =>
         {
             IsIndexing = status.IsProcessing || status.QueueLength > 0;
             IsIndexingPaused = status.IsPaused;
@@ -1055,8 +1053,8 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
 
     private void RecordHistory(string query, string path)
     {
-        PromoteToFront(RecentQueries, query);
-        PromoteToFront(RecentPaths, path);
+        SearchHistory.PromoteToFront(RecentQueries, query, MaxHistoryEntries);
+        SearchHistory.PromoteToFront(RecentPaths, path, MaxHistoryEntries);
 
         // Persist immediately so history survives a crash.
         SaveSettings();
@@ -1099,60 +1097,6 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
                 .ToList();
             settings.LastIndexedRoot = string.Empty;
         });
-    }
-
-    private static void RemoveFromList(ObservableCollection<string> list, string? value)
-    {
-        var trimmed = value?.Trim();
-        if (string.IsNullOrEmpty(trimmed))
-            return;
-
-        for (var i = list.Count - 1; i >= 0; i--)
-        {
-            if (string.Equals(list[i], trimmed, StringComparison.OrdinalIgnoreCase))
-                list.RemoveAt(i);
-        }
-    }
-
-    private static void PromoteToFront(ObservableCollection<string> list, string value)
-    {
-        var trimmed = value?.Trim();
-        if (string.IsNullOrEmpty(trimmed)) return;
-
-        var matchIndex = -1;
-        for (int i = 0; i < list.Count; i++)
-        {
-            if (string.Equals(list[i], trimmed, StringComparison.OrdinalIgnoreCase))
-            {
-                matchIndex = i;
-                break;
-            }
-        }
-
-        for (int i = list.Count - 1; i >= 0; i--)
-        {
-            if (i != matchIndex && string.Equals(list[i], trimmed, StringComparison.OrdinalIgnoreCase))
-            {
-                list.RemoveAt(i);
-                if (i < matchIndex)
-                    matchIndex--;
-            }
-        }
-
-        if (matchIndex < 0)
-        {
-            list.Insert(0, trimmed);
-        }
-        else
-        {
-            if (!string.Equals(list[matchIndex], trimmed, StringComparison.Ordinal))
-                list[matchIndex] = trimmed;
-            if (matchIndex > 0)
-                list.Move(matchIndex, 0);
-        }
-
-        while (list.Count > MaxHistoryEntries)
-            list.RemoveAt(list.Count - 1);
     }
 
     partial void OnFileNamePatternChanged(string value) =>

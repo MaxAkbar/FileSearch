@@ -336,6 +336,25 @@ public sealed class FileIndexTests : IDisposable
     }
 
     [Fact]
+    public async Task HandlesPathsWithApostrophesThroughoutTheSqlLayer()
+    {
+        var file = Path.Combine(_root, "O'Brien's notes.txt");
+        File.WriteAllText(file, "apostrophe needle\n");
+
+        await BuildAsync();
+
+        var hit = Assert.Single(await IndexedSearchAsync(new TermQuery("needle")));
+        Assert.EndsWith("notes.txt", hit.Path);
+
+        await _index.SavePendingChangeAsync(_root, file, IndexChangeKind.UpsertFile, TestContext.Current.CancellationToken);
+        var pending = Assert.Single(await _index.GetPendingChangesAsync(TestContext.Current.CancellationToken));
+        Assert.Equal(IndexPath.NormalizeFile(file), pending.Path);
+
+        await _index.RemovePendingChangeAsync(_root, file, IndexChangeKind.UpsertFile, TestContext.Current.CancellationToken);
+        Assert.Empty(await _index.GetPendingChangesAsync(TestContext.Current.CancellationToken));
+    }
+
+    [Fact]
     public async Task UpsertSkipsReextractionWhenSizeAndTimestampUnchanged()
     {
         var file = Path.Combine(_root, "stable.txt");
