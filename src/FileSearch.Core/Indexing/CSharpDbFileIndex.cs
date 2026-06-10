@@ -195,7 +195,7 @@ public sealed class CSharpDbFileIndex : IFileIndex, IDisposable
             }
             else
             {
-                var sql = IndexTables.SelectLinesSql(rootId.Value, string.Empty);
+                var sql = IndexTables.SelectLinesSql(rootId.Value);
                 await foreach (var line in IndexTables.ReadLinesAsync(db, sql, cancellationToken).ConfigureAwait(false))
                 {
                     if (TryCreateHit(line, request.Expression, request.WalkerOptions, hitsByPath, fileFilterVerdicts, highlightBuffer, out var hit))
@@ -216,7 +216,7 @@ public sealed class CSharpDbFileIndex : IFileIndex, IDisposable
         IReadOnlyList<long> lineIds,
         CancellationToken cancellationToken)
     {
-        var sql = IndexTables.SelectLinesSql(rootId, $"AND l.id IN ({string.Join(",", lineIds)})");
+        var sql = IndexTables.SelectLinesSql(rootId, lineIds);
         return IndexTables.ReadLinesAsync(db, sql, cancellationToken);
     }
 

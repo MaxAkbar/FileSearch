@@ -31,15 +31,18 @@ internal sealed record IndexedLine(
     string Content);
 
 /// <summary>
-/// Every DML statement against the index tables lives here, with
-/// <see cref="SqlText"/> as the single escaping choke point so a forgotten
-/// escape can't slip into an ad-hoc query elsewhere. Schema DDL lives in
+/// Every DML statement against the index tables lives here, composed through
+/// <see cref="Sql.Format"/> so values can't reach the SQL text unescaped —
+/// the handler has no raw-string hole to forget. Schema DDL lives in
 /// <see cref="IndexDatabase"/>.
 /// </summary>
 internal static class IndexTables
 {
-    public static string SqlText(string? value) =>
-        value is null ? "NULL" : "'" + value.Replace("'", "''", StringComparison.Ordinal) + "'";
+    private const string SelectLinesColumns =
+        "SELECT f.path, f.file_name, f.extension, f.size_bytes, f.modified_utc_ticks, l.line_number, l.content " +
+        "FROM lines l INNER JOIN files f ON f.id = l.file_id WHERE ";
+
+    private const string SelectLinesOrder = " ORDER BY f.path, l.line_number";
 
     // ----- index_roots -----
 
@@ -49,14 +52,14 @@ internal static class IndexTables
         if (existing is not null)
         {
             await db.ExecuteAsync(
-                $"UPDATE index_roots SET options_hash = {SqlText(profile)} WHERE id = {existing.Id}",
+                Sql.Format($"UPDATE index_roots SET options_hash = {profile} WHERE id = {existing.Id}"),
                 cancellationToken).ConfigureAwait(false);
             return existing.Id;
         }
 
         var id = await GetNextIdAsync(db, "index_roots", cancellationToken).ConfigureAwait(false);
         await db.ExecuteAsync(
-            $"INSERT INTO index_roots VALUES ({id}, {SqlText(root)}, 0, {SqlText(profile)})",
+            Sql.Format($"INSERT INTO index_roots VALUES ({id}, {root}, 0, {profile})"),
             cancellationToken).ConfigureAwait(false);
         return id;
     }
@@ -64,7 +67,7 @@ internal static class IndexTables
     public static async Task<RootRow?> GetRootAsync(Database db, string root, CancellationToken cancellationToken)
     {
         await using var result = await db.ExecuteAsync(
-            $"SELECT id, indexed_utc_ticks, options_hash FROM index_roots WHERE root_path = {SqlText(root)}",
+            Sql.Format($"SELECT id, indexed_utc_ticks, options_hash FROM index_roots WHERE root_path = {root}"),
             cancellationToken).ConfigureAwait(false);
 
         if (!await result.MoveNextAsync(cancellationToken).ConfigureAwait(false))
@@ -98,11 +101,11 @@ internal static class IndexTables
     public static Task MarkRootRefreshedAsync(Database db, long rootId, string profile, CancellationToken cancellationToken) =>
         ExecuteAsync(
             db,
-            $"UPDATE index_roots SET indexed_utc_ticks = {DateTime.UtcNow.Ticks}, options_hash = {SqlText(profile)} WHERE id = {rootId}",
+            Sql.Format($"UPDATE index_roots SET indexed_utc_ticks = {DateTime.UtcNow.Ticks}, options_hash = {profile} WHERE id = {rootId}"),
             cancellationToken);
 
     public static Task DeleteRootAsync(Database db, long rootId, CancellationToken cancellationToken) =>
-        ExecuteAsync(db, $"DELETE FROM index_roots WHERE id = {rootId}", cancellationToken);
+        ExecuteAsync(db, Sql.Format($"DELETE FROM index_roots WHERE id = {rootId}"), cancellationToken);
 
     // ----- files -----
 
@@ -113,7 +116,7 @@ internal static class IndexTables
         CancellationToken cancellationToken)
     {
         await using var result = await db.ExecuteAsync(
-            $"SELECT id, path, size_bytes, modified_utc_ticks, status FROM files WHERE root_id = {rootId} AND path = {SqlText(path)}",
+            Sql.Format($"SELECT id, path, size_bytes, modified_utc_ticks, status FROM files WHERE root_id = {rootId} AND path = {path}"),
             cancellationToken).ConfigureAwait(false);
 
         if (!await result.MoveNextAsync(cancellationToken).ConfigureAwait(false))
@@ -134,7 +137,7 @@ internal static class IndexTables
     {
         var rows = new Dictionary<string, ExistingFileRow>(StringComparer.OrdinalIgnoreCase);
         await using var result = await db.ExecuteAsync(
-            $"SELECT id, path, size_bytes, modified_utc_ticks, status FROM files WHERE root_id = {rootId}",
+            Sql.Format($"SELECT id, path, size_bytes, modified_utc_ticks, status FROM files WHERE root_id = {rootId}"),
             cancellationToken).ConfigureAwait(false);
 
         while (await result.MoveNextAsync(cancellationToken).ConfigureAwait(false))
@@ -162,26 +165,29 @@ internal static class IndexTables
     {
         var fileName = Path.GetFileName(path);
         var extension = Path.GetExtension(path).ToLowerInvariant();
-        var existing = await ReadIdsAsync(db, $"SELECT id FROM files WHERE root_id = {rootId} AND path = {SqlText(path)}", cancellationToken).ConfigureAwait(false);
+        var existing = await ReadIdsAsync(
+            db,
+            Sql.Format($"SELECT id FROM files WHERE root_id = {rootId} AND path = {path}"),
+            cancellationToken).ConfigureAwait(false);
         var now = DateTime.UtcNow.Ticks;
 
         if (existing.Count == 0)
         {
             var id = await GetNextIdAsync(db, "files", cancellationToken).ConfigureAwait(false);
             await db.ExecuteAsync(
-                "INSERT INTO files VALUES (" +
-                $"{id}, {rootId}, {SqlText(path)}, {SqlText(fileName)}, {SqlText(extension)}, " +
-                $"{info.Length}, {info.LastWriteTimeUtc.Ticks}, {now}, {SqlText(status)}, {SqlText(error)})",
+                Sql.Format(
+                    $"INSERT INTO files VALUES ({id}, {rootId}, {path}, {fileName}, {extension}, " +
+                    $"{info.Length}, {info.LastWriteTimeUtc.Ticks}, {now}, {status}, {error})"),
                 cancellationToken).ConfigureAwait(false);
             return id;
         }
 
         var fileId = existing[0];
         await db.ExecuteAsync(
-            "UPDATE files SET " +
-            $"file_name = {SqlText(fileName)}, extension = {SqlText(extension)}, size_bytes = {info.Length}, " +
-            $"modified_utc_ticks = {info.LastWriteTimeUtc.Ticks}, indexed_utc_ticks = {now}, " +
-            $"status = {SqlText(status)}, error = {SqlText(error)} WHERE id = {fileId}",
+            Sql.Format(
+                $"UPDATE files SET file_name = {fileName}, extension = {extension}, size_bytes = {info.Length}, " +
+                $"modified_utc_ticks = {info.LastWriteTimeUtc.Ticks}, indexed_utc_ticks = {now}, " +
+                $"status = {status}, error = {error} WHERE id = {fileId}"),
             cancellationToken).ConfigureAwait(false);
         return fileId;
     }
@@ -194,7 +200,7 @@ internal static class IndexTables
         CancellationToken cancellationToken) =>
         ExecuteAsync(
             db,
-            $"UPDATE files SET status = {SqlText(status)}, error = {SqlText(error)}, indexed_utc_ticks = {DateTime.UtcNow.Ticks} WHERE id = {fileId}",
+            Sql.Format($"UPDATE files SET status = {status}, error = {error}, indexed_utc_ticks = {DateTime.UtcNow.Ticks} WHERE id = {fileId}"),
             cancellationToken);
 
     /// <summary>Hard-deletes a file row and its lines (no tombstones).</summary>
@@ -204,42 +210,49 @@ internal static class IndexTables
         string path,
         CancellationToken cancellationToken)
     {
-        var ids = await ReadIdsAsync(db, $"SELECT id FROM files WHERE root_id = {rootId} AND path = {SqlText(path)}", cancellationToken).ConfigureAwait(false);
+        var ids = await ReadIdsAsync(
+            db,
+            Sql.Format($"SELECT id FROM files WHERE root_id = {rootId} AND path = {path}"),
+            cancellationToken).ConfigureAwait(false);
         foreach (var id in ids)
         {
             await DeleteLinesAsync(db, id, cancellationToken).ConfigureAwait(false);
-            await db.ExecuteAsync($"DELETE FROM files WHERE id = {id}", cancellationToken).ConfigureAwait(false);
+            await db.ExecuteAsync(Sql.Format($"DELETE FROM files WHERE id = {id}"), cancellationToken).ConfigureAwait(false);
         }
     }
 
     public static Task<List<long>> ReadFileIdsForRootAsync(Database db, long rootId, CancellationToken cancellationToken) =>
-        ReadIdsAsync(db, $"SELECT id FROM files WHERE root_id = {rootId}", cancellationToken);
+        ReadIdsAsync(db, Sql.Format($"SELECT id FROM files WHERE root_id = {rootId}"), cancellationToken);
 
     public static Task DeleteFilesForRootAsync(Database db, long rootId, CancellationToken cancellationToken) =>
-        ExecuteAsync(db, $"DELETE FROM files WHERE root_id = {rootId}", cancellationToken);
+        ExecuteAsync(db, Sql.Format($"DELETE FROM files WHERE root_id = {rootId}"), cancellationToken);
 
     public static Task<long> CountOkFilesAsync(Database db, long rootId, CancellationToken cancellationToken) =>
-        GetCountAsync(db, $"SELECT COUNT(*) FROM files WHERE root_id = {rootId} AND status = '{FileStatus.Ok}'", cancellationToken);
+        GetCountAsync(db, Sql.Format($"SELECT COUNT(*) FROM files WHERE root_id = {rootId} AND status = {FileStatus.Ok}"), cancellationToken);
 
     // ----- lines -----
 
     public static Task DeleteLinesAsync(Database db, long fileId, CancellationToken cancellationToken) =>
-        ExecuteAsync(db, $"DELETE FROM lines WHERE file_id = {fileId}", cancellationToken);
+        ExecuteAsync(db, Sql.Format($"DELETE FROM lines WHERE file_id = {fileId}"), cancellationToken);
 
     public static Task DeleteLinesForFilesAsync(Database db, IEnumerable<long> fileIds, CancellationToken cancellationToken) =>
-        ExecuteAsync(db, $"DELETE FROM lines WHERE file_id IN ({string.Join(",", fileIds)})", cancellationToken);
+        ExecuteAsync(db, Sql.Format($"DELETE FROM lines WHERE file_id IN ({new Sql.IdList(fileIds)})"), cancellationToken);
 
     public static Task<long> CountOkLinesAsync(Database db, long rootId, CancellationToken cancellationToken) =>
         GetCountAsync(
             db,
-            $"SELECT COUNT(*) FROM lines l INNER JOIN files f ON f.id = l.file_id WHERE f.root_id = {rootId} AND f.status = '{FileStatus.Ok}'",
+            Sql.Format($"SELECT COUNT(*) FROM lines l INNER JOIN files f ON f.id = l.file_id WHERE f.root_id = {rootId} AND f.status = {FileStatus.Ok}"),
             cancellationToken);
 
-    public static string SelectLinesSql(long rootId, string linePredicate) =>
-        "SELECT f.path, f.file_name, f.extension, f.size_bytes, f.modified_utc_ticks, l.line_number, l.content " +
-        "FROM lines l INNER JOIN files f ON f.id = l.file_id " +
-        $"WHERE f.root_id = {rootId} AND f.status = '{FileStatus.Ok}' {linePredicate} " +
-        "ORDER BY f.path, l.line_number";
+    public static string SelectLinesSql(long rootId) =>
+        SelectLinesColumns +
+        Sql.Format($"f.root_id = {rootId} AND f.status = {FileStatus.Ok}") +
+        SelectLinesOrder;
+
+    public static string SelectLinesSql(long rootId, IReadOnlyList<long> lineIds) =>
+        SelectLinesColumns +
+        Sql.Format($"f.root_id = {rootId} AND f.status = {FileStatus.Ok} AND l.id IN ({new Sql.IdList(lineIds)})") +
+        SelectLinesOrder;
 
     public static async IAsyncEnumerable<IndexedLine> ReadLinesAsync(
         Database db,
@@ -271,13 +284,12 @@ internal static class IndexTables
         CancellationToken cancellationToken)
     {
         await db.ExecuteAsync(
-            $"DELETE FROM pending_changes WHERE root_path = {SqlText(root)} AND path = {SqlText(path)}",
+            Sql.Format($"DELETE FROM pending_changes WHERE root_path = {root} AND path = {path}"),
             cancellationToken).ConfigureAwait(false);
 
         var id = await GetNextIdAsync(db, "pending_changes", cancellationToken).ConfigureAwait(false);
         await db.ExecuteAsync(
-            "INSERT INTO pending_changes VALUES (" +
-            $"{id}, {SqlText(root)}, {SqlText(path)}, {(long)kind}, {DateTime.UtcNow.Ticks})",
+            Sql.Format($"INSERT INTO pending_changes VALUES ({id}, {root}, {path}, {(long)kind}, {DateTime.UtcNow.Ticks})"),
             cancellationToken).ConfigureAwait(false);
     }
 
@@ -308,18 +320,22 @@ internal static class IndexTables
         CancellationToken cancellationToken) =>
         ExecuteAsync(
             db,
-            "DELETE FROM pending_changes WHERE " +
-            $"root_path = {SqlText(root)} AND path = {SqlText(path)} AND kind = {(long)kind}",
+            Sql.Format($"DELETE FROM pending_changes WHERE root_path = {root} AND path = {path} AND kind = {(long)kind}"),
             cancellationToken);
 
     public static Task DeletePendingChangesForRootAsync(Database db, string root, CancellationToken cancellationToken) =>
-        ExecuteAsync(db, $"DELETE FROM pending_changes WHERE root_path = {SqlText(root)}", cancellationToken);
+        ExecuteAsync(db, Sql.Format($"DELETE FROM pending_changes WHERE root_path = {root}"), cancellationToken);
 
     // ----- shared helpers -----
 
     public static async Task<long> GetNextIdAsync(Database db, string tableName, CancellationToken cancellationToken)
     {
-        await using var result = await db.ExecuteAsync($"SELECT MAX(id) FROM {tableName}", cancellationToken).ConfigureAwait(false);
+        // Table names come from internal constants, but validate anyway so
+        // this hole can never carry SQL even if a caller misuses it.
+        var table = new Sql.Identifier(tableName);
+        await using var result = await db.ExecuteAsync(
+            Sql.Format($"SELECT MAX(id) FROM {table}"),
+            cancellationToken).ConfigureAwait(false);
         if (!await result.MoveNextAsync(cancellationToken).ConfigureAwait(false))
             return 1;
 

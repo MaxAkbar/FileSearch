@@ -213,7 +213,7 @@ internal sealed class IndexDatabase : IDisposable
         await TryExecuteAsync(db, "CREATE INDEX IF NOT EXISTS idx_pending_root_path ON pending_changes(root_path, path)", cancellationToken).ConfigureAwait(false);
 
         await db.ExecuteAsync("DELETE FROM meta WHERE name = 'schema_version'", cancellationToken).ConfigureAwait(false);
-        await db.ExecuteAsync($"INSERT INTO meta VALUES ('schema_version', {IndexTables.SqlText(SchemaVersion)})", cancellationToken).ConfigureAwait(false);
+        await db.ExecuteAsync(Sql.Format($"INSERT INTO meta VALUES ('schema_version', {SchemaVersion})"), cancellationToken).ConfigureAwait(false);
         await db.EnsureFullTextIndexAsync(
             FullTextIndexName,
             "lines",
@@ -264,7 +264,7 @@ internal sealed class IndexDatabase : IDisposable
     private static async Task<string?> GetMetaAsync(Database db, string key, CancellationToken cancellationToken)
     {
         await using var result = await db.ExecuteAsync(
-            $"SELECT value FROM meta WHERE name = {IndexTables.SqlText(key)}",
+            Sql.Format($"SELECT value FROM meta WHERE name = {key}"),
             cancellationToken).ConfigureAwait(false);
 
         return await result.MoveNextAsync(cancellationToken).ConfigureAwait(false)

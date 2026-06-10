@@ -449,15 +449,59 @@ public sealed class FileIndexTests : IDisposable
     }
 
     [Fact]
-    public async Task HandlesPathsWithApostrophesThroughoutTheSqlLayer()
+    public async Task HandlesHostileRootDirectoryNamesThroughoutTheSqlLayer()
     {
-        var file = Path.Combine(_root, "O'Brien's notes.txt");
-        File.WriteAllText(file, "apostrophe needle\n");
+        // Real roots like C:\Users\O'Brien flow into every root_path hole —
+        // a distinct statement set from the file-path holes, and one whose
+        // failure degrades silently (lookups return null, searches go empty).
+        var hostileRoot = Path.Combine(Path.GetDirectoryName(_root)!, "O'Brien's docs; -- 😀");
+        Directory.CreateDirectory(hostileRoot);
+        var file = Path.Combine(hostileRoot, "a.txt");
+        File.WriteAllText(file, "rooted needle\n");
+
+        await _index.BuildOrRefreshAsync(new IndexRequest(hostileRoot, new WalkerOptions()), TestContext.Current.CancellationToken);
+
+        var request = new SearchRequest(new TermQuery("needle"), new[] { hostileRoot }, new WalkerOptions(), UseIndex: true);
+        var hits = new List<Hit>();
+        await foreach (var hit in _indexedSearcher.SearchAsync(request, TestContext.Current.CancellationToken))
+            hits.Add(hit);
+
+        var found = Assert.Single(hits);
+        Assert.Equal(IndexPath.NormalizeFile(file), found.Path);
+
+        var stats = await _index.GetStatsAsync(hostileRoot, TestContext.Current.CancellationToken);
+        Assert.True(stats.Exists);
+        Assert.Equal(1, stats.FileCount);
+
+        await _index.SavePendingChangeAsync(hostileRoot, file, IndexChangeKind.UpsertFile, TestContext.Current.CancellationToken);
+        var pending = Assert.Single(await _index.GetPendingChangesAsync(TestContext.Current.CancellationToken));
+        Assert.Equal(IndexPath.NormalizeRoot(hostileRoot), pending.Root);
+
+        await _index.RemovePendingChangeAsync(hostileRoot, file, IndexChangeKind.UpsertFile, TestContext.Current.CancellationToken);
+        Assert.Empty(await _index.GetPendingChangesAsync(TestContext.Current.CancellationToken));
+
+        await _index.ClearAsync(hostileRoot, TestContext.Current.CancellationToken);
+        Assert.False((await _index.GetStatsAsync(hostileRoot, TestContext.Current.CancellationToken)).Exists);
+    }
+
+    [Theory]
+    [InlineData("O'Brien's notes.txt")]
+    [InlineData("semi;colon -- dashes.txt")]
+    [InlineData("double''apostrophe''.txt")]
+    [InlineData("emoji 😀 файл.txt")]
+    [InlineData("percent%under_score.txt")]
+    public async Task HandlesHostileFileNamesThroughoutTheSqlLayer(string fileName)
+    {
+        // File names are attacker-influencable content that flows into every
+        // SQL statement; each hostile name must survive the full round trip:
+        // index, search, pending-change save/remove, and delete.
+        var file = Path.Combine(_root, fileName);
+        File.WriteAllText(file, "hostile needle\n");
 
         await BuildAsync();
 
         var hit = Assert.Single(await IndexedSearchAsync(new TermQuery("needle")));
-        Assert.EndsWith("notes.txt", hit.Path);
+        Assert.Equal(IndexPath.NormalizeFile(file), hit.Path);
 
         await _index.SavePendingChangeAsync(_root, file, IndexChangeKind.UpsertFile, TestContext.Current.CancellationToken);
         var pending = Assert.Single(await _index.GetPendingChangesAsync(TestContext.Current.CancellationToken));
@@ -465,6 +509,9 @@ public sealed class FileIndexTests : IDisposable
 
         await _index.RemovePendingChangeAsync(_root, file, IndexChangeKind.UpsertFile, TestContext.Current.CancellationToken);
         Assert.Empty(await _index.GetPendingChangesAsync(TestContext.Current.CancellationToken));
+
+        await _index.DeleteFileAsync(_root, file, TestContext.Current.CancellationToken);
+        Assert.Empty(await IndexedSearchAsync(new TermQuery("needle")));
     }
 
     [Fact]
