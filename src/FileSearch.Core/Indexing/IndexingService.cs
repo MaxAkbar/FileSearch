@@ -74,11 +74,15 @@ public sealed class IndexingService : IIndexingService
                 await EnqueueRootRefreshAsync(location.Root, location.WalkerOptions, IndexQueuePriority.Low, cancellationToken).ConfigureAwait(false);
         }
 
-        if (_worker is not null)
-            return;
+        lock (_sync)
+        {
+            if (_worker is not null)
+                return;
 
-        _workerCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
-        _worker = Task.Run(() => RunAsync(_workerCts.Token), CancellationToken.None);
+            _workerCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+            _worker = Task.Run(() => RunAsync(_workerCts.Token), CancellationToken.None);
+        }
+
         Publish(false, "Background indexing ready.");
     }
 
@@ -210,26 +214,39 @@ public sealed class IndexingService : IIndexingService
 
     private async Task RunIterationAsync(Stopwatch burst, CancellationToken cancellationToken)
     {
-        var item = await _queue.DequeueAsync(cancellationToken).ConfigureAwait(false);
-
-        while (_paused && !cancellationToken.IsCancellationRequested)
-        {
-            Publish(false, $"Background indexing paused; {_queue.Count + 1:n0} queued.");
-            await Task.Delay(TimeSpan.FromSeconds(1), cancellationToken).ConfigureAwait(false);
-        }
-
-        if (_foregroundSearchActive && item.Kind == IndexChangeKind.RefreshRoot)
-        {
-            await EnqueueAsync(item with { DueUtc = DateTime.UtcNow.Add(ForegroundRefreshDelay) }, cancellationToken)
-                .ConfigureAwait(false);
-            return;
-        }
-
+        // Rest BEFORE dequeuing — resting after used to hold a dequeued item
+        // across a 5s delay, where a shutdown silently dropped it (the same
+        // loss pattern the pause branch below guards against).
         if (burst.Elapsed >= MaxBurst)
         {
             Publish(false, "Background indexing resting.");
             await Task.Delay(BurstRest, cancellationToken).ConfigureAwait(false);
             burst.Restart();
+        }
+
+        var item = await _queue.DequeueAsync(cancellationToken).ConfigureAwait(false);
+
+        if (_paused)
+        {
+            // Put the item straight back instead of holding it: a shutdown
+            // mid-pause can't lose work and queue counts stay truthful.
+            // CancellationToken.None so the requeue itself can't be torn by
+            // shutdown; Persisted=false because the pending-change row from
+            // the original enqueue is still in place. Pause() already told
+            // the user — no per-poll status spam here.
+            await _queue.EnqueueAsync(
+                item with { DueUtc = DateTime.UtcNow.AddSeconds(1), Persisted = false },
+                CancellationToken.None).ConfigureAwait(false);
+            await Task.Delay(TimeSpan.FromSeconds(1), cancellationToken).ConfigureAwait(false);
+            return;
+        }
+
+        if (_foregroundSearchActive && item.Kind == IndexChangeKind.RefreshRoot)
+        {
+            await EnqueueAsync(
+                item with { DueUtc = DateTime.UtcNow.Add(ForegroundRefreshDelay), Persisted = false },
+                cancellationToken).ConfigureAwait(false);
+            return;
         }
 
         using var itemCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
@@ -247,7 +264,7 @@ public sealed class IndexingService : IIndexingService
         catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested && WasRefreshYieldRequested(item))
         {
             await EnqueueAsync(
-                item with { DueUtc = DateTime.UtcNow.Add(ForegroundRefreshDelay) },
+                item with { DueUtc = DateTime.UtcNow.Add(ForegroundRefreshDelay), Persisted = false },
                 cancellationToken).ConfigureAwait(false);
             Publish(false, "Index update deferred while search is active.");
         }

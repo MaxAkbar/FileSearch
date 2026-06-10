@@ -1,3 +1,4 @@
+using System.Diagnostics;
 using System.IO;
 using CSharpDB.Engine;
 using FileSearch.Core.Engine;
@@ -243,6 +244,118 @@ public sealed class FileIndexTests : IDisposable
         var dequeued = await queue.DequeueAsync(TestContext.Current.CancellationToken);
         Assert.Equal(IndexChangeKind.UpsertFile, dequeued.Kind);
         Assert.Equal(0, queue.Count);
+    }
+
+    [Fact]
+    public async Task DequeuePrefersHigherPriorityAmongDueItems()
+    {
+        var queue = new IndexQueue(new RecordingFileIndex());
+        var lowRoot = Path.Combine(Path.GetDirectoryName(_root)!, "low-priority");
+        var highRoot = Path.Combine(Path.GetDirectoryName(_root)!, "high-priority");
+
+        // The low item is OLDER — the previous due-time-first ordering would
+        // pick it; priority-first among due items must pick High.
+        await queue.EnqueueAsync(
+            new IndexQueueItem(lowRoot, null, new WalkerOptions(), IndexChangeKind.RefreshRoot, IndexQueuePriority.Low, DateTime.UtcNow.AddSeconds(-10), Persisted: false),
+            TestContext.Current.CancellationToken);
+        await queue.EnqueueAsync(
+            new IndexQueueItem(highRoot, null, new WalkerOptions(), IndexChangeKind.RefreshRoot, IndexQueuePriority.High, DateTime.UtcNow.AddSeconds(-1), Persisted: false),
+            TestContext.Current.CancellationToken);
+
+        var first = await queue.DequeueAsync(TestContext.Current.CancellationToken);
+
+        Assert.Equal(IndexQueuePriority.High, first.Priority);
+        Assert.Equal(IndexPath.NormalizeRoot(highRoot), first.Root);
+    }
+
+    [Fact]
+    public async Task DequeueReturnsDueItemInsteadOfWaitingForFutureHigherPriority()
+    {
+        var queue = new IndexQueue(new RecordingFileIndex());
+        var lowRoot = Path.Combine(Path.GetDirectoryName(_root)!, "due-low");
+        var highRoot = Path.Combine(Path.GetDirectoryName(_root)!, "future-high");
+
+        await queue.EnqueueAsync(
+            new IndexQueueItem(lowRoot, null, new WalkerOptions(), IndexChangeKind.RefreshRoot, IndexQueuePriority.Low, DateTime.UtcNow.AddSeconds(-1), Persisted: false),
+            TestContext.Current.CancellationToken);
+        await queue.EnqueueAsync(
+            new IndexQueueItem(highRoot, null, new WalkerOptions(), IndexChangeKind.RefreshRoot, IndexQueuePriority.High, DateTime.UtcNow.AddSeconds(30), Persisted: false),
+            TestContext.Current.CancellationToken);
+
+        // Priority only ranks DUE items; a due Low item must be served now,
+        // not delayed until a future High item ripens (that would starve the
+        // queue every time a refresh is deferred by foreground-search yield).
+        var stopwatch = Stopwatch.StartNew();
+        var first = await queue.DequeueAsync(TestContext.Current.CancellationToken);
+        stopwatch.Stop();
+
+        Assert.Equal(IndexQueuePriority.Low, first.Priority);
+        Assert.True(stopwatch.Elapsed < TimeSpan.FromSeconds(10), $"Dequeue waited {stopwatch.Elapsed} for a future item.");
+    }
+
+    [Fact]
+    public async Task DequeueReturnsOldestAmongSamePriorityDueItems()
+    {
+        var queue = new IndexQueue(new RecordingFileIndex());
+        var olderRoot = Path.Combine(Path.GetDirectoryName(_root)!, "older");
+        var newerRoot = Path.Combine(Path.GetDirectoryName(_root)!, "newer");
+
+        await queue.EnqueueAsync(
+            new IndexQueueItem(newerRoot, null, new WalkerOptions(), IndexChangeKind.RefreshRoot, IndexQueuePriority.Normal, DateTime.UtcNow.AddSeconds(-1), Persisted: false),
+            TestContext.Current.CancellationToken);
+        await queue.EnqueueAsync(
+            new IndexQueueItem(olderRoot, null, new WalkerOptions(), IndexChangeKind.RefreshRoot, IndexQueuePriority.Normal, DateTime.UtcNow.AddSeconds(-10), Persisted: false),
+            TestContext.Current.CancellationToken);
+
+        var first = await queue.DequeueAsync(TestContext.Current.CancellationToken);
+
+        Assert.Equal(IndexPath.NormalizeRoot(olderRoot), first.Root);
+    }
+
+    [Fact]
+    public async Task IndexedSearchStreamsLargeResultSetsWithoutDuplicates()
+    {
+        // 600 matching lines forces the mid-loop FTS batch flush (500) plus
+        // the tail flush — the production-dominant path for common terms.
+        File.WriteAllText(
+            Path.Combine(_root, "many.txt"),
+            string.Concat(Enumerable.Range(0, 600).Select(i => $"needle line {i}\n")));
+
+        await BuildAsync();
+
+        var hits = await IndexedSearchAsync(new TermQuery("needle"));
+
+        Assert.Equal(600, hits.Count);
+        Assert.Equal(600, hits.Select(h => h.LineNumber).Distinct().Count());
+    }
+
+    [Fact]
+    public async Task IndexedSearchDeduplicatesLinesMatchingMultipleOrBranches()
+    {
+        // "alpha beta" matches both FTS candidate queries of the OR — the
+        // cross-query dedupe must keep it a single hit, same as live search.
+        File.WriteAllText(Path.Combine(_root, "overlap.txt"), "alpha beta\nalpha only\nbeta only\n");
+
+        await BuildAsync();
+
+        await AssertSameResultsAsync(new OrQuery(new Query[] { new TermQuery("alpha"), new TermQuery("beta") }));
+    }
+
+    [Fact]
+    public async Task IndexedSearchRejectsMultipleRoots()
+    {
+        var request = new SearchRequest(
+            new TermQuery("needle"),
+            new[] { _root, Path.GetTempPath() },
+            new WalkerOptions(),
+            UseIndex: true);
+
+        await Assert.ThrowsAsync<ArgumentException>(async () =>
+        {
+            await foreach (var _ in _index.SearchAsync(request, TestContext.Current.CancellationToken))
+            {
+            }
+        });
     }
 
     [Fact]

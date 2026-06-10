@@ -59,6 +59,37 @@ public sealed class IndexingServiceTests
         }
     }
 
+    [Fact]
+    public async Task PausedWorkerKeepsItemsInQueueInsteadOfHoldingThem()
+    {
+        var index = new BlockingFileIndex();
+        var queue = new IndexQueue(index);
+        var service = new IndexingService(index, queue, new IndexWatcherService(queue));
+        var root = Path.Combine(Path.GetTempPath(), "filesearch-pause-hold-" + Guid.NewGuid().ToString("N"));
+
+        await service.StartAsync(Array.Empty<IndexedLocation>(), TestContext.Current.CancellationToken);
+        try
+        {
+            service.Pause();
+            await service.EnqueueRootRefreshAsync(root, new WalkerOptions(), IndexQueuePriority.High, TestContext.Current.CancellationToken);
+
+            // The worker must cycle the item back into the queue rather than
+            // hold it (a held item was lost on shutdown-while-paused).
+            await WaitUntilAsync(() => queue.Count == 1, TestContext.Current.CancellationToken);
+            Assert.False(index.RefreshStarted.Task.IsCompleted);
+
+            await service.StopAsync(TestContext.Current.CancellationToken);
+
+            // Shutdown while paused: the item survived in the queue.
+            Assert.Equal(1, queue.Count);
+            Assert.False(index.RefreshStarted.Task.IsCompleted);
+        }
+        finally
+        {
+            await service.StopAsync(TestContext.Current.CancellationToken);
+        }
+    }
+
     private static async Task WaitUntilAsync(Func<bool> condition, CancellationToken cancellationToken)
     {
         using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(5));

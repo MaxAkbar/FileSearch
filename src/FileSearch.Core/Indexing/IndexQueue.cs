@@ -113,19 +113,36 @@ public sealed class IndexQueue : IIndexQueue, IDisposable
                 if (_items.Count > 0)
                 {
                     var now = DateTime.UtcNow;
-                    var next = _items.Values
-                        .OrderBy(item => item.DueUtc)
-                        .ThenBy(item => item.Priority)
-                        .First();
 
-                    if (next.DueUtc <= now)
+                    // Single pass: among items already due, pick the highest
+                    // priority first (then the oldest) — sorting by due time
+                    // first made priority a mere timestamp tie-break.
+                    // Otherwise sleep until the earliest item comes due.
+                    IndexQueueItem? bestDue = null;
+                    var earliest = DateTime.MaxValue;
+
+                    foreach (var item in _items.Values)
                     {
-                        _items.Remove(BuildKey(next));
-                        ready = next;
+                        if (item.DueUtc <= now &&
+                            (bestDue is null ||
+                             item.Priority < bestDue.Priority ||
+                             (item.Priority == bestDue.Priority && item.DueUtc < bestDue.DueUtc)))
+                        {
+                            bestDue = item;
+                        }
+
+                        if (item.DueUtc < earliest)
+                            earliest = item.DueUtc;
+                    }
+
+                    if (bestDue is not null)
+                    {
+                        _items.Remove(BuildKey(bestDue));
+                        ready = bestDue;
                     }
                     else
                     {
-                        delay = next.DueUtc - now;
+                        delay = earliest - now;
                     }
                 }
             }

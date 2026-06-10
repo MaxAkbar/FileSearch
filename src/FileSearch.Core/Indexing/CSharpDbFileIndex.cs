@@ -131,11 +131,17 @@ public sealed class CSharpDbFileIndex : IFileIndex, IDisposable
         SearchRequest request,
         [EnumeratorCancellation] CancellationToken cancellationToken)
     {
+        // Coverage gating routes multi-root requests to the live searcher;
+        // reaching here with anything but one root is a caller bug — fail
+        // loudly instead of silently searching only the first root.
+        if (request.Roots.Count != 1)
+            throw new ArgumentException("Indexed search requires exactly one root.", nameof(request));
+
         Database? db = null;
         try
         {
             db = await _database.OpenExistingAsync(cancellationToken).ConfigureAwait(false);
-            if (db is null || request.Roots.Count == 0)
+            if (db is null)
                 yield break;
 
             var root = IndexPath.NormalizeRoot(request.Roots[0]);
@@ -150,20 +156,37 @@ public sealed class CSharpDbFileIndex : IFileIndex, IDisposable
 
             if (ftsQueries.Count > 0)
             {
-                var lineIds = new HashSet<long>();
+                // Stream: resolve each batch of row ids to hits as soon as
+                // it fills instead of materializing every id from every FTS
+                // query first — first results reach the caller sooner.
+                var seenIds = new HashSet<long>();
+                var batchIds = new List<long>(IdQueryBatchSize);
+
                 foreach (var ftsQuery in ftsQueries)
                 {
                     var ftsHits = await db.SearchAsync(IndexDatabase.FullTextIndexName, ftsQuery, cancellationToken).ConfigureAwait(false);
-                    foreach (var hit in ftsHits)
-                        lineIds.Add(hit.RowId);
+                    foreach (var ftsHit in ftsHits)
+                    {
+                        if (!seenIds.Add(ftsHit.RowId))
+                            continue;
+
+                        batchIds.Add(ftsHit.RowId);
+                        if (batchIds.Count < IdQueryBatchSize)
+                            continue;
+
+                        await foreach (var line in ReadLineBatchAsync(db, rootId.Value, batchIds, cancellationToken).ConfigureAwait(false))
+                        {
+                            if (TryCreateHit(line, request.Expression, request.WalkerOptions, hitsByPath, fileFilterVerdicts, highlightBuffer, out var hit))
+                                yield return hit;
+                        }
+
+                        batchIds.Clear();
+                    }
                 }
 
-                foreach (var batch in lineIds.Chunk(IdQueryBatchSize))
+                if (batchIds.Count > 0)
                 {
-                    cancellationToken.ThrowIfCancellationRequested();
-                    var idList = string.Join(",", batch);
-                    var sql = IndexTables.SelectLinesSql(rootId.Value, $"AND l.id IN ({idList})");
-                    await foreach (var line in IndexTables.ReadLinesAsync(db, sql, cancellationToken).ConfigureAwait(false))
+                    await foreach (var line in ReadLineBatchAsync(db, rootId.Value, batchIds, cancellationToken).ConfigureAwait(false))
                     {
                         if (TryCreateHit(line, request.Expression, request.WalkerOptions, hitsByPath, fileFilterVerdicts, highlightBuffer, out var hit))
                             yield return hit;
@@ -185,6 +208,16 @@ public sealed class CSharpDbFileIndex : IFileIndex, IDisposable
             if (db is not null)
                 await IndexDatabase.CloseQuietlyAsync(db).ConfigureAwait(false);
         }
+    }
+
+    private static IAsyncEnumerable<IndexedLine> ReadLineBatchAsync(
+        Database db,
+        long rootId,
+        IReadOnlyList<long> lineIds,
+        CancellationToken cancellationToken)
+    {
+        var sql = IndexTables.SelectLinesSql(rootId, $"AND l.id IN ({string.Join(",", lineIds)})");
+        return IndexTables.ReadLinesAsync(db, sql, cancellationToken);
     }
 
     public async Task<IndexCoverage> GetCoverageAsync(SearchRequest request, CancellationToken cancellationToken)

@@ -50,6 +50,7 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
 
     private CancellationTokenSource? _searchCts;
     private CancellationTokenSource? _previewCts;
+    private CancellationTokenSource? _refinementDebounceCts;
     private string? _pendingStatsRoot;
     private bool _isInitialized;
 
@@ -198,6 +199,39 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
     [ObservableProperty] private string _refinementQuery = string.Empty;
 
     partial void OnRefinementQueryChanged(string value)
+    {
+        // Refreshing the view rescans every hit of every file; debounce so
+        // fast typing pays once. Clearing applies immediately.
+        _refinementDebounceCts?.Cancel();
+        _refinementDebounceCts?.Dispose();
+        _refinementDebounceCts = null;
+
+        if (string.IsNullOrWhiteSpace(value))
+        {
+            RefreshFilesView();
+            return;
+        }
+
+        var cts = new CancellationTokenSource();
+        _refinementDebounceCts = cts;
+        _ = RefreshFilesViewDebouncedAsync(cts.Token);
+    }
+
+    private async Task RefreshFilesViewDebouncedAsync(CancellationToken token)
+    {
+        try
+        {
+            await Task.Delay(200, token).ConfigureAwait(true);
+        }
+        catch (TaskCanceledException)
+        {
+            return;
+        }
+
+        RefreshFilesView();
+    }
+
+    private void RefreshFilesView()
     {
         FilesView.Refresh();
         OnPropertyChanged(nameof(FilesVisible));
@@ -647,6 +681,7 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
         _indexingService.StatusChanged -= OnIndexingStatusChanged;
         _searchCts?.Dispose();
         _previewCts?.Dispose();
+        _refinementDebounceCts?.Dispose();
     }
 
     public async Task StartBackgroundIndexingAsync()

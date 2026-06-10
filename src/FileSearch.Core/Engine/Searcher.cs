@@ -84,13 +84,23 @@ public sealed class Searcher : ISearcher
                 Interlocked.Read(ref filesFailed)));
         }
 
+        // Count at the walker, not in the worker body — FilesEnumerated means
+        // "files the walker has produced", not "files a worker has started".
+        IEnumerable<string> CountedPaths()
+        {
+            foreach (var path in _walker.Enumerate(request.Roots, request.WalkerOptions, cancellationToken))
+            {
+                Interlocked.Increment(ref filesEnumerated);
+                yield return path;
+            }
+        }
+
         var producer = Task.Run(async () =>
         {
             try
             {
-                var paths = _walker.Enumerate(request.Roots, request.WalkerOptions, cancellationToken);
                 await Parallel.ForEachAsync(
-                    paths,
+                    CountedPaths(),
                     new ParallelOptions
                     {
                         MaxDegreeOfParallelism = _options.MaxDegreeOfParallelism,
@@ -98,7 +108,6 @@ public sealed class Searcher : ISearcher
                     },
                     async (path, token) =>
                     {
-                        Interlocked.Increment(ref filesEnumerated);
                         var extractor = _extractors.GetFor(path);
                         if (extractor is null)
                         {

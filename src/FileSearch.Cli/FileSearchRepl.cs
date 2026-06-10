@@ -846,12 +846,28 @@ internal sealed class FileSearchRepl
 
     private void OnCancelKeyPress(object? sender, ConsoleCancelEventArgs e)
     {
-        if (_activeCommand is null || _activeCommand.IsCancellationRequested)
+        // Snapshot — the command loop can null/dispose the source while this
+        // handler runs on its own thread.
+        var active = _activeCommand;
+        if (active is null)
+            return;
+
+        // Swallow only the FIRST press (e.Cancel stays false on later ones):
+        // a second Ctrl+C while a command is stuck in non-cancelable work
+        // must keep its default behavior of terminating the process.
+        if (active.IsCancellationRequested)
             return;
 
         e.Cancel = true;
-        _activeCommand.Cancel();
-        AnsiConsole.WriteLine();
-        AnsiConsole.MarkupLine("[yellow]Canceling current command...[/]");
+        try
+        {
+            active.Cancel();
+            AnsiConsole.WriteLine();
+            AnsiConsole.MarkupLine("[yellow]Canceling current command...[/]");
+        }
+        catch (ObjectDisposedException)
+        {
+            // The command finished between the snapshot and the cancel.
+        }
     }
 }
