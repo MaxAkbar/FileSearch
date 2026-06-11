@@ -439,6 +439,38 @@ For sideload testing, pass `-CertificateThumbprint` with a certificate trusted o
 - The competitive roadmap refresh is documented in [README.Roadmap.md](README.Roadmap.md).
 - Security and privacy posture are documented in [SECURITY.md](SECURITY.md) and [PRIVACY.md](PRIVACY.md).
 
+## Recent changes
+
+Work landed from `bbd4b73` (*Add background indexed search*, June 2026) to the current head, grouped by area.
+
+### Search engine and indexing
+
+- **Background indexed search** (`bbd4b73`): CSharpDB-backed file index with background refresh, coverage checks, and live-scan fallback — the baseline for the changes below. Documented in [README.Indexing.md](README.Indexing.md).
+- **Indexing correctness, threading, and performance overhaul** (`13b1f9c`): removed the watcher feedback loop that caused double indexing, skipped upserts for unchanged files, ran schema setup once per process, and serialized cross-process writers with a lock file. Heavy parsing and preview extraction moved off the UI thread, UTF-16/32 files are detected correctly, overlapping indexed roots are supported, and search-time filters no longer shrink index coverage. Performance work included directory-exclude pruning, cached per-file verdicts, batched UI updates, and throttled progress callbacks, plus centralized file logging and safer settings management.
+- **Index storage layering** (`1b08535`): split the index implementation into `IndexDatabase` (schema, versioning, write exclusion) and `IndexTables` (DML), extracted a tested `SearchHistory` MRU helper, and moved folder picking and UI dispatch behind injectable services.
+- **Worker and queue fixes** (`2317524`): queue priority, worker edge cases, and small races found in review.
+- **Compiler-enforced SQL escaping** (`6778331`): index queries are built through an interpolated-string handler (`Sql.Format`), so a value that bypasses escaping no longer compiles.
+
+### Desktop app
+
+- **Indexed locations management** (`0d94748`): dedicated window for per-location options (subfolders, hidden files, document extraction, change watching) with live status badges and queue counts in the sidebar.
+- **Shutdown deadlock fix** (`5a1fa5c`): the app could hang forever on exit while stopping background indexing.
+- **View-model split** (`41f59e7`): `MainViewModel` split into focused `Search`, `Index`, `History`, and `StatusBar` view models, backed by a binding-path audit test that verifies every XAML binding resolves.
+- **Sidebar scrolling** (`13402db`): the collapsible sections (Scopes, Recent folders, Indexed locations, Saved searches) scroll as one surface when they outgrow the window instead of pushing the lower sections out of view, and the nav lists no longer swallow mouse-wheel events.
+
+### Command line
+
+- **Interactive search REPL** (`b9c2ec5`): Spectre.Console front end with live and indexed search, query-mode/case/filter/limit commands, and index build/clear/stats — sharing the same core pipeline and index database as the GUI.
+
+### Extractors
+
+- **Hardening pass** (`362b18e`): zip-bomb entry and size caps, bounded file reads, charset-correct EML decoding, and RTF/markup fixes.
+
+### CI, tests, and release
+
+- **CI and release foundation** (`a8e8965`): GitHub Actions build/test workflows, dependency review, Store packaging workflow, Dependabot, `SECURITY.md`, `PRIVACY.md`, the release checklist, and the competitive roadmap.
+- **Coverage and pipeline hardening** (`71a616d`): new searcher, indexed-searcher, and indexing-service test suites and a stricter CI pipeline.
+
 ## Contributing
 
 Contributions are welcome. A typical workflow is:
