@@ -159,10 +159,17 @@
         <Setter Property="Background" Value="Transparent"/>
         <Setter Property="BorderThickness" Value="0"/>
         <Setter Property="Padding" Value="0"/>
-        <Setter Property="ScrollViewer.HorizontalScrollBarVisibility" Value="Disabled"/>
-        <!-- Each section owns a weighted row; let the list scroll within it when
-             its items exceed the space the row was given. -->
-        <Setter Property="ScrollViewer.VerticalScrollBarVisibility" Value="Auto"/>
+        <!-- The sidebar sections scroll as a single surface, so the list must
+             not be a scroll host itself: drop the default template's
+             ScrollViewer (which would swallow mouse-wheel events even when it
+             has nothing to scroll) and size the list to its items. -->
+        <Setter Property="Template">
+            <Setter.Value>
+                <ControlTemplate TargetType="ListBox">
+                    <ItemsPresenter/>
+                </ControlTemplate>
+            </Setter.Value>
+        </Setter>
     </Style>
 
     <Style x:Key="NavListBoxItemStyle" TargetType="ListBoxItem">

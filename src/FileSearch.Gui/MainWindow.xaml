@@ -159,8 +159,14 @@
                     <!-- Collapsible sections. Each expanded section's row takes the
                          leftover space (*) while collapsed sections shrink to their
                          header (Auto), so collapsing one sinks it to the bottom and
-                         gives the still-open sections the freed room. -->
-                    <Grid>
+                         gives the still-open sections the freed room. When the
+                         sections outgrow the sidebar, the whole stack scrolls as
+                         one; the MinHeight binding keeps the sink-to-bottom layout
+                         while everything still fits. -->
+                    <ScrollViewer VerticalScrollBarVisibility="Auto"
+                                  HorizontalScrollBarVisibility="Disabled"
+                                  Focusable="False">
+                    <Grid MinHeight="{Binding ViewportHeight, RelativeSource={RelativeSource AncestorType=ScrollViewer}}">
                         <Grid.RowDefinitions>
                             <RowDefinition x:Name="ScopesRow" Height="Auto"/>
                             <RowDefinition x:Name="RecentRow" Height="Auto"/>
@@ -389,6 +395,7 @@
                                 </DockPanel>
                             </Expander>
                     </Grid>
+                    </ScrollViewer>
                 </DockPanel>
             </Border>
 
