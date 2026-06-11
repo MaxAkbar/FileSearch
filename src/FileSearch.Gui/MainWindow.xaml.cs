@@ -79,13 +79,13 @@ public partial class MainWindow : Window
         if (DataContext is not MainViewModel viewModel)
             return;
 
-        var scopeWindow = new ScopeWindow(viewModel.FileNamePattern)
+        var scopeWindow = new ScopeWindow(viewModel.Search.FileNamePattern)
         {
             Owner = this,
         };
 
         if (scopeWindow.ShowDialog() == true)
-            viewModel.SaveCustomScope(scopeWindow.ScopeName, scopeWindow.FileNamePattern);
+            viewModel.History.SaveCustomScope(scopeWindow.ScopeName, scopeWindow.FileNamePattern);
     }
 
     private void OnManageIndexesClick(object sender, RoutedEventArgs e)
@@ -146,14 +146,14 @@ public partial class MainWindow : Window
 
     private void OnPreviewSplitterDragDelta(object sender, DragDeltaEventArgs e)
     {
-        if (DataContext is not MainViewModel viewModel || !viewModel.IsPreviewPaneVisible)
+        if (DataContext is not MainViewModel viewModel || !viewModel.Search.IsPreviewPaneVisible)
             return;
 
         var availableWidth = GetAvailablePreviewPaneWidth();
-        var minimumWidth = Math.Min(MainViewModel.MinimumPreviewPaneWidth, availableWidth);
+        var minimumWidth = Math.Min(SearchViewModel.MinimumPreviewPaneWidth, availableWidth);
 
-        viewModel.PreviewPaneWidth = Math.Clamp(
-            viewModel.PreviewPaneWidth - e.HorizontalChange,
+        viewModel.Search.PreviewPaneWidth = Math.Clamp(
+            viewModel.Search.PreviewPaneWidth - e.HorizontalChange,
             minimumWidth,
             availableWidth);
 
@@ -163,33 +163,33 @@ public partial class MainWindow : Window
     private void OnDataContextChanged(object sender, DependencyPropertyChangedEventArgs e)
     {
         if (e.OldValue is MainViewModel oldViewModel)
-            oldViewModel.PropertyChanged -= OnViewModelPropertyChanged;
+            oldViewModel.Search.PropertyChanged -= OnSearchPropertyChanged;
 
         if (e.NewValue is MainViewModel newViewModel)
         {
-            newViewModel.PropertyChanged += OnViewModelPropertyChanged;
-            UpdatePreviewColumn(newViewModel);
+            newViewModel.Search.PropertyChanged += OnSearchPropertyChanged;
+            UpdatePreviewColumn(newViewModel.Search);
         }
     }
 
-    private void OnViewModelPropertyChanged(object? sender, PropertyChangedEventArgs e)
+    private void OnSearchPropertyChanged(object? sender, PropertyChangedEventArgs e)
     {
-        if (sender is not MainViewModel viewModel)
+        if (sender is not SearchViewModel search)
             return;
 
-        if (e.PropertyName is nameof(MainViewModel.IsPreviewPaneVisible) or nameof(MainViewModel.PreviewPaneWidth))
-            UpdatePreviewColumn(viewModel);
+        if (e.PropertyName is nameof(SearchViewModel.IsPreviewPaneVisible) or nameof(SearchViewModel.PreviewPaneWidth))
+            UpdatePreviewColumn(search);
     }
 
     private void OnShellRootSizeChanged(object sender, SizeChangedEventArgs e)
     {
         if (DataContext is MainViewModel viewModel)
-            UpdatePreviewColumn(viewModel);
+            UpdatePreviewColumn(viewModel.Search);
     }
 
-    private void UpdatePreviewColumn(MainViewModel viewModel)
+    private void UpdatePreviewColumn(SearchViewModel search)
     {
-        if (!viewModel.IsPreviewPaneVisible)
+        if (!search.IsPreviewPaneVisible)
         {
             PreviewColumn.MinWidth = 0;
             PreviewColumn.MaxWidth = 0;
@@ -198,8 +198,8 @@ public partial class MainWindow : Window
         }
 
         var availableWidth = GetAvailablePreviewPaneWidth();
-        var minimumWidth = Math.Min(MainViewModel.MinimumPreviewPaneWidth, availableWidth);
-        var width = Math.Clamp(viewModel.PreviewPaneWidth, minimumWidth, availableWidth);
+        var minimumWidth = Math.Min(SearchViewModel.MinimumPreviewPaneWidth, availableWidth);
+        var width = Math.Clamp(search.PreviewPaneWidth, minimumWidth, availableWidth);
 
         PreviewColumn.MinWidth = minimumWidth;
         PreviewColumn.MaxWidth = availableWidth;
@@ -209,13 +209,13 @@ public partial class MainWindow : Window
     private double GetAvailablePreviewPaneWidth()
     {
         if (ShellRoot.ActualWidth <= 0)
-            return MainViewModel.MaximumPreviewPaneWidth;
+            return SearchViewModel.MaximumPreviewPaneWidth;
 
         var navigationWidth = ShellRoot.ColumnDefinitions[0].ActualWidth;
         var resultsMinWidth = ShellRoot.ColumnDefinitions[1].MinWidth;
         var splitterWidth = ShellRoot.ColumnDefinitions[2].ActualWidth;
         var available = ShellRoot.ActualWidth - navigationWidth - resultsMinWidth - splitterWidth;
 
-        return Math.Clamp(available, 0, MainViewModel.MaximumPreviewPaneWidth);
+        return Math.Clamp(available, 0, SearchViewModel.MaximumPreviewPaneWidth);
     }
 }

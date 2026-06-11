@@ -30,11 +30,11 @@
                 </Grid.ColumnDefinitions>
                 <StackPanel>
                     <TextBlock Text="Indexed locations" Style="{StaticResource CtxTitleStyle}"/>
-                    <TextBlock Text="{Binding IndexedLocationCountText}" Style="{StaticResource MutedValueStyle}" Margin="0,3,0,0"/>
+                    <TextBlock Text="{Binding Index.IndexedLocationCountText}" Style="{StaticResource MutedValueStyle}" Margin="0,3,0,0"/>
                 </StackPanel>
                 <CheckBox Grid.Column="1"
                           Content="Use index for covered searches"
-                          IsChecked="{Binding UseIndex, Mode=TwoWay}"
+                          IsChecked="{Binding Search.UseIndex, Mode=TwoWay}"
                           VerticalAlignment="Center"/>
             </Grid>
         </Border>
@@ -58,7 +58,7 @@
                     Padding="10">
                 <DockPanel>
                     <StackPanel DockPanel.Dock="Top" Margin="4,2,4,10">
-                        <Button Command="{Binding AddCurrentFolderToIndexCommand}"
+                        <Button Command="{Binding Index.AddCurrentFolderToIndexCommand}"
                                 Style="{StaticResource SecondaryButtonStyle}"
                                 Height="34"
                                 HorizontalAlignment="Stretch"
@@ -66,7 +66,7 @@
                                 Margin="0,0,0,8">
                             <StackPanel Orientation="Horizontal">
                                 <ui:FontIcon Glyph="&#xE710;" FontSize="13" Margin="0,0,7,0"/>
-                                <TextBlock Text="{Binding CurrentFolderIndexActionText}"/>
+                                <TextBlock Text="{Binding Index.CurrentFolderIndexActionText}"/>
                             </StackPanel>
                         </Button>
                         <Button Click="OnAddFolderClick"
@@ -81,8 +81,8 @@
                         </Button>
                     </StackPanel>
 
-                    <ListBox ItemsSource="{Binding IndexedLocations}"
-                             SelectedItem="{Binding SelectedIndexedLocation, Mode=TwoWay}"
+                    <ListBox ItemsSource="{Binding Index.IndexedLocations}"
+                             SelectedItem="{Binding Index.SelectedIndexedLocation, Mode=TwoWay}"
                              Style="{StaticResource NavListBoxStyle}"
                              ItemContainerStyle="{StaticResource NavListBoxItemStyle}">
                         <ListBox.ItemTemplate>
@@ -124,20 +124,20 @@
                             <Style TargetType="StackPanel">
                                 <Setter Property="Visibility" Value="Visible"/>
                                 <Style.Triggers>
-                                    <DataTrigger Binding="{Binding SelectedIndexedLocation}" Value="{x:Null}">
+                                    <DataTrigger Binding="{Binding Index.SelectedIndexedLocation}" Value="{x:Null}">
                                         <Setter Property="Visibility" Value="Collapsed"/>
                                     </DataTrigger>
                                 </Style.Triggers>
                             </Style>
                         </StackPanel.Style>
 
-                        <TextBlock Text="{Binding SelectedIndexedLocation.DisplayName}"
+                        <TextBlock Text="{Binding Index.SelectedIndexedLocation.DisplayName}"
                                    FontSize="20"
                                    FontWeight="SemiBold"
                                    Foreground="{DynamicResource Atlas.InkBrush}"
                                    TextTrimming="CharacterEllipsis"/>
-                        <TextBlock Text="{Binding SelectedIndexedLocation.Root}"
-                                   ToolTip="{Binding SelectedIndexedLocation.Root}"
+                        <TextBlock Text="{Binding Index.SelectedIndexedLocation.Root}"
+                                   ToolTip="{Binding Index.SelectedIndexedLocation.Root}"
                                    Style="{StaticResource MetaValueStyle}"
                                    TextAlignment="Left"
                                    TextTrimming="CharacterEllipsis"
@@ -159,7 +159,7 @@
 
                             <TextBlock Grid.Row="0" Text="Status" Style="{StaticResource MetaKeyStyle}" Margin="0,0,0,8"/>
                             <Border Grid.Row="0" Grid.Column="1"
-                                    DataContext="{Binding SelectedIndexedLocation}"
+                                    DataContext="{Binding Index.SelectedIndexedLocation}"
                                     Style="{StaticResource IndexStatusBadgeStyle}"
                                     Margin="0,0,0,8">
                                 <TextBlock Text="{Binding RuntimeStatusSummary}"
@@ -167,20 +167,20 @@
                             </Border>
 
                             <TextBlock Grid.Row="1" Text="Files" Style="{StaticResource MetaKeyStyle}" Margin="0,0,0,8"/>
-                            <TextBlock Grid.Row="1" Grid.Column="1" Text="{Binding SelectedIndexedLocation.FileCount, StringFormat={}{0:n0}}" Style="{StaticResource MetaValueStyle}" TextAlignment="Left" Margin="0,0,0,8"/>
+                            <TextBlock Grid.Row="1" Grid.Column="1" Text="{Binding Index.SelectedIndexedLocation.FileCount, StringFormat={}{0:n0}}" Style="{StaticResource MetaValueStyle}" TextAlignment="Left" Margin="0,0,0,8"/>
 
                             <TextBlock Grid.Row="2" Text="Lines" Style="{StaticResource MetaKeyStyle}" Margin="0,0,0,8"/>
-                            <TextBlock Grid.Row="2" Grid.Column="1" Text="{Binding SelectedIndexedLocation.LineCount, StringFormat={}{0:n0}}" Style="{StaticResource MetaValueStyle}" TextAlignment="Left" Margin="0,0,0,8"/>
+                            <TextBlock Grid.Row="2" Grid.Column="1" Text="{Binding Index.SelectedIndexedLocation.LineCount, StringFormat={}{0:n0}}" Style="{StaticResource MetaValueStyle}" TextAlignment="Left" Margin="0,0,0,8"/>
 
                             <TextBlock Grid.Row="3" Text="Refresh" Style="{StaticResource MetaKeyStyle}" Margin="0,0,0,8"/>
-                            <TextBlock Grid.Row="3" Grid.Column="1" Text="{Binding SelectedIndexedLocation.LastIndexedSummary}" Style="{StaticResource MetaValueStyle}" TextAlignment="Left" Margin="0,0,0,8"/>
+                            <TextBlock Grid.Row="3" Grid.Column="1" Text="{Binding Index.SelectedIndexedLocation.LastIndexedSummary}" Style="{StaticResource MetaValueStyle}" TextAlignment="Left" Margin="0,0,0,8"/>
 
                             <TextBlock Grid.Row="4" Text="Coverage" Style="{StaticResource MetaKeyStyle}" Margin="0,0,0,8"/>
-                            <TextBlock Grid.Row="4" Grid.Column="1" Text="{Binding SelectedIndexedLocation.RecursionSummary}" Style="{StaticResource MetaValueStyle}" TextAlignment="Left" Margin="0,0,0,8"/>
+                            <TextBlock Grid.Row="4" Grid.Column="1" Text="{Binding Index.SelectedIndexedLocation.RecursionSummary}" Style="{StaticResource MetaValueStyle}" TextAlignment="Left" Margin="0,0,0,8"/>
 
                             <TextBlock Grid.Row="5" Text="Watcher" Style="{StaticResource MetaKeyStyle}"/>
                             <Border Grid.Row="5" Grid.Column="1"
-                                    DataContext="{Binding SelectedIndexedLocation}"
+                                    DataContext="{Binding Index.SelectedIndexedLocation}"
                                     Style="{StaticResource WatchStatusBadgeStyle}">
                                 <TextBlock Text="{Binding WatchSummary}"
                                            Style="{StaticResource IndexStatusBadgeTextStyle}"/>
@@ -190,13 +190,13 @@
                         <Border Height="1" Background="{DynamicResource Atlas.LineBrush}" Margin="0,0,0,18"/>
 
                         <TextBlock Text="Indexed with" Style="{StaticResource FieldLabelStyle}"/>
-                        <TextBlock Text="{Binding SelectedIndexedLocation.TypeSummary}"
+                        <TextBlock Text="{Binding Index.SelectedIndexedLocation.TypeSummary}"
                                    Style="{StaticResource MetaValueStyle}"
                                    TextAlignment="Left"
                                    Margin="0,2,0,18"/>
 
                         <WrapPanel>
-                            <Button Command="{Binding RebuildSelectedIndexCommand}"
+                            <Button Command="{Binding Index.RebuildSelectedIndexCommand}"
                                     Style="{StaticResource PrimaryButtonStyle}"
                                     Height="34"
                                     MinWidth="142"
@@ -206,7 +206,7 @@
                                     <TextBlock Text="Rebuild selected"/>
                                 </StackPanel>
                             </Button>
-                            <Button Command="{Binding RemoveSelectedIndexCommand}"
+                            <Button Command="{Binding Index.RemoveSelectedIndexCommand}"
                                     Style="{StaticResource SecondaryButtonStyle}"
                                     Height="34"
                                     MinWidth="138"
@@ -216,7 +216,7 @@
                                     <TextBlock Text="Remove selected"/>
                                 </StackPanel>
                             </Button>
-                            <Button Command="{Binding OpenIndexLocationCommand}"
+                            <Button Command="{Binding Index.OpenIndexLocationCommand}"
                                     Style="{StaticResource SecondaryButtonStyle}"
                                     Height="34"
                                     MinWidth="132"
@@ -234,7 +234,7 @@
                             <Style TargetType="StackPanel">
                                 <Setter Property="Visibility" Value="Collapsed"/>
                                 <Style.Triggers>
-                                    <DataTrigger Binding="{Binding SelectedIndexedLocation}" Value="{x:Null}">
+                                    <DataTrigger Binding="{Binding Index.SelectedIndexedLocation}" Value="{x:Null}">
                                         <Setter Property="Visibility" Value="Visible"/>
                                     </DataTrigger>
                                 </Style.Triggers>
@@ -250,7 +250,7 @@
                         Orientation="Horizontal"
                         HorizontalAlignment="Right"
                         Margin="0,16,0,0">
-                <Button Command="{Binding PauseBackgroundIndexingCommand}"
+                <Button Command="{Binding Index.PauseBackgroundIndexingCommand}"
                         Style="{StaticResource SecondaryButtonStyle}"
                         Height="34"
                         MinWidth="86"
@@ -260,7 +260,7 @@
                         <TextBlock Text="Pause"/>
                     </StackPanel>
                 </Button>
-                <Button Command="{Binding ResumeBackgroundIndexingCommand}"
+                <Button Command="{Binding Index.ResumeBackgroundIndexingCommand}"
                         Style="{StaticResource SecondaryButtonStyle}"
                         Height="34"
                         MinWidth="92"

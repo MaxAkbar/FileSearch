@@ -45,19 +45,19 @@
                         <MenuItem Header="E_xit" Click="OnExitClick"/>
                     </MenuItem>
                     <MenuItem Header="_Search">
-                        <MenuItem Header="_Start" Command="{Binding SearchCommand}" InputGestureText="Enter"/>
-                        <MenuItem Header="_Cancel" Command="{Binding CancelCommand}" InputGestureText="Esc"/>
+                        <MenuItem Header="_Start" Command="{Binding Search.SearchCommand}" InputGestureText="Enter"/>
+                        <MenuItem Header="_Cancel" Command="{Binding Search.CancelCommand}" InputGestureText="Esc"/>
                     </MenuItem>
                     <MenuItem Header="_Index">
                         <MenuItem Header="_Manage indexed locations..."
                                   Click="OnManageIndexesClick"/>
                         <MenuItem Header="_Pause background indexing"
-                                  Command="{Binding PauseBackgroundIndexingCommand}"/>
+                                  Command="{Binding Index.PauseBackgroundIndexingCommand}"/>
                         <MenuItem Header="_Resume background indexing"
-                                  Command="{Binding ResumeBackgroundIndexingCommand}"/>
+                                  Command="{Binding Index.ResumeBackgroundIndexingCommand}"/>
                         <Separator/>
                         <MenuItem Header="_Open index location"
-                                  Command="{Binding OpenIndexLocationCommand}"/>
+                                  Command="{Binding Index.OpenIndexLocationCommand}"/>
                     </MenuItem>
                     <MenuItem Header="_View">
                         <MenuItem Header="Theme">
@@ -91,14 +91,14 @@
                 <Ellipse Width="7" Height="7"
                          Fill="{DynamicResource Atlas.AccentBrush}"
                          VerticalAlignment="Center" Margin="0,0,9,0"/>
-                <TextBlock Grid.Column="1" Text="{Binding StatusText}" Style="{StaticResource StatusTextStyle}"/>
+                <TextBlock Grid.Column="1" Text="{Binding Status.Text}" Style="{StaticResource StatusTextStyle}"/>
                 <TextBlock Grid.Column="3" Style="{StaticResource StatusStrongStyle}" Margin="16,0,0,0">
-                    <Run Text="{Binding FilesMatched, Mode=OneWay}"/><Run Text=" files · "/><Run Text="{Binding TotalHits, Mode=OneWay}"/><Run Text=" hits"/>
+                    <Run Text="{Binding Search.FilesMatched, Mode=OneWay}"/><Run Text=" files · "/><Run Text="{Binding Search.TotalHits, Mode=OneWay}"/><Run Text=" hits"/>
                 </TextBlock>
                 <TextBlock Grid.Column="4" Style="{StaticResource StatusTextStyle}" Margin="16,0,0,0">
-                    <Run Text="elapsed "/><Run Text="{Binding ElapsedText, Mode=OneWay}"/>
+                    <Run Text="elapsed "/><Run Text="{Binding Search.ElapsedText, Mode=OneWay}"/>
                 </TextBlock>
-                <TextBlock Grid.Column="5" Text="{Binding IndexActivityText}"
+                <TextBlock Grid.Column="5" Text="{Binding Index.IndexActivityText}"
                            Style="{StaticResource StatusTextStyle}" Margin="16,0,0,0"/>
             </Grid>
         </Border>
@@ -171,14 +171,14 @@
                                       Header="SCOPES" Style="{StaticResource NavSectionExpanderStyle}"
                                       Expanded="OnNavSectionToggled" Collapsed="OnNavSectionToggled">
                                 <StackPanel>
-                                    <Button Command="{Binding ApplyFilePatternPresetCommand}" CommandParameter=""
+                                    <Button Command="{Binding Search.ApplyFilePatternPresetCommand}" CommandParameter=""
                                             Style="{StaticResource NavItemButtonStyle}">
                                         <StackPanel Orientation="Horizontal">
                                             <ui:FontIcon Glyph="&#xE8A5;" FontSize="14" Margin="0,0,11,0"/>
                                             <TextBlock Text="All files" VerticalAlignment="Center"/>
                                         </StackPanel>
                                     </Button>
-                                    <Button Command="{Binding ApplyFilePatternPresetCommand}"
+                                    <Button Command="{Binding Search.ApplyFilePatternPresetCommand}"
                                             CommandParameter="*.cs;*.xaml;*.csproj;*.sln;*.slnx;*.json;*.md"
                                             Style="{StaticResource NavItemButtonStyle}">
                                         <StackPanel Orientation="Horizontal">
@@ -186,7 +186,7 @@
                                             <TextBlock Text="Source and config" VerticalAlignment="Center"/>
                                         </StackPanel>
                                     </Button>
-                                    <Button Command="{Binding ApplyFilePatternPresetCommand}"
+                                    <Button Command="{Binding Search.ApplyFilePatternPresetCommand}"
                                             CommandParameter="*.txt;*.md;*.rtf;*.docx;*.xlsx;*.pptx"
                                             Style="{StaticResource NavItemButtonStyle}">
                                         <StackPanel Orientation="Horizontal">
@@ -194,14 +194,14 @@
                                             <TextBlock Text="Documents" VerticalAlignment="Center"/>
                                         </StackPanel>
                                     </Button>
-                                    <Button Command="{Binding ApplyFilePatternPresetCommand}" CommandParameter="*.pdf"
+                                    <Button Command="{Binding Search.ApplyFilePatternPresetCommand}" CommandParameter="*.pdf"
                                             Style="{StaticResource NavItemButtonStyle}">
                                         <StackPanel Orientation="Horizontal">
                                             <ui:FontIcon Glyph="&#xEA90;" FontSize="14" Margin="0,0,11,0"/>
                                             <TextBlock Text="PDFs" VerticalAlignment="Center"/>
                                         </StackPanel>
                                     </Button>
-                                    <ItemsControl ItemsSource="{Binding CustomScopes}" Margin="0,4,0,0">
+                                    <ItemsControl ItemsSource="{Binding History.CustomScopes}" Margin="0,4,0,0">
                                         <ItemsControl.ItemTemplate>
                                             <DataTemplate>
                                                 <Grid Margin="0,1">
@@ -209,7 +209,7 @@
                                                         <ColumnDefinition Width="*"/>
                                                         <ColumnDefinition Width="Auto"/>
                                                     </Grid.ColumnDefinitions>
-                                                    <Button Command="{Binding DataContext.ApplyCustomScopeCommand, RelativeSource={RelativeSource AncestorType=ItemsControl}}"
+                                                    <Button Command="{Binding DataContext.Search.ApplyCustomScopeCommand, RelativeSource={RelativeSource AncestorType=ItemsControl}}"
                                                             CommandParameter="{Binding}"
                                                             HorizontalContentAlignment="Stretch"
                                                             Style="{StaticResource NavItemButtonStyle}"
@@ -227,7 +227,7 @@
                                                         </Grid>
                                                     </Button>
                                                     <Button Grid.Column="1"
-                                                            Command="{Binding DataContext.RemoveCustomScopeCommand, RelativeSource={RelativeSource AncestorType=ItemsControl}}"
+                                                            Command="{Binding DataContext.History.RemoveCustomScopeCommand, RelativeSource={RelativeSource AncestorType=ItemsControl}}"
                                                             CommandParameter="{Binding}"
                                                             Style="{StaticResource IconButtonStyle}"
                                                             Width="24" Height="24"
@@ -246,7 +246,7 @@
                                             <TextBlock Text="New scope" VerticalAlignment="Center"/>
                                         </StackPanel>
                                     </Button>
-                                    <Button Command="{Binding ClearCustomScopesCommand}" Style="{StaticResource NavItemButtonStyle}">
+                                    <Button Command="{Binding History.ClearCustomScopesCommand}" Style="{StaticResource NavItemButtonStyle}">
                                         <StackPanel Orientation="Horizontal">
                                             <ui:FontIcon Glyph="&#xE74D;" FontSize="14" Margin="0,0,11,0"/>
                                             <TextBlock Text="Clear scopes" VerticalAlignment="Center"/>
@@ -260,15 +260,15 @@
                                       Expanded="OnNavSectionToggled" Collapsed="OnNavSectionToggled">
                                 <DockPanel>
                                     <Button DockPanel.Dock="Bottom"
-                                            Command="{Binding ClearRecentPathsCommand}"
+                                            Command="{Binding History.ClearRecentPathsCommand}"
                                             Style="{StaticResource NavItemButtonStyle}">
                                         <StackPanel Orientation="Horizontal">
                                             <ui:FontIcon Glyph="&#xE74D;" FontSize="14" Margin="0,0,11,0"/>
                                             <TextBlock Text="Clear recent folders" VerticalAlignment="Center"/>
                                         </StackPanel>
                                     </Button>
-                                    <ListBox ItemsSource="{Binding RecentPaths}"
-                                             SelectedItem="{Binding SearchPath, Mode=TwoWay}"
+                                    <ListBox ItemsSource="{Binding History.RecentPaths}"
+                                             SelectedItem="{Binding Search.SearchPath, Mode=TwoWay}"
                                              Style="{StaticResource NavListBoxStyle}"
                                              ItemContainerStyle="{StaticResource NavListBoxItemStyle}">
                                         <ListBox.ItemTemplate>
@@ -284,7 +284,7 @@
                                                                  VerticalAlignment="Center"/>
                                                     <TextBlock Grid.Column="1" Text="{Binding}" TextTrimming="CharacterEllipsis" VerticalAlignment="Center"/>
                                                     <Button Grid.Column="2"
-                                                            Command="{Binding DataContext.RemoveRecentPathCommand, RelativeSource={RelativeSource AncestorType=ListBox}}"
+                                                            Command="{Binding DataContext.History.RemoveRecentPathCommand, RelativeSource={RelativeSource AncestorType=ListBox}}"
                                                             CommandParameter="{Binding}"
                                                             Style="{StaticResource IconButtonStyle}"
                                                             Width="24" Height="24"
@@ -311,8 +311,8 @@
                                             <TextBlock Text="Manage locations" VerticalAlignment="Center"/>
                                         </StackPanel>
                                     </Button>
-                                    <ListBox ItemsSource="{Binding IndexedLocations}"
-                                             SelectedItem="{Binding SelectedIndexedLocation, Mode=TwoWay}"
+                                    <ListBox ItemsSource="{Binding Index.IndexedLocations}"
+                                             SelectedItem="{Binding Index.SelectedIndexedLocation, Mode=TwoWay}"
                                              Style="{StaticResource NavListBoxStyle}"
                                              ItemContainerStyle="{StaticResource NavListBoxItemStyle}">
                                         <ListBox.ItemTemplate>
@@ -351,15 +351,15 @@
                                       Expanded="OnNavSectionToggled" Collapsed="OnNavSectionToggled">
                                 <DockPanel>
                                     <Button DockPanel.Dock="Bottom"
-                                            Command="{Binding ClearRecentQueriesCommand}"
+                                            Command="{Binding History.ClearRecentQueriesCommand}"
                                             Style="{StaticResource NavItemButtonStyle}">
                                         <StackPanel Orientation="Horizontal">
                                             <ui:FontIcon Glyph="&#xE74D;" FontSize="14" Margin="0,0,11,0"/>
                                             <TextBlock Text="Clear saved searches" VerticalAlignment="Center"/>
                                         </StackPanel>
                                     </Button>
-                                    <ListBox ItemsSource="{Binding RecentQueries}"
-                                             SelectedItem="{Binding QueryText, Mode=TwoWay}"
+                                    <ListBox ItemsSource="{Binding History.RecentQueries}"
+                                             SelectedItem="{Binding Search.QueryText, Mode=TwoWay}"
                                              Style="{StaticResource NavListBoxStyle}"
                                              ItemContainerStyle="{StaticResource NavListBoxItemStyle}">
                                         <ListBox.ItemTemplate>
@@ -374,7 +374,7 @@
                                                              Margin="1,0,12,0" VerticalAlignment="Center"/>
                                                     <TextBlock Grid.Column="1" Text="{Binding}" TextTrimming="CharacterEllipsis" VerticalAlignment="Center"/>
                                                     <Button Grid.Column="2"
-                                                            Command="{Binding DataContext.RemoveRecentQueryCommand, RelativeSource={RelativeSource AncestorType=ListBox}}"
+                                                            Command="{Binding DataContext.History.RemoveRecentQueryCommand, RelativeSource={RelativeSource AncestorType=ListBox}}"
                                                             CommandParameter="{Binding}"
                                                             Style="{StaticResource IconButtonStyle}"
                                                             Width="24" Height="24"
@@ -410,7 +410,7 @@
                         <ColumnDefinition Width="Auto"/>
                     </Grid.ColumnDefinitions>
 
-                    <Button Grid.Column="0" Command="{Binding BrowseCommand}"
+                    <Button Grid.Column="0" Command="{Binding Search.BrowseCommand}"
                             Style="{StaticResource IconButtonStyle}" ToolTip="Choose folder" Margin="0,0,8,0">
                         <ui:FontIcon Glyph="&#xE8B7;" FontSize="15"/>
                     </Button>
@@ -426,32 +426,32 @@
                             <ui:FontIcon Glyph="&#xE721;" FontSize="15" Margin="0,0,10,0"
                                          Foreground="{DynamicResource Atlas.Ink3Brush}" VerticalAlignment="Center"/>
                             <TextBox Grid.Column="1"
-                                     Text="{Binding SearchPath, UpdateSourceTrigger=LostFocus}"
+                                     Text="{Binding Search.SearchPath, UpdateSourceTrigger=LostFocus}"
                                      Style="{StaticResource OmniPathBoxStyle}"
                                      ui:ControlHelper.PlaceholderText="Folder to search"/>
                             <Border Grid.Column="2" Style="{StaticResource OmniDividerStyle}"/>
                             <TextBox Grid.Column="3"
-                                     Text="{Binding QueryText, UpdateSourceTrigger=PropertyChanged}"
+                                     Text="{Binding Search.QueryText, UpdateSourceTrigger=PropertyChanged}"
                                      Style="{StaticResource OmniQueryBoxStyle}"
                                      ui:ControlHelper.PlaceholderText="Search text, regex, or Boolean query"/>
                         </Grid>
                     </Border>
 
-                    <Button Grid.Column="2" Command="{Binding SearchCommand}" IsDefault="True"
+                    <Button Grid.Column="2" Command="{Binding Search.SearchCommand}" IsDefault="True"
                             Style="{StaticResource PrimaryButtonStyle}" Margin="8,0,0,0">
                         <StackPanel Orientation="Horizontal">
                             <ui:FontIcon Glyph="&#xE768;" FontSize="13" Margin="0,0,8,0"/>
                             <TextBlock Text="Start"/>
                         </StackPanel>
                     </Button>
-                    <Button Grid.Column="3" Command="{Binding CancelCommand}" IsCancel="True"
+                    <Button Grid.Column="3" Command="{Binding Search.CancelCommand}" IsCancel="True"
                             Style="{StaticResource SecondaryButtonStyle}" Margin="8,0,0,0">
                         <StackPanel Orientation="Horizontal">
                             <ui:FontIcon Glyph="&#xE711;" FontSize="13" Margin="0,0,8,0"/>
                             <TextBlock Text="Cancel"/>
                         </StackPanel>
                     </Button>
-                    <Button Grid.Column="4" Command="{Binding TogglePreviewPaneCommand}"
+                    <Button Grid.Column="4" Command="{Binding Search.TogglePreviewPaneCommand}"
                             Style="{StaticResource IconButtonStyle}" Margin="8,0,0,0"
                             ToolTip="Show or hide the preview pane">
                         <ui:FontIcon Glyph="&#xE8A1;" FontSize="15"/>
@@ -463,7 +463,7 @@
                     <Border Style="{StaticResource FilterChipStyle}">
                         <StackPanel Orientation="Horizontal">
                             <TextBlock Text="Pattern" Style="{StaticResource ChipLabelStyle}"/>
-                            <TextBox Text="{Binding FileNamePattern, UpdateSourceTrigger=PropertyChanged}"
+                            <TextBox Text="{Binding Search.FileNamePattern, UpdateSourceTrigger=PropertyChanged}"
                                      MinWidth="260" MaxWidth="460" BorderThickness="0" Background="Transparent"
                                      VerticalContentAlignment="Center"
                                      ToolTip="Glob patterns separated by ; or , — e.g. *.cs;*.md"
@@ -473,25 +473,25 @@
                     <Border Style="{StaticResource FilterChipStyle}">
                         <StackPanel Orientation="Horizontal">
                             <TextBlock Text="Mode" Style="{StaticResource ChipLabelStyle}"/>
-                            <ComboBox SelectedItem="{Binding SearchMode}"
-                                      ItemsSource="{Binding AvailableModes}"
+                            <ComboBox SelectedItem="{Binding Search.SearchMode}"
+                                      ItemsSource="{Binding Search.AvailableModes}"
                                       MinWidth="104" BorderThickness="0" Background="Transparent"/>
                         </StackPanel>
                     </Border>
                     <Border Style="{StaticResource FilterChipStyle}">
-                        <CheckBox Content="{Binding SubfoldersSummary}" IsChecked="{Binding IncludeSubfolders}" VerticalAlignment="Center"/>
+                        <CheckBox Content="{Binding Search.SubfoldersSummary}" IsChecked="{Binding Search.IncludeSubfolders}" VerticalAlignment="Center"/>
                     </Border>
                     <Border Style="{StaticResource FilterChipStyle}">
-                        <CheckBox Content="{Binding MatchCaseSummary}" IsChecked="{Binding MatchCase}" VerticalAlignment="Center"/>
+                        <CheckBox Content="{Binding Search.MatchCaseSummary}" IsChecked="{Binding Search.MatchCase}" VerticalAlignment="Center"/>
                     </Border>
                     <Border Style="{StaticResource FilterChipStyle}">
-                        <CheckBox Content="{Binding DocumentExtractionSummary}" IsChecked="{Binding EnableDocumentExtraction}" VerticalAlignment="Center"/>
+                        <CheckBox Content="{Binding Search.DocumentExtractionSummary}" IsChecked="{Binding Search.EnableDocumentExtraction}" VerticalAlignment="Center"/>
                     </Border>
                     <Border Style="{StaticResource FilterChipStyle}">
-                        <CheckBox Content="{Binding IndexSummaryText}" IsChecked="{Binding UseIndex}" VerticalAlignment="Center"/>
+                        <CheckBox Content="{Binding Search.IndexSummaryText}" IsChecked="{Binding Search.UseIndex}" VerticalAlignment="Center"/>
                     </Border>
                     <Border Style="{StaticResource FilterChipStyle}">
-                        <TextBlock Text="{Binding DateSummary}" Style="{StaticResource MutedValueStyle}"/>
+                        <TextBlock Text="{Binding Search.DateSummary}" Style="{StaticResource MutedValueStyle}"/>
                     </Border>
                     <Expander Header="Advanced" Style="{StaticResource AdvancedExpanderStyle}">
                         <Border Style="{StaticResource AdvancedFlyoutCardStyle}">
@@ -514,11 +514,11 @@
                                         </Grid.ColumnDefinitions>
                                         <StackPanel>
                                             <TextBlock Text="Min" Style="{StaticResource FieldLabelStyle}"/>
-                                            <TextBox Text="{Binding MinSizeKB}"/>
+                                            <TextBox Text="{Binding Search.MinSizeKB}"/>
                                         </StackPanel>
                                         <StackPanel Grid.Column="2">
                                             <TextBlock Text="Max" Style="{StaticResource FieldLabelStyle}"/>
-                                            <TextBox Text="{Binding MaxSizeKB}" ToolTip="0 = no upper limit"/>
+                                            <TextBox Text="{Binding Search.MaxSizeKB}" ToolTip="0 = no upper limit"/>
                                         </StackPanel>
                                     </Grid>
                                 </StackPanel>
@@ -532,26 +532,26 @@
                                             <ColumnDefinition Width="*"/>
                                         </Grid.ColumnDefinitions>
                                         <StackPanel>
-                                            <CheckBox Content="After" IsChecked="{Binding ModifiedAfterEnabled}"/>
-                                            <DatePicker SelectedDate="{Binding ModifiedAfter}"
-                                                        IsEnabled="{Binding ModifiedAfterEnabled}" Margin="0,6,0,0"/>
+                                            <CheckBox Content="After" IsChecked="{Binding Search.ModifiedAfterEnabled}"/>
+                                            <DatePicker SelectedDate="{Binding Search.ModifiedAfter}"
+                                                        IsEnabled="{Binding Search.ModifiedAfterEnabled}" Margin="0,6,0,0"/>
                                         </StackPanel>
                                         <StackPanel Grid.Column="2">
-                                            <CheckBox Content="Before" IsChecked="{Binding ModifiedBeforeEnabled}"/>
-                                            <DatePicker SelectedDate="{Binding ModifiedBefore}"
-                                                        IsEnabled="{Binding ModifiedBeforeEnabled}" Margin="0,6,0,0"/>
+                                            <CheckBox Content="Before" IsChecked="{Binding Search.ModifiedBeforeEnabled}"/>
+                                            <DatePicker SelectedDate="{Binding Search.ModifiedBefore}"
+                                                        IsEnabled="{Binding Search.ModifiedBeforeEnabled}" Margin="0,6,0,0"/>
                                         </StackPanel>
                                     </Grid>
                                 </StackPanel>
 
                                 <StackPanel Grid.Column="4">
                                     <TextBlock Text="FILE TYPES" Style="{StaticResource SectionHeaderStyle}"/>
-                                    <CheckBox Content="{Binding UnknownFileTypesSummary}"
-                                              IsChecked="{Binding SkipUnknownFileTypes}"
+                                    <CheckBox Content="{Binding Search.UnknownFileTypesSummary}"
+                                              IsChecked="{Binding Search.SkipUnknownFileTypes}"
                                               ToolTip="Faster, but extensionless or uncommon text files are not searched."/>
                                     <TextBlock Text="Additional plain-text extensions"
                                                Style="{StaticResource FieldLabelStyle}" Margin="0,12,0,4"/>
-                                    <TextBox Text="{Binding AdditionalPlainTextExtensions, UpdateSourceTrigger=PropertyChanged}"
+                                    <TextBox Text="{Binding Search.AdditionalPlainTextExtensions, UpdateSourceTrigger=PropertyChanged}"
                                              ui:ControlHelper.PlaceholderText=".liquid; .tmpl; .foo"/>
                                     <TextBlock Text="Separate extensions with commas or semicolons."
                                                Style="{StaticResource HintLabelStyle}"/>
@@ -577,14 +577,14 @@
                                 <ColumnDefinition Width="*"/>
                                 <ColumnDefinition Width="Auto"/>
                             </Grid.ColumnDefinitions>
-                            <TextBlock Text="{Binding ResultsContextText}" Style="{StaticResource CtxTitleStyle}"/>
-                            <TextBlock Grid.Column="1" Text="{Binding ResultsSummaryText}"
+                            <TextBlock Text="{Binding Search.ResultsContextText}" Style="{StaticResource CtxTitleStyle}"/>
+                            <TextBlock Grid.Column="1" Text="{Binding Search.ResultsSummaryText}"
                                        Style="{StaticResource MutedValueStyle}" Margin="12,3,0,0"/>
                             <Grid Grid.Column="3" Width="210">
-                                <TextBox Text="{Binding RefinementQuery, UpdateSourceTrigger=PropertyChanged, Delay=120}"
+                                <TextBox Text="{Binding Search.RefinementQuery, UpdateSourceTrigger=PropertyChanged, Delay=120}"
                                          ui:ControlHelper.PlaceholderText="Filter results"
                                          Padding="8,4,28,4"/>
-                                <Button Command="{Binding ClearRefinementCommand}"
+                                <Button Command="{Binding Search.ClearRefinementCommand}"
                                         Style="{StaticResource IconButtonStyle}"
                                         Width="24" Height="24" HorizontalAlignment="Right" Margin="0,0,3,0"
                                         ToolTip="Clear filter">
@@ -595,8 +595,8 @@
 
                         <!-- Result cards + empty state -->
                         <Grid Grid.Row="1">
-                            <ListBox ItemsSource="{Binding FilesView}"
-                                     SelectedItem="{Binding SelectedFile}"
+                            <ListBox ItemsSource="{Binding Search.FilesView}"
+                                     SelectedItem="{Binding Search.SelectedFile}"
                                      Style="{StaticResource ResultsListStyle}">
                                 <ListBox.ItemContainerStyle>
                                     <Style TargetType="ListBoxItem" BasedOn="{StaticResource ResultCardContainerStyle}">
@@ -683,7 +683,7 @@
                                     <Style TargetType="StackPanel">
                                         <Setter Property="Visibility" Value="Collapsed"/>
                                         <Style.Triggers>
-                                            <DataTrigger Binding="{Binding Files.Count}" Value="0">
+                                            <DataTrigger Binding="{Binding Search.Files.Count}" Value="0">
                                                 <Setter Property="Visibility" Value="Visible"/>
                                             </DataTrigger>
                                         </Style.Triggers>
@@ -705,7 +705,7 @@
 
             <!-- ===== Preview pane ===== -->
             <Border Grid.Column="3"
-                    Visibility="{Binding IsPreviewPaneVisible, Converter={StaticResource BoolToVisibility}}"
+                    Visibility="{Binding Search.IsPreviewPaneVisible, Converter={StaticResource BoolToVisibility}}"
                     Style="{StaticResource PreviewPaneStyle}">
                 <DockPanel>
                     <!-- header -->
@@ -718,8 +718,8 @@
                             </Grid.ColumnDefinitions>
                             <TextBlock Text="PREVIEW" Style="{StaticResource UpperPanelLabelStyle}"/>
                             <Button Grid.Column="1"
-                                    Command="{Binding SelectedFile.RevealInExplorerCommand}"
-                                    IsEnabled="{Binding HasSelectedFile}"
+                                    Command="{Binding Search.SelectedFile.RevealInExplorerCommand}"
+                                    IsEnabled="{Binding Search.HasSelectedFile}"
                                     Style="{StaticResource IconButtonStyle}" Width="28" Height="28"
                                     ToolTip="Reveal in Explorer">
                                 <ui:FontIcon Glyph="&#xE838;" FontSize="13"/>
@@ -736,15 +736,15 @@
                             <ColumnDefinition Width="8"/>
                             <ColumnDefinition Width="*"/>
                         </Grid.ColumnDefinitions>
-                        <Button Command="{Binding SelectedFile.OpenCommand}" IsEnabled="{Binding HasSelectedFile}"
+                        <Button Command="{Binding Search.SelectedFile.OpenCommand}" IsEnabled="{Binding Search.HasSelectedFile}"
                                 Style="{StaticResource PreviewActionButtonStyle}">
                             <StackPanel Orientation="Horizontal" HorizontalAlignment="Center">
                                 <ui:FontIcon Glyph="&#xE8E5;" FontSize="13" Margin="0,0,7,0"/>
                                 <TextBlock Text="Open"/>
                             </StackPanel>
                         </Button>
-                        <Button Grid.Column="2" Command="{Binding SelectedFile.RevealInExplorerCommand}"
-                                IsEnabled="{Binding HasSelectedFile}"
+                        <Button Grid.Column="2" Command="{Binding Search.SelectedFile.RevealInExplorerCommand}"
+                                IsEnabled="{Binding Search.HasSelectedFile}"
                                 Style="{StaticResource SecondaryPreviewActionButtonStyle}">
                             <StackPanel Orientation="Horizontal" HorizontalAlignment="Center">
                                 <ui:FontIcon Glyph="&#xE838;" FontSize="13" Margin="0,0,7,0"/>
@@ -752,20 +752,20 @@
                             </StackPanel>
                         </Button>
                         <Button Grid.Column="4"
-                                IsEnabled="{Binding HasSelectedFile}"
+                                IsEnabled="{Binding Search.HasSelectedFile}"
                                 Style="{StaticResource SecondaryPreviewActionButtonStyle}"
                                 Click="OnCopyMenuButtonClick"
                                 ToolTip="Copy the path, the preview, or the full file content">
                             <Button.ContextMenu>
                                 <ContextMenu Placement="Top"
                                              DataContext="{Binding Path=PlacementTarget.DataContext, RelativeSource={RelativeSource Self}}">
-                                    <MenuItem Header="Copy file _path" Command="{Binding SelectedFile.CopyPathCommand}">
+                                    <MenuItem Header="Copy file _path" Command="{Binding Search.SelectedFile.CopyPathCommand}">
                                         <MenuItem.Icon><ui:FontIcon Glyph="&#xE8C8;" FontSize="14"/></MenuItem.Icon>
                                     </MenuItem>
-                                    <MenuItem Header="Copy _preview" Command="{Binding CopyPreviewCommand}">
+                                    <MenuItem Header="Copy _preview" Command="{Binding Search.CopyPreviewCommand}">
                                         <MenuItem.Icon><ui:FontIcon Glyph="&#xE7C3;" FontSize="14"/></MenuItem.Icon>
                                     </MenuItem>
-                                    <MenuItem Header="Copy file _content" Command="{Binding CopyFileContentCommand}">
+                                    <MenuItem Header="Copy file _content" Command="{Binding Search.CopyFileContentCommand}">
                                         <MenuItem.Icon><ui:FontIcon Glyph="&#xE8E5;" FontSize="14"/></MenuItem.Icon>
                                     </MenuItem>
                                 </ContextMenu>
@@ -781,7 +781,7 @@
                     <!-- body -->
                     <Grid Margin="16,16,16,8">
                         <!-- selected file -->
-                        <Grid Visibility="{Binding HasSelectedFile, Converter={StaticResource BoolToVisibility}}">
+                        <Grid Visibility="{Binding Search.HasSelectedFile, Converter={StaticResource BoolToVisibility}}">
                             <Grid.RowDefinitions>
                                 <RowDefinition Height="Auto"/>
                                 <RowDefinition Height="Auto"/>
@@ -790,11 +790,11 @@
 
                             <StackPanel Grid.Row="0" Margin="0,0,0,14">
                                 <Border Style="{StaticResource PreviewBadgeStyle}"
-                                        Background="{Binding SelectedFile.FileName, Converter={StaticResource TypeBrush}}">
-                                    <TextBlock Text="{Binding SelectedFile.FileName, Converter={StaticResource TypeLabel}}"
+                                        Background="{Binding Search.SelectedFile.FileName, Converter={StaticResource TypeBrush}}">
+                                    <TextBlock Text="{Binding Search.SelectedFile.FileName, Converter={StaticResource TypeLabel}}"
                                                Style="{StaticResource PreviewBadgeTextStyle}"/>
                                 </Border>
-                                <TextBlock Text="{Binding SelectedFile.FileName}" Style="{StaticResource PreviewNameStyle}"/>
+                                <TextBlock Text="{Binding Search.SelectedFile.FileName}" Style="{StaticResource PreviewNameStyle}"/>
                             </StackPanel>
 
                             <StackPanel Grid.Row="1" Margin="0,0,0,12">
@@ -806,7 +806,7 @@
                                                 <ColumnDefinition Width="*"/>
                                             </Grid.ColumnDefinitions>
                                             <TextBlock Text="Location" Style="{StaticResource MetaKeyStyle}"/>
-                                            <TextBlock Grid.Column="1" Text="{Binding SelectedFile.Directory}" Style="{StaticResource MetaValueStyle}" Margin="10,0,0,0"/>
+                                            <TextBlock Grid.Column="1" Text="{Binding Search.SelectedFile.Directory}" Style="{StaticResource MetaValueStyle}" Margin="10,0,0,0"/>
                                         </Grid>
                                         <Grid Margin="0,0,0,6">
                                             <Grid.ColumnDefinitions>
@@ -815,7 +815,7 @@
                                             </Grid.ColumnDefinitions>
                                             <TextBlock Text="Type" Style="{StaticResource MetaKeyStyle}"/>
                                             <TextBlock Grid.Column="1" Style="{StaticResource MetaValueStyle}" Margin="10,0,0,0">
-                                                <Run Text="."/><Run Text="{Binding SelectedFile.Extension, Mode=OneWay}"/>
+                                                <Run Text="."/><Run Text="{Binding Search.SelectedFile.Extension, Mode=OneWay}"/>
                                             </TextBlock>
                                         </Grid>
                                         <Grid Margin="0,0,0,6">
@@ -824,7 +824,7 @@
                                                 <ColumnDefinition Width="*"/>
                                             </Grid.ColumnDefinitions>
                                             <TextBlock Text="Size" Style="{StaticResource MetaKeyStyle}"/>
-                                            <TextBlock Grid.Column="1" Text="{Binding SelectedFile.SizeText}" Style="{StaticResource MetaValueStyle}" Margin="10,0,0,0"/>
+                                            <TextBlock Grid.Column="1" Text="{Binding Search.SelectedFile.SizeText}" Style="{StaticResource MetaValueStyle}" Margin="10,0,0,0"/>
                                         </Grid>
                                         <Grid>
                                             <Grid.ColumnDefinitions>
@@ -832,13 +832,13 @@
                                                 <ColumnDefinition Width="*"/>
                                             </Grid.ColumnDefinitions>
                                             <TextBlock Text="Modified" Style="{StaticResource MetaKeyStyle}"/>
-                                            <TextBlock Grid.Column="1" Text="{Binding SelectedFile.ModifiedText}" Style="{StaticResource MetaValueStyle}" Margin="10,0,0,0"/>
+                                            <TextBlock Grid.Column="1" Text="{Binding Search.SelectedFile.ModifiedText}" Style="{StaticResource MetaValueStyle}" Margin="10,0,0,0"/>
                                         </Grid>
                                     </StackPanel>
                                 </Border>
                             </StackPanel>
 
-                            <TextBox Grid.Row="2" Text="{Binding PreviewContent, Mode=OneWay}"
+                            <TextBox Grid.Row="2" Text="{Binding Search.PreviewContent, Mode=OneWay}"
                                      Style="{StaticResource PreviewCodeBoxStyle}"/>
                         </Grid>
 
@@ -848,7 +848,7 @@
                                 <Style TargetType="StackPanel">
                                     <Setter Property="Visibility" Value="Collapsed"/>
                                     <Style.Triggers>
-                                        <DataTrigger Binding="{Binding SelectedFile}" Value="{x:Null}">
+                                        <DataTrigger Binding="{Binding Search.SelectedFile}" Value="{x:Null}">
                                             <Setter Property="Visibility" Value="Visible"/>
                                         </DataTrigger>
                                     </Style.Triggers>

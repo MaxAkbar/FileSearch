@@ -19,13 +19,13 @@ public partial class IndexedLocationsWindow : Window
         var dialog = new OpenFolderDialog
         {
             Title = "Add folder to index",
-            InitialDirectory = string.IsNullOrWhiteSpace(viewModel.SearchPath)
+            InitialDirectory = string.IsNullOrWhiteSpace(viewModel.Search.SearchPath)
                 ? Environment.CurrentDirectory
-                : viewModel.SearchPath,
+                : viewModel.Search.SearchPath,
         };
 
         if (dialog.ShowDialog(this) == true)
-            await viewModel.AddFolderToIndexAsync(dialog.FolderName).ConfigureAwait(true);
+            await viewModel.Index.AddFolderToIndexAsync(dialog.FolderName).ConfigureAwait(true);
     }
 
     private void OnCloseClick(object sender, RoutedEventArgs e)

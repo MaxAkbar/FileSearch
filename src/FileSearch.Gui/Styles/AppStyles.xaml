@@ -258,7 +258,7 @@
         <Setter Property="CornerRadius" Value="8"/>
         <Setter Property="Padding" Value="20"/>
         <Style.Triggers>
-            <DataTrigger Binding="{Binding SelectedIndexedLocation.WatchEnabled}" Value="True">
+            <DataTrigger Binding="{Binding Index.SelectedIndexedLocation.WatchEnabled}" Value="True">
                 <Setter Property="Background" Value="{DynamicResource Atlas.AccentSoftBrush}"/>
                 <Setter Property="BorderBrush" Value="{DynamicResource Atlas.AccentBrush}"/>
                 <Setter Property="BorderThickness" Value="2"/>
@@ -811,7 +811,7 @@
         <Setter Property="Cursor" Value="SizeWE"/>
         <Setter Property="ToolTip" Value="Drag to resize preview"/>
         <Style.Triggers>
-            <DataTrigger Binding="{Binding IsPreviewPaneVisible}" Value="False">
+            <DataTrigger Binding="{Binding Search.IsPreviewPaneVisible}" Value="False">
                 <Setter Property="Width" Value="0"/>
                 <Setter Property="Visibility" Value="Collapsed"/>
                 <Setter Property="IsHitTestVisible" Value="False"/>

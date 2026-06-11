@@ -46,6 +46,10 @@ public partial class App : System.Windows.Application
                 services.AddSingleton<IShellIntegrationService, ShellIntegrationService>();
                 services.AddSingleton<IFolderPicker, FolderPicker>();
                 services.AddSingleton<IUiDispatcher, WpfUiDispatcher>();
+                services.AddSingleton<StatusBarViewModel>();
+                services.AddSingleton<HistoryViewModel>();
+                services.AddSingleton<SearchViewModel>();
+                services.AddSingleton<IndexViewModel>();
                 services.AddSingleton<MainViewModel>();
                 services.AddSingleton<MainWindow>();
             })
@@ -61,7 +65,7 @@ public partial class App : System.Windows.Application
         var viewModel = _host.Services.GetRequiredService<MainViewModel>();
         var startupFolder = StartupFolderResolver.ResolveFolderPath(e.Args, Directory.Exists);
         if (startupFolder is not null)
-            viewModel.SearchPath = startupFolder;
+            viewModel.Search.SearchPath = startupFolder;
 
         window.DataContext = viewModel;
         window.Show();
