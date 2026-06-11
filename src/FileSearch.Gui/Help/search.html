@@ -22,6 +22,7 @@
                 <a class="active" href="search.html">Run a Search</a>
                 <a href="query-syntax.html">Query Syntax</a>
                 <a href="results.html">Results and Preview</a>
+                <a href="indexing.html">Indexed Search</a>
                 <a href="options.html">Options</a>
                 <a href="troubleshooting.html">Troubleshooting</a>
             </nav>
@@ -86,8 +87,39 @@
                 If a search returns too many files, narrow the file name pattern first. It reduces the number of files FileSearch has to open and scan.
             </div>
 
+            <h2>The Sidebar</h2>
+            <p>The sidebar on the left keeps frequently used scopes, folders, and searches one click away. Each section collapses independently, and the panel scrolls as a whole when the expanded sections are taller than the window.</p>
+            <div class="table-wrap">
+                <table>
+                    <thead>
+                        <tr>
+                            <th>Section</th>
+                            <th>What it does</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <tr>
+                            <td><strong>Scopes</strong></td>
+                            <td>One-click file name patterns. Presets cover all files, source and config, documents, and PDFs. <strong>New scope</strong> saves your own named pattern, such as <code>*.cs;*.xaml;*.md</code>; clicking a scope fills <strong>File name pattern</strong>.</td>
+                        </tr>
+                        <tr>
+                            <td><strong>Recent folders</strong></td>
+                            <td>Folders you searched recently. Click one to set <strong>Look in</strong>. The X on a row removes that entry.</td>
+                        </tr>
+                        <tr>
+                            <td><strong>Indexed locations</strong></td>
+                            <td>Folders covered by background indexing, with live status badges. <strong>Manage locations</strong> opens the management window. See <a href="indexing.html">Indexed Search</a>.</td>
+                        </tr>
+                        <tr>
+                            <td><strong>Saved searches</strong></td>
+                            <td>Your most recent queries. Click one to put it back into <strong>Containing text</strong>.</td>
+                        </tr>
+                    </tbody>
+                </table>
+            </div>
+
             <h2>Search History</h2>
-            <p>FileSearch keeps the most recent queries and folders so repeated searches are quick. A search attempt is added to history when it starts, even if it is canceled or fails.</p>
+            <p>FileSearch keeps the most recent queries and folders so repeated searches are quick. A search attempt is added to history when it starts, even if it is canceled or fails. History appears in the field dropdowns and in the sidebar's Recent folders and Saved searches sections.</p>
 
             <div class="next-links">
                 <a href="query-syntax.html">Query Syntax</a>

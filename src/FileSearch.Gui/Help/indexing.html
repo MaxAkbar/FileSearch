@@ -1,0 +1,147 @@
+<!doctype html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Indexed Search - FileSearch Help</title>
+    <link rel="stylesheet" href="css/help.css">
+</head>
+<body>
+    <div class="shell">
+        <aside class="sidebar">
+            <a class="brand" href="index.html" aria-label="FileSearch help home">
+                <img src="../Assets/FileSearch-256.png" alt="">
+                <span>
+                    <span class="brand-title">FileSearch</span>
+                    <span class="brand-subtitle">User help</span>
+                </span>
+            </a>
+            <div class="nav-heading">Using FileSearch</div>
+            <nav class="nav">
+                <a href="index.html">Overview</a>
+                <a href="search.html">Run a Search</a>
+                <a href="query-syntax.html">Query Syntax</a>
+                <a href="results.html">Results and Preview</a>
+                <a class="active" href="indexing.html">Indexed Search</a>
+                <a href="options.html">Options</a>
+                <a href="troubleshooting.html">Troubleshooting</a>
+            </nav>
+        </aside>
+
+        <main class="content">
+            <section class="hero">
+                <div class="eyebrow">Indexed Search</div>
+                <h1>Speed up repeat searches with a background index.</h1>
+                <p class="lead">FileSearch can index folders you search often. Indexed searches read prepared text from a local database instead of re-opening every file, and a background watcher keeps the index current while the app is running.</p>
+            </section>
+
+            <h2>How It Works</h2>
+            <ul class="plain-list">
+                <li>You choose folders to index, called <strong>indexed locations</strong>. FileSearch scans them in the background and stores their text in a local database.</li>
+                <li>While the app is open, a file watcher batches changes inside indexed locations and refreshes the affected entries automatically.</li>
+                <li>A search uses the index only when it is <strong>covered</strong>: the <strong>Look in</strong> folder falls inside an indexed location and the current options match what was indexed. When a search is not covered, FileSearch automatically falls back to a normal live scan.</li>
+            </ul>
+
+            <div class="callout">
+                Indexed search is opt-in. Turn on the <strong>Use index</strong> checkbox next to the search controls, or <strong>Use index for covered searches</strong> in the Manage indexed locations window. Live scan always remains the fallback, so enabling it never makes results worse.
+            </div>
+
+            <h2>Managing Indexed Locations</h2>
+            <p>Open <strong>Index &gt; Manage indexed locations...</strong>, or choose <strong>Manage locations</strong> in the sidebar's Indexed locations section.</p>
+            <div class="table-wrap">
+                <table>
+                    <thead>
+                        <tr>
+                            <th>Action</th>
+                            <th>What it does</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <tr>
+                            <td><strong>Add current folder to index</strong></td>
+                            <td>Adds the folder currently shown in <strong>Look in</strong> as an indexed location.</td>
+                        </tr>
+                        <tr>
+                            <td><strong>Add folder...</strong></td>
+                            <td>Picks any folder to index.</td>
+                        </tr>
+                        <tr>
+                            <td><strong>Rebuild selected</strong></td>
+                            <td>Re-scans the selected location from scratch. Use it after changing extraction options or if results look stale.</td>
+                        </tr>
+                        <tr>
+                            <td><strong>Remove selected</strong></td>
+                            <td>Removes the location and deletes its data from the index database.</td>
+                        </tr>
+                        <tr>
+                            <td><strong>Open database</strong></td>
+                            <td>Reveals the index database file in Explorer. Also available as <strong>Index &gt; Open index location</strong>.</td>
+                        </tr>
+                        <tr>
+                            <td><strong>Pause / Resume</strong></td>
+                            <td>Pauses or resumes all background indexing. Also available from the <strong>Index</strong> menu.</td>
+                        </tr>
+                    </tbody>
+                </table>
+            </div>
+
+            <h2>Location Details</h2>
+            <p>Selecting a location shows its current state:</p>
+            <ul class="plain-list">
+                <li><strong>Status</strong>, <strong>Files</strong>, and <strong>Lines</strong> show how much of the location is indexed.</li>
+                <li><strong>Refresh</strong> shows when the location was last indexed.</li>
+                <li><strong>Coverage</strong> shows whether subfolders are included or only the top folder.</li>
+                <li><strong>Watcher</strong> shows whether file changes are applied automatically.</li>
+                <li><strong>Indexed with</strong> records the extraction options used, such as whether Office/PDF documents were included and whether unknown file types were skipped.</li>
+            </ul>
+
+            <h2>Status Badges</h2>
+            <div class="table-wrap">
+                <table>
+                    <thead>
+                        <tr>
+                            <th>Badge</th>
+                            <th>Meaning</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <tr>
+                            <td><strong>Ready</strong></td>
+                            <td>The location is indexed and has no pending work.</td>
+                        </tr>
+                        <tr>
+                            <td><strong>Queued</strong></td>
+                            <td>Changes are waiting for the background worker. A count appears when several batches are pending.</td>
+                        </tr>
+                        <tr>
+                            <td><strong>Indexing now</strong></td>
+                            <td>The location is being scanned.</td>
+                        </tr>
+                        <tr>
+                            <td><strong>Paused</strong></td>
+                            <td>Background indexing is paused; pending work resumes when you choose Resume.</td>
+                        </tr>
+                        <tr>
+                            <td><strong>Watching changes / Watch disabled</strong></td>
+                            <td>Whether the file watcher keeps this location updated automatically.</td>
+                        </tr>
+                    </tbody>
+                </table>
+            </div>
+
+            <div class="callout">
+                The right side of the status bar shows live background indexing activity, so you can keep searching while the index builds.
+            </div>
+
+            <h2>Where the Index Is Stored</h2>
+            <p>The index is a local database under <code>%LocalAppData%\FileSearch\Index</code>. It contains text only from the folders you chose to index, never leaves your machine, and can be rebuilt at any time. Removing a location deletes its indexed data.</p>
+
+            <div class="next-links">
+                <a href="search.html">Run a Search</a>
+                <a href="options.html">Options</a>
+                <a href="troubleshooting.html">Troubleshooting</a>
+            </div>
+        </main>
+    </div>
+</body>
+</html>

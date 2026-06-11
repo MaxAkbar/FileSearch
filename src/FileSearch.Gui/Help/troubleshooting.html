@@ -22,6 +22,7 @@
                 <a href="search.html">Run a Search</a>
                 <a href="query-syntax.html">Query Syntax</a>
                 <a href="results.html">Results and Preview</a>
+                <a href="indexing.html">Indexed Search</a>
                 <a href="options.html">Options</a>
                 <a class="active" href="troubleshooting.html">Troubleshooting</a>
             </nav>
@@ -58,6 +59,23 @@
                 <li>Enable Skip unknown file types when scanning folders with many binaries.</li>
                 <li>Add date or size filters to avoid very old, very small, or very large files.</li>
                 <li>Cancel the current search if the scope is too broad, then start again with tighter filters.</li>
+                <li>Index folders you search repeatedly and enable <strong>Use index</strong>. See <a href="indexing.html">Indexed Search</a>.</li>
+            </ul>
+
+            <h2>Index Is Not Being Used</h2>
+            <ul class="plain-list">
+                <li>Confirm <strong>Use index</strong> is enabled next to the search controls or in the Manage indexed locations window.</li>
+                <li>The <strong>Look in</strong> folder must be inside an indexed location. Check the sidebar's Indexed locations section.</li>
+                <li>A location indexed without subfolders does not cover a recursive search below it. Check the location's <strong>Coverage</strong> in Manage indexed locations.</li>
+                <li>The search options must match what the location was indexed with (see <strong>Indexed with</strong> in the location details). After changing extraction options, use <strong>Rebuild selected</strong>.</li>
+                <li>When a search is not covered, FileSearch falls back to a live scan automatically — results are still correct, just slower.</li>
+            </ul>
+
+            <h2>Indexed Results Look Stale</h2>
+            <ul class="plain-list">
+                <li>Check the location's watcher badge: <strong>Watch disabled</strong> means file changes are not applied automatically.</li>
+                <li>Check whether background indexing is paused — the <strong>Index</strong> menu and the status bar show indexing activity.</li>
+                <li>Use <strong>Rebuild selected</strong> in Manage indexed locations to re-scan the location from scratch.</li>
             </ul>
 
             <h2>Preview Fails or Looks Incomplete</h2>
