@@ -1,0 +1,161 @@
+<!doctype html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Workflows - FileSearch Help</title>
+    <link rel="stylesheet" href="css/help.css">
+</head>
+<body>
+    <div class="shell">
+        <aside class="sidebar">
+            <a class="brand" href="index.html" aria-label="FileSearch help home">
+                <img src="../Assets/FileSearch-256.png" alt="">
+                <span>
+                    <span class="brand-title">FileSearch</span>
+                    <span class="brand-subtitle">User help</span>
+                </span>
+            </a>
+            <div class="nav-heading">Using FileSearch</div>
+            <nav class="nav">
+                <a href="index.html">Overview</a>
+                <a href="search.html">Run a Search</a>
+                <a href="query-syntax.html">Query Syntax</a>
+                <a href="results.html">Results and Preview</a>
+                <a href="indexing.html">Indexed Search</a>
+                <a class="active" href="workflows.html">Workflows</a>
+                <a href="options.html">Options</a>
+                <a href="troubleshooting.html">Troubleshooting</a>
+            </nav>
+        </aside>
+
+        <main class="content">
+            <section class="hero">
+                <div class="eyebrow">Workflows</div>
+                <h1>Save multi-step searches and replay them with one click.</h1>
+                <p class="lead">A workflow is a named sequence of steps: run a search, branch on how much it found, narrow into the matched files, loop with broader parameters, then export the results, copy the files, or hand them to a program. Open the editor with <strong>Search &gt; Workflows...</strong> or <strong>Workflows</strong> in the sidebar.</p>
+            </section>
+
+            <h2>Step Types</h2>
+            <div class="table-wrap">
+                <table>
+                    <thead>
+                        <tr>
+                            <th>Step</th>
+                            <th>What it does</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <tr>
+                            <td><strong>Search</strong></td>
+                            <td>Runs a query over root folders, or — with a <strong>scope step</strong> set — only over the files an earlier search matched (a sub-search). Filters include file-name globs (matched against the name only, never the path), size and date limits, and a list of directory names to skip (<code>.git</code>, <code>.vs</code> and <code>node_modules</code> by default). Results are recorded under the step's id for later steps.</td>
+                        </tr>
+                        <tr>
+                            <td><strong>If</strong></td>
+                            <td>Evaluates a condition over earlier search results and runs the <strong>then</strong> steps when it holds, otherwise the <strong>else</strong> steps.</td>
+                        </tr>
+                        <tr>
+                            <td><strong>Retry loop</strong></td>
+                            <td>Repeats its body until a condition is met or the iteration limit is reached — the "broaden and try again" loop. Optional parameter sets give each iteration its own variables.</td>
+                        </tr>
+                        <tr>
+                            <td><strong>For each file</strong></td>
+                            <td>Runs its body once per distinct file a search matched, exposing the current file to the body as variables.</td>
+                        </tr>
+                        <tr>
+                            <td><strong>Export results</strong></td>
+                            <td>Writes search results to a JSON, CSV, or Markdown file, asking for confirmation before an existing file is overwritten. New files are written without a prompt.</td>
+                        </tr>
+                        <tr>
+                            <td><strong>Copy / move files</strong></td>
+                            <td>Copies or moves the matched files into a folder, with a collision policy (rename, skip, or overwrite).</td>
+                        </tr>
+                        <tr>
+                            <td><strong>Run program</strong></td>
+                            <td>Launches an external program once, or once per matched file with the file path available in the arguments. Write <code>"${file}"</code> in quotes — file names may contain spaces. When waiting for exit, a non-zero exit code or a timeout marks the step failed; untick <strong>Wait for exit</strong> for GUI apps you don't want to wait on.</td>
+                        </tr>
+                        <tr>
+                            <td><strong>Stop</strong></td>
+                            <td>Ends the workflow immediately with a success or failure and an optional message — typically inside an if-branch.</td>
+                        </tr>
+                    </tbody>
+                </table>
+            </div>
+
+            <h2>Conditions</h2>
+            <p>If-steps and retry loops compare a number from an earlier search step: the <strong>hit count</strong> (matched lines) or the <strong>file count</strong> (distinct files with at least one hit). Choose the source step by id, or leave it at <strong>(last search)</strong> to measure the most recent search. For example: <code>hitCount of 'find-todos' &gt;= 5</code>.</p>
+
+            <div class="callout">
+                Every step has a unique <strong>id</strong> (generated automatically, e.g. <code>search-1</code>). Conditions, sub-searches, exports and file operations reference results by these ids, so the editor offers a dropdown of the search steps defined so far. A reference must point at a search step that runs <em>before</em> the referencing step; the one exception is a retry loop's exit condition, which may reference a search inside the loop's own body.
+            </div>
+
+            <h2>Loops and Variables</h2>
+            <p>Steps inside loop bodies can use <code>${variable}</code> placeholders in the query text, root folders, globs, export paths, destination folders, and program arguments:</p>
+            <div class="table-wrap">
+                <table>
+                    <thead>
+                        <tr>
+                            <th>Variable</th>
+                            <th>Available in</th>
+                            <th>Value</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <tr>
+                            <td><code>${file}</code></td>
+                            <td>For-each bodies, per-file program arguments</td>
+                            <td>Full path of the current file.</td>
+                        </tr>
+                        <tr>
+                            <td><code>${fileName}</code></td>
+                            <td>For-each bodies, per-file program arguments</td>
+                            <td>File name without the folder.</td>
+                        </tr>
+                        <tr>
+                            <td><code>${directory}</code></td>
+                            <td>For-each bodies, per-file program arguments</td>
+                            <td>Folder containing the current file.</td>
+                        </tr>
+                        <tr>
+                            <td><code>${iteration}</code></td>
+                            <td>Retry bodies</td>
+                            <td>The 1-based iteration number.</td>
+                        </tr>
+                        <tr>
+                            <td>Parameter-set keys</td>
+                            <td>Retry bodies</td>
+                            <td>Iteration <em>i</em> exposes the keys of the <em>i</em>-th parameter set, so successive iterations can relax the query, widen roots, and so on.</td>
+                        </tr>
+                    </tbody>
+                </table>
+            </div>
+            <p>Parameter sets are edited as <code>key=value</code> lines, one set per iteration; values cannot span lines, so hand-edit the JSON file for multi-line values. The built-in names — <code>file</code>, <code>fileName</code>, <code>directory</code>, <code>iteration</code> — are reserved: a parameter-set key with the same name (case-insensitive) overrides the built-in for that iteration. Unknown <code>${name}</code> placeholders are left as-is.</p>
+
+            <h2>Running a Workflow</h2>
+            <ul class="plain-list">
+                <li><strong>Run</strong> executes the workflow. The run log shows each step starting and completing (indented by nesting), and the hits list streams matching lines as they are found. The display is capped at the first 5,000 hits; counting continues past the cap.</li>
+                <li><strong>Dry run</strong> performs the searches but no exports, file operations, or program launches — those steps log what they would do instead. Searches still read your files, so you can check hit counts before a real run.</li>
+                <li><strong>Cancel</strong> stops the run; closing the window also cancels it.</li>
+                <li>Before any files are copied or moved, any program is launched, or an export overwrites an existing file, FileSearch shows a confirmation listing what is about to happen. Declining skips that step and the workflow continues. Exports to a new file path write without a prompt.</li>
+            </ul>
+
+            <div class="callout">
+                The editor validates as you type — missing names, empty loops, duplicate ids, more parameter sets than iterations, and references to search steps that don't run earlier are listed under the step editor — and a workflow must be valid before it runs.
+            </div>
+
+            <h2>Where Workflows Are Stored</h2>
+            <p>Each workflow is one JSON file in <code>%AppData%\FileSearch\Workflows</code> in a documented, hand-editable format (see <code>README.Workflows.md</code> in the project repository). Use <strong>Folder</strong> in the workflow library to open it. To share a workflow, send the file; to install one, drop it into the folder and reopen the window. Files that fail to parse still appear in the library with their error message.</p>
+
+            <div class="callout">
+                A workflow file is executable automation — it can copy or move files, overwrite export files, and launch programs. Review the steps before running a workflow someone else wrote. Confirmations cover file operations, program launches and export overwrites, but an export to a new path writes without prompting.
+            </div>
+
+            <div class="next-links">
+                <a href="search.html">Run a Search</a>
+                <a href="query-syntax.html">Query Syntax</a>
+                <a href="indexing.html">Indexed Search</a>
+            </div>
+        </main>
+    </div>
+</body>
+</html>

@@ -47,6 +47,8 @@
                     <MenuItem Header="_Search">
                         <MenuItem Header="_Start" Command="{Binding Search.SearchCommand}" InputGestureText="Enter"/>
                         <MenuItem Header="_Cancel" Command="{Binding Search.CancelCommand}" InputGestureText="Esc"/>
+                        <Separator/>
+                        <MenuItem Header="_Workflows..." Click="OnWorkflowsClick"/>
                     </MenuItem>
                     <MenuItem Header="_Index">
                         <MenuItem Header="_Manage indexed locations..."
@@ -142,6 +144,12 @@
                             <Button Content="Sys" Command="{Binding ApplyThemeCommand}" CommandParameter="System"
                                     Style="{StaticResource ThemeMiniButtonStyle}"/>
                         </UniformGrid>
+                        <Button Click="OnWorkflowsClick" Style="{StaticResource NavItemButtonStyle}">
+                            <StackPanel Orientation="Horizontal">
+                                <ui:FontIcon Glyph="&#xE8F1;" FontSize="14" Margin="0,0,11,0"/>
+                                <TextBlock Text="Workflows" VerticalAlignment="Center"/>
+                            </StackPanel>
+                        </Button>
                         <Button Click="OnHelpClick" Style="{StaticResource NavItemButtonStyle}">
                             <StackPanel Orientation="Horizontal">
                                 <ui:FontIcon Glyph="&#xE897;" FontSize="14" Margin="0,0,11,0"/>

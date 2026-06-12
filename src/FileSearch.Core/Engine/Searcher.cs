@@ -43,6 +43,12 @@ public sealed class Searcher : ISearcher
     {
         ArgumentNullException.ThrowIfNull(request);
 
+        // The producer runs on its own linked token so that a consumer that
+        // stops enumerating early (break/dispose) can shut it down instead of
+        // abandoning workers that still hold file handles.
+        using var producerCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+        var producerToken = producerCts.Token;
+
         var channel = Channel.CreateBounded<Hit>(new BoundedChannelOptions(_options.ChannelCapacity)
         {
             SingleReader = true,
@@ -88,7 +94,7 @@ public sealed class Searcher : ISearcher
         // "files the walker has produced", not "files a worker has started".
         IEnumerable<string> CountedPaths()
         {
-            foreach (var path in _walker.Enumerate(request.Roots, request.WalkerOptions, cancellationToken))
+            foreach (var path in _walker.Enumerate(request.Roots, request.WalkerOptions, producerToken))
             {
                 Interlocked.Increment(ref filesEnumerated);
                 yield return path;
@@ -104,7 +110,7 @@ public sealed class Searcher : ISearcher
                     new ParallelOptions
                     {
                         MaxDegreeOfParallelism = _options.MaxDegreeOfParallelism,
-                        CancellationToken = cancellationToken,
+                        CancellationToken = producerToken,
                     },
                     async (path, token) =>
                     {
@@ -144,12 +150,29 @@ public sealed class Searcher : ISearcher
             {
                 channel.Writer.TryComplete();
             }
-        }, cancellationToken);
+        }, producerToken);
 
-        await foreach (var hit in channel.Reader.ReadAllAsync(cancellationToken).ConfigureAwait(false))
-            yield return hit;
-
-        await producer.ConfigureAwait(false); // surface producer-side exceptions
+        try
+        {
+            await foreach (var hit in channel.Reader.ReadAllAsync(cancellationToken).ConfigureAwait(false))
+                yield return hit;
+        }
+        finally
+        {
+            // Runs on normal completion AND when the consumer stops early
+            // (break disposes the iterator, which skips code after the loop
+            // but not this finally). Joining the producer here guarantees no
+            // worker still holds a file open when the caller continues, and
+            // surfaces real producer faults; its cancellation is not a fault.
+            producerCts.Cancel();
+            try
+            {
+                await producer.ConfigureAwait(false);
+            }
+            catch (OperationCanceledException)
+            {
+            }
+        }
     }
 
     private async Task<int> ProcessFileAsync(

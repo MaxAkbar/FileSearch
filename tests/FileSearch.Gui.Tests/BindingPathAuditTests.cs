@@ -26,6 +26,18 @@ public sealed class BindingPathAuditTests
         typeof(Hit),
         typeof(IndexedLocationSettings),
         typeof(SearchScope),
+        typeof(WorkflowLibraryItemViewModel),
+        typeof(WorkflowStepViewModel),
+        typeof(SearchStepViewModel),
+        typeof(IfStepViewModel),
+        typeof(RetryStepViewModel),
+        typeof(ForEachStepViewModel),
+        typeof(ExportStepViewModel),
+        typeof(FileOperationStepViewModel),
+        typeof(RunProgramStepViewModel),
+        typeof(StopStepViewModel),
+        typeof(WorkflowConditionViewModel),
+        typeof(WorkflowParameterSetViewModel),
     };
 
     /// <summary>Window-scope (DataContext) type per file; default is the shell.</summary>
@@ -102,10 +114,15 @@ public sealed class BindingPathAuditTests
 
         if (site.Expression.Contains("RelativeSource", StringComparison.Ordinal))
         {
-            // The explicit escape from an item template back to the window's
-            // DataContext — strictly a root-type path.
+            // The explicit escape from an item template to an ancestor's
+            // DataContext — the window's view model, or an intermediate
+            // template's item (e.g. a per-item button bound to a command on
+            // the list-owning step view model).
             if (path.StartsWith("DataContext.", StringComparison.Ordinal))
-                return ResolvesOn(rootType, path["DataContext.".Length..]);
+            {
+                var rest = path["DataContext.".Length..];
+                return ResolvesOn(rootType, rest) || s_itemTypes.Any(type => ResolvesOn(type, rest));
+            }
 
             // Self/TemplatedParent/Ancestor control-property bindings.
             return true;

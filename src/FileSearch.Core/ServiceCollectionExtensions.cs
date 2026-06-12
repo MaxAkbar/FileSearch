@@ -4,6 +4,7 @@ using FileSearch.Core.Extractors;
 using FileSearch.Core.Indexing;
 using FileSearch.Core.Queries;
 using FileSearch.Core.Walker;
+using FileSearch.Core.Workflows;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Logging;
@@ -77,6 +78,15 @@ public static class ServiceCollectionExtensions
             sp.GetRequiredService<IFileIndex>(),
             sp.GetRequiredService<IndexCoverageService>(),
             sp.GetService<IIndexingService>()));
+
+        services.TryAddSingleton<IWorkflowStore>(_ => new JsonWorkflowStore());
+        services.TryAddSingleton<IWorkflowRunner>(sp => new WorkflowRunner(
+            sp.GetRequiredService<ISearcher>(),
+            sp.GetRequiredService<IQueryFactory>(),
+            sp.GetRequiredService<IExtractorRegistry>(),
+            sp.GetService<SearchOptions>(),
+            sp.GetService<ILogger<WorkflowRunner>>(),
+            sp.GetService<ILoggerFactory>()));
 
         return services;
     }

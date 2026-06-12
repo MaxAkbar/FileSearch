@@ -22,6 +22,7 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
         IndexViewModel index,
         HistoryViewModel history,
         StatusBarViewModel status,
+        WorkflowsViewModel workflows,
         IThemeService themeService,
         IShellIntegrationService shellIntegrationService)
     {
@@ -29,6 +30,7 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
         Index = index;
         History = history;
         Status = status;
+        Workflows = workflows;
         _themeService = themeService;
         _shellIntegrationService = shellIntegrationService;
     }
@@ -40,6 +42,8 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
     public HistoryViewModel History { get; }
 
     public StatusBarViewModel Status { get; }
+
+    public WorkflowsViewModel Workflows { get; }
 
     [RelayCommand]
     private void ApplyTheme(string themeName)
@@ -96,5 +100,6 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
     {
         Search.Dispose();
         Index.Dispose();
+        Workflows.Dispose();
     }
 }

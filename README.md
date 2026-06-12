@@ -436,6 +436,7 @@ For sideload testing, pass `-CertificateThumbprint` with a certificate trusted o
 - Tests use xUnit and `Microsoft.NET.Test.Sdk`.
 - The core search pipeline is designed around dependency injection so extractors and options can be swapped or extended.
 - Indexed search and background watcher behavior are documented in [README.Indexing.md](README.Indexing.md).
+- Workflow search and the workflow JSON file format are documented in [README.Workflows.md](README.Workflows.md).
 - The competitive roadmap refresh is documented in [README.Roadmap.md](README.Roadmap.md).
 - Security and privacy posture are documented in [SECURITY.md](SECURITY.md) and [PRIVACY.md](PRIVACY.md).
 
@@ -450,6 +451,7 @@ Work landed from `bbd4b73` (*Add background indexed search*, June 2026) to the c
 - **Index storage layering** (`1b08535`): split the index implementation into `IndexDatabase` (schema, versioning, write exclusion) and `IndexTables` (DML), extracted a tested `SearchHistory` MRU helper, and moved folder picking and UI dispatch behind injectable services.
 - **Worker and queue fixes** (`2317524`): queue priority, worker edge cases, and small races found in review.
 - **Compiler-enforced SQL escaping** (`6778331`): index queries are built through an interpolated-string handler (`Sql.Format`), so a value that bypasses escaping no longer compiles.
+- **Workflow search** (unreleased): saved multi-step searches with if/else conditions on hit or file counts, retry and for-each loops, sub-searches over previous results, JSON/CSV/Markdown export, and confirmed copy/move/run-program actions — stored as hand-editable JSON files, one per workflow. The file format is documented in [README.Workflows.md](README.Workflows.md).
 
 ### Desktop app
 
