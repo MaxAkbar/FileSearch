@@ -526,79 +526,79 @@ public sealed partial class WorkflowsViewModel : ObservableObject, IWorkflowStep
         switch (step)
         {
             case SearchStep search:
-            {
-                var viewModel = new SearchStepViewModel(this, search.Id)
                 {
-                    Name = search.Name,
-                    Query = search.Query,
-                    Mode = search.Mode,
-                    CaseSensitive = search.CaseSensitive,
-                    ScopeStepId = WorkflowEditorOptions.FromStepId(search.ScopeStepId, WorkflowEditorOptions.NoScope),
-                    UseIndex = search.UseIndex,
-                    IncludeGlobs = string.Join("; ", search.Filters.IncludeGlobs),
-                    ExcludeGlobs = string.Join("; ", search.Filters.ExcludeGlobs),
-                    UseDefaultExcludedFolders = search.Filters.ExcludeDirectories is null,
-                    ExcludeDirectories = search.Filters.ExcludeDirectories is null
-                        ? ""
-                        : string.Join("; ", search.Filters.ExcludeDirectories),
-                    Recursive = search.Filters.Recursive,
-                    IncludeHidden = search.Filters.IncludeHidden,
-                    MinFileSizeBytes = search.Filters.MinFileSizeBytes,
-                    MaxFileSizeBytes = search.Filters.MaxFileSizeBytes,
-                    MaxHits = search.MaxHits,
-                };
-                if (search.Filters.ModifiedAfterUtc is { } after)
-                {
-                    viewModel.ModifiedAfterEnabled = true;
-                    viewModel.ModifiedAfter = after.ToLocalTime();
+                    var viewModel = new SearchStepViewModel(this, search.Id)
+                    {
+                        Name = search.Name,
+                        Query = search.Query,
+                        Mode = search.Mode,
+                        CaseSensitive = search.CaseSensitive,
+                        ScopeStepId = WorkflowEditorOptions.FromStepId(search.ScopeStepId, WorkflowEditorOptions.NoScope),
+                        UseIndex = search.UseIndex,
+                        IncludeGlobs = string.Join("; ", search.Filters.IncludeGlobs),
+                        ExcludeGlobs = string.Join("; ", search.Filters.ExcludeGlobs),
+                        UseDefaultExcludedFolders = search.Filters.ExcludeDirectories is null,
+                        ExcludeDirectories = search.Filters.ExcludeDirectories is null
+                            ? ""
+                            : string.Join("; ", search.Filters.ExcludeDirectories),
+                        Recursive = search.Filters.Recursive,
+                        IncludeHidden = search.Filters.IncludeHidden,
+                        MinFileSizeBytes = search.Filters.MinFileSizeBytes,
+                        MaxFileSizeBytes = search.Filters.MaxFileSizeBytes,
+                        MaxHits = search.MaxHits,
+                    };
+                    if (search.Filters.ModifiedAfterUtc is { } after)
+                    {
+                        viewModel.ModifiedAfterEnabled = true;
+                        viewModel.ModifiedAfter = after.ToLocalTime();
+                    }
+                    if (search.Filters.ModifiedBeforeUtc is { } before)
+                    {
+                        viewModel.ModifiedBeforeEnabled = true;
+                        viewModel.ModifiedBefore = before.ToLocalTime();
+                    }
+                    foreach (var root in search.Roots)
+                        viewModel.Roots.Add(root);
+                    return viewModel;
                 }
-                if (search.Filters.ModifiedBeforeUtc is { } before)
-                {
-                    viewModel.ModifiedBeforeEnabled = true;
-                    viewModel.ModifiedBefore = before.ToLocalTime();
-                }
-                foreach (var root in search.Roots)
-                    viewModel.Roots.Add(root);
-                return viewModel;
-            }
 
             case IfStep ifStep:
-            {
-                var viewModel = new IfStepViewModel(this, ifStep.Id) { Name = ifStep.Name };
-                viewModel.Condition.Load(ifStep.Condition);
-                foreach (var child in ifStep.Then)
-                    viewModel.ThenSteps.Add(FromModel(child));
-                foreach (var child in ifStep.Else)
-                    viewModel.ElseSteps.Add(FromModel(child));
-                return viewModel;
-            }
+                {
+                    var viewModel = new IfStepViewModel(this, ifStep.Id) { Name = ifStep.Name };
+                    viewModel.Condition.Load(ifStep.Condition);
+                    foreach (var child in ifStep.Then)
+                        viewModel.ThenSteps.Add(FromModel(child));
+                    foreach (var child in ifStep.Else)
+                        viewModel.ElseSteps.Add(FromModel(child));
+                    return viewModel;
+                }
 
             case RetryStep retry:
-            {
-                var viewModel = new RetryStepViewModel(this, retry.Id)
                 {
-                    Name = retry.Name,
-                    MaxIterations = retry.MaxIterations,
-                };
-                viewModel.Until.Load(retry.Until);
-                viewModel.LoadParameterSets(retry.ParameterSets);
-                foreach (var child in retry.Body)
-                    viewModel.BodySteps.Add(FromModel(child));
-                return viewModel;
-            }
+                    var viewModel = new RetryStepViewModel(this, retry.Id)
+                    {
+                        Name = retry.Name,
+                        MaxIterations = retry.MaxIterations,
+                    };
+                    viewModel.Until.Load(retry.Until);
+                    viewModel.LoadParameterSets(retry.ParameterSets);
+                    foreach (var child in retry.Body)
+                        viewModel.BodySteps.Add(FromModel(child));
+                    return viewModel;
+                }
 
             case ForEachStep forEach:
-            {
-                var viewModel = new ForEachStepViewModel(this, forEach.Id)
                 {
-                    Name = forEach.Name,
-                    SourceStepId = WorkflowEditorOptions.FromStepId(forEach.SourceStepId, WorkflowEditorOptions.LastSearch),
-                    MaxItems = forEach.MaxItems,
-                };
-                foreach (var child in forEach.Body)
-                    viewModel.BodySteps.Add(FromModel(child));
-                return viewModel;
-            }
+                    var viewModel = new ForEachStepViewModel(this, forEach.Id)
+                    {
+                        Name = forEach.Name,
+                        SourceStepId = WorkflowEditorOptions.FromStepId(forEach.SourceStepId, WorkflowEditorOptions.LastSearch),
+                        MaxItems = forEach.MaxItems,
+                    };
+                    foreach (var child in forEach.Body)
+                        viewModel.BodySteps.Add(FromModel(child));
+                    return viewModel;
+                }
 
             case ExportStep export:
                 return new ExportStepViewModel(this, export.Id)
