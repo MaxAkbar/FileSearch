@@ -91,7 +91,133 @@ public sealed class IndexViewModelTests
         Assert.Equal("Scanning 10; 2 changed, 8 unchanged", location.RuntimeStatusSummary);
     }
 
-    private static (SearchViewModel Search, IndexViewModel Index) Build()
+    [Fact]
+    public void DatabaseInfoIsFormattedForIndexedLocationsPanel()
+    {
+        var fileIndex = new FakeFileIndex
+        {
+            DatabaseInfo = new IndexDatabaseInfo(
+                @"C:\Index\filesearch.db",
+                Exists: true,
+                IsCompatible: true,
+                SchemaVersion: "3",
+                DatabaseBytes: 2048,
+                WalBytes: 512,
+                ShmBytes: 128,
+                LocationCount: 2,
+                TotalFileCount: 3,
+                TotalLineCount: 10,
+                PendingChangeCount: 1,
+                LastIndexedUtc: new DateTime(2026, 6, 14, 12, 0, 0, DateTimeKind.Utc)),
+        };
+
+        var (_, index) = Build(fileIndex);
+
+        Assert.Equal(@"C:\Index\filesearch.db", index.IndexDatabasePath);
+        Assert.Equal("Ready, schema 3", index.IndexDatabaseStatusText);
+        Assert.Contains("2.6 KB total", index.IndexDatabaseSizeText);
+        Assert.Contains("db 2.0 KB", index.IndexDatabaseSizeText);
+        Assert.Equal("2 locations, 3 files, 10 lines", index.IndexDatabaseContentText);
+        Assert.Equal("1 pending index change", index.IndexDatabaseQueueText);
+        Assert.StartsWith("Last indexed ", index.IndexDatabaseLastIndexedText);
+    }
+
+    [Fact]
+    public async Task CompactCommandRunsMaintenanceAndRefreshesDatabaseInfo()
+    {
+        var fileIndex = new FakeFileIndex
+        {
+            DatabaseInfo = new IndexDatabaseInfo(
+                @"C:\Index\filesearch.db",
+                Exists: true,
+                IsCompatible: true,
+                SchemaVersion: "3",
+                DatabaseBytes: 2048,
+                WalBytes: 512,
+                ShmBytes: 0,
+                LocationCount: 1,
+                TotalFileCount: 1,
+                TotalLineCount: 2,
+                PendingChangeCount: 1,
+                LastIndexedUtc: null),
+        };
+        var (_, index) = Build(fileIndex);
+
+        fileIndex.DatabaseInfo = fileIndex.DatabaseInfo with
+        {
+            DatabaseBytes = 1536,
+            WalBytes = 0,
+            PendingChangeCount = 0,
+        };
+        await index.CompactIndexDatabaseCommand.ExecuteAsync(null);
+
+        Assert.Equal(1, fileIndex.CompactCallCount);
+        Assert.Contains("1.5 KB total", index.IndexDatabaseSizeText);
+        Assert.Equal("No pending index changes", index.IndexDatabaseQueueText);
+    }
+
+    [Fact]
+    public async Task CompactCommandQueuesDuringIndexingAndRunsWhenCurrentWorkStops()
+    {
+        var fileIndex = new FakeFileIndex
+        {
+            DatabaseInfo = new IndexDatabaseInfo(
+                @"C:\Index\filesearch.db",
+                Exists: true,
+                IsCompatible: true,
+                SchemaVersion: "3",
+                DatabaseBytes: 2048,
+                WalBytes: 512,
+                ShmBytes: 0,
+                LocationCount: 1,
+                TotalFileCount: 1,
+                TotalLineCount: 2,
+                PendingChangeCount: 0,
+                LastIndexedUtc: null),
+        };
+        var indexingService = new FakeIndexingService();
+        var (_, index) = Build(fileIndex, indexingService);
+
+        indexingService.RaiseStatus(new IndexingStatus(
+            IsRunning: true,
+            IsPaused: false,
+            IsProcessing: true,
+            QueueLength: 3,
+            Message: "Indexing",
+            ActiveRoot: Path.GetTempPath(),
+            ActiveKind: IndexChangeKind.RefreshRoot));
+
+        await index.CompactIndexDatabaseCommand.ExecuteAsync(null);
+
+        Assert.True(index.IsIndexDatabaseCompactionQueued);
+        Assert.Equal("Compact queued", index.CompactIndexDatabaseActionText);
+        Assert.Equal(1, indexingService.PauseCallCount);
+        Assert.Equal(0, fileIndex.CompactCallCount);
+
+        fileIndex.DatabaseInfo = fileIndex.DatabaseInfo with
+        {
+            DatabaseBytes = 1536,
+            WalBytes = 0,
+        };
+
+        indexingService.RaiseStatus(new IndexingStatus(
+            IsRunning: true,
+            IsPaused: true,
+            IsProcessing: false,
+            QueueLength: 3,
+            Message: "Indexing paused."));
+
+        await WaitUntilAsync(() => fileIndex.CompactCallCount == 1);
+
+        Assert.False(index.IsIndexDatabaseCompactionQueued);
+        Assert.Equal(1, indexingService.ResumeCallCount);
+        Assert.False(indexingService.IsPaused);
+        Assert.Contains("1.5 KB total", index.IndexDatabaseSizeText);
+    }
+
+    private static (SearchViewModel Search, IndexViewModel Index) Build(
+        FakeFileIndex? fileIndex = null,
+        FakeIndexingService? indexingService = null)
     {
         var status = new StatusBarViewModel();
         var settings = new FakeSettingsService();
@@ -108,14 +234,23 @@ public sealed class IndexViewModelTests
             history,
             status);
         var index = new IndexViewModel(
-            new FakeFileIndex(),
-            new FakeIndexingService(),
+            fileIndex ?? new FakeFileIndex(),
+            indexingService ?? new FakeIndexingService(),
             settings,
             new FakeFileLauncher(),
             new InlineDispatcher(),
             search,
             status);
         return (search, index);
+    }
+
+    private static async Task WaitUntilAsync(Func<bool> condition)
+    {
+        using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(5));
+        while (!condition())
+        {
+            await Task.Delay(25, timeout.Token);
+        }
     }
 
     private sealed class NullSearcher : FileSearch.Core.Engine.ISearcher

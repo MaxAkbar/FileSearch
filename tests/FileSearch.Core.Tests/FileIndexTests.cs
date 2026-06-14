@@ -718,6 +718,47 @@ public sealed class FileIndexTests : IDisposable
         Assert.Equal(IndexCoverageStatus.Missing, coverage.Status);
     }
 
+    [Fact]
+    public async Task DatabaseInfoReportsFootprintAndIndexedContent()
+    {
+        var a = Path.Combine(_root, "a.txt");
+        File.WriteAllText(a, "one\n");
+        File.WriteAllText(Path.Combine(_root, "b.txt"), "two\nthree\n");
+
+        await BuildAsync();
+        await _index.SavePendingChangeAsync(_root, a, IndexChangeKind.UpsertFile, TestContext.Current.CancellationToken);
+
+        var info = await _index.GetDatabaseInfoAsync(TestContext.Current.CancellationToken);
+
+        Assert.Equal(_dbPath, info.DatabasePath);
+        Assert.True(info.Exists);
+        Assert.True(info.IsCompatible);
+        Assert.Equal("3", info.SchemaVersion);
+        Assert.True(info.DatabaseBytes > 0);
+        Assert.True(info.TotalBytes >= info.DatabaseBytes);
+        Assert.Equal(1, info.LocationCount);
+        Assert.Equal(2, info.TotalFileCount);
+        Assert.Equal(3, info.TotalLineCount);
+        Assert.Equal(1, info.PendingChangeCount);
+        Assert.NotNull(info.LastIndexedUtc);
+    }
+
+    [Fact]
+    public async Task CompactPreservesSearchableIndexContent()
+    {
+        File.WriteAllText(Path.Combine(_root, "compact.txt"), "compact needle\n");
+        await BuildAsync();
+
+        await _index.CompactAsync(TestContext.Current.CancellationToken);
+
+        var info = await _index.GetDatabaseInfoAsync(TestContext.Current.CancellationToken);
+        Assert.True(info.Exists);
+        Assert.True(info.IsCompatible);
+
+        var hit = Assert.Single(await IndexedSearchAsync(new TermQuery("compact")));
+        Assert.EndsWith("compact.txt", hit.Path);
+    }
+
     private async Task BuildAsync(WalkerOptions? options = null)
     {
         await _index.BuildOrRefreshAsync(
@@ -833,6 +874,11 @@ public sealed class FileIndexTests : IDisposable
         public Task<IReadOnlyList<IndexedLocationInfo>> GetLocationsAsync(CancellationToken cancellationToken) =>
             Task.FromResult<IReadOnlyList<IndexedLocationInfo>>(Array.Empty<IndexedLocationInfo>());
 
+        public Task<IndexDatabaseInfo> GetDatabaseInfoAsync(CancellationToken cancellationToken) =>
+            Task.FromResult(new IndexDatabaseInfo(DatabasePath, false, false, "3", 0, 0, 0, 0, 0, 0, 0, null));
+
+        public Task CompactAsync(CancellationToken cancellationToken) => Task.CompletedTask;
+
         public Task ClearAsync(string root, CancellationToken cancellationToken) => Task.CompletedTask;
 
         public Task SavePendingChangeAsync(string root, string? path, IndexChangeKind kind, CancellationToken cancellationToken)
@@ -876,6 +922,11 @@ public sealed class FileIndexTests : IDisposable
 
         public Task<IReadOnlyList<IndexedLocationInfo>> GetLocationsAsync(CancellationToken cancellationToken) =>
             Task.FromResult<IReadOnlyList<IndexedLocationInfo>>(Array.Empty<IndexedLocationInfo>());
+
+        public Task<IndexDatabaseInfo> GetDatabaseInfoAsync(CancellationToken cancellationToken) =>
+            Task.FromResult(new IndexDatabaseInfo(DatabasePath, false, false, "3", 0, 0, 0, 0, 0, 0, 0, null));
+
+        public Task CompactAsync(CancellationToken cancellationToken) => Task.CompletedTask;
 
         public Task ClearAsync(string root, CancellationToken cancellationToken) => Task.CompletedTask;
 

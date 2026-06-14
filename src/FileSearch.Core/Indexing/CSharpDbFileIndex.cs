@@ -305,6 +305,56 @@ public sealed class CSharpDbFileIndex : IFileIndex, IDisposable
         }
     }
 
+    public async Task<IndexDatabaseInfo> GetDatabaseInfoAsync(CancellationToken cancellationToken)
+    {
+        var db = await _database.OpenExistingAsync(cancellationToken).ConfigureAwait(false);
+        if (db is null)
+            return CreateDatabaseInfo(isCompatible: false);
+
+        var locationCount = 0;
+        long totalFiles = 0;
+        long totalLines = 0;
+        var pendingChangeCount = 0;
+        DateTime? lastIndexedUtc = null;
+
+        try
+        {
+            var roots = await IndexTables.ListRootPathsAsync(db, cancellationToken).ConfigureAwait(false);
+            locationCount = roots.Count;
+            foreach (var root in roots)
+            {
+                var info = await GetLocationInfoAsync(db, root, cancellationToken).ConfigureAwait(false);
+                if (info is null)
+                    continue;
+
+                totalFiles += info.FileCount;
+                totalLines += info.LineCount;
+                if (info.IndexedUtc is { } indexedUtc &&
+                    (lastIndexedUtc is null || indexedUtc > lastIndexedUtc.Value))
+                {
+                    lastIndexedUtc = indexedUtc;
+                }
+            }
+
+            pendingChangeCount = (await IndexTables.ReadPendingChangesAsync(db, cancellationToken).ConfigureAwait(false)).Count;
+        }
+        finally
+        {
+            await IndexDatabase.CloseQuietlyAsync(db).ConfigureAwait(false);
+        }
+
+        return CreateDatabaseInfo(
+            isCompatible: true,
+            locationCount,
+            totalFiles,
+            totalLines,
+            pendingChangeCount,
+            lastIndexedUtc);
+    }
+
+    public Task CompactAsync(CancellationToken cancellationToken) =>
+        _database.CompactAsync(cancellationToken);
+
     public async Task ClearAsync(string root, CancellationToken cancellationToken)
     {
         await _database.RunExclusiveWriteAsync(async db =>
@@ -528,6 +578,45 @@ public sealed class CSharpDbFileIndex : IFileIndex, IDisposable
             : (DateTime?)null;
 
         return new IndexedLocationInfo(root, fileCount, lineCount, indexedUtc, rootRow.OptionsHash, Exists: true);
+    }
+
+    private IndexDatabaseInfo CreateDatabaseInfo(
+        bool isCompatible,
+        int locationCount = 0,
+        long totalFileCount = 0,
+        long totalLineCount = 0,
+        int pendingChangeCount = 0,
+        DateTime? lastIndexedUtc = null)
+    {
+        var databaseBytes = GetFileLength(DatabasePath);
+        var walBytes = GetFileLength(DatabasePath + ".wal");
+        var shmBytes = GetFileLength(DatabasePath + ".shm");
+
+        return new IndexDatabaseInfo(
+            DatabasePath,
+            File.Exists(DatabasePath),
+            isCompatible,
+            IndexDatabase.CurrentSchemaVersion,
+            databaseBytes,
+            walBytes,
+            shmBytes,
+            locationCount,
+            totalFileCount,
+            totalLineCount,
+            pendingChangeCount,
+            lastIndexedUtc);
+    }
+
+    private static long GetFileLength(string path)
+    {
+        try
+        {
+            return File.Exists(path) ? new FileInfo(path).Length : 0;
+        }
+        catch
+        {
+            return 0;
+        }
     }
 
     private static bool IsUnchanged(ExistingFileRow row, FileInfo info) =>

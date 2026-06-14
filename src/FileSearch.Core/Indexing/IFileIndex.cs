@@ -43,6 +43,10 @@ public interface IIndexMaintenance
     Task<IndexStats> GetStatsAsync(string root, CancellationToken cancellationToken);
 
     Task<IReadOnlyList<IndexedLocationInfo>> GetLocationsAsync(CancellationToken cancellationToken);
+
+    Task<IndexDatabaseInfo> GetDatabaseInfoAsync(CancellationToken cancellationToken);
+
+    Task CompactAsync(CancellationToken cancellationToken);
 }
 
 /// <summary>Durable queue of file and root-refresh changes awaiting indexing (crash recovery).</summary>

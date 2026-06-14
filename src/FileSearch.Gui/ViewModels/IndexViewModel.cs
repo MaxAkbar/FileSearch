@@ -31,6 +31,8 @@ public sealed partial class IndexViewModel : ObservableObject, IDisposable
     private readonly StatusBarViewModel _status;
 
     private string? _pendingStatsRoot;
+    private bool _isIndexingOperationActive;
+    private bool _resumeIndexingAfterCompaction;
 
     public IndexViewModel(
         IFileIndex fileIndex,
@@ -55,6 +57,8 @@ public sealed partial class IndexViewModel : ObservableObject, IDisposable
         IndexedLocations.CollectionChanged += (_, _) => NotifyIndexCommandStateChanged();
         _search.PropertyChanged += OnSearchPropertyChanged;
         _indexingService.StatusChanged += OnIndexingStatusChanged;
+
+        _ = RefreshIndexDatabaseInfoAsync();
     }
 
     public ObservableCollection<IndexedLocationSettings> IndexedLocations { get; } = new();
@@ -64,6 +68,16 @@ public sealed partial class IndexViewModel : ObservableObject, IDisposable
     [ObservableProperty] private int _indexQueueLength;
     [ObservableProperty] private string _activeIndexingRoot = string.Empty;
     [ObservableProperty] private IndexedLocationSettings? _selectedIndexedLocation;
+    [ObservableProperty] private bool _indexDatabaseExists;
+    [ObservableProperty] private bool _indexDatabaseIsCompatible;
+    [ObservableProperty] private bool _isCompactingIndexDatabase;
+    [ObservableProperty] private bool _isIndexDatabaseCompactionQueued;
+    [ObservableProperty] private string _indexDatabasePath = string.Empty;
+    [ObservableProperty] private string _indexDatabaseStatusText = "Database info unavailable";
+    [ObservableProperty] private string _indexDatabaseSizeText = "No database file yet";
+    [ObservableProperty] private string _indexDatabaseContentText = "No indexed content";
+    [ObservableProperty] private string _indexDatabaseQueueText = "No pending index changes";
+    [ObservableProperty] private string _indexDatabaseLastIndexedText = "Never indexed";
 
     public string IndexActivityText =>
         IsIndexingPaused
@@ -83,6 +97,13 @@ public sealed partial class IndexViewModel : ObservableObject, IDisposable
         IndexedLocations.Count == 1
             ? "1 indexed location"
             : $"{IndexedLocations.Count:n0} indexed locations";
+
+    public string CompactIndexDatabaseActionText =>
+        IsIndexDatabaseCompactionQueued
+            ? "Compact queued"
+            : IsIndexing || _search.IsSearching
+                ? "Compact when idle"
+                : "Compact database";
 
     // ----- commands -----
 
@@ -172,6 +193,7 @@ public sealed partial class IndexViewModel : ObservableObject, IDisposable
             RemoveIndexedLocation(_search.SearchPath);
             _status.Text = "Index cleared for current folder.";
             SaveLocations();
+            await RefreshIndexDatabaseInfoAsync().ConfigureAwait(true);
         }
         catch (Exception ex)
         {
@@ -192,6 +214,7 @@ public sealed partial class IndexViewModel : ObservableObject, IDisposable
         IndexedLocations.Remove(location);
         SelectedIndexedLocation = IndexedLocations.FirstOrDefault();
         SaveLocations();
+        await RefreshIndexDatabaseInfoAsync().ConfigureAwait(true);
         _status.Text = "Indexed location removed.";
     }
 
@@ -223,11 +246,31 @@ public sealed partial class IndexViewModel : ObservableObject, IDisposable
         _fileLauncher.RevealInExplorer(File.Exists(path) ? path : folder ?? path);
     }
 
+    [RelayCommand(CanExecute = nameof(CanCompactIndexDatabase))]
+    private async Task CompactIndexDatabaseAsync()
+    {
+        if (_isIndexingOperationActive || IndexQueueLength > 0 || _search.IsSearching)
+        {
+            QueueIndexDatabaseCompaction();
+            RunQueuedIndexDatabaseCompactionIfReady();
+            return;
+        }
+
+        await RunCompactIndexDatabaseAsync().ConfigureAwait(true);
+    }
+
+    private bool CanCompactIndexDatabase() =>
+        IndexDatabaseExists &&
+        IndexDatabaseIsCompatible &&
+        !IsCompactingIndexDatabase &&
+        !IsIndexDatabaseCompactionQueued;
+
     public async Task StartBackgroundIndexingAsync()
     {
         await _indexingService.StartAsync(
             IndexedLocations.Select(ToIndexedLocation),
             CancellationToken.None).ConfigureAwait(true);
+        await RefreshIndexDatabaseInfoAsync().ConfigureAwait(true);
     }
 
     public async Task StopBackgroundIndexingAsync()
@@ -273,6 +316,12 @@ public sealed partial class IndexViewModel : ObservableObject, IDisposable
     {
         if (e.PropertyName == nameof(SearchViewModel.SearchPath))
             NotifyIndexCommandStateChanged();
+
+        if (e.PropertyName == nameof(SearchViewModel.IsSearching))
+        {
+            OnPropertyChanged(nameof(CompactIndexDatabaseActionText));
+            RunQueuedIndexDatabaseCompactionIfReady();
+        }
     }
 
     private static IEnumerable<IndexedLocationSettings> LoadIndexedLocations(AppSettings settings)
@@ -368,6 +417,7 @@ public sealed partial class IndexViewModel : ObservableObject, IDisposable
     {
         _dispatcher.Post(() =>
         {
+            _isIndexingOperationActive = status.IsProcessing;
             IsIndexing = status.IsProcessing || status.QueueLength > 0;
             IsIndexingPaused = status.IsPaused;
             IndexQueueLength = status.QueueLength;
@@ -388,7 +438,10 @@ public sealed partial class IndexViewModel : ObservableObject, IDisposable
             {
                 _pendingStatsRoot = null;
                 _ = RefreshIndexedLocationStatsAsync(completedRoot);
+                _ = RefreshIndexDatabaseInfoAsync();
             }
+
+            RunQueuedIndexDatabaseCompactionIfReady();
         });
     }
 
@@ -415,14 +468,103 @@ public sealed partial class IndexViewModel : ObservableObject, IDisposable
         SaveLocations();
     }
 
+    private async Task RefreshIndexDatabaseInfoAsync()
+    {
+        IndexDatabaseInfo info;
+        try
+        {
+            info = await _fileIndex.GetDatabaseInfoAsync(CancellationToken.None).ConfigureAwait(true);
+        }
+        catch
+        {
+            IndexDatabaseStatusText = "Database info unavailable";
+            CompactIndexDatabaseCommand.NotifyCanExecuteChanged();
+            return;
+        }
+
+        IndexDatabasePath = info.DatabasePath;
+        IndexDatabaseExists = info.Exists;
+        IndexDatabaseIsCompatible = info.IsCompatible;
+        IndexDatabaseStatusText = FormatDatabaseStatus(info);
+        IndexDatabaseSizeText = FormatDatabaseSize(info);
+        IndexDatabaseContentText = FormatDatabaseContent(info);
+        IndexDatabaseQueueText = FormatPendingChanges(info.PendingChangeCount);
+        IndexDatabaseLastIndexedText = info.LastIndexedUtc is { } indexedUtc
+            ? $"Last indexed {indexedUtc.ToLocalTime():g}"
+            : "Never indexed";
+        CompactIndexDatabaseCommand.NotifyCanExecuteChanged();
+    }
+
+    private void QueueIndexDatabaseCompaction()
+    {
+        IsIndexDatabaseCompactionQueued = true;
+        _resumeIndexingAfterCompaction |= !_indexingService.IsPaused;
+
+        if (!_indexingService.IsPaused)
+        {
+            _indexingService.Pause();
+            IsIndexingPaused = true;
+        }
+
+        _status.Text = "Index database compaction queued. Indexing will pause, compact, then resume.";
+    }
+
+    private void RunQueuedIndexDatabaseCompactionIfReady()
+    {
+        if (!IsIndexDatabaseCompactionQueued ||
+            IsCompactingIndexDatabase ||
+            _isIndexingOperationActive ||
+            _search.IsSearching)
+        {
+            return;
+        }
+
+        _ = RunCompactIndexDatabaseAsync();
+    }
+
+    private async Task RunCompactIndexDatabaseAsync()
+    {
+        var resumeIndexing = _resumeIndexingAfterCompaction;
+        IsIndexDatabaseCompactionQueued = false;
+        _resumeIndexingAfterCompaction = false;
+        IsCompactingIndexDatabase = true;
+        _status.Text = "Compacting index database...";
+
+        try
+        {
+            await _fileIndex.CompactAsync(CancellationToken.None).ConfigureAwait(true);
+            await RefreshIndexDatabaseInfoAsync().ConfigureAwait(true);
+            _status.Text = "Index database compacted.";
+        }
+        catch (Exception ex)
+        {
+            _status.Text = $"Couldn't compact index database: {ex.Message}";
+        }
+        finally
+        {
+            IsCompactingIndexDatabase = false;
+
+            if (resumeIndexing)
+            {
+                _indexingService.Resume();
+                IsIndexingPaused = false;
+            }
+        }
+    }
+
     partial void OnIsIndexingChanged(bool value)
     {
         BuildOrRefreshIndexCommand.NotifyCanExecuteChanged();
         ClearIndexForCurrentFolderCommand.NotifyCanExecuteChanged();
+        CompactIndexDatabaseCommand.NotifyCanExecuteChanged();
+        OnPropertyChanged(nameof(CompactIndexDatabaseActionText));
     }
 
-    partial void OnIndexQueueLengthChanged(int value) =>
+    partial void OnIndexQueueLengthChanged(int value)
+    {
         OnPropertyChanged(nameof(IndexActivityText));
+        OnPropertyChanged(nameof(CompactIndexDatabaseActionText));
+    }
 
     partial void OnIsIndexingPausedChanged(bool value)
     {
@@ -438,6 +580,21 @@ public sealed partial class IndexViewModel : ObservableObject, IDisposable
     {
         RebuildSelectedIndexCommand.NotifyCanExecuteChanged();
         RemoveSelectedIndexCommand.NotifyCanExecuteChanged();
+    }
+
+    partial void OnIndexDatabaseExistsChanged(bool value) =>
+        CompactIndexDatabaseCommand.NotifyCanExecuteChanged();
+
+    partial void OnIndexDatabaseIsCompatibleChanged(bool value) =>
+        CompactIndexDatabaseCommand.NotifyCanExecuteChanged();
+
+    partial void OnIsCompactingIndexDatabaseChanged(bool value) =>
+        CompactIndexDatabaseCommand.NotifyCanExecuteChanged();
+
+    partial void OnIsIndexDatabaseCompactionQueuedChanged(bool value)
+    {
+        CompactIndexDatabaseCommand.NotifyCanExecuteChanged();
+        OnPropertyChanged(nameof(CompactIndexDatabaseActionText));
     }
 
     private void NotifyIndexCommandStateChanged()
@@ -485,6 +642,56 @@ public sealed partial class IndexViewModel : ObservableObject, IDisposable
             IndexChangeKind.DeleteFile => status.Message,
             _ => "Indexing now",
         };
+    }
+
+    private static string FormatDatabaseStatus(IndexDatabaseInfo info)
+    {
+        if (!info.Exists)
+            return "Database not created yet";
+
+        return info.IsCompatible
+            ? $"Ready, schema {info.SchemaVersion}"
+            : $"Schema mismatch, expected {info.SchemaVersion}";
+    }
+
+    private static string FormatDatabaseSize(IndexDatabaseInfo info)
+    {
+        if (!info.Exists && info.TotalBytes == 0)
+            return "No database file yet";
+
+        return $"{FormatBytes(info.TotalBytes)} total (db {FormatBytes(info.DatabaseBytes)}, wal {FormatBytes(info.WalBytes)}, shm {FormatBytes(info.ShmBytes)})";
+    }
+
+    private static string FormatDatabaseContent(IndexDatabaseInfo info)
+    {
+        var locations = info.LocationCount == 1
+            ? "1 location"
+            : $"{info.LocationCount:n0} locations";
+        return $"{locations}, {info.TotalFileCount:n0} files, {info.TotalLineCount:n0} lines";
+    }
+
+    private static string FormatPendingChanges(int count) =>
+        count switch
+        {
+            0 => "No pending index changes",
+            1 => "1 pending index change",
+            _ => $"{count:n0} pending index changes",
+        };
+
+    private static string FormatBytes(long bytes)
+    {
+        string[] units = ["B", "KB", "MB", "GB", "TB"];
+        var value = (double)Math.Max(0, bytes);
+        var unit = 0;
+        while (value >= 1024 && unit < units.Length - 1)
+        {
+            value /= 1024;
+            unit++;
+        }
+
+        return unit == 0
+            ? $"{bytes:n0} {units[unit]}"
+            : $"{value:n1} {units[unit]}";
     }
 
     private static string GetDisplayName(string root)

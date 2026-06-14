@@ -16,7 +16,7 @@ namespace FileSearch.Core.Indexing;
 /// </summary>
 internal sealed class IndexDatabase : IDisposable
 {
-    private const string SchemaVersion = "3";
+    internal const string CurrentSchemaVersion = "3";
     internal const string FullTextIndexName = "fts_lines";
 
     private static readonly string[] s_fullTextColumns = { "content" };
@@ -91,7 +91,7 @@ internal sealed class IndexDatabase : IDisposable
         try
         {
             var version = await GetMetaAsync(db, "schema_version", cancellationToken).ConfigureAwait(false);
-            if (version == SchemaVersion)
+            if (version == CurrentSchemaVersion)
                 return db;
         }
         catch (Exception ex)
@@ -125,10 +125,10 @@ internal sealed class IndexDatabase : IDisposable
         // process is noticed, but the schema DDL (and its meta rewrite) only
         // runs until it has succeeded once against the current file.
         var version = await GetMetaAsync(db, "schema_version", cancellationToken).ConfigureAwait(false);
-        if (version == SchemaVersion && _schemaEnsured)
+        if (version == CurrentSchemaVersion && _schemaEnsured)
             return db;
 
-        if (version is not null && version != SchemaVersion)
+        if (version is not null && version != CurrentSchemaVersion)
         {
             await CloseQuietlyAsync(db).ConfigureAwait(false);
             DeleteDatabaseFiles();
@@ -139,6 +139,44 @@ internal sealed class IndexDatabase : IDisposable
         await EnsureSchemaAsync(db, cancellationToken).ConfigureAwait(false);
         _schemaEnsured = true;
         return db;
+    }
+
+    public async Task CompactAsync(CancellationToken cancellationToken)
+    {
+        await _writeGate.WaitAsync(cancellationToken).ConfigureAwait(false);
+        var tempPath = DatabasePath + ".compact-" + Guid.NewGuid().ToString("N");
+        try
+        {
+            var folder = Path.GetDirectoryName(DatabasePath);
+            if (!string.IsNullOrEmpty(folder))
+                Directory.CreateDirectory(folder);
+
+            using var crossProcessLock = await AcquireCrossProcessLockAsync(cancellationToken).ConfigureAwait(false);
+            var db = await OpenExistingAsync(cancellationToken).ConfigureAwait(false);
+            if (db is null)
+                return;
+
+            try
+            {
+                await db.CheckpointAsync(cancellationToken).ConfigureAwait(false);
+                await db.SaveToFileAsync(tempPath, cancellationToken).ConfigureAwait(false);
+            }
+            finally
+            {
+                await CloseQuietlyAsync(db).ConfigureAwait(false);
+            }
+
+            DeleteIfExists(DatabasePath + ".wal");
+            DeleteIfExists(DatabasePath + ".shm");
+            File.Move(tempPath, DatabasePath, overwrite: true);
+            TryDelete(tempPath + ".wal");
+            TryDelete(tempPath + ".shm");
+        }
+        finally
+        {
+            TryDelete(tempPath);
+            _writeGate.Release();
+        }
     }
 
     private async Task<FileStream> AcquireCrossProcessLockAsync(CancellationToken cancellationToken)
@@ -213,7 +251,7 @@ internal sealed class IndexDatabase : IDisposable
         await TryExecuteAsync(db, "CREATE INDEX IF NOT EXISTS idx_pending_root_path ON pending_changes(root_path, path)", cancellationToken).ConfigureAwait(false);
 
         await db.ExecuteAsync("DELETE FROM meta WHERE name = 'schema_version'", cancellationToken).ConfigureAwait(false);
-        await db.ExecuteAsync(Sql.Format($"INSERT INTO meta VALUES ('schema_version', {SchemaVersion})"), cancellationToken).ConfigureAwait(false);
+        await db.ExecuteAsync(Sql.Format($"INSERT INTO meta VALUES ('schema_version', {CurrentSchemaVersion})"), cancellationToken).ConfigureAwait(false);
         await db.EnsureFullTextIndexAsync(
             FullTextIndexName,
             "lines",
@@ -259,6 +297,12 @@ internal sealed class IndexDatabase : IDisposable
         {
             _logger.LogWarning(ex, "Could not delete stale index file {Path}.", path);
         }
+    }
+
+    private static void DeleteIfExists(string path)
+    {
+        if (File.Exists(path))
+            File.Delete(path);
     }
 
     private static async Task<string?> GetMetaAsync(Database db, string key, CancellationToken cancellationToken)

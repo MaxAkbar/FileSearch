@@ -62,7 +62,11 @@ internal sealed class FakeIndexingService : IIndexingService
 
     public IndexingStatus CurrentStatus { get; set; } = new(false, false, false, 0, "Idle");
 
-    public bool IsPaused => false;
+    public bool IsPaused { get; private set; }
+
+    public int PauseCallCount { get; private set; }
+
+    public int ResumeCallCount { get; private set; }
 
     public Task StartAsync(IEnumerable<IndexedLocation> locations, CancellationToken cancellationToken) => Task.CompletedTask;
 
@@ -80,18 +84,45 @@ internal sealed class FakeIndexingService : IIndexingService
 
     public void Pause()
     {
+        PauseCallCount++;
+        IsPaused = true;
+        CurrentStatus = CurrentStatus with { IsPaused = true };
     }
 
     public void Resume()
     {
+        ResumeCallCount++;
+        IsPaused = false;
+        CurrentStatus = CurrentStatus with { IsPaused = false };
     }
 
-    public void RaiseStatus(IndexingStatus status) => StatusChanged?.Invoke(this, status);
+    public void RaiseStatus(IndexingStatus status)
+    {
+        CurrentStatus = status;
+        IsPaused = status.IsPaused;
+        StatusChanged?.Invoke(this, status);
+    }
 }
 
 internal sealed class FakeFileIndex : IFileIndex
 {
-    public string DatabasePath => string.Empty;
+    public IndexDatabaseInfo DatabaseInfo { get; set; } = new(
+        string.Empty,
+        Exists: false,
+        IsCompatible: false,
+        SchemaVersion: "3",
+        DatabaseBytes: 0,
+        WalBytes: 0,
+        ShmBytes: 0,
+        LocationCount: 0,
+        TotalFileCount: 0,
+        TotalLineCount: 0,
+        PendingChangeCount: 0,
+        LastIndexedUtc: null);
+
+    public int CompactCallCount { get; private set; }
+
+    public string DatabasePath => DatabaseInfo.DatabasePath;
 
     public Task BuildOrRefreshAsync(IndexRequest request, CancellationToken cancellationToken) => Task.CompletedTask;
 
@@ -115,6 +146,15 @@ internal sealed class FakeFileIndex : IFileIndex
 
     public Task<IReadOnlyList<IndexedLocationInfo>> GetLocationsAsync(CancellationToken cancellationToken) =>
         Task.FromResult<IReadOnlyList<IndexedLocationInfo>>(Array.Empty<IndexedLocationInfo>());
+
+    public Task<IndexDatabaseInfo> GetDatabaseInfoAsync(CancellationToken cancellationToken) =>
+        Task.FromResult(DatabaseInfo);
+
+    public Task CompactAsync(CancellationToken cancellationToken)
+    {
+        CompactCallCount++;
+        return Task.CompletedTask;
+    }
 
     public Task ClearAsync(string root, CancellationToken cancellationToken) => Task.CompletedTask;
 

@@ -119,9 +119,9 @@
             <Border Grid.Column="2"
                     Style="{StaticResource WatchAwareSurfaceStyle}">
                 <Grid>
-                    <StackPanel>
-                        <StackPanel.Style>
-                            <Style TargetType="StackPanel">
+                    <ScrollViewer VerticalScrollBarVisibility="Auto">
+                        <ScrollViewer.Style>
+                            <Style TargetType="ScrollViewer">
                                 <Setter Property="Visibility" Value="Visible"/>
                                 <Style.Triggers>
                                     <DataTrigger Binding="{Binding Index.SelectedIndexedLocation}" Value="{x:Null}">
@@ -129,7 +129,9 @@
                                     </DataTrigger>
                                 </Style.Triggers>
                             </Style>
-                        </StackPanel.Style>
+                        </ScrollViewer.Style>
+
+                        <StackPanel>
 
                         <TextBlock Text="{Binding Index.SelectedIndexedLocation.DisplayName}"
                                    FontSize="20"
@@ -195,6 +197,69 @@
                                    TextAlignment="Left"
                                    Margin="0,2,0,18"/>
 
+                        <Border Height="1" Background="{DynamicResource Atlas.LineBrush}" Margin="0,0,0,18"/>
+
+                        <TextBlock Text="Database" Style="{StaticResource FieldLabelStyle}"/>
+                        <Grid Margin="0,6,0,18">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="140"/>
+                                <ColumnDefinition Width="*"/>
+                            </Grid.ColumnDefinitions>
+                            <Grid.RowDefinitions>
+                                <RowDefinition Height="Auto"/>
+                                <RowDefinition Height="Auto"/>
+                                <RowDefinition Height="Auto"/>
+                                <RowDefinition Height="Auto"/>
+                                <RowDefinition Height="Auto"/>
+                                <RowDefinition Height="Auto"/>
+                            </Grid.RowDefinitions>
+
+                            <TextBlock Grid.Row="0" Text="Path" Style="{StaticResource MetaKeyStyle}" Margin="0,0,0,8"/>
+                            <TextBlock Grid.Row="0" Grid.Column="1"
+                                       Text="{Binding Index.IndexDatabasePath}"
+                                       ToolTip="{Binding Index.IndexDatabasePath}"
+                                       Style="{StaticResource MetaValueStyle}"
+                                       TextAlignment="Left"
+                                       TextTrimming="CharacterEllipsis"
+                                       Margin="0,0,0,8"/>
+
+                            <TextBlock Grid.Row="1" Text="Status" Style="{StaticResource MetaKeyStyle}" Margin="0,0,0,8"/>
+                            <TextBlock Grid.Row="1" Grid.Column="1"
+                                       Text="{Binding Index.IndexDatabaseStatusText}"
+                                       Style="{StaticResource MetaValueStyle}"
+                                       TextAlignment="Left"
+                                       Margin="0,0,0,8"/>
+
+                            <TextBlock Grid.Row="2" Text="Storage" Style="{StaticResource MetaKeyStyle}" Margin="0,0,0,8"/>
+                            <TextBlock Grid.Row="2" Grid.Column="1"
+                                       Text="{Binding Index.IndexDatabaseSizeText}"
+                                       Style="{StaticResource MetaValueStyle}"
+                                       TextAlignment="Left"
+                                       TextWrapping="Wrap"
+                                       Margin="0,0,0,8"/>
+
+                            <TextBlock Grid.Row="3" Text="Content" Style="{StaticResource MetaKeyStyle}" Margin="0,0,0,8"/>
+                            <TextBlock Grid.Row="3" Grid.Column="1"
+                                       Text="{Binding Index.IndexDatabaseContentText}"
+                                       Style="{StaticResource MetaValueStyle}"
+                                       TextAlignment="Left"
+                                       TextWrapping="Wrap"
+                                       Margin="0,0,0,8"/>
+
+                            <TextBlock Grid.Row="4" Text="Queue" Style="{StaticResource MetaKeyStyle}" Margin="0,0,0,8"/>
+                            <TextBlock Grid.Row="4" Grid.Column="1"
+                                       Text="{Binding Index.IndexDatabaseQueueText}"
+                                       Style="{StaticResource MetaValueStyle}"
+                                       TextAlignment="Left"
+                                       Margin="0,0,0,8"/>
+
+                            <TextBlock Grid.Row="5" Text="Updated" Style="{StaticResource MetaKeyStyle}"/>
+                            <TextBlock Grid.Row="5" Grid.Column="1"
+                                       Text="{Binding Index.IndexDatabaseLastIndexedText}"
+                                       Style="{StaticResource MetaValueStyle}"
+                                       TextAlignment="Left"/>
+                        </Grid>
+
                         <WrapPanel>
                             <Button Command="{Binding Index.RebuildSelectedIndexCommand}"
                                     Style="{StaticResource PrimaryButtonStyle}"
@@ -226,8 +291,19 @@
                                     <TextBlock Text="Open database"/>
                                 </StackPanel>
                             </Button>
+                            <Button Command="{Binding Index.CompactIndexDatabaseCommand}"
+                                    Style="{StaticResource SecondaryButtonStyle}"
+                                    Height="34"
+                                    MinWidth="146"
+                                    Margin="0,0,8,8">
+                                <StackPanel Orientation="Horizontal">
+                                    <ui:FontIcon Glyph="&#xE777;" FontSize="13" Margin="0,0,7,0"/>
+                                    <TextBlock Text="{Binding Index.CompactIndexDatabaseActionText}"/>
+                                </StackPanel>
+                            </Button>
                         </WrapPanel>
-                    </StackPanel>
+                        </StackPanel>
+                    </ScrollViewer>
 
                     <StackPanel HorizontalAlignment="Center" VerticalAlignment="Center" MaxWidth="280">
                         <StackPanel.Style>
