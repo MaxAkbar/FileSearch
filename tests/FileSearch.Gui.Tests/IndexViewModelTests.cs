@@ -1,6 +1,6 @@
 using System.ComponentModel;
-using FileSearch.Core.Indexing;
 using FileSearch.Core.Extractors;
+using FileSearch.Core.Indexing;
 using FileSearch.Core.Queries;
 using FileSearch.Gui.ViewModels;
 

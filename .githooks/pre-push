@@ -1,0 +1,7 @@
+#!/usr/bin/env sh
+set -eu
+
+SOLUTION="${SOLUTION:-FileSearch.slnx}"
+
+echo "Running dotnet format ./${SOLUTION} --verify-no-changes --no-restore"
+dotnet format "./${SOLUTION}" --verify-no-changes --no-restore
