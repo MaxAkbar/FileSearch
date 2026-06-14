@@ -1,4 +1,5 @@
 using System.ComponentModel;
+using FileSearch.Core.Indexing;
 using FileSearch.Core.Extractors;
 using FileSearch.Core.Queries;
 using FileSearch.Gui.ViewModels;
@@ -39,6 +40,55 @@ public sealed class IndexViewModelTests
         search.SearchPath = Path.GetTempPath();
 
         Assert.Empty(raised);
+    }
+
+    [Fact]
+    public void ActiveRefreshProgressUpdatesLocationRuntimeSummary()
+    {
+        var root = Path.GetTempPath();
+        var status = new StatusBarViewModel();
+        var settings = new FakeSettingsService();
+        settings.Current.IndexedLocations.Add(new() { Root = root });
+        var history = new HistoryViewModel(settings, status);
+        var search = new SearchViewModel(
+            new NullSearcher(),
+            new ExtractorRegistry(Array.Empty<ITextExtractor>()),
+            new QueryFactory(),
+            new FakePreviewService(),
+            new FakeFileLauncher(),
+            settings,
+            new FakeFileTypeOptionsStore(),
+            new FakeFolderPicker(),
+            history,
+            status);
+        var indexingService = new FakeIndexingService();
+        var index = new IndexViewModel(
+            new FakeFileIndex(),
+            indexingService,
+            settings,
+            new FakeFileLauncher(),
+            new InlineDispatcher(),
+            search,
+            status);
+
+        indexingService.RaiseStatus(new IndexingStatus(
+            IsRunning: true,
+            IsPaused: false,
+            IsProcessing: true,
+            QueueLength: 0,
+            Message: "Scanning 10; 2 changed, 8 unchanged",
+            ActiveRoot: IndexPath.NormalizeRoot(root),
+            ActiveKind: IndexChangeKind.RefreshRoot,
+            ActiveProgress: new IndexProgress(
+                FilesEnumerated: 10,
+                FilesIndexed: 2,
+                FilesSkippedUnchanged: 8,
+                FilesRemoved: 0,
+                FilesFailed: 0,
+                LinesIndexed: 20)));
+
+        var location = Assert.Single(index.IndexedLocations);
+        Assert.Equal("Scanning 10; 2 changed, 8 unchanged", location.RuntimeStatusSummary);
     }
 
     private static (SearchViewModel Search, IndexViewModel Index) Build()

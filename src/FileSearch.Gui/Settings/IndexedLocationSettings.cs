@@ -10,6 +10,7 @@ public sealed class IndexedLocationSettings : INotifyPropertyChanged
     private bool _isQueued;
     private bool _isIndexingPaused;
     private int _queuedWorkCount;
+    private string _runtimeStatusDetail = string.Empty;
     private long _lastIndexedUtcTicks;
     private long _fileCount;
     private long _lineCount;
@@ -122,6 +123,17 @@ public sealed class IndexedLocationSettings : INotifyPropertyChanged
     }
 
     [JsonIgnore]
+    public string RuntimeStatusDetail
+    {
+        get => _runtimeStatusDetail;
+        set
+        {
+            if (SetProperty(ref _runtimeStatusDetail, value ?? string.Empty))
+                OnRuntimeStatusChanged();
+        }
+    }
+
+    [JsonIgnore]
     public string RuntimeStatusSummary
     {
         get
@@ -129,7 +141,7 @@ public sealed class IndexedLocationSettings : INotifyPropertyChanged
             if (IsIndexingPaused && (IsIndexing || IsQueued))
                 return "Paused";
             if (IsIndexing)
-                return "Indexing now";
+                return string.IsNullOrWhiteSpace(RuntimeStatusDetail) ? "Indexing now" : RuntimeStatusDetail;
             if (IsQueued)
                 return QueuedWorkCount <= 1 ? "Queued" : $"{QueuedWorkCount:n0} queued";
             return "Ready";

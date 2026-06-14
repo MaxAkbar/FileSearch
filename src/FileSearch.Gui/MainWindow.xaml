@@ -487,6 +487,16 @@
                     </Border>
                     <Border Style="{StaticResource FilterChipStyle}">
                         <StackPanel Orientation="Horizontal">
+                            <TextBlock Text="Exclude" Style="{StaticResource ChipLabelStyle}"/>
+                            <TextBox Text="{Binding Search.ExcludeFileNamePattern, UpdateSourceTrigger=PropertyChanged}"
+                                     MinWidth="220" MaxWidth="420" BorderThickness="0" Background="Transparent"
+                                     VerticalContentAlignment="Center"
+                                     ToolTip="Exclude glob patterns separated by ; or , — e.g. *.log;*.tmp"
+                                     ui:ControlHelper.PlaceholderText="None (e.g. *.log;*.tmp)"/>
+                        </StackPanel>
+                    </Border>
+                    <Border Style="{StaticResource FilterChipStyle}">
+                        <StackPanel Orientation="Horizontal">
                             <TextBlock Text="Mode" Style="{StaticResource ChipLabelStyle}"/>
                             <ComboBox SelectedItem="{Binding Search.SearchMode}"
                                       ItemsSource="{Binding Search.AvailableModes}"
@@ -616,6 +626,7 @@
                                 <ListBox.ItemContainerStyle>
                                     <Style TargetType="ListBoxItem" BasedOn="{StaticResource ResultCardContainerStyle}">
                                         <EventSetter Event="MouseDoubleClick" Handler="OnResultCardDoubleClick"/>
+                                        <Setter Property="Tag" Value="{Binding DataContext.Search, RelativeSource={RelativeSource AncestorType=ListBox}}"/>
                                         <Setter Property="ContextMenu">
                                             <Setter.Value>
                                                 <ContextMenu DataContext="{Binding Path=PlacementTarget.DataContext, RelativeSource={RelativeSource Self}}">
@@ -631,6 +642,12 @@
                                                     </MenuItem>
                                                     <MenuItem Header="Copy _folder path" Command="{Binding CopyFolderPathCommand}">
                                                         <MenuItem.Icon><ui:FontIcon Glyph="&#xE8C8;" FontSize="14"/></MenuItem.Icon>
+                                                    </MenuItem>
+                                                    <Separator/>
+                                                    <MenuItem Header="{Binding ExcludeExtensionPatternMenuText}"
+                                                              Command="{Binding PlacementTarget.Tag.ExcludeFileExtensionPatternCommand, RelativeSource={RelativeSource AncestorType=ContextMenu}}"
+                                                              CommandParameter="{Binding}">
+                                                        <MenuItem.Icon><ui:FontIcon Glyph="&#xE74D;" FontSize="14"/></MenuItem.Icon>
                                                     </MenuItem>
                                                 </ContextMenu>
                                             </Setter.Value>

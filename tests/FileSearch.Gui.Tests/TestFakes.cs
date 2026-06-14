@@ -118,10 +118,10 @@ internal sealed class FakeFileIndex : IFileIndex
 
     public Task ClearAsync(string root, CancellationToken cancellationToken) => Task.CompletedTask;
 
-    public Task SavePendingChangeAsync(string root, string path, IndexChangeKind kind, CancellationToken cancellationToken) => Task.CompletedTask;
+    public Task SavePendingChangeAsync(string root, string? path, IndexChangeKind kind, CancellationToken cancellationToken) => Task.CompletedTask;
 
     public Task<IReadOnlyList<PendingIndexChange>> GetPendingChangesAsync(CancellationToken cancellationToken) =>
         Task.FromResult<IReadOnlyList<PendingIndexChange>>(Array.Empty<PendingIndexChange>());
 
-    public Task RemovePendingChangeAsync(string root, string path, IndexChangeKind kind, CancellationToken cancellationToken) => Task.CompletedTask;
+    public Task RemovePendingChangeAsync(string root, string? path, IndexChangeKind kind, CancellationToken cancellationToken) => Task.CompletedTask;
 }

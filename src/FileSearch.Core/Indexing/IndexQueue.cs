@@ -49,11 +49,9 @@ public sealed class IndexQueue : IIndexQueue, IDisposable
         {
             // A queued root refresh re-walks the tree and diffs every file by
             // size/mtime when it runs, so per-file changes under that root are
-            // redundant: drop incoming ones (before they're persisted) and
-            // purge queued ones when a refresh arrives. Pending-change rows of
-            // purged items are left behind deliberately — reprocessing them at
-            // next startup is a cheap no-op thanks to the upsert unchanged
-            // check, and processing removes the rows.
+            // redundant: drop incoming ones and purge queued ones when a
+            // refresh arrives. Persisting the root refresh also clears older
+            // pending rows for that root.
             if (normalized.Kind == IndexChangeKind.RefreshRoot)
             {
                 RemoveFileItemsForRootLocked(normalized.Root);
@@ -72,11 +70,13 @@ public sealed class IndexQueue : IIndexQueue, IDisposable
             }
 
             _items[key] = normalized;
-            persist = normalized.Persisted && !alreadyPersisted && normalized.Path is not null;
+            persist = normalized.Persisted &&
+                !alreadyPersisted &&
+                (normalized.Kind == IndexChangeKind.RefreshRoot || normalized.Path is not null);
         }
 
         if (persist)
-            await _pendingChanges.SavePendingChangeAsync(normalized.Root, normalized.Path!, normalized.Kind, cancellationToken)
+            await _pendingChanges.SavePendingChangeAsync(normalized.Root, normalized.Path, normalized.Kind, cancellationToken)
                 .ConfigureAwait(false);
 
         _signal.Release();
@@ -190,11 +190,13 @@ public sealed class IndexQueue : IIndexQueue, IDisposable
         {
             if (!locations.TryGetValue(IndexPath.NormalizeRoot(change.Root), out var location))
                 continue;
+            if (change.Kind != IndexChangeKind.RefreshRoot && change.Path is null)
+                continue;
 
             await EnqueueAsync(
                 new IndexQueueItem(
                     location.Root,
-                    change.Path,
+                    change.Kind == IndexChangeKind.RefreshRoot ? null : change.Path,
                     location.WalkerOptions,
                     change.Kind,
                     IndexQueuePriority.Normal,

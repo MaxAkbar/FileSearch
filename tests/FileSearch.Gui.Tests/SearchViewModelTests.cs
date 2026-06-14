@@ -156,6 +156,54 @@ public sealed class SearchViewModelTests
         });
     }
 
+    [Fact]
+    public void SearchPassesIncludeAndExcludePatternsToWalkerOptions()
+    {
+        var searcher = new RecordingSearcher();
+        RunWithPump((pump, vm, history, status, settings) =>
+        {
+            vm.QueryText = "needle";
+            vm.SearchPath = Path.GetTempPath();
+            vm.FileNamePattern = "*.cs; *.md";
+            vm.ExcludeFileNamePattern = "*.g.cs, *.tmp";
+
+            var task = vm.SearchCommand.ExecuteAsync(null);
+            pump.PumpUntil(() => task.IsCompleted, TimeSpan.FromSeconds(10));
+
+            Assert.NotNull(searcher.Request);
+            Assert.Equal(new[] { "*.cs", "*.md" }, searcher.Request.WalkerOptions.IncludeGlobs);
+            Assert.Equal(new[] { "*.g.cs", "*.tmp" }, searcher.Request.WalkerOptions.ExcludeGlobs);
+        }, searcher);
+    }
+
+    [Fact]
+    public void ExcludeFileExtensionPatternCommandAppendsPatternAndRerunsSearch()
+    {
+        var searcher = new RecordingSearcher();
+        RunWithPump((pump, vm, history, status, settings) =>
+        {
+            var result = new FileResultViewModel(@"C:\results\Component.CS", new FakeFileLauncher());
+            vm.QueryText = "needle";
+            vm.SearchPath = Path.GetTempPath();
+            vm.ExcludeFileNamePattern = "*.log";
+
+            Assert.True(vm.ExcludeFileExtensionPatternCommand.CanExecute(result));
+            var task = vm.ExcludeFileExtensionPatternCommand.ExecuteAsync(result);
+            pump.PumpUntil(() => task.IsCompleted, TimeSpan.FromSeconds(10));
+
+            Assert.Equal("*.log; *.cs", vm.ExcludeFileNamePattern);
+            Assert.NotNull(searcher.Request);
+            Assert.Equal(new[] { "*.log", "*.cs" }, searcher.Request.WalkerOptions.ExcludeGlobs);
+            Assert.Equal(1, searcher.RequestCount);
+
+            var duplicate = vm.ExcludeFileExtensionPatternCommand.ExecuteAsync(result);
+            pump.PumpUntil(() => duplicate.IsCompleted, TimeSpan.FromSeconds(10));
+
+            Assert.Equal("*.log; *.cs", vm.ExcludeFileNamePattern);
+            Assert.Equal(2, searcher.RequestCount);
+        }, searcher);
+    }
+
     private static void RunWithPump(
         Action<PumpingSynchronizationContext, SearchViewModel, HistoryViewModel, StatusBarViewModel, FakeSettingsService> body,
         ISearcher? searcher = null)
@@ -229,6 +277,22 @@ public sealed class SearchViewModelTests
             await Task.Yield();
             yield return new Hit(@"C:\results\a.txt", 1, "needle", Array.Empty<MatchSpan>());
             throw new InvalidOperationException("boom");
+        }
+    }
+
+    private sealed class RecordingSearcher : ISearcher
+    {
+        public SearchRequest? Request { get; private set; }
+        public int RequestCount { get; private set; }
+
+        public async IAsyncEnumerable<Hit> SearchAsync(
+            SearchRequest request,
+            [EnumeratorCancellation] CancellationToken cancellationToken)
+        {
+            Request = request;
+            RequestCount++;
+            await Task.Yield();
+            yield break;
         }
     }
 

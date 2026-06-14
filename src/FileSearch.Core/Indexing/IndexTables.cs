@@ -279,13 +279,20 @@ internal static class IndexTables
     public static async Task UpsertPendingChangeAsync(
         Database db,
         string root,
-        string path,
+        string? path,
         IndexChangeKind kind,
         CancellationToken cancellationToken)
     {
-        await db.ExecuteAsync(
-            Sql.Format($"DELETE FROM pending_changes WHERE root_path = {root} AND path = {path}"),
-            cancellationToken).ConfigureAwait(false);
+        if (kind == IndexChangeKind.RefreshRoot && path is null)
+        {
+            await DeletePendingChangesForRootAsync(db, root, cancellationToken).ConfigureAwait(false);
+        }
+        else
+        {
+            await db.ExecuteAsync(
+                Sql.Format($"DELETE FROM pending_changes WHERE root_path = {root}") + " AND " + PendingPathPredicate(path),
+                cancellationToken).ConfigureAwait(false);
+        }
 
         var id = await GetNextIdAsync(db, "pending_changes", cancellationToken).ConfigureAwait(false);
         await db.ExecuteAsync(
@@ -305,7 +312,7 @@ internal static class IndexTables
             changes.Add(new PendingIndexChange(
                 result.Current[0].AsInteger,
                 result.Current[1].AsText,
-                result.Current[2].AsText,
+                result.Current[2].IsNull ? null : result.Current[2].AsText,
                 (IndexChangeKind)result.Current[3].AsInteger));
         }
 
@@ -315,18 +322,25 @@ internal static class IndexTables
     public static Task DeletePendingChangeAsync(
         Database db,
         string root,
-        string path,
+        string? path,
         IndexChangeKind kind,
         CancellationToken cancellationToken) =>
         ExecuteAsync(
             db,
-            Sql.Format($"DELETE FROM pending_changes WHERE root_path = {root} AND path = {path} AND kind = {(long)kind}"),
+            Sql.Format($"DELETE FROM pending_changes WHERE root_path = {root}") +
+            " AND " + PendingPathPredicate(path) +
+            Sql.Format($" AND kind = {(long)kind}"),
             cancellationToken);
 
     public static Task DeletePendingChangesForRootAsync(Database db, string root, CancellationToken cancellationToken) =>
         ExecuteAsync(db, Sql.Format($"DELETE FROM pending_changes WHERE root_path = {root}"), cancellationToken);
 
     // ----- shared helpers -----
+
+    private static string PendingPathPredicate(string? path) =>
+        path is null
+            ? "path IS NULL"
+            : Sql.Format($"path = {path}");
 
     public static async Task<long> GetNextIdAsync(Database db, string tableName, CancellationToken cancellationToken)
     {

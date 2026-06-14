@@ -8,4 +8,5 @@ public sealed record IndexingStatus(
     string Message,
     string? ActiveRoot = null,
     IndexChangeKind? ActiveKind = null,
-    IReadOnlyDictionary<string, int>? QueuedRootCounts = null);
+    IReadOnlyDictionary<string, int>? QueuedRootCounts = null,
+    IndexProgress? ActiveProgress = null);

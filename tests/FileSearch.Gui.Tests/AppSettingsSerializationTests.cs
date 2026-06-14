@@ -36,6 +36,7 @@ public sealed class AppSettingsSerializationTests
                     IsQueued = true,
                     IsIndexingPaused = true,
                     QueuedWorkCount = 2,
+                    RuntimeStatusDetail = "Scanning 42",
                 },
             ],
         };
@@ -53,6 +54,7 @@ public sealed class AppSettingsSerializationTests
         Assert.DoesNotContain(nameof(IndexedLocationSettings.IsQueued), json);
         Assert.DoesNotContain(nameof(IndexedLocationSettings.IsIndexingPaused), json);
         Assert.DoesNotContain(nameof(IndexedLocationSettings.QueuedWorkCount), json);
+        Assert.DoesNotContain(nameof(IndexedLocationSettings.RuntimeStatusDetail), json);
         Assert.DoesNotContain(nameof(IndexedLocationSettings.RuntimeStatusSummary), json);
         Assert.NotNull(loaded);
         var location = Assert.Single(loaded.IndexedLocations);

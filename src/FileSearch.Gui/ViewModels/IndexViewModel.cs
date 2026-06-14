@@ -202,7 +202,6 @@ public sealed partial class IndexViewModel : ObservableObject, IDisposable
     {
         _indexingService.Pause();
         IsIndexingPaused = true;
-        OnPropertyChanged(nameof(IndexActivityText));
     }
 
     private bool CanPauseBackgroundIndexing() => !IsIndexingPaused;
@@ -212,7 +211,6 @@ public sealed partial class IndexViewModel : ObservableObject, IDisposable
     {
         _indexingService.Resume();
         IsIndexingPaused = false;
-        OnPropertyChanged(nameof(IndexActivityText));
     }
 
     private bool CanResumeBackgroundIndexing() => IsIndexingPaused;
@@ -375,7 +373,6 @@ public sealed partial class IndexViewModel : ObservableObject, IDisposable
             IndexQueueLength = status.QueueLength;
             ActiveIndexingRoot = status.ActiveRoot ?? string.Empty;
             ApplyIndexingRuntimeStatus(status);
-            OnPropertyChanged(nameof(IndexActivityText));
 
             if (!_search.IsSearching)
                 _status.Text = status.Message;
@@ -463,10 +460,31 @@ public sealed partial class IndexViewModel : ObservableObject, IDisposable
             var queuedCount = queued.TryGetValue(location.Root, out var count) ? count : 0;
 
             location.IsIndexing = status.IsProcessing && isActive;
+            location.RuntimeStatusDetail = location.IsIndexing
+                ? FormatRuntimeStatus(status)
+                : string.Empty;
             location.QueuedWorkCount = queuedCount;
             location.IsQueued = queuedCount > 0;
             location.IsIndexingPaused = status.IsPaused && (location.IsIndexing || location.IsQueued);
         }
+    }
+
+    private static string FormatRuntimeStatus(IndexingStatus status)
+    {
+        if (status.ActiveProgress is { } progress)
+        {
+            var changed = progress.FilesIndexed + progress.FilesRemoved;
+            var failed = progress.FilesFailed > 0 ? $", {progress.FilesFailed:n0} failed" : string.Empty;
+            return $"Scanning {progress.FilesEnumerated:n0}; {changed:n0} changed, {progress.FilesSkippedUnchanged:n0} unchanged{failed}";
+        }
+
+        return status.ActiveKind switch
+        {
+            IndexChangeKind.RefreshRoot => "Scanning files",
+            IndexChangeKind.UpsertFile => status.Message,
+            IndexChangeKind.DeleteFile => status.Message,
+            _ => "Indexing now",
+        };
     }
 
     private static string GetDisplayName(string root)

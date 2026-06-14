@@ -116,6 +116,7 @@ public sealed partial class SearchViewModel : ObservableObject, IDisposable
     [ObservableProperty] private string _searchPath = Environment.CurrentDirectory;
     [ObservableProperty] private string _queryText = string.Empty;
     [ObservableProperty] private string _fileNamePattern = string.Empty;
+    [ObservableProperty] private string _excludeFileNamePattern = string.Empty;
     [ObservableProperty] private bool _includeSubfolders = true;
 
     // --- options (Options tab) ---
@@ -225,6 +226,9 @@ public sealed partial class SearchViewModel : ObservableObject, IDisposable
 
     public string FilePatternSummary =>
         string.IsNullOrWhiteSpace(FileNamePattern) ? "All files" : FileNamePattern;
+
+    public string ExcludePatternSummary =>
+        string.IsNullOrWhiteSpace(ExcludeFileNamePattern) ? "No excludes" : ExcludeFileNamePattern;
 
     public string MatchCaseSummary => MatchCase ? "Match case on" : "Match case off";
 
@@ -368,6 +372,7 @@ public sealed partial class SearchViewModel : ObservableObject, IDisposable
         _status.Text = "Searching...";
         SearchCommand.NotifyCanExecuteChanged();
         CancelCommand.NotifyCanExecuteChanged();
+        ExcludeFileExtensionPatternCommand.NotifyCanExecuteChanged();
 
         var stopwatch = Stopwatch.StartNew();
         var routeStatus = string.Empty;
@@ -428,6 +433,7 @@ public sealed partial class SearchViewModel : ObservableObject, IDisposable
             IsSearching = false;
             SearchCommand.NotifyCanExecuteChanged();
             CancelCommand.NotifyCanExecuteChanged();
+            ExcludeFileExtensionPatternCommand.NotifyCanExecuteChanged();
         }
     }
 
@@ -477,6 +483,20 @@ public sealed partial class SearchViewModel : ObservableObject, IDisposable
     private void ApplyFilePatternPreset(string? pattern) =>
         FileNamePattern = pattern?.Trim() ?? string.Empty;
 
+    [RelayCommand(CanExecute = nameof(CanExcludeFileExtensionPattern))]
+    private async Task ExcludeFileExtensionPatternAsync(FileResultViewModel? file)
+    {
+        if (file is null || string.IsNullOrWhiteSpace(file.ExtensionPattern))
+            return;
+
+        ExcludeFileNamePattern = AppendPattern(ExcludeFileNamePattern, file.ExtensionPattern);
+        _status.Text = $"Added exclude pattern {file.ExtensionPattern}; reapplying search...";
+        await SearchAsync().ConfigureAwait(true);
+    }
+
+    private bool CanExcludeFileExtensionPattern(FileResultViewModel? file) =>
+        !IsSearching && !string.IsNullOrWhiteSpace(file?.ExtensionPattern);
+
     [RelayCommand]
     private void ApplyCustomScope(SearchScope? scope)
     {
@@ -499,10 +519,12 @@ public sealed partial class SearchViewModel : ObservableObject, IDisposable
     private WalkerOptions BuildWalkerOptions()
     {
         var include = ParsePatterns(FileNamePattern);
+        var exclude = ParsePatterns(ExcludeFileNamePattern);
 
         return new WalkerOptions
         {
             IncludeGlobs = include,
+            ExcludeGlobs = exclude,
             IncludeExtensions = SkipUnknownFileTypes
                 ? BuildKnownTextExtensions()
                 : new HashSet<string>(StringComparer.OrdinalIgnoreCase),
@@ -598,6 +620,20 @@ public sealed partial class SearchViewModel : ObservableObject, IDisposable
 
     private static readonly char[] s_patternSeparators = { ';', ',' };
 
+    private static string AppendPattern(string raw, string pattern)
+    {
+        var trimmed = pattern.Trim();
+        if (string.IsNullOrWhiteSpace(trimmed))
+            return raw.Trim();
+
+        var existing = ParsePatterns(raw).ToList();
+        if (existing.Any(value => string.Equals(value, trimmed, StringComparison.OrdinalIgnoreCase)))
+            return string.Join("; ", existing);
+
+        existing.Add(trimmed);
+        return string.Join("; ", existing);
+    }
+
     private static string[] ParsePatterns(string raw)
     {
         if (string.IsNullOrWhiteSpace(raw)) return Array.Empty<string>();
@@ -616,6 +652,9 @@ public sealed partial class SearchViewModel : ObservableObject, IDisposable
 
     partial void OnFileNamePatternChanged(string value) =>
         OnPropertyChanged(nameof(FilePatternSummary));
+
+    partial void OnExcludeFileNamePatternChanged(string value) =>
+        OnPropertyChanged(nameof(ExcludePatternSummary));
 
     partial void OnIncludeSubfoldersChanged(bool value) =>
         OnPropertyChanged(nameof(SubfoldersSummary));

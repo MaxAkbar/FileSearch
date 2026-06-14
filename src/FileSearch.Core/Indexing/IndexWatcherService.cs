@@ -108,7 +108,7 @@ public sealed class IndexWatcherService : IIndexWatcherService
             IndexChangeKind.RefreshRoot,
             IndexQueuePriority.Low,
             DateTime.UtcNow.AddSeconds(5),
-            Persisted: false));
+            Persisted: true));
     }
 
     /// <summary>

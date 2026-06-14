@@ -326,7 +326,7 @@ public sealed class CSharpDbFileIndex : IFileIndex, IDisposable
 
     public async Task SavePendingChangeAsync(
         string root,
-        string path,
+        string? path,
         IndexChangeKind kind,
         CancellationToken cancellationToken)
     {
@@ -334,7 +334,7 @@ public sealed class CSharpDbFileIndex : IFileIndex, IDisposable
             db => IndexTables.UpsertPendingChangeAsync(
                 db,
                 IndexPath.NormalizeRoot(root),
-                IndexPath.NormalizeFile(path),
+                path is null ? null : IndexPath.NormalizeFile(path),
                 kind,
                 cancellationToken),
             cancellationToken).ConfigureAwait(false);
@@ -358,7 +358,7 @@ public sealed class CSharpDbFileIndex : IFileIndex, IDisposable
 
     public async Task RemovePendingChangeAsync(
         string root,
-        string path,
+        string? path,
         IndexChangeKind kind,
         CancellationToken cancellationToken)
     {
@@ -366,7 +366,7 @@ public sealed class CSharpDbFileIndex : IFileIndex, IDisposable
             db => IndexTables.DeletePendingChangeAsync(
                 db,
                 IndexPath.NormalizeRoot(root),
-                IndexPath.NormalizeFile(path),
+                path is null ? null : IndexPath.NormalizeFile(path),
                 kind,
                 cancellationToken),
             cancellationToken).ConfigureAwait(false);

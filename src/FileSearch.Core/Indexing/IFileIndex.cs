@@ -45,12 +45,12 @@ public interface IIndexMaintenance
     Task<IReadOnlyList<IndexedLocationInfo>> GetLocationsAsync(CancellationToken cancellationToken);
 }
 
-/// <summary>Durable queue of file changes awaiting indexing (crash recovery).</summary>
+/// <summary>Durable queue of file and root-refresh changes awaiting indexing (crash recovery).</summary>
 public interface IPendingChangeStore
 {
     Task SavePendingChangeAsync(
         string root,
-        string path,
+        string? path,
         IndexChangeKind kind,
         CancellationToken cancellationToken);
 
@@ -58,7 +58,7 @@ public interface IPendingChangeStore
 
     Task RemovePendingChangeAsync(
         string root,
-        string path,
+        string? path,
         IndexChangeKind kind,
         CancellationToken cancellationToken);
 }

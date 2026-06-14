@@ -15,6 +15,7 @@ public sealed class IndexingService : IIndexingService
     private static readonly TimeSpan MaxBurst = TimeSpan.FromSeconds(30);
     private static readonly TimeSpan BurstRest = TimeSpan.FromSeconds(5);
     private static readonly TimeSpan ForegroundRefreshDelay = TimeSpan.FromSeconds(5);
+    private const long StatusNotificationIntervalMs = 200;
 
     private readonly IFileIndex _index;
     private readonly IIndexQueue _queue;
@@ -29,6 +30,7 @@ public sealed class IndexingService : IIndexingService
     private bool _paused;
     private bool _foregroundSearchActive;
     private bool _foregroundRefreshYieldRequested;
+    private long _lastStatusNotificationTicks;
     private IndexingStatus _status = new(false, false, false, 0, "Indexing idle.");
 
     private readonly ILogger _logger;
@@ -69,8 +71,7 @@ public sealed class IndexingService : IIndexingService
 
         foreach (var location in SnapshotLocations())
         {
-            var stats = await _index.GetStatsAsync(location.Root, cancellationToken).ConfigureAwait(false);
-            if (!stats.Exists)
+            if (Directory.Exists(location.Root))
                 await EnqueueRootRefreshAsync(location.Root, location.WalkerOptions, IndexQueuePriority.Low, cancellationToken).ConfigureAwait(false);
         }
 
@@ -83,7 +84,7 @@ public sealed class IndexingService : IIndexingService
             _worker = Task.Run(() => RunAsync(_workerCts.Token), CancellationToken.None);
         }
 
-        Publish(false, "Background indexing ready.");
+        Publish(false, "Background indexing ready.", force: true);
     }
 
     public async Task StopAsync(CancellationToken cancellationToken)
@@ -110,7 +111,7 @@ public sealed class IndexingService : IIndexingService
         _worker = null;
         _workerCts?.Dispose();
         _workerCts = null;
-        Publish(false, "Background indexing stopped.");
+        Publish(false, "Background indexing stopped.", force: true);
     }
 
     public async Task AddOrUpdateLocationAsync(
@@ -131,7 +132,7 @@ public sealed class IndexingService : IIndexingService
             await EnqueueRootRefreshAsync(normalized.Root, normalized.WalkerOptions, IndexQueuePriority.Low, cancellationToken)
                 .ConfigureAwait(false);
 
-        Publish(false, $"Indexed location ready: {normalized.Root}");
+        Publish(false, $"Indexed location ready: {normalized.Root}", force: true);
     }
 
     public async Task RemoveLocationAsync(string root, CancellationToken cancellationToken)
@@ -142,7 +143,7 @@ public sealed class IndexingService : IIndexingService
 
         _watchers.StopWatching(normalizedRoot);
         await _index.ClearAsync(normalizedRoot, cancellationToken).ConfigureAwait(false);
-        Publish(false, $"Removed indexed location: {normalizedRoot}");
+        Publish(false, $"Removed indexed location: {normalizedRoot}", force: true);
     }
 
     public Task EnqueueRootRefreshAsync(
@@ -157,7 +158,7 @@ public sealed class IndexingService : IIndexingService
             IndexChangeKind.RefreshRoot,
             priority,
             DateTime.UtcNow.AddSeconds(priority == IndexQueuePriority.High ? 0 : 3),
-            Persisted: false),
+            Persisted: true),
             cancellationToken);
 
     public void SetForegroundSearchActive(bool isActive)
@@ -166,7 +167,7 @@ public sealed class IndexingService : IIndexingService
         if (isActive)
         {
             CancelCurrentRootRefreshForSearch();
-            Publish(CurrentStatus.IsProcessing, "Search active; background root indexing will yield.");
+            Publish(CurrentStatus.IsProcessing, "Search active; background root indexing will yield.", force: true);
         }
     }
 
@@ -174,13 +175,13 @@ public sealed class IndexingService : IIndexingService
     {
         _paused = true;
         CancelCurrentRootRefreshForSearch();
-        Publish(CurrentStatus.IsProcessing, "Background indexing paused.");
+        Publish(CurrentStatus.IsProcessing, "Background indexing paused.", force: true);
     }
 
     public void Resume()
     {
         _paused = false;
-        Publish(CurrentStatus.IsProcessing, "Background indexing resumed.");
+        Publish(CurrentStatus.IsProcessing, "Background indexing resumed.", force: true);
     }
 
     private async Task EnqueueAsync(IndexQueueItem item, CancellationToken cancellationToken)
@@ -266,7 +267,7 @@ public sealed class IndexingService : IIndexingService
             await EnqueueAsync(
                 item with { DueUtc = DateTime.UtcNow.Add(ForegroundRefreshDelay), Persisted = false },
                 cancellationToken).ConfigureAwait(false);
-            Publish(false, "Index update deferred while search is active.");
+            Publish(false, "Index update deferred while search is active.", force: true);
         }
         finally
         {
@@ -292,9 +293,14 @@ public sealed class IndexingService : IIndexingService
             {
                 case IndexChangeKind.RefreshRoot:
                     await _index.RefreshRootAsync(
-                        new IndexRequest(item.Root, item.WalkerOptions),
+                        new IndexRequest(
+                            item.Root,
+                            item.WalkerOptions,
+                            progress => Publish(true, FormatProgress(progress), progress: progress)),
                         IndexRefreshMode.Incremental,
                         cancellationToken).ConfigureAwait(false);
+                    await _index.RemovePendingChangeAsync(item.Root, null, item.Kind, cancellationToken)
+                        .ConfigureAwait(false);
                     break;
                 case IndexChangeKind.UpsertFile:
                     if (item.Path is not null)
@@ -315,7 +321,8 @@ public sealed class IndexingService : IIndexingService
                     break;
             }
 
-            Publish(false, _queue.Count == 0 ? "Index ready." : $"Indexing {_queue.Count:n0} files queued.");
+            var queueCount = _queue.Count;
+            Publish(false, queueCount == 0 ? "Index ready." : $"Indexing {queueCount:n0} files queued.", force: queueCount == 0);
         }
         catch (OperationCanceledException)
         {
@@ -324,7 +331,7 @@ public sealed class IndexingService : IIndexingService
         catch (Exception ex)
         {
             _logger.LogError(ex, "Indexing {Kind} failed for {Root}.", item.Kind, item.Root);
-            Publish(false, $"Indexing error: {ex.Message}");
+            Publish(false, $"Indexing error: {ex.Message}", force: true);
         }
     }
 
@@ -358,10 +365,15 @@ public sealed class IndexingService : IIndexingService
             return new Dictionary<string, IndexedLocation>(_locations, StringComparer.OrdinalIgnoreCase);
     }
 
-    private void Publish(bool isProcessing, string message)
+    private void Publish(
+        bool isProcessing,
+        string message,
+        bool force = false,
+        IndexProgress? progress = null)
     {
         var activeItem = isProcessing ? _currentItem : null;
-        _status = new IndexingStatus(
+        var previous = _status;
+        var next = new IndexingStatus(
             IsRunning: _worker is not null,
             IsPaused: _paused,
             IsProcessing: isProcessing,
@@ -369,8 +381,56 @@ public sealed class IndexingService : IIndexingService
             Message: message,
             ActiveRoot: activeItem?.Root,
             ActiveKind: activeItem?.Kind,
-            QueuedRootCounts: _queue.GetQueuedRootCounts());
-        StatusChanged?.Invoke(this, _status);
+            QueuedRootCounts: _queue.GetQueuedRootCounts(),
+            ActiveProgress: progress);
+
+        if (StatusesEquivalent(previous, next))
+            return;
+
+        _status = next;
+
+        var now = Environment.TickCount64;
+        if (!force && !ShouldPublishNow(previous, next, now))
+            return;
+
+        Interlocked.Exchange(ref _lastStatusNotificationTicks, now);
+        StatusChanged?.Invoke(this, next);
+    }
+
+    private bool ShouldPublishNow(IndexingStatus previous, IndexingStatus next, long now)
+    {
+        if (previous.QueueLength == 0 && next.QueueLength > 0)
+            return true;
+
+        var last = Interlocked.Read(ref _lastStatusNotificationTicks);
+        return now - last >= StatusNotificationIntervalMs;
+    }
+
+    private static bool StatusesEquivalent(IndexingStatus left, IndexingStatus right) =>
+        left.IsRunning == right.IsRunning &&
+        left.IsPaused == right.IsPaused &&
+        left.IsProcessing == right.IsProcessing &&
+        left.QueueLength == right.QueueLength &&
+        string.Equals(left.Message, right.Message, StringComparison.Ordinal) &&
+        string.Equals(left.ActiveRoot, right.ActiveRoot, StringComparison.OrdinalIgnoreCase) &&
+        left.ActiveKind == right.ActiveKind &&
+        QueuedRootCountsEqual(left.QueuedRootCounts, right.QueuedRootCounts) &&
+        Equals(left.ActiveProgress, right.ActiveProgress);
+
+    private static bool QueuedRootCountsEqual(
+        IReadOnlyDictionary<string, int>? left,
+        IReadOnlyDictionary<string, int>? right)
+    {
+        if (ReferenceEquals(left, right))
+            return true;
+        if (left is null || right is null || left.Count != right.Count)
+            return false;
+
+        foreach (var (root, count) in left)
+            if (!right.TryGetValue(root, out var otherCount) || otherCount != count)
+                return false;
+
+        return true;
     }
 
     private static string Describe(IndexQueueItem item) =>
@@ -381,4 +441,11 @@ public sealed class IndexingService : IIndexingService
             IndexChangeKind.DeleteFile => $"Removing deleted file from index: {Path.GetFileName(item.Path)}",
             _ => "Indexing...",
         };
+
+    private static string FormatProgress(IndexProgress progress)
+    {
+        var changed = progress.FilesIndexed + progress.FilesRemoved;
+        var failed = progress.FilesFailed > 0 ? $", {progress.FilesFailed:n0} failed" : string.Empty;
+        return $"Scanning {progress.FilesEnumerated:n0}; {changed:n0} changed, {progress.FilesSkippedUnchanged:n0} unchanged{failed}";
+    }
 }

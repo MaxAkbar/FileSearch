@@ -449,6 +449,20 @@ public sealed class FileIndexTests : IDisposable
     }
 
     [Fact]
+    public async Task RootRefreshPendingChange_IsDurableAndSubsumesFilePendingChanges()
+    {
+        var file = Path.Combine(_root, "pending.txt");
+
+        await _index.SavePendingChangeAsync(_root, file, IndexChangeKind.UpsertFile, TestContext.Current.CancellationToken);
+        await _index.SavePendingChangeAsync(_root, null, IndexChangeKind.RefreshRoot, TestContext.Current.CancellationToken);
+
+        var change = Assert.Single(await _index.GetPendingChangesAsync(TestContext.Current.CancellationToken));
+        Assert.Equal(IndexPath.NormalizeRoot(_root), change.Root);
+        Assert.Null(change.Path);
+        Assert.Equal(IndexChangeKind.RefreshRoot, change.Kind);
+    }
+
+    [Fact]
     public async Task HandlesHostileRootDirectoryNamesThroughoutTheSqlLayer()
     {
         // Real roots like C:\Users\O'Brien flow into every root_path hole —
@@ -821,7 +835,7 @@ public sealed class FileIndexTests : IDisposable
 
         public Task ClearAsync(string root, CancellationToken cancellationToken) => Task.CompletedTask;
 
-        public Task SavePendingChangeAsync(string root, string path, IndexChangeKind kind, CancellationToken cancellationToken)
+        public Task SavePendingChangeAsync(string root, string? path, IndexChangeKind kind, CancellationToken cancellationToken)
         {
             SavedPendingChanges++;
             return Task.CompletedTask;
@@ -830,7 +844,7 @@ public sealed class FileIndexTests : IDisposable
         public Task<IReadOnlyList<PendingIndexChange>> GetPendingChangesAsync(CancellationToken cancellationToken) =>
             Task.FromResult<IReadOnlyList<PendingIndexChange>>(Array.Empty<PendingIndexChange>());
 
-        public Task RemovePendingChangeAsync(string root, string path, IndexChangeKind kind, CancellationToken cancellationToken) => Task.CompletedTask;
+        public Task RemovePendingChangeAsync(string root, string? path, IndexChangeKind kind, CancellationToken cancellationToken) => Task.CompletedTask;
     }
 
     private sealed class ThrowIfUsedFileIndex : IFileIndex
@@ -865,11 +879,11 @@ public sealed class FileIndexTests : IDisposable
 
         public Task ClearAsync(string root, CancellationToken cancellationToken) => Task.CompletedTask;
 
-        public Task SavePendingChangeAsync(string root, string path, IndexChangeKind kind, CancellationToken cancellationToken) => Task.CompletedTask;
+        public Task SavePendingChangeAsync(string root, string? path, IndexChangeKind kind, CancellationToken cancellationToken) => Task.CompletedTask;
 
         public Task<IReadOnlyList<PendingIndexChange>> GetPendingChangesAsync(CancellationToken cancellationToken) =>
             Task.FromResult<IReadOnlyList<PendingIndexChange>>(Array.Empty<PendingIndexChange>());
 
-        public Task RemovePendingChangeAsync(string root, string path, IndexChangeKind kind, CancellationToken cancellationToken) => Task.CompletedTask;
+        public Task RemovePendingChangeAsync(string root, string? path, IndexChangeKind kind, CancellationToken cancellationToken) => Task.CompletedTask;
     }
 }

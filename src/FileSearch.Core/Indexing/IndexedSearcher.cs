@@ -50,6 +50,14 @@ public sealed class IndexedSearcher : ISearcher
                 yield break;
             }
 
+            if (HasQueuedWorkForRequestRoot(request))
+            {
+                request.Status?.Invoke("Index has pending updates; using live scan");
+                await foreach (var hit in _liveSearcher.SearchAsync(request with { UseIndex = false }, cancellationToken).ConfigureAwait(false))
+                    yield return hit;
+                yield break;
+            }
+
             var coverage = await _coverageService.GetCoverageAsync(request, cancellationToken).ConfigureAwait(false);
             if (!coverage.IsCovered)
             {
@@ -73,6 +81,28 @@ public sealed class IndexedSearcher : ISearcher
         {
             _indexingService?.SetForegroundSearchActive(false);
         }
+    }
+
+    private bool HasQueuedWorkForRequestRoot(SearchRequest request)
+    {
+        if (_indexingService is null || request.Roots.Count != 1)
+            return false;
+
+        var queued = _indexingService.CurrentStatus.QueuedRootCounts;
+        if (queued is null || queued.Count == 0)
+            return false;
+
+        string root;
+        try
+        {
+            root = IndexPath.NormalizeRoot(request.Roots[0]);
+        }
+        catch
+        {
+            return false;
+        }
+
+        return queued.ContainsKey(root);
     }
 
     private void QueueRootRefresh(SearchRequest request)

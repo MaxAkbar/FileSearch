@@ -41,6 +41,12 @@ public sealed partial class FileResultViewModel : ObservableObject
     /// <summary>Lower-cased extension without the leading dot (e.g. "cs").</summary>
     public string Extension { get; }
 
+    public string ExtensionPattern =>
+        string.IsNullOrWhiteSpace(Extension) ? string.Empty : $"*.{Extension}";
+
+    public string ExcludeExtensionPatternMenuText =>
+        string.IsNullOrWhiteSpace(ExtensionPattern) ? "Exclude extension" : $"Exclude {ExtensionPattern}";
+
     public IReadOnlyList<Hit> Hits => _hits;
 
     [ObservableProperty] private int _hitCount;

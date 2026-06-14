@@ -3,5 +3,5 @@ namespace FileSearch.Core.Indexing;
 public sealed record PendingIndexChange(
     long Id,
     string Root,
-    string Path,
+    string? Path,
     IndexChangeKind Kind);

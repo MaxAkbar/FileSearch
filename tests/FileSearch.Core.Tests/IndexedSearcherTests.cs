@@ -56,6 +56,30 @@ public sealed class IndexedSearcherTests
         Assert.False(index.SearchWasUsed);
     }
 
+    [Fact]
+    public async Task UsesLiveScanWhenRequestRootHasQueuedIndexWork()
+    {
+        var live = new StubSearcher("live.txt");
+        var index = new StubIndexSearch(covered: true, "indexed.txt");
+        var indexingService = new StubIndexingService(new IndexingStatus(
+            IsRunning: true,
+            IsPaused: false,
+            IsProcessing: false,
+            QueueLength: 1,
+            Message: "queued",
+            QueuedRootCounts: new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase)
+            {
+                [IndexPath.NormalizeRoot(s_root)] = 1,
+            }));
+        var searcher = new IndexedSearcher(live, index, new IndexCoverageService(index), indexingService);
+
+        var hits = await CollectAsync(searcher, BuildRequest(useIndex: true));
+
+        var hit = Assert.Single(hits);
+        Assert.Equal("live.txt", hit.Path);
+        Assert.False(index.SearchWasUsed);
+    }
+
     private static SearchRequest BuildRequest(bool useIndex) =>
         new(new TermQuery("needle"), new[] { s_root }, new WalkerOptions(), UseIndex: useIndex);
 
@@ -111,5 +135,36 @@ public sealed class IndexedSearcherTests
             Task.FromResult(_covered
                 ? new IndexCoverage(IndexCoverageStatus.Covered, "stub covered")
                 : new IndexCoverage(IndexCoverageStatus.Missing, "stub missing"));
+    }
+
+    private sealed class StubIndexingService : IIndexingService
+    {
+        public StubIndexingService(IndexingStatus status) => CurrentStatus = status;
+
+        public event EventHandler<IndexingStatus>? StatusChanged;
+
+        public IndexingStatus CurrentStatus { get; private set; }
+
+        public bool IsPaused => CurrentStatus.IsPaused;
+
+        public Task StartAsync(IEnumerable<IndexedLocation> locations, CancellationToken cancellationToken) => Task.CompletedTask;
+
+        public Task StopAsync(CancellationToken cancellationToken) => Task.CompletedTask;
+
+        public Task AddOrUpdateLocationAsync(IndexedLocation location, bool queueInitialRefresh, CancellationToken cancellationToken) => Task.CompletedTask;
+
+        public Task RemoveLocationAsync(string root, CancellationToken cancellationToken) => Task.CompletedTask;
+
+        public Task EnqueueRootRefreshAsync(string root, WalkerOptions options, IndexQueuePriority priority, CancellationToken cancellationToken) => Task.CompletedTask;
+
+        public void SetForegroundSearchActive(bool isActive) => StatusChanged?.Invoke(this, CurrentStatus);
+
+        public void Pause()
+        {
+        }
+
+        public void Resume()
+        {
+        }
     }
 }
