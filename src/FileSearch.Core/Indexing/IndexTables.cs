@@ -50,12 +50,7 @@ internal static class IndexTables
     {
         var existing = await GetRootAsync(db, root, cancellationToken).ConfigureAwait(false);
         if (existing is not null)
-        {
-            await db.ExecuteAsync(
-                Sql.Format($"UPDATE index_roots SET options_hash = {profile} WHERE id = {existing.Id}"),
-                cancellationToken).ConfigureAwait(false);
             return existing.Id;
-        }
 
         var id = await GetNextIdAsync(db, "index_roots", cancellationToken).ConfigureAwait(false);
         await db.ExecuteAsync(
@@ -97,6 +92,12 @@ internal static class IndexTables
 
         return roots;
     }
+
+    public static Task MarkRootRefreshStartedAsync(Database db, long rootId, string profile, CancellationToken cancellationToken) =>
+        ExecuteAsync(
+            db,
+            Sql.Format($"UPDATE index_roots SET indexed_utc_ticks = 0, options_hash = {profile} WHERE id = {rootId}"),
+            cancellationToken);
 
     public static Task MarkRootRefreshedAsync(Database db, long rootId, string profile, CancellationToken cancellationToken) =>
         ExecuteAsync(

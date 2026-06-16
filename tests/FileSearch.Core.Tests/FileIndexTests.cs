@@ -95,15 +95,15 @@ public sealed class FileIndexTests : IDisposable
         File.WriteAllText(file, "first needle\n");
         await _index.UpsertFileAsync(_root, file, new WalkerOptions(), TestContext.Current.CancellationToken);
 
-        var first = Assert.Single(await IndexedSearchAsync(new TermQuery("first")));
+        var first = Assert.Single(await RawIndexedSearchAsync(new TermQuery("first")));
         Assert.EndsWith("live.txt", first.Path);
 
         File.WriteAllText(file, "second needle\n");
         File.SetLastWriteTimeUtc(file, DateTime.UtcNow.AddSeconds(2));
         await _index.UpsertFileAsync(_root, file, new WalkerOptions(), TestContext.Current.CancellationToken);
 
-        Assert.Empty(await IndexedSearchAsync(new TermQuery("first")));
-        var second = Assert.Single(await IndexedSearchAsync(new TermQuery("second")));
+        Assert.Empty(await RawIndexedSearchAsync(new TermQuery("first")));
+        var second = Assert.Single(await RawIndexedSearchAsync(new TermQuery("second")));
         Assert.EndsWith("live.txt", second.Path);
     }
 
@@ -593,15 +593,15 @@ public sealed class FileIndexTests : IDisposable
         File.SetLastWriteTimeUtc(file, indexedWriteTime);
         await _index.UpsertFileAsync(_root, file, new WalkerOptions(), TestContext.Current.CancellationToken);
 
-        Assert.Single(await IndexedSearchAsync(new TermQuery("first")));
-        Assert.Empty(await IndexedSearchAsync(new TermQuery("fresh")));
+        Assert.Single(await RawIndexedSearchAsync(new TermQuery("first")));
+        Assert.Empty(await RawIndexedSearchAsync(new TermQuery("fresh")));
 
         // A newer timestamp is a real change and gets re-extracted.
         File.SetLastWriteTimeUtc(file, indexedWriteTime.AddSeconds(2));
         await _index.UpsertFileAsync(_root, file, new WalkerOptions(), TestContext.Current.CancellationToken);
 
-        Assert.Single(await IndexedSearchAsync(new TermQuery("fresh")));
-        Assert.Empty(await IndexedSearchAsync(new TermQuery("first")));
+        Assert.Single(await RawIndexedSearchAsync(new TermQuery("fresh")));
+        Assert.Empty(await RawIndexedSearchAsync(new TermQuery("first")));
     }
 
     [Fact]
@@ -628,6 +628,34 @@ public sealed class FileIndexTests : IDisposable
         var found = Assert.Single(hits);
         Assert.EndsWith("a.txt", found.Path);
         Assert.Contains("using live scan", status, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public async Task IndexedSearcherFallsBackToLiveScan_WhenRootRefreshDidNotComplete()
+    {
+        File.WriteAllText(Path.Combine(_root, "empty.txt"), string.Empty);
+        await _index.UpsertFileAsync(
+            _root,
+            Path.Combine(_root, "empty.txt"),
+            new WalkerOptions(),
+            TestContext.Current.CancellationToken);
+        File.WriteAllText(Path.Combine(_root, "live.txt"), "live needle\n");
+
+        var coverage = await _index.GetCoverageAsync(
+            new SearchRequest(
+                new TermQuery("needle"),
+                new[] { _root },
+                new WalkerOptions(),
+                UseIndex: true),
+            TestContext.Current.CancellationToken);
+
+        Assert.Equal(IndexCoverageStatus.Missing, coverage.Status);
+        Assert.Contains("incomplete", coverage.Message, StringComparison.OrdinalIgnoreCase);
+
+        var hits = await IndexedSearchAsync(new TermQuery("needle"));
+
+        var hit = Assert.Single(hits);
+        Assert.EndsWith("live.txt", hit.Path);
     }
 
     [Fact]
@@ -841,6 +869,15 @@ public sealed class FileIndexTests : IDisposable
         var request = new SearchRequest(query, new[] { _root }, options ?? new WalkerOptions(), UseIndex: true);
         var hits = new List<Hit>();
         await foreach (var hit in _indexedSearcher.SearchAsync(request, TestContext.Current.CancellationToken))
+            hits.Add(hit);
+        return hits;
+    }
+
+    private async Task<List<Hit>> RawIndexedSearchAsync(Query query, WalkerOptions? options = null)
+    {
+        var request = new SearchRequest(query, new[] { _root }, options ?? new WalkerOptions(), UseIndex: true);
+        var hits = new List<Hit>();
+        await foreach (var hit in _index.SearchAsync(request, TestContext.Current.CancellationToken))
             hits.Add(hit);
         return hits;
     }

@@ -241,6 +241,9 @@ public sealed class CSharpDbFileIndex : IFileIndex, IDisposable
                 if (rootRow is null)
                     return new IndexCoverage(IndexCoverageStatus.Missing, "Index does not cover this folder");
 
+                if (rootRow.IndexedUtcTicks <= 0)
+                    return new IndexCoverage(IndexCoverageStatus.Missing, "Index refresh for this folder is incomplete");
+
                 if (!IndexProfile.TryParse(rootRow.OptionsHash, out var profile))
                     return new IndexCoverage(IndexCoverageStatus.Incompatible, "Index profile is incompatible");
 
@@ -432,6 +435,7 @@ public sealed class CSharpDbFileIndex : IFileIndex, IDisposable
         var walkerOptions = IndexWalkerOptions.ForIndexing(request.WalkerOptions);
         var profile = IndexProfile.FromWalkerOptions(walkerOptions).ToStorageString();
         var rootId = await IndexTables.EnsureRootAsync(db, root, profile, cancellationToken).ConfigureAwait(false);
+        await IndexTables.MarkRootRefreshStartedAsync(db, rootId, profile, cancellationToken).ConfigureAwait(false);
         var existing = await IndexTables.LoadExistingFilesAsync(db, rootId, cancellationToken).ConfigureAwait(false);
 
         long filesEnumerated = 0;
