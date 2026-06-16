@@ -353,7 +353,7 @@
                                     </Grid>
 
                                     <ListBox ItemsSource="{Binding History.RecentPathList.Items}"
-                                             SelectedItem="{Binding Search.SearchPath, Mode=TwoWay}"
+                                             SelectedItem="{Binding Search.SelectedRecentPath, Mode=TwoWay}"
                                              Style="{StaticResource NavListBoxStyle}"
                                              ItemContainerStyle="{StaticResource NavListBoxItemStyle}">
                                         <ListBox.ItemTemplate>

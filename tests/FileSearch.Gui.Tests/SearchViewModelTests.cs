@@ -249,6 +249,43 @@ public sealed class SearchViewModelTests
     }
 
     [Fact]
+    public void SearchAfterSavedSearchSelectionKeepsPathWhenRecentPathSelectionClears()
+    {
+        var searcher = new RecordingSearcher();
+        RunWithPump((pump, vm, history, status, settings) =>
+        {
+            var folder1 = Path.Combine(Path.GetTempPath(), "folder1");
+            var folder2 = Path.Combine(Path.GetTempPath(), "folder2");
+
+            vm.SelectedSavedSearch = new SavedSearchSettings
+            {
+                QueryText = "folder1",
+                SearchPath = folder1,
+            };
+            var first = vm.SearchCommand.ExecuteAsync(null);
+            pump.PumpUntil(() => first.IsCompleted, TimeSpan.FromSeconds(10));
+
+            vm.SelectedSavedSearch = new SavedSearchSettings
+            {
+                QueryText = "folder2",
+                SearchPath = folder2,
+            };
+
+            // The recent-folder ListBox clears SelectedItem while its paged
+            // Items collection refreshes. That null selection must not clear
+            // the actual search path restored by the saved search.
+            vm.SelectedRecentPath = null;
+
+            var second = vm.SearchCommand.ExecuteAsync(null);
+            pump.PumpUntil(() => second.IsCompleted, TimeSpan.FromSeconds(10));
+
+            Assert.NotNull(searcher.Request);
+            Assert.Equal(folder2, Assert.Single(searcher.Request.Roots));
+            Assert.Equal(folder2, vm.SearchPath);
+        }, searcher);
+    }
+
+    [Fact]
     public void SearchPassesIncludeAndExcludePatternsToWalkerOptions()
     {
         var searcher = new RecordingSearcher();

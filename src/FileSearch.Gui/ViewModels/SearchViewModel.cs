@@ -126,6 +126,7 @@ public sealed partial class SearchViewModel : ObservableObject, IDisposable
     [ObservableProperty] private string _fileNamePattern = string.Empty;
     [ObservableProperty] private string _excludeFileNamePattern = string.Empty;
     [ObservableProperty] private bool _includeSubfolders = true;
+    [ObservableProperty] private string? _selectedRecentPath;
 
     // --- options (Options tab) ---
     [ObservableProperty] private QueryMode _searchMode = QueryMode.Boolean;
@@ -791,6 +792,21 @@ public sealed partial class SearchViewModel : ObservableObject, IDisposable
 
     partial void OnQueryTextChanged(string value) =>
         OnPropertyChanged(nameof(ResultsContextText));
+
+    partial void OnSearchPathChanged(string value)
+    {
+        if (!string.Equals(SelectedRecentPath, value, StringComparison.OrdinalIgnoreCase))
+            SelectedRecentPath = value;
+    }
+
+    partial void OnSelectedRecentPathChanged(string? value)
+    {
+        if (!string.IsNullOrWhiteSpace(value) &&
+            !string.Equals(SearchPath, value, StringComparison.OrdinalIgnoreCase))
+        {
+            SearchPath = value;
+        }
+    }
 
     partial void OnFilesMatchedChanged(int value) =>
         OnPropertyChanged(nameof(ResultsSummaryText));
