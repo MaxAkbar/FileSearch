@@ -30,6 +30,8 @@ public sealed class IndexingService : IIndexingService
     private bool _paused;
     private bool _foregroundSearchActive;
     private bool _foregroundRefreshYieldRequested;
+    private bool _currentItemCanceledForRemoval;
+    private string? _currentItemRemovalRoot;
     private long _lastStatusNotificationTicks;
     private IndexingStatus _status = new(false, false, false, 0, "Indexing idle.");
 
@@ -142,6 +144,8 @@ public sealed class IndexingService : IIndexingService
             _locations.Remove(normalizedRoot);
 
         _watchers.StopWatching(normalizedRoot);
+        _queue.RemoveRoot(normalizedRoot);
+        CancelCurrentItemForRemoval(normalizedRoot);
         await _index.ClearAsync(normalizedRoot, cancellationToken).ConfigureAwait(false);
         Publish(false, $"Removed indexed location: {normalizedRoot}", force: true);
     }
@@ -262,6 +266,18 @@ public sealed class IndexingService : IIndexingService
         {
             await ProcessAsync(item, itemCts.Token).ConfigureAwait(false);
         }
+        catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested && WasRemovalRequested(out var removalRoot))
+        {
+            if (removalRoot is null ||
+                !string.Equals(item.Root, removalRoot, StringComparison.OrdinalIgnoreCase))
+            {
+                await EnqueueAsync(
+                    item with { DueUtc = DateTime.UtcNow.AddSeconds(3), Persisted = false },
+                    cancellationToken).ConfigureAwait(false);
+            }
+
+            Publish(false, "Index update interrupted so an indexed location can be removed.", force: true);
+        }
         catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested && WasRefreshYieldRequested(item))
         {
             await EnqueueAsync(
@@ -278,6 +294,8 @@ public sealed class IndexingService : IIndexingService
                     _currentItem = null;
                     _currentItemCts = null;
                     _foregroundRefreshYieldRequested = false;
+                    _currentItemCanceledForRemoval = false;
+                    _currentItemRemovalRoot = null;
                 }
             }
         }
@@ -353,10 +371,32 @@ public sealed class IndexingService : IIndexingService
         }
     }
 
+    private void CancelCurrentItemForRemoval(string root)
+    {
+        lock (_sync)
+        {
+            if (_currentItemCts is null)
+                return;
+
+            _currentItemCanceledForRemoval = true;
+            _currentItemRemovalRoot = root;
+            _currentItemCts.Cancel();
+        }
+    }
+
     private bool WasRefreshYieldRequested(IndexQueueItem item)
     {
         lock (_sync)
             return item.Kind == IndexChangeKind.RefreshRoot && _foregroundRefreshYieldRequested;
+    }
+
+    private bool WasRemovalRequested(out string? root)
+    {
+        lock (_sync)
+        {
+            root = _currentItemRemovalRoot;
+            return _currentItemCanceledForRemoval;
+        }
     }
 
     private Dictionary<string, IndexedLocation> SnapshotLocationMap()

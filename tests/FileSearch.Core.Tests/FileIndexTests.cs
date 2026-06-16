@@ -427,6 +427,32 @@ public sealed class FileIndexTests : IDisposable
     }
 
     [Fact]
+    public async Task IndexQueueRemoveRootDropsQueuedWorkForThatLocation()
+    {
+        var otherRoot = Path.Combine(Path.GetDirectoryName(_root)!, "other-remove-root");
+        var queue = new IndexQueue(_index);
+
+        await queue.EnqueueAsync(
+            new IndexQueueItem(_root, null, new WalkerOptions(), IndexChangeKind.RefreshRoot, IndexQueuePriority.Low, DateTime.UtcNow, Persisted: false),
+            TestContext.Current.CancellationToken);
+        await queue.EnqueueAsync(
+            new IndexQueueItem(_root, Path.Combine(_root, "a.txt"), new WalkerOptions(), IndexChangeKind.UpsertFile, IndexQueuePriority.Normal, DateTime.UtcNow, Persisted: false),
+            TestContext.Current.CancellationToken);
+        await queue.EnqueueAsync(
+            new IndexQueueItem(otherRoot, null, new WalkerOptions(), IndexChangeKind.RefreshRoot, IndexQueuePriority.Low, DateTime.UtcNow, Persisted: false),
+            TestContext.Current.CancellationToken);
+
+        queue.RemoveRoot(_root);
+
+        var queued = queue.GetQueuedRootCounts();
+        Assert.False(queued.ContainsKey(IndexPath.NormalizeRoot(_root)));
+        Assert.Equal(1, queue.Count);
+
+        var remaining = await queue.DequeueAsync(TestContext.Current.CancellationToken);
+        Assert.True(IndexPath.EqualsPath(otherRoot, remaining.Root));
+    }
+
+    [Fact]
     public async Task IndexQueuePersistsCoalescedFileChangeOnlyOnce()
     {
         var index = new RecordingFileIndex();

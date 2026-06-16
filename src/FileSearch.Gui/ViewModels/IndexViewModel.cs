@@ -204,21 +204,35 @@ public sealed partial class IndexViewModel : ObservableObject, IDisposable
     private bool CanClearIndexForCurrentFolder() => !string.IsNullOrWhiteSpace(_search.SearchPath);
 
     [RelayCommand(CanExecute = nameof(CanRemoveSelectedIndex))]
-    private async Task RemoveSelectedIndexAsync()
+    private Task RemoveSelectedIndexAsync()
     {
         var location = SelectedIndexedLocation;
         if (location is null)
-            return;
+            return Task.CompletedTask;
 
-        await _indexingService.RemoveLocationAsync(location.Root, CancellationToken.None).ConfigureAwait(true);
+        var root = location.Root;
         IndexedLocations.Remove(location);
         SelectedIndexedLocation = IndexedLocations.FirstOrDefault();
         SaveLocations();
-        await RefreshIndexDatabaseInfoAsync().ConfigureAwait(true);
         _status.Text = "Indexed location removed.";
+        _ = RemoveIndexStorageAsync(root);
+        return Task.CompletedTask;
     }
 
     private bool CanRemoveSelectedIndex() => SelectedIndexedLocation is not null;
+
+    private async Task RemoveIndexStorageAsync(string root)
+    {
+        try
+        {
+            await _indexingService.RemoveLocationAsync(root, CancellationToken.None).ConfigureAwait(true);
+            await RefreshIndexDatabaseInfoAsync().ConfigureAwait(true);
+        }
+        catch (Exception ex)
+        {
+            _status.Text = $"Couldn't clear removed index data: {ex.Message}";
+        }
+    }
 
     [RelayCommand(CanExecute = nameof(CanPauseBackgroundIndexing))]
     private void PauseBackgroundIndexing()

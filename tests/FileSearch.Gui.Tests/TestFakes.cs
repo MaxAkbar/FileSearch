@@ -68,13 +68,21 @@ internal sealed class FakeIndexingService : IIndexingService
 
     public int ResumeCallCount { get; private set; }
 
+    public TaskCompletionSource? RemoveLocationCompletion { get; set; }
+
+    public List<string> RemovedLocations { get; } = new();
+
     public Task StartAsync(IEnumerable<IndexedLocation> locations, CancellationToken cancellationToken) => Task.CompletedTask;
 
     public Task StopAsync(CancellationToken cancellationToken) => Task.CompletedTask;
 
     public Task AddOrUpdateLocationAsync(IndexedLocation location, bool queueInitialRefresh, CancellationToken cancellationToken) => Task.CompletedTask;
 
-    public Task RemoveLocationAsync(string root, CancellationToken cancellationToken) => Task.CompletedTask;
+    public Task RemoveLocationAsync(string root, CancellationToken cancellationToken)
+    {
+        RemovedLocations.Add(IndexPath.NormalizeRoot(root));
+        return RemoveLocationCompletion?.Task ?? Task.CompletedTask;
+    }
 
     public Task EnqueueRootRefreshAsync(string root, WalkerOptions options, IndexQueuePriority priority, CancellationToken cancellationToken) => Task.CompletedTask;
 

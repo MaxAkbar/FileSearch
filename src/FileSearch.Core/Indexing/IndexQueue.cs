@@ -171,6 +171,34 @@ public sealed class IndexQueue : IIndexQueue, IDisposable
         }
     }
 
+    public void RemoveRoot(string root)
+    {
+        var normalizedRoot = IndexPath.NormalizeRoot(root);
+        var removed = 0;
+
+        lock (_sync)
+        {
+            List<string>? stale = null;
+            foreach (var (key, queued) in _items)
+            {
+                if (string.Equals(queued.Root, normalizedRoot, StringComparison.OrdinalIgnoreCase))
+                    (stale ??= new List<string>()).Add(key);
+            }
+
+            if (stale is not null)
+            {
+                foreach (var key in stale)
+                {
+                    if (_items.Remove(key))
+                        removed++;
+                }
+            }
+        }
+
+        if (removed > 0)
+            _signal.Release();
+    }
+
     public IReadOnlyDictionary<string, int> GetQueuedRootCounts()
     {
         lock (_sync)

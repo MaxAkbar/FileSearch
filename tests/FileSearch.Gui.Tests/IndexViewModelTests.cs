@@ -2,6 +2,7 @@ using System.ComponentModel;
 using FileSearch.Core.Extractors;
 using FileSearch.Core.Indexing;
 using FileSearch.Core.Queries;
+using FileSearch.Gui.Settings;
 using FileSearch.Gui.ViewModels;
 
 namespace FileSearch.Gui.Tests;
@@ -157,6 +158,29 @@ public sealed class IndexViewModelTests
     }
 
     [Fact]
+    public async Task RemoveSelectedIndexRemovesLocationBeforeStorageClearCompletes()
+    {
+        var root = Path.Combine(Path.GetTempPath(), "filesearch-remove-ui-" + Guid.NewGuid().ToString("N"));
+        var indexingService = new FakeIndexingService
+        {
+            RemoveLocationCompletion = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously),
+        };
+        var (_, index) = Build(
+            indexingService: indexingService,
+            configureSettings: settings => settings.IndexedLocations.Add(new() { Root = root }));
+
+        index.SelectedIndexedLocation = Assert.Single(index.IndexedLocations);
+
+        await index.RemoveSelectedIndexCommand.ExecuteAsync(null);
+
+        Assert.Empty(index.IndexedLocations);
+        Assert.Equal(IndexPath.NormalizeRoot(root), Assert.Single(indexingService.RemovedLocations));
+        Assert.False(indexingService.RemoveLocationCompletion.Task.IsCompleted);
+
+        indexingService.RemoveLocationCompletion.SetResult();
+    }
+
+    [Fact]
     public async Task CompactCommandQueuesDuringIndexingAndRunsWhenCurrentWorkStops()
     {
         var fileIndex = new FakeFileIndex
@@ -217,10 +241,12 @@ public sealed class IndexViewModelTests
 
     private static (SearchViewModel Search, IndexViewModel Index) Build(
         FakeFileIndex? fileIndex = null,
-        FakeIndexingService? indexingService = null)
+        FakeIndexingService? indexingService = null,
+        Action<AppSettings>? configureSettings = null)
     {
         var status = new StatusBarViewModel();
         var settings = new FakeSettingsService();
+        configureSettings?.Invoke(settings.Current);
         var history = new HistoryViewModel(settings, status);
         var search = new SearchViewModel(
             new NullSearcher(),

@@ -60,6 +60,35 @@ public sealed class IndexingServiceTests
     }
 
     [Fact]
+    public async Task RemoveLocationCancelsActiveWriterAndPrunesQueuedWorkForRemovedRoot()
+    {
+        var index = new BlockingFileIndex();
+        var queue = new IndexQueue(index);
+        var service = new IndexingService(index, queue, new IndexWatcherService(queue));
+        var activeRoot = Path.Combine(Path.GetTempPath(), "filesearch-active-remove-" + Guid.NewGuid().ToString("N"));
+        var removedRoot = Path.Combine(Path.GetTempPath(), "filesearch-queued-remove-" + Guid.NewGuid().ToString("N"));
+
+        await service.StartAsync(Array.Empty<IndexedLocation>(), TestContext.Current.CancellationToken);
+        try
+        {
+            await service.EnqueueRootRefreshAsync(activeRoot, new WalkerOptions(), IndexQueuePriority.High, TestContext.Current.CancellationToken);
+            await index.RefreshStarted.Task.WaitAsync(TimeSpan.FromSeconds(5), TestContext.Current.CancellationToken);
+            await service.EnqueueRootRefreshAsync(removedRoot, new WalkerOptions(), IndexQueuePriority.High, TestContext.Current.CancellationToken);
+
+            await service.RemoveLocationAsync(removedRoot, TestContext.Current.CancellationToken);
+
+            await WaitUntilAsync(() => index.RefreshCanceled, TestContext.Current.CancellationToken);
+            Assert.True(index.RefreshCanceled);
+            Assert.Contains(IndexPath.NormalizeRoot(removedRoot), index.ClearedRoots);
+            Assert.False(queue.GetQueuedRootCounts().ContainsKey(IndexPath.NormalizeRoot(removedRoot)));
+        }
+        finally
+        {
+            await service.StopAsync(TestContext.Current.CancellationToken);
+        }
+    }
+
+    [Fact]
     public async Task PauseDefersProcessingUntilResume()
     {
         var index = new BlockingFileIndex();
@@ -143,6 +172,13 @@ public sealed class IndexingServiceTests
             throw new OperationCanceledException(cancellationToken);
         }
 
+        public void RemoveRoot(string root)
+        {
+            var normalizedRoot = IndexPath.NormalizeRoot(root);
+            Enqueued.RemoveAll(item =>
+                string.Equals(item.Root, normalizedRoot, StringComparison.OrdinalIgnoreCase));
+        }
+
         public IReadOnlyDictionary<string, int> GetQueuedRootCounts() =>
             Enqueued
                 .GroupBy(item => item.Root, StringComparer.OrdinalIgnoreCase)
@@ -157,6 +193,8 @@ public sealed class IndexingServiceTests
     private sealed class BlockingFileIndex : IFileIndex
     {
         public TaskCompletionSource RefreshStarted { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
+
+        public List<string> ClearedRoots { get; } = new();
 
         public bool RefreshCanceled { get; private set; }
 
@@ -207,7 +245,10 @@ public sealed class IndexingServiceTests
             Task.CompletedTask;
 
         public Task ClearAsync(string root, CancellationToken cancellationToken) =>
-            Task.CompletedTask;
+            Task.Run(() =>
+            {
+                ClearedRoots.Add(IndexPath.NormalizeRoot(root));
+            }, cancellationToken);
 
         public Task SavePendingChangeAsync(string root, string? path, IndexChangeKind kind, CancellationToken cancellationToken) =>
             Task.CompletedTask;
