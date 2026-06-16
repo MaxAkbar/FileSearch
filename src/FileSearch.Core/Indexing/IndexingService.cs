@@ -12,8 +12,6 @@ namespace FileSearch.Core.Indexing;
 
 public sealed class IndexingService : IIndexingService
 {
-    private static readonly TimeSpan MaxBurst = TimeSpan.FromSeconds(30);
-    private static readonly TimeSpan BurstRest = TimeSpan.FromSeconds(5);
     private static readonly TimeSpan ForegroundRefreshDelay = TimeSpan.FromSeconds(5);
     private const long StatusNotificationIntervalMs = 200;
 
@@ -32,6 +30,7 @@ public sealed class IndexingService : IIndexingService
     private bool _foregroundRefreshYieldRequested;
     private bool _currentItemCanceledForRemoval;
     private string? _currentItemRemovalRoot;
+    private IndexerResourceProfile _resourceProfile = IndexerResourceProfile.Balanced;
     private long _lastStatusNotificationTicks;
     private IndexingStatus _status = new(false, false, false, 0, "Indexing idle.");
 
@@ -54,6 +53,8 @@ public sealed class IndexingService : IIndexingService
     public IndexingStatus CurrentStatus => _status;
 
     public bool IsPaused => _paused;
+
+    public IndexerResourceProfile ResourceProfile => _resourceProfile;
 
     public async Task StartAsync(IEnumerable<IndexedLocation> locations, CancellationToken cancellationToken)
     {
@@ -175,6 +176,16 @@ public sealed class IndexingService : IIndexingService
         }
     }
 
+    public void SetResourceProfile(IndexerResourceProfile profile)
+    {
+        var normalized = IndexingResourcePolicy.Normalize(profile);
+        if (_resourceProfile == normalized)
+            return;
+
+        _resourceProfile = normalized;
+        Publish(CurrentStatus.IsProcessing, $"Indexer resource use set to {normalized}.", force: true);
+    }
+
     public void Pause()
     {
         _paused = true;
@@ -219,13 +230,15 @@ public sealed class IndexingService : IIndexingService
 
     private async Task RunIterationAsync(Stopwatch burst, CancellationToken cancellationToken)
     {
+        var policy = IndexingResourcePolicy.For(_resourceProfile);
+
         // Rest BEFORE dequeuing — resting after used to hold a dequeued item
         // across a 5s delay, where a shutdown silently dropped it (the same
         // loss pattern the pause branch below guards against).
-        if (burst.Elapsed >= MaxBurst)
+        if (policy.BurstRest > TimeSpan.Zero && burst.Elapsed >= policy.MaxBurst)
         {
             Publish(false, "Background indexing resting.");
-            await Task.Delay(BurstRest, cancellationToken).ConfigureAwait(false);
+            await Task.Delay(policy.BurstRest, cancellationToken).ConfigureAwait(false);
             burst.Restart();
         }
 
@@ -314,7 +327,8 @@ public sealed class IndexingService : IIndexingService
                         new IndexRequest(
                             item.Root,
                             item.WalkerOptions,
-                            progress => Publish(true, FormatProgress(progress), progress: progress)),
+                            progress => Publish(true, FormatProgress(progress), progress: progress),
+                            IndexingResourcePolicy.For(_resourceProfile).Throttle),
                         IndexRefreshMode.Incremental,
                         cancellationToken).ConfigureAwait(false);
                     await _index.RemovePendingChangeAsync(item.Root, null, item.Kind, cancellationToken)

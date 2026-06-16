@@ -1,4 +1,5 @@
 using System.Collections.ObjectModel;
+using FileSearch.Core.Indexing;
 using FileSearch.Gui.Settings;
 using FileSearch.Gui.ViewModels;
 
@@ -130,5 +131,20 @@ public sealed class PagedSidebarListTests
         Assert.Equal(4, history.RecentPathList.Items.Count);
         Assert.False(history.RecentPathList.IsPagerVisible);
         Assert.Equal(5, settings.Current.SidebarPageSize);
+    }
+
+    [Fact]
+    public void ApplicationSettingsPersistIndexerResourceProfile()
+    {
+        var settings = new FakeSettingsService();
+        var appSettings = new ApplicationSettingsViewModel(settings, new StatusBarViewModel());
+
+        appSettings.IndexerResourceProfile = IndexerResourceProfile.Low;
+
+        Assert.Equal(IndexerResourceProfile.Low, settings.Current.IndexerResourceProfile);
+
+        appSettings.ResetNavigationDefaultsCommand.Execute(null);
+
+        Assert.Equal(IndexerResourceProfile.Balanced, settings.Current.IndexerResourceProfile);
     }
 }

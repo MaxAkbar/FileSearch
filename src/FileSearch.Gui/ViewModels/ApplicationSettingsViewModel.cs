@@ -1,7 +1,9 @@
+using System;
 using System.Collections.Generic;
 using System.Linq;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
+using FileSearch.Core.Indexing;
 using FileSearch.Gui.Settings;
 
 namespace FileSearch.Gui.ViewModels;
@@ -20,17 +22,22 @@ public sealed partial class ApplicationSettingsViewModel : ObservableObject
     private readonly StatusBarViewModel _status;
     private readonly bool _isInitialized;
     private int _sidebarPageSize;
+    private IndexerResourceProfile _indexerResourceProfile;
 
     public ApplicationSettingsViewModel(ISettingsService settingsService, StatusBarViewModel status)
     {
         _settingsService = settingsService;
         _status = status;
         _sidebarPageSize = NormalizeSidebarPageSize(_settingsService.Current.SidebarPageSize);
+        _indexerResourceProfile = NormalizeIndexerResourceProfile(_settingsService.Current.IndexerResourceProfile);
         _isInitialized = true;
     }
 
     public IReadOnlyList<int> SidebarPageSizeOptions { get; } =
         Enumerable.Range(MinimumSidebarPageSize, MaximumSidebarPageSize - MinimumSidebarPageSize + 1).ToList();
+
+    public IReadOnlyList<IndexerResourceProfile> IndexerResourceProfileOptions { get; } =
+        [IndexerResourceProfile.Low, IndexerResourceProfile.Balanced, IndexerResourceProfile.High];
 
     public int SidebarPageSize
     {
@@ -50,14 +57,43 @@ public sealed partial class ApplicationSettingsViewModel : ObservableObject
 
     public string SidebarPageSizeSummary => $"{SidebarPageSize:n0} rows per sidebar section";
 
+    public IndexerResourceProfile IndexerResourceProfile
+    {
+        get => _indexerResourceProfile;
+        set
+        {
+            var normalized = NormalizeIndexerResourceProfile(value);
+            if (!SetProperty(ref _indexerResourceProfile, normalized))
+                return;
+
+            OnPropertyChanged(nameof(IndexerResourceProfileSummary));
+
+            if (_isInitialized)
+                SaveSettings();
+        }
+    }
+
+    public string IndexerResourceProfileSummary =>
+        IndexerResourceProfile switch
+        {
+            IndexerResourceProfile.Low => "Pauses often so indexing stays quiet in the background",
+            IndexerResourceProfile.High => "Indexes as fast as possible while the app is idle",
+            _ => "Balances indexing progress with foreground responsiveness",
+        };
+
     [RelayCommand]
-    private void ResetNavigationDefaults() => SidebarPageSize = DefaultSidebarPageSize;
+    private void ResetNavigationDefaults()
+    {
+        SidebarPageSize = DefaultSidebarPageSize;
+        IndexerResourceProfile = IndexerResourceProfile.Balanced;
+    }
 
     public void SaveSettings()
     {
         _settingsService.Update(settings =>
         {
             settings.SidebarPageSize = SidebarPageSize;
+            settings.IndexerResourceProfile = IndexerResourceProfile;
         });
 
         _status.Text = "Settings saved.";
@@ -67,4 +103,7 @@ public sealed partial class ApplicationSettingsViewModel : ObservableObject
         value < MinimumSidebarPageSize || value > MaximumSidebarPageSize
             ? DefaultSidebarPageSize
             : value;
+
+    private static IndexerResourceProfile NormalizeIndexerResourceProfile(IndexerResourceProfile profile) =>
+        Enum.IsDefined(profile) ? profile : IndexerResourceProfile.Balanced;
 }

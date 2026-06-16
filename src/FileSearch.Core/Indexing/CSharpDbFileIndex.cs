@@ -491,6 +491,8 @@ public sealed class CSharpDbFileIndex : IFileIndex, IDisposable
             }
 
             Publish();
+            if (request.Throttle is { } throttle)
+                await throttle.PauseAfterFileAsync(filesEnumerated, cancellationToken).ConfigureAwait(false);
         }
 
         if (mode == IndexRefreshMode.Full || mode == IndexRefreshMode.Incremental)
@@ -501,6 +503,8 @@ public sealed class CSharpDbFileIndex : IFileIndex, IDisposable
                 await IndexTables.DeleteFileAsync(db, rootId, stale.Path, cancellationToken).ConfigureAwait(false);
                 filesRemoved++;
                 Publish();
+                if (request.Throttle is { } throttle)
+                    await throttle.PauseAfterFileAsync(filesEnumerated + filesRemoved, cancellationToken).ConfigureAwait(false);
             }
         }
 

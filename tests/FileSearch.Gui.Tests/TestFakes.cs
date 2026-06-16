@@ -64,6 +64,8 @@ internal sealed class FakeIndexingService : IIndexingService
 
     public bool IsPaused { get; private set; }
 
+    public IndexerResourceProfile ResourceProfile { get; private set; } = IndexerResourceProfile.Balanced;
+
     public int PauseCallCount { get; private set; }
 
     public int ResumeCallCount { get; private set; }
@@ -94,6 +96,11 @@ internal sealed class FakeIndexingService : IIndexingService
 
     public void SetForegroundSearchActive(bool isActive)
     {
+    }
+
+    public void SetResourceProfile(IndexerResourceProfile profile)
+    {
+        ResourceProfile = profile;
     }
 
     public void Pause()

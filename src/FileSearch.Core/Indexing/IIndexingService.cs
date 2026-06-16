@@ -14,6 +14,8 @@ public interface IIndexingService
 
     bool IsPaused { get; }
 
+    IndexerResourceProfile ResourceProfile { get; }
+
     Task StartAsync(IEnumerable<IndexedLocation> locations, CancellationToken cancellationToken);
 
     Task StopAsync(CancellationToken cancellationToken);
@@ -32,6 +34,8 @@ public interface IIndexingService
         CancellationToken cancellationToken);
 
     void SetForegroundSearchActive(bool isActive);
+
+    void SetResourceProfile(IndexerResourceProfile profile);
 
     void Pause();
 

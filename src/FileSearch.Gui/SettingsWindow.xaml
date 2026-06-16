@@ -63,6 +63,33 @@
                                   MinWidth="110"
                                   VerticalAlignment="Center"/>
                     </Grid>
+
+                    <Border Height="1"
+                            Background="{DynamicResource Atlas.LineBrush}"
+                            Margin="0,18"/>
+
+                    <TextBlock Text="INDEXING" Style="{StaticResource SectionHeaderStyle}"/>
+                    <Grid Margin="0,8,0,0">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="*"/>
+                            <ColumnDefinition Width="Auto"/>
+                        </Grid.ColumnDefinitions>
+
+                        <StackPanel Grid.Column="0" Margin="0,0,20,0">
+                            <TextBlock Text="Indexer resource use"
+                                       Style="{StaticResource FieldLabelStyle}"/>
+                            <TextBlock Text="{Binding IndexerResourceProfileSummary}"
+                                       Style="{StaticResource MutedValueStyle}"
+                                       TextWrapping="Wrap"
+                                       Margin="0,4,0,0"/>
+                        </StackPanel>
+
+                        <ComboBox Grid.Column="1"
+                                  ItemsSource="{Binding IndexerResourceProfileOptions}"
+                                  SelectedItem="{Binding IndexerResourceProfile, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
+                                  MinWidth="130"
+                                  VerticalAlignment="Center"/>
+                    </Grid>
                 </StackPanel>
             </Border>
 

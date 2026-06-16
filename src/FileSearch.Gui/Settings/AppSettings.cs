@@ -1,4 +1,5 @@
 using System.Collections.Generic;
+using FileSearch.Core.Indexing;
 using FileSearch.Gui.Services;
 
 namespace FileSearch.Gui.Settings;
@@ -15,6 +16,11 @@ public sealed class AppSettings
     /// Number of rows shown per page in each searchable sidebar section.
     /// </summary>
     public int SidebarPageSize { get; set; } = 7;
+
+    /// <summary>
+    /// Controls how aggressively the background indexer uses CPU/disk.
+    /// </summary>
+    public IndexerResourceProfile IndexerResourceProfile { get; set; } = IndexerResourceProfile.Balanced;
 
     public bool SkipUnknownFileTypes { get; set; }
 

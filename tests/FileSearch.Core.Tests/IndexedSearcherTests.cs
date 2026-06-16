@@ -147,6 +147,8 @@ public sealed class IndexedSearcherTests
 
         public bool IsPaused => CurrentStatus.IsPaused;
 
+        public IndexerResourceProfile ResourceProfile { get; private set; } = IndexerResourceProfile.Balanced;
+
         public Task StartAsync(IEnumerable<IndexedLocation> locations, CancellationToken cancellationToken) => Task.CompletedTask;
 
         public Task StopAsync(CancellationToken cancellationToken) => Task.CompletedTask;
@@ -158,6 +160,8 @@ public sealed class IndexedSearcherTests
         public Task EnqueueRootRefreshAsync(string root, WalkerOptions options, IndexQueuePriority priority, CancellationToken cancellationToken) => Task.CompletedTask;
 
         public void SetForegroundSearchActive(bool isActive) => StatusChanged?.Invoke(this, CurrentStatus);
+
+        public void SetResourceProfile(IndexerResourceProfile profile) => ResourceProfile = profile;
 
         public void Pause()
         {

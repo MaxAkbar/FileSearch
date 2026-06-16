@@ -56,6 +56,7 @@ public sealed partial class IndexViewModel : ObservableObject, IDisposable
         _dispatcher = dispatcher;
         _search = search;
         _status = status;
+        _indexingService.SetResourceProfile(_applicationSettings.IndexerResourceProfile);
         _newIndexRecursive = _search.IncludeSubfolders;
         _newIndexEnableDocumentExtraction = _search.EnableDocumentExtraction;
         _newIndexSkipUnknownFileTypes = _search.SkipUnknownFileTypes;
@@ -466,7 +467,13 @@ public sealed partial class IndexViewModel : ObservableObject, IDisposable
     private void OnApplicationSettingsPropertyChanged(object? sender, PropertyChangedEventArgs e)
     {
         if (e.PropertyName == nameof(ApplicationSettingsViewModel.SidebarPageSize))
+        {
             IndexedLocationList.PageSize = _applicationSettings.SidebarPageSize;
+        }
+        else if (e.PropertyName == nameof(ApplicationSettingsViewModel.IndexerResourceProfile))
+        {
+            _indexingService.SetResourceProfile(_applicationSettings.IndexerResourceProfile);
+        }
     }
 
     private static IEnumerable<IndexFilterListSettings> LoadFilterLists(IEnumerable<IndexFilterListSettings> lists)

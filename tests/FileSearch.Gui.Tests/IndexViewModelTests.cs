@@ -327,6 +327,47 @@ public sealed class IndexViewModelTests
         Assert.Contains("1.5 KB total", index.IndexDatabaseSizeText);
     }
 
+    [Fact]
+    public void IndexerResourceProfileSettingUpdatesIndexingService()
+    {
+        var status = new StatusBarViewModel();
+        var settings = new FakeSettingsService();
+        var appSettings = new ApplicationSettingsViewModel(settings, status);
+        var history = new HistoryViewModel(settings, appSettings, status);
+        var search = new SearchViewModel(
+            new NullSearcher(),
+            new ExtractorRegistry(Array.Empty<ITextExtractor>()),
+            new QueryFactory(),
+            new FakePreviewService(),
+            new FakeFileLauncher(),
+            settings,
+            new FakeFileTypeOptionsStore(),
+            new FakeFolderPicker(),
+            history,
+            status);
+        var indexingService = new FakeIndexingService();
+        using var index = new IndexViewModel(
+            new FakeFileIndex(),
+            indexingService,
+            settings,
+            appSettings,
+            new FakeFileLauncher(),
+            new InlineDispatcher(),
+            search,
+            status);
+
+        try
+        {
+            appSettings.IndexerResourceProfile = IndexerResourceProfile.Low;
+
+            Assert.Equal(IndexerResourceProfile.Low, indexingService.ResourceProfile);
+        }
+        finally
+        {
+            search.Dispose();
+        }
+    }
+
     private static (SearchViewModel Search, IndexViewModel Index) Build(
         FakeFileIndex? fileIndex = null,
         FakeIndexingService? indexingService = null,

@@ -116,6 +116,35 @@ public sealed class IndexingServiceTests
     }
 
     [Fact]
+    public async Task ResourceProfileAddsThrottleToRootRefreshRequests()
+    {
+        var index = new BlockingFileIndex();
+        var queue = new IndexQueue(index);
+        var service = new IndexingService(index, queue, new IndexWatcherService(queue));
+        var root = Path.Combine(Path.GetTempPath(), "filesearch-throttle-" + Guid.NewGuid().ToString("N"));
+
+        await service.StartAsync(Array.Empty<IndexedLocation>(), TestContext.Current.CancellationToken);
+        try
+        {
+            service.SetResourceProfile(IndexerResourceProfile.Low);
+            await service.EnqueueRootRefreshAsync(root, new WalkerOptions(), IndexQueuePriority.High, TestContext.Current.CancellationToken);
+
+            await index.RefreshStarted.Task.WaitAsync(TimeSpan.FromSeconds(5), TestContext.Current.CancellationToken);
+
+            Assert.Equal(IndexerResourceProfile.Low, service.ResourceProfile);
+            Assert.NotNull(index.RefreshRequest);
+            Assert.NotNull(index.RefreshRequest.Throttle);
+            var throttle = index.RefreshRequest.Throttle!;
+            Assert.True(throttle.IsEnabled);
+            Assert.Equal(1, throttle.FilesPerPause);
+        }
+        finally
+        {
+            await service.StopAsync(TestContext.Current.CancellationToken);
+        }
+    }
+
+    [Fact]
     public async Task PausedWorkerKeepsItemsInQueueInsteadOfHoldingThem()
     {
         var index = new BlockingFileIndex();
@@ -194,6 +223,8 @@ public sealed class IndexingServiceTests
     {
         public TaskCompletionSource RefreshStarted { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
 
+        public IndexRequest? RefreshRequest { get; private set; }
+
         public List<string> ClearedRoots { get; } = new();
 
         public bool RefreshCanceled { get; private set; }
@@ -205,6 +236,7 @@ public sealed class IndexingServiceTests
 
         public async Task RefreshRootAsync(IndexRequest request, IndexRefreshMode mode, CancellationToken cancellationToken)
         {
+            RefreshRequest = request;
             RefreshStarted.TrySetResult();
             try
             {

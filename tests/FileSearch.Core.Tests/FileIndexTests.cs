@@ -870,6 +870,8 @@ public sealed class FileIndexTests : IDisposable
 
         public bool IsPaused => false;
 
+        public IndexerResourceProfile ResourceProfile { get; private set; } = IndexerResourceProfile.Balanced;
+
         public bool ForegroundSearchWasSet { get; private set; }
 
         public Task StartAsync(IEnumerable<IndexedLocation> locations, CancellationToken cancellationToken) => Task.CompletedTask;
@@ -890,6 +892,8 @@ public sealed class FileIndexTests : IDisposable
                 : CurrentStatus with { IsProcessing = false };
             StatusChanged?.Invoke(this, CurrentStatus);
         }
+
+        public void SetResourceProfile(IndexerResourceProfile profile) => ResourceProfile = profile;
 
         public void Pause() { }
 

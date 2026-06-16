@@ -1,5 +1,6 @@
 using System.Text.Json;
 using System.Text.Json.Serialization;
+using FileSearch.Core.Indexing;
 using FileSearch.Core.Queries;
 using FileSearch.Gui.Settings;
 
@@ -21,6 +22,7 @@ public sealed class AppSettingsSerializationTests
         {
             UseIndex = true,
             SidebarPageSize = 15,
+            IndexerResourceProfile = IndexerResourceProfile.Low,
             SavedSearches =
             [
                 new()
@@ -108,6 +110,7 @@ public sealed class AppSettingsSerializationTests
         Assert.DoesNotContain(nameof(SavedSearchSettings.Summary), json);
         Assert.NotNull(loaded);
         Assert.Equal(15, loaded.SidebarPageSize);
+        Assert.Equal(IndexerResourceProfile.Low, loaded.IndexerResourceProfile);
 
         var savedSearch = Assert.Single(loaded.SavedSearches);
         Assert.Equal("needle", savedSearch.QueryText);

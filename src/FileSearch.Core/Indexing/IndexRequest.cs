@@ -6,4 +6,5 @@ namespace FileSearch.Core.Indexing;
 public sealed record IndexRequest(
     string Root,
     WalkerOptions WalkerOptions,
-    Action<IndexProgress>? Progress = null);
+    Action<IndexProgress>? Progress = null,
+    IndexingThrottle? Throttle = null);
