@@ -1,5 +1,6 @@
 using System;
 using System.Collections.ObjectModel;
+using System.ComponentModel;
 using System.Linq;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
@@ -14,21 +15,35 @@ namespace FileSearch.Gui.ViewModels;
 public sealed partial class HistoryViewModel : ObservableObject
 {
     private const int MaxHistoryEntries = 15;
-    private const int ScopePageSize = 7;
-    private const int RecentPathPageSize = 7;
-    private const int SavedSearchPageSize = 6;
 
     private readonly ISettingsService _settingsService;
+    private readonly ApplicationSettingsViewModel _applicationSettings;
     private readonly StatusBarViewModel _status;
     private readonly ObservableCollection<SidebarScopeItem> _scopeItems = new();
 
-    public HistoryViewModel(ISettingsService settingsService, StatusBarViewModel status)
+    public HistoryViewModel(
+        ISettingsService settingsService,
+        ApplicationSettingsViewModel applicationSettings,
+        StatusBarViewModel status)
     {
         _settingsService = settingsService;
+        _applicationSettings = applicationSettings;
         _status = status;
-        ScopeList = new PagedSidebarList<SidebarScopeItem>(_scopeItems, MatchesScope, "scopes", ScopePageSize);
-        RecentPathList = new PagedSidebarList<string>(RecentPaths, MatchesText, "recent folders", RecentPathPageSize);
-        SavedSearchList = new PagedSidebarList<SavedSearchSettings>(SavedSearches, MatchesSavedSearch, "saved searches", SavedSearchPageSize);
+        ScopeList = new PagedSidebarList<SidebarScopeItem>(
+            _scopeItems,
+            MatchesScope,
+            "scopes",
+            _applicationSettings.SidebarPageSize);
+        RecentPathList = new PagedSidebarList<string>(
+            RecentPaths,
+            MatchesText,
+            "recent folders",
+            _applicationSettings.SidebarPageSize);
+        SavedSearchList = new PagedSidebarList<SavedSearchSettings>(
+            SavedSearches,
+            MatchesSavedSearch,
+            "saved searches",
+            _applicationSettings.SidebarPageSize);
 
         var saved = _settingsService.Current;
         foreach (var search in saved.SavedSearches.Select(NormalizeSavedSearch).Where(IsUsableSavedSearch))
@@ -57,6 +72,7 @@ public sealed partial class HistoryViewModel : ObservableObject
             RebuildScopeItems();
         };
         RebuildScopeItems();
+        _applicationSettings.PropertyChanged += OnApplicationSettingsPropertyChanged;
     }
 
     public PagedSidebarList<SidebarScopeItem> ScopeList { get; }
@@ -348,6 +364,16 @@ public sealed partial class HistoryViewModel : ObservableObject
     private static bool Contains(string? value, string needle) =>
         !string.IsNullOrWhiteSpace(value) &&
         value.Contains(needle, StringComparison.OrdinalIgnoreCase);
+
+    private void OnApplicationSettingsPropertyChanged(object? sender, PropertyChangedEventArgs e)
+    {
+        if (e.PropertyName != nameof(ApplicationSettingsViewModel.SidebarPageSize))
+            return;
+
+        ScopeList.PageSize = _applicationSettings.SidebarPageSize;
+        RecentPathList.PageSize = _applicationSettings.SidebarPageSize;
+        SavedSearchList.PageSize = _applicationSettings.SidebarPageSize;
+    }
 
     private static SavedSearchSettings NormalizeSavedSearch(SavedSearchSettings search) =>
         new()

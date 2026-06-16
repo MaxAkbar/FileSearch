@@ -20,6 +20,7 @@ public sealed class AppSettingsSerializationTests
         var settings = new AppSettings
         {
             UseIndex = true,
+            SidebarPageSize = 15,
             SavedSearches =
             [
                 new()
@@ -106,6 +107,8 @@ public sealed class AppSettingsSerializationTests
         Assert.DoesNotContain(nameof(SavedSearchSettings.DisplayName), json);
         Assert.DoesNotContain(nameof(SavedSearchSettings.Summary), json);
         Assert.NotNull(loaded);
+        Assert.Equal(15, loaded.SidebarPageSize);
+
         var savedSearch = Assert.Single(loaded.SavedSearches);
         Assert.Equal("needle", savedSearch.QueryText);
         Assert.Equal(@"C:\Work", savedSearch.SearchPath);

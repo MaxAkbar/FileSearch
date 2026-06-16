@@ -21,6 +21,7 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
         SearchViewModel search,
         IndexViewModel index,
         HistoryViewModel history,
+        ApplicationSettingsViewModel settings,
         StatusBarViewModel status,
         WorkflowsViewModel workflows,
         IThemeService themeService,
@@ -29,6 +30,7 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
         Search = search;
         Index = index;
         History = history;
+        Settings = settings;
         Status = status;
         Workflows = workflows;
         _themeService = themeService;
@@ -40,6 +42,8 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
     public IndexViewModel Index { get; }
 
     public HistoryViewModel History { get; }
+
+    public ApplicationSettingsViewModel Settings { get; }
 
     public StatusBarViewModel Status { get; }
 
@@ -85,6 +89,7 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
     /// exit-time safety net.</summary>
     public void PersistSettings()
     {
+        Settings.SaveSettings();
         Search.SaveOptions();
         History.SaveHistory();
         Index.SaveLocations();

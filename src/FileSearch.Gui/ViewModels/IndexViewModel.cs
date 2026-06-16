@@ -24,11 +24,11 @@ namespace FileSearch.Gui.ViewModels;
 public sealed partial class IndexViewModel : ObservableObject, IDisposable
 {
     private const string DefaultNewIndexExcludedExtensions = ".dll; .exe";
-    private const int IndexedLocationPageSize = 5;
 
     private readonly IFileIndex _fileIndex;
     private readonly IIndexingService _indexingService;
     private readonly ISettingsService _settingsService;
+    private readonly ApplicationSettingsViewModel _applicationSettings;
     private readonly IFileLauncher _fileLauncher;
     private readonly IUiDispatcher _dispatcher;
     private readonly SearchViewModel _search;
@@ -42,6 +42,7 @@ public sealed partial class IndexViewModel : ObservableObject, IDisposable
         IFileIndex fileIndex,
         IIndexingService indexingService,
         ISettingsService settingsService,
+        ApplicationSettingsViewModel applicationSettings,
         IFileLauncher fileLauncher,
         IUiDispatcher dispatcher,
         SearchViewModel search,
@@ -50,6 +51,7 @@ public sealed partial class IndexViewModel : ObservableObject, IDisposable
         _fileIndex = fileIndex;
         _indexingService = indexingService;
         _settingsService = settingsService;
+        _applicationSettings = applicationSettings;
         _fileLauncher = fileLauncher;
         _dispatcher = dispatcher;
         _search = search;
@@ -61,7 +63,7 @@ public sealed partial class IndexViewModel : ObservableObject, IDisposable
             IndexedLocations,
             MatchesIndexedLocation,
             "indexed locations",
-            IndexedLocationPageSize);
+            _applicationSettings.SidebarPageSize);
 
         foreach (var list in LoadFilterLists(_settingsService.Current.IndexInclusionLists))
             IndexInclusionLists.Add(list);
@@ -73,6 +75,7 @@ public sealed partial class IndexViewModel : ObservableObject, IDisposable
             IndexedLocations.Add(location);
 
         IndexedLocations.CollectionChanged += (_, _) => NotifyIndexCommandStateChanged();
+        _applicationSettings.PropertyChanged += OnApplicationSettingsPropertyChanged;
         _search.PropertyChanged += OnSearchPropertyChanged;
         _indexingService.StatusChanged += OnIndexingStatusChanged;
 
@@ -406,6 +409,7 @@ public sealed partial class IndexViewModel : ObservableObject, IDisposable
     {
         _indexingService.StatusChanged -= OnIndexingStatusChanged;
         _search.PropertyChanged -= OnSearchPropertyChanged;
+        _applicationSettings.PropertyChanged -= OnApplicationSettingsPropertyChanged;
     }
 
     /// <summary>Persists this view model's slice of the settings.</summary>
@@ -457,6 +461,12 @@ public sealed partial class IndexViewModel : ObservableObject, IDisposable
             OnPropertyChanged(nameof(CompactIndexDatabaseActionText));
             RunQueuedIndexDatabaseCompactionIfReady();
         }
+    }
+
+    private void OnApplicationSettingsPropertyChanged(object? sender, PropertyChangedEventArgs e)
+    {
+        if (e.PropertyName == nameof(ApplicationSettingsViewModel.SidebarPageSize))
+            IndexedLocationList.PageSize = _applicationSettings.SidebarPageSize;
     }
 
     private static IEnumerable<IndexFilterListSettings> LoadFilterLists(IEnumerable<IndexFilterListSettings> lists)

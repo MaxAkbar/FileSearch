@@ -42,6 +42,30 @@ public sealed class PagedSidebarListTests
     }
 
     [Fact]
+    public void PageSizeCanBeChangedAfterConstruction()
+    {
+        var source = new ObservableCollection<string>
+        {
+            "alpha",
+            "beta",
+            "gamma",
+        };
+        var list = new PagedSidebarList<string>(
+            source,
+            (item, needle) => item.Contains(needle, StringComparison.OrdinalIgnoreCase),
+            "items",
+            pageSize: 2);
+
+        Assert.True(list.IsPagerVisible);
+
+        list.PageSize = 3;
+
+        Assert.Equal(new[] { "alpha", "beta", "gamma" }, list.Items);
+        Assert.False(list.IsPagerVisible);
+        Assert.Equal("1-3 of 3", list.PageSummaryText);
+    }
+
+    [Fact]
     public void RefreshesWhenSourceChanges()
     {
         var source = new ObservableCollection<string> { "alpha" };
@@ -66,8 +90,10 @@ public sealed class PagedSidebarListTests
             Name = "Generated",
             FileNamePattern = "*.g.cs",
         });
+        var status = new StatusBarViewModel();
+        var appSettings = new ApplicationSettingsViewModel(settings, status);
 
-        var history = new HistoryViewModel(settings, new StatusBarViewModel());
+        var history = new HistoryViewModel(settings, appSettings, status);
 
         Assert.Contains(history.ScopeList.Items, item => item.Name == "All files" && !item.IsCustom);
         Assert.Contains(history.ScopeList.Items, item => item.Name == "Generated" && item.IsCustom);
@@ -77,5 +103,32 @@ public sealed class PagedSidebarListTests
         var item = Assert.Single(history.ScopeList.Items);
         Assert.Equal("Generated", item.Name);
         Assert.Equal("*.g.cs", item.FileNamePattern);
+    }
+
+    [Fact]
+    public void HistoryListsFollowApplicationSidebarPageSizeSetting()
+    {
+        var settings = new FakeSettingsService();
+        settings.Current.SidebarPageSize = 3;
+        settings.Current.RecentPaths.AddRange(
+        [
+            @"C:\One",
+            @"C:\Two",
+            @"C:\Three",
+            @"C:\Four",
+        ]);
+
+        var status = new StatusBarViewModel();
+        var appSettings = new ApplicationSettingsViewModel(settings, status);
+        var history = new HistoryViewModel(settings, appSettings, status);
+
+        Assert.Equal(3, history.RecentPathList.Items.Count);
+        Assert.True(history.RecentPathList.IsPagerVisible);
+
+        appSettings.SidebarPageSize = 5;
+
+        Assert.Equal(4, history.RecentPathList.Items.Count);
+        Assert.False(history.RecentPathList.IsPagerVisible);
+        Assert.Equal(5, settings.Current.SidebarPageSize);
     }
 }

@@ -11,6 +11,11 @@ public sealed class AppSettings
 {
     public AppTheme Theme { get; set; } = AppTheme.System;
 
+    /// <summary>
+    /// Number of rows shown per page in each searchable sidebar section.
+    /// </summary>
+    public int SidebarPageSize { get; set; } = 7;
+
     public bool SkipUnknownFileTypes { get; set; }
 
     public bool UseIndex { get; set; }

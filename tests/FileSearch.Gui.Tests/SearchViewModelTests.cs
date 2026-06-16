@@ -307,7 +307,8 @@ public sealed class SearchViewModelTests
         {
             var status = new StatusBarViewModel();
             var settings = new FakeSettingsService();
-            var history = new HistoryViewModel(settings, status);
+            var appSettings = new ApplicationSettingsViewModel(settings, status);
+            var history = new HistoryViewModel(settings, appSettings, status);
             var vm = new SearchViewModel(
                 searcher ?? new StubSearcher(),
                 new ExtractorRegistry(Array.Empty<ITextExtractor>()),

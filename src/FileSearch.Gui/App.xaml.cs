@@ -47,6 +47,7 @@ public partial class App : System.Windows.Application
                 services.AddSingleton<IFolderPicker, FolderPicker>();
                 services.AddSingleton<IUiDispatcher, WpfUiDispatcher>();
                 services.AddSingleton<StatusBarViewModel>();
+                services.AddSingleton<ApplicationSettingsViewModel>();
                 services.AddSingleton<HistoryViewModel>();
                 services.AddSingleton<SearchViewModel>();
                 services.AddSingleton<IndexViewModel>();

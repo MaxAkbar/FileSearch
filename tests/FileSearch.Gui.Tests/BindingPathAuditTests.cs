@@ -47,6 +47,7 @@ public sealed class BindingPathAuditTests
     private static readonly Dictionary<string, Type> s_rootTypeOverrides = new(StringComparer.OrdinalIgnoreCase)
     {
         ["AboutWindow.xaml"] = typeof(AboutWindow),
+        ["SettingsWindow.xaml"] = typeof(ApplicationSettingsViewModel),
     };
 
     // Matches a {Binding ...} expression with up to two nesting levels of

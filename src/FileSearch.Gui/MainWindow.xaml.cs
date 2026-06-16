@@ -65,6 +65,20 @@ public partial class MainWindow : Window
         }
     }
 
+    private void OnSettingsClick(object sender, RoutedEventArgs e)
+    {
+        if (DataContext is not MainViewModel viewModel)
+            return;
+
+        var window = new SettingsWindow
+        {
+            Owner = this,
+            DataContext = viewModel.Settings,
+        };
+
+        window.ShowDialog();
+    }
+
     private void OnCopyMenuButtonClick(object sender, RoutedEventArgs e)
     {
         if (sender is System.Windows.Controls.Button { ContextMenu: { } menu } button)

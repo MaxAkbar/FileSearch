@@ -1,0 +1,97 @@
+<Window x:Class="FileSearch.Gui.SettingsWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+        xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+        xmlns:ui="http://schemas.modernwpf.com/2019"
+        xmlns:vm="clr-namespace:FileSearch.Gui.ViewModels"
+        mc:Ignorable="d"
+        d:DataContext="{d:DesignInstance Type=vm:ApplicationSettingsViewModel}"
+        ui:WindowHelper.UseModernWindowStyle="True"
+        Icon="Assets/FileSearch.ico"
+        Background="{DynamicResource Atlas.PaperBrush}"
+        Foreground="{DynamicResource Atlas.InkBrush}"
+        FontFamily="{DynamicResource Atlas.SansFont}"
+        TextOptions.TextFormattingMode="Display"
+        TextOptions.TextRenderingMode="ClearType"
+        Title="Settings"
+        Width="620"
+        SizeToContent="Height"
+        MinWidth="560"
+        ResizeMode="NoResize"
+        WindowStartupLocation="CenterOwner">
+
+    <DockPanel Style="{StaticResource AppRootStyle}">
+        <Border DockPanel.Dock="Top"
+                Background="{DynamicResource Atlas.PaperBrush}"
+                BorderBrush="{DynamicResource Atlas.LineBrush}"
+                BorderThickness="0,0,0,1"
+                Padding="18,11">
+            <TextBlock Text="Settings" Style="{StaticResource CtxTitleStyle}"/>
+        </Border>
+
+        <Grid Margin="20">
+            <Grid.RowDefinitions>
+                <RowDefinition Height="Auto"/>
+                <RowDefinition Height="Auto"/>
+            </Grid.RowDefinitions>
+
+            <Border Background="{DynamicResource Atlas.SurfaceBrush}"
+                    BorderBrush="{DynamicResource Atlas.LineBrush}"
+                    BorderThickness="1"
+                    CornerRadius="8"
+                    Padding="20">
+                <StackPanel>
+                    <TextBlock Text="NAVIGATION" Style="{StaticResource SectionHeaderStyle}"/>
+                    <Grid Margin="0,8,0,0">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="*"/>
+                            <ColumnDefinition Width="Auto"/>
+                        </Grid.ColumnDefinitions>
+
+                        <StackPanel Grid.Column="0" Margin="0,0,20,0">
+                            <TextBlock Text="Sidebar page size"
+                                       Style="{StaticResource FieldLabelStyle}"/>
+                            <TextBlock Text="{Binding SidebarPageSizeSummary}"
+                                       Style="{StaticResource MutedValueStyle}"
+                                       Margin="0,4,0,0"/>
+                        </StackPanel>
+
+                        <ComboBox Grid.Column="1"
+                                  ItemsSource="{Binding SidebarPageSizeOptions}"
+                                  SelectedItem="{Binding SidebarPageSize, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
+                                  MinWidth="110"
+                                  VerticalAlignment="Center"/>
+                    </Grid>
+                </StackPanel>
+            </Border>
+
+            <StackPanel Grid.Row="1"
+                        Orientation="Horizontal"
+                        HorizontalAlignment="Right"
+                        Margin="0,16,0,0">
+                <Button Command="{Binding ResetNavigationDefaultsCommand}"
+                        Style="{StaticResource SecondaryButtonStyle}"
+                        Height="34"
+                        MinWidth="128"
+                        Margin="0,0,8,0">
+                    <StackPanel Orientation="Horizontal">
+                        <ui:FontIcon Glyph="&#xE72C;" FontSize="12" Margin="0,0,7,0"/>
+                        <TextBlock Text="Reset"/>
+                    </StackPanel>
+                </Button>
+                <Button Click="OnCloseClick"
+                        IsDefault="True"
+                        IsCancel="True"
+                        Style="{StaticResource PrimaryButtonStyle}"
+                        Height="34"
+                        MinWidth="84">
+                    <StackPanel Orientation="Horizontal">
+                        <ui:FontIcon Glyph="&#xE73E;" FontSize="13" Margin="0,0,7,0"/>
+                        <TextBlock Text="Done"/>
+                    </StackPanel>
+                </Button>
+            </StackPanel>
+        </Grid>
+    </DockPanel>
+</Window>

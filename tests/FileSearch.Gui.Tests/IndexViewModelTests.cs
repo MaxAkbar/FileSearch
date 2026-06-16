@@ -50,7 +50,8 @@ public sealed class IndexViewModelTests
         var status = new StatusBarViewModel();
         var settings = new FakeSettingsService();
         settings.Current.IndexedLocations.Add(new() { Root = root });
-        var history = new HistoryViewModel(settings, status);
+        var appSettings = new ApplicationSettingsViewModel(settings, status);
+        var history = new HistoryViewModel(settings, appSettings, status);
         var search = new SearchViewModel(
             new NullSearcher(),
             new ExtractorRegistry(Array.Empty<ITextExtractor>()),
@@ -67,6 +68,7 @@ public sealed class IndexViewModelTests
             new FakeFileIndex(),
             indexingService,
             settings,
+            appSettings,
             new FakeFileLauncher(),
             new InlineDispatcher(),
             search,
@@ -333,7 +335,8 @@ public sealed class IndexViewModelTests
         var status = new StatusBarViewModel();
         var settings = new FakeSettingsService();
         configureSettings?.Invoke(settings.Current);
-        var history = new HistoryViewModel(settings, status);
+        var appSettings = new ApplicationSettingsViewModel(settings, status);
+        var history = new HistoryViewModel(settings, appSettings, status);
         var search = new SearchViewModel(
             new NullSearcher(),
             new ExtractorRegistry(Array.Empty<ITextExtractor>()),
@@ -349,6 +352,7 @@ public sealed class IndexViewModelTests
             fileIndex ?? new FakeFileIndex(),
             indexingService ?? new FakeIndexingService(),
             settings,
+            appSettings,
             new FakeFileLauncher(),
             new InlineDispatcher(),
             search,

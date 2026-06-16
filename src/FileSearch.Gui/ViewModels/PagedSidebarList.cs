@@ -13,7 +13,7 @@ public sealed class PagedSidebarList<T> : ObservableObject
     private readonly IEnumerable _source;
     private readonly Func<T, string, bool> _matches;
     private readonly string _itemLabel;
-    private readonly int _pageSize;
+    private int _pageSize;
     private string _searchText = string.Empty;
     private int _pageIndex;
     private int _filteredItemCount;
@@ -45,6 +45,20 @@ public sealed class PagedSidebarList<T> : ObservableObject
     public IRelayCommand NextPageCommand { get; }
 
     public IRelayCommand ClearSearchCommand { get; }
+
+    public int PageSize
+    {
+        get => _pageSize;
+        set
+        {
+            var normalized = Math.Max(1, value);
+            if (!SetProperty(ref _pageSize, normalized))
+                return;
+
+            _pageIndex = 0;
+            Refresh();
+        }
+    }
 
     public string SearchText
     {
