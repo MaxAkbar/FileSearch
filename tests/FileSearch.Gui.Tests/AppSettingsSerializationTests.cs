@@ -28,7 +28,10 @@ public sealed class AppSettingsSerializationTests
                     IncludeHidden = true,
                     EnableDocumentExtraction = false,
                     SkipUnknownFileTypes = true,
+                    IncludedExtensions = ".cs; md",
+                    IncludedFolders = "src; tests",
                     ExcludedExtensions = ".dll; exe",
+                    ExcludedFolders = "bin; obj",
                     WatchEnabled = true,
                     LastIndexedUtcTicks = 638851392000000000,
                     FileCount = 42,
@@ -38,6 +41,24 @@ public sealed class AppSettingsSerializationTests
                     IsIndexingPaused = true,
                     QueuedWorkCount = 2,
                     RuntimeStatusDetail = "Scanning 42",
+                },
+            ],
+            IndexInclusionLists =
+            [
+                new()
+                {
+                    Name = "Source",
+                    Extensions = ".cs; .xaml",
+                    Folders = "src",
+                },
+            ],
+            IndexExclusionLists =
+            [
+                new()
+                {
+                    Name = "Build output",
+                    Extensions = ".dll; .exe",
+                    Folders = "bin; obj",
                 },
             ],
         };
@@ -57,6 +78,7 @@ public sealed class AppSettingsSerializationTests
         Assert.DoesNotContain(nameof(IndexedLocationSettings.QueuedWorkCount), json);
         Assert.DoesNotContain(nameof(IndexedLocationSettings.RuntimeStatusDetail), json);
         Assert.DoesNotContain(nameof(IndexedLocationSettings.RuntimeStatusSummary), json);
+        Assert.DoesNotContain(nameof(IndexFilterListSettings.Summary), json);
         Assert.NotNull(loaded);
         var location = Assert.Single(loaded.IndexedLocations);
         Assert.Equal(@"C:\Work", location.Root);
@@ -64,10 +86,23 @@ public sealed class AppSettingsSerializationTests
         Assert.True(location.IncludeHidden);
         Assert.False(location.EnableDocumentExtraction);
         Assert.True(location.SkipUnknownFileTypes);
+        Assert.Equal(".cs; md", location.IncludedExtensions);
+        Assert.Equal("src; tests", location.IncludedFolders);
         Assert.Equal(".dll; exe", location.ExcludedExtensions);
+        Assert.Equal("bin; obj", location.ExcludedFolders);
         Assert.True(location.WatchEnabled);
         Assert.Equal(638851392000000000, location.LastIndexedUtcTicks);
         Assert.Equal(42, location.FileCount);
         Assert.Equal(1_234, location.LineCount);
+
+        var includeList = Assert.Single(loaded.IndexInclusionLists);
+        Assert.Equal("Source", includeList.Name);
+        Assert.Equal(".cs; .xaml", includeList.Extensions);
+        Assert.Equal("src", includeList.Folders);
+
+        var excludeList = Assert.Single(loaded.IndexExclusionLists);
+        Assert.Equal("Build output", excludeList.Name);
+        Assert.Equal(".dll; .exe", excludeList.Extensions);
+        Assert.Equal("bin; obj", excludeList.Folders);
     }
 }

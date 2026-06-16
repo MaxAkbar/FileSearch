@@ -134,7 +134,10 @@ public sealed class IndexViewModelTests
         index.NewIndexIncludeHidden = true;
         index.NewIndexEnableDocumentExtraction = false;
         index.NewIndexSkipUnknownFileTypes = true;
+        index.NewIndexIncludedExtensions = ".cs; md";
+        index.NewIndexIncludedFolders = "src; tests";
         index.NewIndexExcludedExtensions = ".dll; exe";
+        index.NewIndexExcludedFolders = "bin; obj";
 
         try
         {
@@ -145,19 +148,65 @@ public sealed class IndexViewModelTests
             Assert.True(location.IncludeHidden);
             Assert.False(location.EnableDocumentExtraction);
             Assert.True(location.SkipUnknownFileTypes);
+            Assert.Equal(".cs; .md", location.IncludedExtensions);
+            Assert.Equal("src; tests", location.IncludedFolders);
             Assert.Equal(".dll; .exe", location.ExcludedExtensions);
+            Assert.Equal("bin; obj", location.ExcludedFolders);
 
             var indexed = Assert.Single(indexingService.AddedLocations);
             Assert.False(indexed.WalkerOptions.Recursive);
             Assert.True(indexed.WalkerOptions.IncludeHidden);
+            Assert.Contains(".cs", indexed.WalkerOptions.IncludeExtensions);
+            Assert.Contains(".md", indexed.WalkerOptions.IncludeExtensions);
             Assert.Contains(".dll", indexed.WalkerOptions.ExcludeExtensions);
             Assert.Contains(".exe", indexed.WalkerOptions.ExcludeExtensions);
             Assert.Contains(".pdf", indexed.WalkerOptions.ExcludeExtensions);
+            Assert.Contains("src", indexed.WalkerOptions.IncludeDirectories);
+            Assert.Contains("tests", indexed.WalkerOptions.IncludeDirectories);
+            Assert.Contains("bin", indexed.WalkerOptions.ExcludeDirectories);
+            Assert.Contains("obj", indexed.WalkerOptions.ExcludeDirectories);
         }
         finally
         {
             Directory.Delete(root, recursive: true);
         }
+    }
+
+    [Fact]
+    public void NamedIndexFilterListsCanBeSavedAndSelected()
+    {
+        var (_, index) = Build();
+        index.NewIndexInclusionListName = "Source";
+        index.NewIndexIncludedExtensions = "cs; .md";
+        index.NewIndexIncludedFolders = "src; tests";
+        index.NewIndexExclusionListName = "Build";
+        index.NewIndexExcludedExtensions = "dll; exe";
+        index.NewIndexExcludedFolders = "bin; obj";
+
+        index.SaveNewIndexInclusionListCommand.Execute(null);
+        index.SaveNewIndexExclusionListCommand.Execute(null);
+
+        var include = Assert.Single(index.IndexInclusionLists);
+        Assert.Equal("Source", include.Name);
+        Assert.Equal(".cs; .md", include.Extensions);
+        Assert.Equal("src; tests", include.Folders);
+
+        var exclude = Assert.Single(index.IndexExclusionLists);
+        Assert.Equal("Build", exclude.Name);
+        Assert.Equal(".dll; .exe", exclude.Extensions);
+        Assert.Equal("bin; obj", exclude.Folders);
+
+        index.NewIndexIncludedExtensions = string.Empty;
+        index.NewIndexExcludedFolders = string.Empty;
+        index.SelectedIndexInclusionList = null;
+        index.SelectedIndexExclusionList = null;
+        index.SelectedIndexInclusionList = include;
+        index.SelectedIndexExclusionList = exclude;
+
+        Assert.Equal(".cs; .md", index.NewIndexIncludedExtensions);
+        Assert.Equal("src; tests", index.NewIndexIncludedFolders);
+        Assert.Equal(".dll; .exe", index.NewIndexExcludedExtensions);
+        Assert.Equal("bin; obj", index.NewIndexExcludedFolders);
     }
 
     [Fact]

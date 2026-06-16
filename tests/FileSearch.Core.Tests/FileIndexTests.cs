@@ -208,6 +208,31 @@ public sealed class FileIndexTests : IDisposable
     }
 
     [Fact]
+    public async Task CoverageRequiresSearchToStayWithinIndexedIncludeDirectories()
+    {
+        var src = Directory.CreateDirectory(Path.Combine(_root, "src")).FullName;
+        var docs = Directory.CreateDirectory(Path.Combine(_root, "docs")).FullName;
+        File.WriteAllText(Path.Combine(src, "app.txt"), "needle\n");
+        File.WriteAllText(Path.Combine(docs, "readme.txt"), "needle\n");
+
+        var srcOnly = new WalkerOptions
+        {
+            IncludeDirectories = new HashSet<string>(StringComparer.OrdinalIgnoreCase) { "src" },
+        };
+        await BuildAsync(srcOnly);
+
+        var covered = await _index.GetCoverageAsync(
+            new SearchRequest(new TermQuery("needle"), new[] { _root }, srcOnly, UseIndex: true),
+            TestContext.Current.CancellationToken);
+        var broad = await _index.GetCoverageAsync(
+            new SearchRequest(new TermQuery("needle"), new[] { _root }, new WalkerOptions(), UseIndex: true),
+            TestContext.Current.CancellationToken);
+
+        Assert.Equal(IndexCoverageStatus.Covered, covered.Status);
+        Assert.Equal(IndexCoverageStatus.Incompatible, broad.Status);
+    }
+
+    [Fact]
     public async Task MultiRootIndexReturnsOnlyMatchingRootResults()
     {
         var otherRoot = Path.Combine(Path.GetDirectoryName(_root)!, "other");

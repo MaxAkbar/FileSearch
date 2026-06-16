@@ -552,10 +552,11 @@ public sealed partial class SearchViewModel : ObservableObject, IDisposable
         {
             IncludeGlobs = Array.Empty<string>(),
             ExcludeGlobs = Array.Empty<string>(),
-            IncludeExtensions = settings.SkipUnknownFileTypes
-                ? BuildKnownTextExtensions()
-                : new HashSet<string>(StringComparer.OrdinalIgnoreCase),
+            IncludeExtensions = BuildIndexIncludedExtensions(settings),
             ExcludeExtensions = BuildIndexExcludedExtensions(settings),
+            IncludeDirectories = IndexFilterListSettings.ParseFolders(settings.IncludedFolders)
+                .ToHashSet(StringComparer.OrdinalIgnoreCase),
+            ExcludeDirectories = BuildIndexExcludedDirectories(settings),
             Recursive = settings.Recursive,
             IncludeHidden = settings.IncludeHidden,
             MinFileSizeBytes = 0,
@@ -563,6 +564,17 @@ public sealed partial class SearchViewModel : ObservableObject, IDisposable
             ModifiedAfterUtc = null,
             ModifiedBeforeUtc = null,
         };
+
+    private HashSet<string> BuildIndexIncludedExtensions(IndexedLocationSettings settings)
+    {
+        var explicitIncludes = ExtensionList.Parse(settings.IncludedExtensions);
+        if (explicitIncludes.Length > 0)
+            return explicitIncludes.ToHashSet(StringComparer.OrdinalIgnoreCase);
+
+        return settings.SkipUnknownFileTypes
+            ? BuildKnownTextExtensions()
+            : new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+    }
 
     private HashSet<string> BuildIndexExcludedExtensions(IndexedLocationSettings settings)
     {
@@ -576,6 +588,14 @@ public sealed partial class SearchViewModel : ObservableObject, IDisposable
         }
 
         return extensions;
+    }
+
+    private static HashSet<string> BuildIndexExcludedDirectories(IndexedLocationSettings settings)
+    {
+        var directories = WalkerOptions.DefaultExcludeDirectories.ToHashSet(StringComparer.OrdinalIgnoreCase);
+        foreach (var folder in IndexFilterListSettings.ParseFolders(settings.ExcludedFolders))
+            directories.Add(folder);
+        return directories;
     }
 
     private HashSet<string> BuildKnownTextExtensions()

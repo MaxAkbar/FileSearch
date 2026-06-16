@@ -96,7 +96,7 @@ public sealed class CSharpDbFileIndex : IFileIndex, IDisposable
             }
 
             var info = new FileInfo(normalizedPath);
-            if (ShouldSkipSingleFile(info, indexingOptions))
+            if (ShouldSkipSingleFile(normalizedRoot, info, indexingOptions))
             {
                 await IndexTables.DeleteFileAsync(db, rootId, normalizedPath, cancellationToken).ConfigureAwait(false);
                 return;
@@ -176,7 +176,7 @@ public sealed class CSharpDbFileIndex : IFileIndex, IDisposable
 
                         await foreach (var line in ReadLineBatchAsync(db, rootId.Value, batchIds, cancellationToken).ConfigureAwait(false))
                         {
-                            if (TryCreateHit(line, request.Expression, request.WalkerOptions, hitsByPath, fileFilterVerdicts, highlightBuffer, out var hit))
+                            if (TryCreateHit(root, line, request.Expression, request.WalkerOptions, hitsByPath, fileFilterVerdicts, highlightBuffer, out var hit))
                                 yield return hit;
                         }
 
@@ -188,7 +188,7 @@ public sealed class CSharpDbFileIndex : IFileIndex, IDisposable
                 {
                     await foreach (var line in ReadLineBatchAsync(db, rootId.Value, batchIds, cancellationToken).ConfigureAwait(false))
                     {
-                        if (TryCreateHit(line, request.Expression, request.WalkerOptions, hitsByPath, fileFilterVerdicts, highlightBuffer, out var hit))
+                        if (TryCreateHit(root, line, request.Expression, request.WalkerOptions, hitsByPath, fileFilterVerdicts, highlightBuffer, out var hit))
                             yield return hit;
                     }
                 }
@@ -198,7 +198,7 @@ public sealed class CSharpDbFileIndex : IFileIndex, IDisposable
                 var sql = IndexTables.SelectLinesSql(rootId.Value);
                 await foreach (var line in IndexTables.ReadLinesAsync(db, sql, cancellationToken).ConfigureAwait(false))
                 {
-                    if (TryCreateHit(line, request.Expression, request.WalkerOptions, hitsByPath, fileFilterVerdicts, highlightBuffer, out var hit))
+                    if (TryCreateHit(root, line, request.Expression, request.WalkerOptions, hitsByPath, fileFilterVerdicts, highlightBuffer, out var hit))
                         yield return hit;
                 }
             }
@@ -624,12 +624,13 @@ public sealed class CSharpDbFileIndex : IFileIndex, IDisposable
         row.ModifiedUtcTicks == info.LastWriteTimeUtc.Ticks &&
         string.Equals(row.Status, FileStatus.Ok, StringComparison.OrdinalIgnoreCase);
 
-    private static bool ShouldSkipSingleFile(FileInfo info, WalkerOptions options)
+    private static bool ShouldSkipSingleFile(string root, FileInfo info, WalkerOptions options)
     {
         if ((info.Attributes & (FileAttributes.Hidden | FileAttributes.System)) != 0 && !options.IncludeHidden)
             return true;
 
         return !IndexedFileFilter.Matches(
+            root,
             info.FullName,
             info.Name,
             info.Extension.ToLowerInvariant(),
@@ -639,6 +640,7 @@ public sealed class CSharpDbFileIndex : IFileIndex, IDisposable
     }
 
     private bool TryCreateHit(
+        string root,
         IndexedLine line,
         Query query,
         WalkerOptions options,
@@ -655,7 +657,7 @@ public sealed class CSharpDbFileIndex : IFileIndex, IDisposable
         if (!fileFilterVerdicts.TryGetValue(line.Path, out var fileAllowed))
         {
             fileAllowed = IndexedFileFilter.Matches(
-                line.Path, line.FileName, line.Extension, line.SizeBytes, line.ModifiedUtcTicks, options);
+                root, line.Path, line.FileName, line.Extension, line.SizeBytes, line.ModifiedUtcTicks, options);
             fileFilterVerdicts[line.Path] = fileAllowed;
         }
 

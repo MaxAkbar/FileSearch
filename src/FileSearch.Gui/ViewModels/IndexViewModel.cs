@@ -57,6 +57,12 @@ public sealed partial class IndexViewModel : ObservableObject, IDisposable
         _newIndexEnableDocumentExtraction = _search.EnableDocumentExtraction;
         _newIndexSkipUnknownFileTypes = _search.SkipUnknownFileTypes;
 
+        foreach (var list in LoadFilterLists(_settingsService.Current.IndexInclusionLists))
+            IndexInclusionLists.Add(list);
+
+        foreach (var list in LoadFilterLists(_settingsService.Current.IndexExclusionLists))
+            IndexExclusionLists.Add(list);
+
         foreach (var location in LoadIndexedLocations(_settingsService.Current))
             IndexedLocations.Add(location);
 
@@ -88,7 +94,18 @@ public sealed partial class IndexViewModel : ObservableObject, IDisposable
     [ObservableProperty] private bool _newIndexIncludeHidden;
     [ObservableProperty] private bool _newIndexEnableDocumentExtraction = true;
     [ObservableProperty] private bool _newIndexSkipUnknownFileTypes;
+    [ObservableProperty] private IndexFilterListSettings? _selectedIndexInclusionList;
+    [ObservableProperty] private string _newIndexInclusionListName = string.Empty;
+    [ObservableProperty] private string _newIndexIncludedExtensions = string.Empty;
+    [ObservableProperty] private string _newIndexIncludedFolders = string.Empty;
+    [ObservableProperty] private IndexFilterListSettings? _selectedIndexExclusionList;
+    [ObservableProperty] private string _newIndexExclusionListName = string.Empty;
     [ObservableProperty] private string _newIndexExcludedExtensions = DefaultNewIndexExcludedExtensions;
+    [ObservableProperty] private string _newIndexExcludedFolders = string.Empty;
+
+    public ObservableCollection<IndexFilterListSettings> IndexInclusionLists { get; } = new();
+
+    public ObservableCollection<IndexFilterListSettings> IndexExclusionLists { get; } = new();
 
     public string IndexActivityText =>
         IsIndexingPaused
@@ -173,6 +190,78 @@ public sealed partial class IndexViewModel : ObservableObject, IDisposable
         !string.IsNullOrWhiteSpace(_search.SearchPath) && Directory.Exists(_search.SearchPath) && !IsCurrentFolderIndexed;
 
     private bool CanBuildOrRefreshIndex() => CanAddCurrentFolderToIndex();
+
+    [RelayCommand(CanExecute = nameof(CanSaveNewIndexInclusionList))]
+    private void SaveNewIndexInclusionList()
+    {
+        var list = new IndexFilterListSettings
+        {
+            Name = NewIndexInclusionListName.Trim(),
+            Extensions = NormalizeExtensionList(NewIndexIncludedExtensions),
+            Folders = NormalizeFolderList(NewIndexIncludedFolders),
+        };
+
+        AddOrReplaceFilterList(IndexInclusionLists, list);
+        SelectedIndexInclusionList = list;
+        SaveFilterLists();
+        _status.Text = $"Saved include list: {list.Name}.";
+    }
+
+    private bool CanSaveNewIndexInclusionList() =>
+        !string.IsNullOrWhiteSpace(NewIndexInclusionListName) &&
+        (!string.IsNullOrWhiteSpace(NewIndexIncludedExtensions) ||
+         !string.IsNullOrWhiteSpace(NewIndexIncludedFolders));
+
+    [RelayCommand(CanExecute = nameof(CanRemoveSelectedIndexInclusionList))]
+    private void RemoveSelectedIndexInclusionList()
+    {
+        var selected = SelectedIndexInclusionList;
+        if (selected is null)
+            return;
+
+        IndexInclusionLists.Remove(selected);
+        SelectedIndexInclusionList = IndexInclusionLists.FirstOrDefault();
+        SaveFilterLists();
+        _status.Text = "Include list removed.";
+    }
+
+    private bool CanRemoveSelectedIndexInclusionList() => SelectedIndexInclusionList is not null;
+
+    [RelayCommand(CanExecute = nameof(CanSaveNewIndexExclusionList))]
+    private void SaveNewIndexExclusionList()
+    {
+        var list = new IndexFilterListSettings
+        {
+            Name = NewIndexExclusionListName.Trim(),
+            Extensions = NormalizeExtensionList(NewIndexExcludedExtensions),
+            Folders = NormalizeFolderList(NewIndexExcludedFolders),
+        };
+
+        AddOrReplaceFilterList(IndexExclusionLists, list);
+        SelectedIndexExclusionList = list;
+        SaveFilterLists();
+        _status.Text = $"Saved exclude list: {list.Name}.";
+    }
+
+    private bool CanSaveNewIndexExclusionList() =>
+        !string.IsNullOrWhiteSpace(NewIndexExclusionListName) &&
+        (!string.IsNullOrWhiteSpace(NewIndexExcludedExtensions) ||
+         !string.IsNullOrWhiteSpace(NewIndexExcludedFolders));
+
+    [RelayCommand(CanExecute = nameof(CanRemoveSelectedIndexExclusionList))]
+    private void RemoveSelectedIndexExclusionList()
+    {
+        var selected = SelectedIndexExclusionList;
+        if (selected is null)
+            return;
+
+        IndexExclusionLists.Remove(selected);
+        SelectedIndexExclusionList = IndexExclusionLists.FirstOrDefault();
+        SaveFilterLists();
+        _status.Text = "Exclude list removed.";
+    }
+
+    private bool CanRemoveSelectedIndexExclusionList() => SelectedIndexExclusionList is not null;
 
     [RelayCommand(CanExecute = nameof(CanRebuildSelectedIndex))]
     private async Task RebuildSelectedIndexAsync()
@@ -325,7 +414,10 @@ public sealed partial class IndexViewModel : ObservableObject, IDisposable
                     IncludeHidden = location.IncludeHidden,
                     EnableDocumentExtraction = location.EnableDocumentExtraction,
                     SkipUnknownFileTypes = location.SkipUnknownFileTypes,
+                    IncludedExtensions = NormalizeExtensionList(location.IncludedExtensions),
+                    IncludedFolders = NormalizeFolderList(location.IncludedFolders),
                     ExcludedExtensions = NormalizeExtensionList(location.ExcludedExtensions),
+                    ExcludedFolders = NormalizeFolderList(location.ExcludedFolders),
                     WatchEnabled = location.WatchEnabled,
                     LastIndexedUtcTicks = location.LastIndexedUtcTicks,
                     FileCount = location.FileCount,
@@ -333,6 +425,15 @@ public sealed partial class IndexViewModel : ObservableObject, IDisposable
                 })
                 .ToList();
             settings.LastIndexedRoot = string.Empty;
+        });
+    }
+
+    private void SaveFilterLists()
+    {
+        _settingsService.Update(settings =>
+        {
+            settings.IndexInclusionLists = IndexInclusionLists.Select(NormalizeFilterList).ToList();
+            settings.IndexExclusionLists = IndexExclusionLists.Select(NormalizeFilterList).ToList();
         });
     }
 
@@ -350,6 +451,27 @@ public sealed partial class IndexViewModel : ObservableObject, IDisposable
         }
     }
 
+    private static IEnumerable<IndexFilterListSettings> LoadFilterLists(IEnumerable<IndexFilterListSettings> lists)
+    {
+        var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        foreach (var list in lists)
+        {
+            var normalized = NormalizeFilterList(list);
+            if (string.IsNullOrWhiteSpace(normalized.Name) || !seen.Add(normalized.Name))
+                continue;
+
+            yield return normalized;
+        }
+    }
+
+    private static IndexFilterListSettings NormalizeFilterList(IndexFilterListSettings list) =>
+        new()
+        {
+            Name = list.Name.Trim(),
+            Extensions = NormalizeExtensionList(list.Extensions),
+            Folders = NormalizeFolderList(list.Folders),
+        };
+
     private static IEnumerable<IndexedLocationSettings> LoadIndexedLocations(AppSettings settings)
     {
         var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
@@ -363,7 +485,10 @@ public sealed partial class IndexViewModel : ObservableObject, IDisposable
                 continue;
 
             location.Root = normalizedRoot;
+            location.IncludedExtensions = NormalizeExtensionList(location.IncludedExtensions);
+            location.IncludedFolders = NormalizeFolderList(location.IncludedFolders);
             location.ExcludedExtensions = NormalizeExtensionList(location.ExcludedExtensions);
+            location.ExcludedFolders = NormalizeFolderList(location.ExcludedFolders);
             yield return location;
         }
 
@@ -390,7 +515,10 @@ public sealed partial class IndexViewModel : ObservableObject, IDisposable
             IncludeHidden = NewIndexIncludeHidden,
             EnableDocumentExtraction = NewIndexEnableDocumentExtraction,
             SkipUnknownFileTypes = NewIndexSkipUnknownFileTypes,
+            IncludedExtensions = NormalizeExtensionList(NewIndexIncludedExtensions),
+            IncludedFolders = NormalizeFolderList(NewIndexIncludedFolders),
             ExcludedExtensions = NormalizeExtensionList(NewIndexExcludedExtensions),
+            ExcludedFolders = NormalizeFolderList(NewIndexExcludedFolders),
             WatchEnabled = true,
         };
 
@@ -406,6 +534,22 @@ public sealed partial class IndexViewModel : ObservableObject, IDisposable
         }
 
         IndexedLocations.Add(location);
+    }
+
+    private static void AddOrReplaceFilterList(
+        ObservableCollection<IndexFilterListSettings> lists,
+        IndexFilterListSettings list)
+    {
+        for (var i = 0; i < lists.Count; i++)
+        {
+            if (string.Equals(lists[i].Name, list.Name, StringComparison.OrdinalIgnoreCase))
+            {
+                lists[i] = list;
+                return;
+            }
+        }
+
+        lists.Add(list);
     }
 
     private IndexedLocationSettings? GetIndexedLocation(string root)
@@ -610,6 +754,48 @@ public sealed partial class IndexViewModel : ObservableObject, IDisposable
         RemoveSelectedIndexCommand.NotifyCanExecuteChanged();
     }
 
+    partial void OnSelectedIndexInclusionListChanged(IndexFilterListSettings? value)
+    {
+        if (value is not null)
+        {
+            NewIndexInclusionListName = value.Name;
+            NewIndexIncludedExtensions = value.Extensions;
+            NewIndexIncludedFolders = value.Folders;
+        }
+
+        RemoveSelectedIndexInclusionListCommand.NotifyCanExecuteChanged();
+    }
+
+    partial void OnSelectedIndexExclusionListChanged(IndexFilterListSettings? value)
+    {
+        if (value is not null)
+        {
+            NewIndexExclusionListName = value.Name;
+            NewIndexExcludedExtensions = value.Extensions;
+            NewIndexExcludedFolders = value.Folders;
+        }
+
+        RemoveSelectedIndexExclusionListCommand.NotifyCanExecuteChanged();
+    }
+
+    partial void OnNewIndexInclusionListNameChanged(string value) =>
+        SaveNewIndexInclusionListCommand.NotifyCanExecuteChanged();
+
+    partial void OnNewIndexIncludedExtensionsChanged(string value) =>
+        SaveNewIndexInclusionListCommand.NotifyCanExecuteChanged();
+
+    partial void OnNewIndexIncludedFoldersChanged(string value) =>
+        SaveNewIndexInclusionListCommand.NotifyCanExecuteChanged();
+
+    partial void OnNewIndexExclusionListNameChanged(string value) =>
+        SaveNewIndexExclusionListCommand.NotifyCanExecuteChanged();
+
+    partial void OnNewIndexExcludedExtensionsChanged(string value) =>
+        SaveNewIndexExclusionListCommand.NotifyCanExecuteChanged();
+
+    partial void OnNewIndexExcludedFoldersChanged(string value) =>
+        SaveNewIndexExclusionListCommand.NotifyCanExecuteChanged();
+
     partial void OnIndexDatabaseExistsChanged(bool value) =>
         CompactIndexDatabaseCommand.NotifyCanExecuteChanged();
 
@@ -708,6 +894,9 @@ public sealed partial class IndexViewModel : ObservableObject, IDisposable
 
     private static string NormalizeExtensionList(string raw) =>
         string.Join("; ", ExtensionList.Parse(raw));
+
+    private static string NormalizeFolderList(string raw) =>
+        string.Join("; ", IndexFilterListSettings.ParseFolders(raw));
 
     private static string FormatBytes(long bytes)
     {

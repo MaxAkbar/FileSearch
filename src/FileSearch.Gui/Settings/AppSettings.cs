@@ -17,6 +17,10 @@ public sealed class AppSettings
 
     public List<IndexedLocationSettings> IndexedLocations { get; set; } = new();
 
+    public List<IndexFilterListSettings> IndexInclusionLists { get; set; } = new();
+
+    public List<IndexFilterListSettings> IndexExclusionLists { get; set; } = new();
+
     // Legacy single-root field retained for migration into IndexedLocations.
     public string LastIndexedRoot { get; set; } = string.Empty;
 

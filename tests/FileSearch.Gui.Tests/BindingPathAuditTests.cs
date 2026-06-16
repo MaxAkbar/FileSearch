@@ -25,6 +25,7 @@ public sealed class BindingPathAuditTests
         typeof(FileResultViewModel),
         typeof(Hit),
         typeof(IndexedLocationSettings),
+        typeof(IndexFilterListSettings),
         typeof(SearchScope),
         typeof(WorkflowLibraryItemViewModel),
         typeof(WorkflowStepViewModel),

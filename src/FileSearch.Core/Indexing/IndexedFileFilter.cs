@@ -7,6 +7,7 @@ namespace FileSearch.Core.Indexing;
 internal static class IndexedFileFilter
 {
     public static bool Matches(
+        string root,
         string path,
         string fileName,
         string extension,
@@ -14,7 +15,10 @@ internal static class IndexedFileFilter
         long modifiedUtcTicks,
         WalkerOptions options)
     {
-        if (options.ExcludeDirectories.Count > 0 && HasExcludedDirectory(path, options.ExcludeDirectories))
+        if (options.IncludeDirectories.Count > 0 && !HasDirectory(path, root, options.IncludeDirectories))
+            return false;
+
+        if (options.ExcludeDirectories.Count > 0 && HasDirectory(path, root, options.ExcludeDirectories))
             return false;
 
         if (options.MinFileSizeBytes > 0 && sizeBytes < options.MinFileSizeBytes)
@@ -44,19 +48,28 @@ internal static class IndexedFileFilter
         return true;
     }
 
-    private static bool HasExcludedDirectory(
+    private static bool HasDirectory(
         string path,
-        System.Collections.Generic.IReadOnlySet<string> excluded)
+        string root,
+        System.Collections.Generic.IReadOnlySet<string> directoryNames)
     {
         var directory = Path.GetDirectoryName(path);
         if (string.IsNullOrEmpty(directory))
             return false;
 
-        foreach (var segment in directory.Split(
+        var rootName = Path.GetFileName(root.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar));
+        if (!string.IsNullOrWhiteSpace(rootName) && directoryNames.Contains(rootName))
+            return true;
+
+        var relative = Path.GetRelativePath(root, directory);
+        if (string.IsNullOrWhiteSpace(relative) || relative == ".")
+            return false;
+
+        foreach (var segment in relative.Split(
             new[] { Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar },
             StringSplitOptions.RemoveEmptyEntries))
         {
-            if (excluded.Contains(segment))
+            if (directoryNames.Contains(segment))
                 return true;
         }
 

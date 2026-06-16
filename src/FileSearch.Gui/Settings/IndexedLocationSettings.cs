@@ -28,7 +28,13 @@ public sealed class IndexedLocationSettings : INotifyPropertyChanged
 
     public bool SkipUnknownFileTypes { get; set; }
 
+    public string IncludedExtensions { get; set; } = string.Empty;
+
+    public string IncludedFolders { get; set; } = string.Empty;
+
     public string ExcludedExtensions { get; set; } = string.Empty;
+
+    public string ExcludedFolders { get; set; } = string.Empty;
 
     public bool WatchEnabled { get; set; } = true;
 
@@ -168,9 +174,21 @@ public sealed class IndexedLocationSettings : INotifyPropertyChanged
                 SkipUnknownFileTypes ? "Known types only" : "Unknown text allowed",
             };
 
-            var excluded = ExtensionList.Parse(ExcludedExtensions);
-            if (excluded.Length > 0)
-                parts.Add($"Excludes {string.Join(", ", excluded)}");
+            var includedExtensions = ExtensionList.Parse(IncludedExtensions);
+            if (includedExtensions.Length > 0)
+                parts.Add($"Includes {string.Join(", ", includedExtensions)}");
+
+            var includedFolders = IndexFilterListSettings.ParseFolders(IncludedFolders);
+            if (includedFolders.Length > 0)
+                parts.Add($"Folders {string.Join(", ", includedFolders)}");
+
+            var excludedExtensions = ExtensionList.Parse(ExcludedExtensions);
+            if (excludedExtensions.Length > 0)
+                parts.Add($"Excludes {string.Join(", ", excludedExtensions)}");
+
+            var excludedFolders = IndexFilterListSettings.ParseFolders(ExcludedFolders);
+            if (excludedFolders.Length > 0)
+                parts.Add($"Skips folders {string.Join(", ", excludedFolders)}");
 
             return string.Join(", ", parts);
         }

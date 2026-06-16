@@ -131,6 +131,28 @@ public sealed class WalkerTests : IDisposable
     }
 
     [Fact]
+    public void Enumerate_AppliesIncludeDirectories()
+    {
+        var src = Directory.CreateDirectory(Path.Combine(_root, "src")).FullName;
+        var tests = Directory.CreateDirectory(Path.Combine(_root, "tests")).FullName;
+        File.WriteAllText(Path.Combine(src, "app.cs"), "");
+        File.WriteAllText(Path.Combine(tests, "appTests.cs"), "");
+        File.WriteAllText(Path.Combine(_root, "README.md"), "");
+
+        var walker = new FileWalker();
+        var result = walker.Enumerate(
+            new[] { _root },
+            new WalkerOptions
+            {
+                IncludeDirectories = new HashSet<string>(StringComparer.OrdinalIgnoreCase) { "src" },
+            },
+            CancellationToken.None).ToList();
+
+        Assert.Single(result);
+        Assert.EndsWith("app.cs", result[0]);
+    }
+
+    [Fact]
     public void Enumerate_SkipsFilesLargerThanMax()
     {
         File.WriteAllText(Path.Combine(_root, "small.txt"), "x");
