@@ -78,11 +78,6 @@ public sealed partial class SearchViewModel : ObservableObject, IDisposable
         FilesView.Filter = FilterFiles;
         Files.CollectionChanged += (_, _) => OnPropertyChanged(nameof(FilesVisible));
 
-        // Seed the input fields with the most recent history entry so the
-        // user lands back where they left off.
-        if (_history.RecentQueries.Count > 0) QueryText = _history.RecentQueries[0];
-        if (_history.RecentPaths.Count > 0) SearchPath = _history.RecentPaths[0];
-
         var saved = _settingsService.Current;
         SkipUnknownFileTypes = saved.SkipUnknownFileTypes;
         UseIndex = saved.UseIndex;
@@ -92,6 +87,19 @@ public sealed partial class SearchViewModel : ObservableObject, IDisposable
             _fileTypeOptionsStore.Save(_fileTypeOptions);
         }
         AdditionalPlainTextExtensions = string.Join("; ", _fileTypeOptions.AdditionalPlainTextExtensions);
+
+        // Seed the input fields with the most recent full saved search when
+        // available; older settings files fall back to query/path history.
+        if (_history.SavedSearches.Count > 0)
+        {
+            SelectedSavedSearch = _history.SavedSearches[0];
+        }
+        else
+        {
+            if (_history.RecentQueries.Count > 0) QueryText = _history.RecentQueries[0];
+            if (_history.RecentPaths.Count > 0) SearchPath = _history.RecentPaths[0];
+        }
+
         _isInitialized = true;
     }
 
@@ -214,6 +222,9 @@ public sealed partial class SearchViewModel : ObservableObject, IDisposable
     [ObservableProperty]
     private FileResultViewModel? _selectedFile;
 
+    [ObservableProperty]
+    private SavedSearchSettings? _selectedSavedSearch;
+
     public bool HasSelectedFile => SelectedFile is not null;
 
     public string PreviewPaneToggleText => "Preview";
@@ -264,6 +275,9 @@ public sealed partial class SearchViewModel : ObservableObject, IDisposable
             SelectedDetailsTabIndex = HitsTabIndex;
         _ = LoadPreviewAsync(value);
     }
+
+    partial void OnSelectedSavedSearchChanged(SavedSearchSettings? value) =>
+        ApplySavedSearch(value);
 
     partial void OnPreviewContentChanged(string value) =>
         CopyPreviewCommand.NotifyCanExecuteChanged();
@@ -346,7 +360,7 @@ public sealed partial class SearchViewModel : ObservableObject, IDisposable
 
         // Record this attempt in history first so a failing/cancelled
         // search still ends up in the dropdowns.
-        _history.RecordSearch(QueryText, SearchPath);
+        _history.RecordSearch(CreateSavedSearch());
 
         RefinementQuery = string.Empty;
         _filesByPath.Clear();
@@ -505,6 +519,55 @@ public sealed partial class SearchViewModel : ObservableObject, IDisposable
 
         FileNamePattern = scope.FileNamePattern?.Trim() ?? string.Empty;
         _status.Text = $"Scope set to {scope.Name}.";
+    }
+
+    private SavedSearchSettings CreateSavedSearch() =>
+        new()
+        {
+            QueryText = QueryText,
+            SearchPath = SearchPath,
+            FileNamePattern = FileNamePattern,
+            ExcludeFileNamePattern = ExcludeFileNamePattern,
+            IncludeSubfolders = IncludeSubfolders,
+            SearchMode = SearchMode,
+            MatchCase = MatchCase,
+            EnableDocumentExtraction = EnableDocumentExtraction,
+            SkipUnknownFileTypes = SkipUnknownFileTypes,
+            UseIndex = UseIndex,
+            MinSizeKB = MinSizeKB,
+            MaxSizeKB = MaxSizeKB,
+            ModifiedAfterEnabled = ModifiedAfterEnabled,
+            ModifiedAfter = ModifiedAfter,
+            ModifiedBeforeEnabled = ModifiedBeforeEnabled,
+            ModifiedBefore = ModifiedBefore,
+            AdditionalPlainTextExtensions = AdditionalPlainTextExtensions,
+        };
+
+    private void ApplySavedSearch(SavedSearchSettings? search)
+    {
+        if (search is null)
+            return;
+
+        SearchPath = search.SearchPath;
+        QueryText = search.QueryText;
+        FileNamePattern = search.FileNamePattern;
+        ExcludeFileNamePattern = search.ExcludeFileNamePattern;
+        IncludeSubfolders = search.IncludeSubfolders;
+        SearchMode = search.SearchMode;
+        MatchCase = search.MatchCase;
+        EnableDocumentExtraction = search.EnableDocumentExtraction;
+        SkipUnknownFileTypes = search.SkipUnknownFileTypes;
+        UseIndex = search.UseIndex;
+        MinSizeKB = Math.Max(0, search.MinSizeKB);
+        MaxSizeKB = Math.Max(0, search.MaxSizeKB);
+        ModifiedAfterEnabled = search.ModifiedAfterEnabled;
+        ModifiedAfter = search.ModifiedAfter == default ? DateTime.Today.AddDays(-7) : search.ModifiedAfter;
+        ModifiedBeforeEnabled = search.ModifiedBeforeEnabled;
+        ModifiedBefore = search.ModifiedBefore == default ? DateTime.Today : search.ModifiedBefore;
+        AdditionalPlainTextExtensions = search.AdditionalPlainTextExtensions?.Trim() ?? string.Empty;
+
+        if (_isInitialized)
+            _status.Text = "Saved search loaded.";
     }
 
     public void Dispose()

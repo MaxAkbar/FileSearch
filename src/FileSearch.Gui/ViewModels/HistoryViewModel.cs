@@ -14,16 +14,29 @@ namespace FileSearch.Gui.ViewModels;
 public sealed partial class HistoryViewModel : ObservableObject
 {
     private const int MaxHistoryEntries = 15;
+    private const int ScopePageSize = 7;
+    private const int RecentPathPageSize = 7;
+    private const int SavedSearchPageSize = 6;
 
     private readonly ISettingsService _settingsService;
     private readonly StatusBarViewModel _status;
+    private readonly ObservableCollection<SidebarScopeItem> _scopeItems = new();
 
     public HistoryViewModel(ISettingsService settingsService, StatusBarViewModel status)
     {
         _settingsService = settingsService;
         _status = status;
+        ScopeList = new PagedSidebarList<SidebarScopeItem>(_scopeItems, MatchesScope, "scopes", ScopePageSize);
+        RecentPathList = new PagedSidebarList<string>(RecentPaths, MatchesText, "recent folders", RecentPathPageSize);
+        SavedSearchList = new PagedSidebarList<SavedSearchSettings>(SavedSearches, MatchesSavedSearch, "saved searches", SavedSearchPageSize);
 
         var saved = _settingsService.Current;
+        foreach (var search in saved.SavedSearches.Select(NormalizeSavedSearch).Where(IsUsableSavedSearch))
+            SavedSearches.Add(search);
+
+        if (SavedSearches.Count == 0)
+            LoadLegacySavedSearches(saved);
+
         foreach (var query in saved.RecentQueries) RecentQueries.Add(query);
         foreach (var path in saved.RecentPaths) RecentPaths.Add(path);
         foreach (var scope in saved.CustomScopes.Where(scope => !string.IsNullOrWhiteSpace(scope.Name)))
@@ -35,10 +48,24 @@ public sealed partial class HistoryViewModel : ObservableObject
             });
         }
 
+        SavedSearches.CollectionChanged += (_, _) => ClearSavedSearchesCommand.NotifyCanExecuteChanged();
         RecentQueries.CollectionChanged += (_, _) => ClearRecentQueriesCommand.NotifyCanExecuteChanged();
         RecentPaths.CollectionChanged += (_, _) => ClearRecentPathsCommand.NotifyCanExecuteChanged();
-        CustomScopes.CollectionChanged += (_, _) => ClearCustomScopesCommand.NotifyCanExecuteChanged();
+        CustomScopes.CollectionChanged += (_, _) =>
+        {
+            ClearCustomScopesCommand.NotifyCanExecuteChanged();
+            RebuildScopeItems();
+        };
+        RebuildScopeItems();
     }
+
+    public PagedSidebarList<SidebarScopeItem> ScopeList { get; }
+
+    public PagedSidebarList<string> RecentPathList { get; }
+
+    public PagedSidebarList<SavedSearchSettings> SavedSearchList { get; }
+
+    public ObservableCollection<SavedSearchSettings> SavedSearches { get; } = new();
 
     /// <summary>Dropdown for the "Containing text" field (most-recent first).</summary>
     public ObservableCollection<string> RecentQueries { get; } = new();
@@ -48,11 +75,16 @@ public sealed partial class HistoryViewModel : ObservableObject
 
     public ObservableCollection<SearchScope> CustomScopes { get; } = new();
 
-    /// <summary>Promotes the attempt into both dropdowns and persists.</summary>
-    public void RecordSearch(string query, string path)
+    /// <summary>Promotes the attempt into saved searches, both legacy lists, and persists.</summary>
+    public void RecordSearch(SavedSearchSettings search)
     {
-        SearchHistory.PromoteToFront(RecentQueries, query, MaxHistoryEntries);
-        SearchHistory.PromoteToFront(RecentPaths, path, MaxHistoryEntries);
+        var savedSearch = NormalizeSavedSearch(search);
+        if (!IsUsableSavedSearch(savedSearch))
+            return;
+
+        PromoteSavedSearch(savedSearch);
+        SearchHistory.PromoteToFront(RecentQueries, savedSearch.QueryText, MaxHistoryEntries);
+        SearchHistory.PromoteToFront(RecentPaths, savedSearch.SearchPath, MaxHistoryEntries);
 
         // Persist immediately so history survives a crash.
         SaveHistory();
@@ -109,6 +141,35 @@ public sealed partial class HistoryViewModel : ObservableObject
     private bool CanClearCustomScopes() => CustomScopes.Count > 0;
 
     [RelayCommand]
+    private void RemoveSavedSearch(SavedSearchSettings? search)
+    {
+        if (search is null)
+            return;
+
+        for (var i = SavedSearches.Count - 1; i >= 0; i--)
+        {
+            if (HasSameSavedSearchIdentity(SavedSearches[i], search))
+                SavedSearches.RemoveAt(i);
+        }
+
+        if (!SavedSearches.Any(item =>
+                string.Equals(item.QueryText, search.QueryText, StringComparison.OrdinalIgnoreCase)))
+            SearchHistory.Remove(RecentQueries, search.QueryText);
+
+        SaveHistory();
+    }
+
+    [RelayCommand(CanExecute = nameof(CanClearSavedSearches))]
+    private void ClearSavedSearches()
+    {
+        SavedSearches.Clear();
+        RecentQueries.Clear();
+        SaveHistory();
+    }
+
+    private bool CanClearSavedSearches() => SavedSearches.Count > 0;
+
+    [RelayCommand]
     private void RemoveRecentPath(string? path)
     {
         SearchHistory.Remove(RecentPaths, path);
@@ -128,6 +189,12 @@ public sealed partial class HistoryViewModel : ObservableObject
     private void RemoveRecentQuery(string? query)
     {
         SearchHistory.Remove(RecentQueries, query);
+        for (var i = SavedSearches.Count - 1; i >= 0; i--)
+        {
+            if (string.Equals(SavedSearches[i].QueryText, query?.Trim(), StringComparison.OrdinalIgnoreCase))
+                SavedSearches.RemoveAt(i);
+        }
+
         SaveHistory();
     }
 
@@ -135,6 +202,7 @@ public sealed partial class HistoryViewModel : ObservableObject
     private void ClearRecentQueries()
     {
         RecentQueries.Clear();
+        SavedSearches.Clear();
         SaveHistory();
     }
 
@@ -147,6 +215,10 @@ public sealed partial class HistoryViewModel : ObservableObject
         {
             settings.RecentQueries = RecentQueries.ToList();
             settings.RecentPaths = RecentPaths.ToList();
+            settings.SavedSearches = SavedSearches
+                .Select(NormalizeSavedSearch)
+                .Where(IsUsableSavedSearch)
+                .ToList();
             settings.CustomScopes = CustomScopes
                 .Where(scope => !string.IsNullOrWhiteSpace(scope.Name))
                 .Select(scope => new SearchScope
@@ -157,4 +229,145 @@ public sealed partial class HistoryViewModel : ObservableObject
                 .ToList();
         });
     }
+
+    private void PromoteSavedSearch(SavedSearchSettings search)
+    {
+        var matchIndex = -1;
+        for (var i = 0; i < SavedSearches.Count; i++)
+        {
+            if (HasSameSavedSearchIdentity(SavedSearches[i], search))
+            {
+                matchIndex = i;
+                break;
+            }
+        }
+
+        for (var i = SavedSearches.Count - 1; i >= 0; i--)
+        {
+            if (i != matchIndex && HasSameSavedSearchIdentity(SavedSearches[i], search))
+            {
+                SavedSearches.RemoveAt(i);
+                if (i < matchIndex)
+                    matchIndex--;
+            }
+        }
+
+        if (matchIndex < 0)
+        {
+            SavedSearches.Insert(0, search);
+        }
+        else
+        {
+            SavedSearches[matchIndex] = search;
+            if (matchIndex > 0)
+                SavedSearches.Move(matchIndex, 0);
+        }
+
+        while (SavedSearches.Count > MaxHistoryEntries)
+            SavedSearches.RemoveAt(SavedSearches.Count - 1);
+    }
+
+    private static bool HasSameSavedSearchIdentity(SavedSearchSettings left, SavedSearchSettings right) =>
+        string.Equals(left.QueryText?.Trim(), right.QueryText?.Trim(), StringComparison.OrdinalIgnoreCase) &&
+        string.Equals(left.SearchPath?.Trim(), right.SearchPath?.Trim(), StringComparison.OrdinalIgnoreCase);
+
+    private void LoadLegacySavedSearches(AppSettings saved)
+    {
+        var path = saved.RecentPaths.FirstOrDefault() ?? string.Empty;
+        foreach (var query in saved.RecentQueries)
+        {
+            var search = NormalizeSavedSearch(new SavedSearchSettings
+            {
+                QueryText = query,
+                SearchPath = path,
+                SkipUnknownFileTypes = saved.SkipUnknownFileTypes,
+                UseIndex = saved.UseIndex,
+            });
+
+            if (IsUsableSavedSearch(search))
+                SavedSearches.Add(search);
+        }
+    }
+
+    private static bool IsUsableSavedSearch(SavedSearchSettings search) =>
+        !string.IsNullOrWhiteSpace(search.QueryText);
+
+    private void RebuildScopeItems()
+    {
+        _scopeItems.Clear();
+        _scopeItems.Add(new SidebarScopeItem
+        {
+            Name = "All files",
+            FileNamePattern = string.Empty,
+            Glyph = "\uE8A5",
+        });
+        _scopeItems.Add(new SidebarScopeItem
+        {
+            Name = "Source and config",
+            FileNamePattern = "*.cs;*.xaml;*.csproj;*.sln;*.slnx;*.json;*.md",
+            Glyph = "\uE943",
+        });
+        _scopeItems.Add(new SidebarScopeItem
+        {
+            Name = "Documents",
+            FileNamePattern = "*.txt;*.md;*.rtf;*.docx;*.xlsx;*.pptx",
+            Glyph = "\uE8A5",
+        });
+        _scopeItems.Add(new SidebarScopeItem
+        {
+            Name = "PDFs",
+            FileNamePattern = "*.pdf",
+            Glyph = "\uEA90",
+        });
+
+        foreach (var scope in CustomScopes)
+        {
+            _scopeItems.Add(new SidebarScopeItem
+            {
+                Name = scope.Name,
+                FileNamePattern = scope.FileNamePattern,
+                Glyph = "\uE8A5",
+                IsCustom = true,
+                CustomScope = scope,
+            });
+        }
+    }
+
+    private static bool MatchesScope(SidebarScopeItem item, string needle) =>
+        Contains(item.Name, needle) || Contains(item.FileNamePattern, needle);
+
+    private static bool MatchesSavedSearch(SavedSearchSettings item, string needle) =>
+        Contains(item.QueryText, needle) ||
+        Contains(item.SearchPath, needle) ||
+        Contains(item.FileNamePattern, needle) ||
+        Contains(item.ExcludeFileNamePattern, needle) ||
+        Contains(item.SearchMode.ToString(), needle);
+
+    private static bool MatchesText(string item, string needle) => Contains(item, needle);
+
+    private static bool Contains(string? value, string needle) =>
+        !string.IsNullOrWhiteSpace(value) &&
+        value.Contains(needle, StringComparison.OrdinalIgnoreCase);
+
+    private static SavedSearchSettings NormalizeSavedSearch(SavedSearchSettings search) =>
+        new()
+        {
+            QueryText = search.QueryText?.Trim() ?? string.Empty,
+            SearchPath = search.SearchPath?.Trim() ?? string.Empty,
+            FileNamePattern = search.FileNamePattern?.Trim() ?? string.Empty,
+            ExcludeFileNamePattern = search.ExcludeFileNamePattern?.Trim() ?? string.Empty,
+            IncludeSubfolders = search.IncludeSubfolders,
+            SearchMode = search.SearchMode,
+            MatchCase = search.MatchCase,
+            EnableDocumentExtraction = search.EnableDocumentExtraction,
+            SkipUnknownFileTypes = search.SkipUnknownFileTypes,
+            UseIndex = search.UseIndex,
+            MinSizeKB = Math.Max(0, search.MinSizeKB),
+            MaxSizeKB = Math.Max(0, search.MaxSizeKB),
+            ModifiedAfterEnabled = search.ModifiedAfterEnabled,
+            ModifiedAfter = search.ModifiedAfter == default ? DateTime.Today.AddDays(-7) : search.ModifiedAfter,
+            ModifiedBeforeEnabled = search.ModifiedBeforeEnabled,
+            ModifiedBefore = search.ModifiedBefore == default ? DateTime.Today : search.ModifiedBefore,
+            AdditionalPlainTextExtensions = search.AdditionalPlainTextExtensions?.Trim() ?? string.Empty,
+        };
 }

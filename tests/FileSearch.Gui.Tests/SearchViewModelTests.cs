@@ -2,6 +2,7 @@ using System.Runtime.CompilerServices;
 using FileSearch.Core.Engine;
 using FileSearch.Core.Extractors;
 using FileSearch.Core.Queries;
+using FileSearch.Gui.Settings;
 using FileSearch.Gui.ViewModels;
 
 namespace FileSearch.Gui.Tests;
@@ -31,9 +32,12 @@ public sealed class SearchViewModelTests
             Assert.NotEqual("—", vm.ElapsedText);
             Assert.StartsWith("Done", status.Text);
             Assert.Equal("needle", history.RecentQueries[0]);
+            Assert.Equal("needle", history.SavedSearches[0].QueryText);
+            Assert.Equal(Path.GetTempPath().TrimEnd(Path.DirectorySeparatorChar), history.SavedSearches[0].SearchPath.TrimEnd(Path.DirectorySeparatorChar));
 
             // History persists its slice immediately (crash safety).
             Assert.Contains("needle", settings.Current.RecentQueries);
+            Assert.Contains(settings.Current.SavedSearches, search => search.QueryText == "needle");
         });
     }
 
@@ -149,10 +153,98 @@ public sealed class SearchViewModelTests
             Assert.True(settings.Current.SkipUnknownFileTypes);
 
             // Another slice's save must not clobber these values.
-            history.RecordSearch("query", Path.GetTempPath());
+            history.RecordSearch(new SavedSearchSettings
+            {
+                QueryText = "query",
+                SearchPath = Path.GetTempPath(),
+            });
             Assert.True(settings.Current.UseIndex);
             Assert.True(settings.Current.SkipUnknownFileTypes);
             Assert.Contains("query", settings.Current.RecentQueries);
+        });
+    }
+
+    [Fact]
+    public void SavedSearchPreservesAndRestoresSearchProperties()
+    {
+        RunWithPump((pump, vm, history, status, settings) =>
+        {
+            var path = Path.GetTempPath();
+            var after = new DateTime(2026, 1, 2);
+            var before = new DateTime(2026, 2, 3);
+
+            vm.QueryText = "needle";
+            vm.SearchPath = path;
+            vm.FileNamePattern = "*.cs; *.xaml";
+            vm.ExcludeFileNamePattern = "*.g.cs";
+            vm.IncludeSubfolders = false;
+            vm.SearchMode = QueryMode.Regex;
+            vm.MatchCase = true;
+            vm.EnableDocumentExtraction = false;
+            vm.SkipUnknownFileTypes = true;
+            vm.UseIndex = true;
+            vm.MinSizeKB = 4;
+            vm.MaxSizeKB = 128;
+            vm.ModifiedAfterEnabled = true;
+            vm.ModifiedAfter = after;
+            vm.ModifiedBeforeEnabled = true;
+            vm.ModifiedBefore = before;
+            vm.AdditionalPlainTextExtensions = ".tmpl; .liquid";
+
+            var task = vm.SearchCommand.ExecuteAsync(null);
+            pump.PumpUntil(() => task.IsCompleted, TimeSpan.FromSeconds(10));
+
+            var saved = Assert.Single(history.SavedSearches);
+            Assert.Equal(path, saved.SearchPath);
+            Assert.Equal(QueryMode.Regex, saved.SearchMode);
+            Assert.False(saved.IncludeSubfolders);
+            Assert.True(saved.MatchCase);
+            Assert.False(saved.EnableDocumentExtraction);
+            Assert.True(saved.SkipUnknownFileTypes);
+            Assert.True(saved.UseIndex);
+            Assert.Equal(4, saved.MinSizeKB);
+            Assert.Equal(128, saved.MaxSizeKB);
+            Assert.True(saved.ModifiedAfterEnabled);
+            Assert.Equal(after, saved.ModifiedAfter);
+            Assert.True(saved.ModifiedBeforeEnabled);
+            Assert.Equal(before, saved.ModifiedBefore);
+            Assert.Equal(".tmpl; .liquid", saved.AdditionalPlainTextExtensions);
+
+            vm.QueryText = "other";
+            vm.SearchPath = @"C:\Different";
+            vm.FileNamePattern = "*.md";
+            vm.ExcludeFileNamePattern = string.Empty;
+            vm.IncludeSubfolders = true;
+            vm.SearchMode = QueryMode.Boolean;
+            vm.MatchCase = false;
+            vm.EnableDocumentExtraction = true;
+            vm.SkipUnknownFileTypes = false;
+            vm.UseIndex = false;
+            vm.MinSizeKB = 0;
+            vm.MaxSizeKB = 0;
+            vm.ModifiedAfterEnabled = false;
+            vm.ModifiedBeforeEnabled = false;
+            vm.AdditionalPlainTextExtensions = string.Empty;
+
+            vm.SelectedSavedSearch = saved;
+
+            Assert.Equal("needle", vm.QueryText);
+            Assert.Equal(path, vm.SearchPath);
+            Assert.Equal("*.cs; *.xaml", vm.FileNamePattern);
+            Assert.Equal("*.g.cs", vm.ExcludeFileNamePattern);
+            Assert.False(vm.IncludeSubfolders);
+            Assert.Equal(QueryMode.Regex, vm.SearchMode);
+            Assert.True(vm.MatchCase);
+            Assert.False(vm.EnableDocumentExtraction);
+            Assert.True(vm.SkipUnknownFileTypes);
+            Assert.True(vm.UseIndex);
+            Assert.Equal(4, vm.MinSizeKB);
+            Assert.Equal(128, vm.MaxSizeKB);
+            Assert.True(vm.ModifiedAfterEnabled);
+            Assert.Equal(after, vm.ModifiedAfter);
+            Assert.True(vm.ModifiedBeforeEnabled);
+            Assert.Equal(before, vm.ModifiedBefore);
+            Assert.Equal(".tmpl; .liquid", vm.AdditionalPlainTextExtensions);
         });
     }
 

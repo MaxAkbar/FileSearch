@@ -24,6 +24,7 @@ namespace FileSearch.Gui.ViewModels;
 public sealed partial class IndexViewModel : ObservableObject, IDisposable
 {
     private const string DefaultNewIndexExcludedExtensions = ".dll; .exe";
+    private const int IndexedLocationPageSize = 5;
 
     private readonly IFileIndex _fileIndex;
     private readonly IIndexingService _indexingService;
@@ -56,6 +57,11 @@ public sealed partial class IndexViewModel : ObservableObject, IDisposable
         _newIndexRecursive = _search.IncludeSubfolders;
         _newIndexEnableDocumentExtraction = _search.EnableDocumentExtraction;
         _newIndexSkipUnknownFileTypes = _search.SkipUnknownFileTypes;
+        IndexedLocationList = new PagedSidebarList<IndexedLocationSettings>(
+            IndexedLocations,
+            MatchesIndexedLocation,
+            "indexed locations",
+            IndexedLocationPageSize);
 
         foreach (var list in LoadFilterLists(_settingsService.Current.IndexInclusionLists))
             IndexInclusionLists.Add(list);
@@ -74,6 +80,8 @@ public sealed partial class IndexViewModel : ObservableObject, IDisposable
     }
 
     public ObservableCollection<IndexedLocationSettings> IndexedLocations { get; } = new();
+
+    public PagedSidebarList<IndexedLocationSettings> IndexedLocationList { get; }
 
     [ObservableProperty] private bool _isIndexing;
     [ObservableProperty] private bool _isIndexingPaused;
@@ -920,4 +928,15 @@ public sealed partial class IndexViewModel : ObservableObject, IDisposable
         var name = Path.GetFileName(trimmed);
         return string.IsNullOrWhiteSpace(name) ? root : name;
     }
+
+    private static bool MatchesIndexedLocation(IndexedLocationSettings location, string needle) =>
+        Contains(location.DisplayName, needle) ||
+        Contains(location.Root, needle) ||
+        Contains(location.Summary, needle) ||
+        Contains(location.TypeSummary, needle) ||
+        Contains(location.RuntimeStatusSummary, needle);
+
+    private static bool Contains(string? value, string needle) =>
+        !string.IsNullOrWhiteSpace(value) &&
+        value.Contains(needle, StringComparison.OrdinalIgnoreCase);
 }

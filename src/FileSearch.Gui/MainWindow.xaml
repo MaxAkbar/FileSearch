@@ -174,7 +174,8 @@
                     <ScrollViewer VerticalScrollBarVisibility="Auto"
                                   HorizontalScrollBarVisibility="Disabled"
                                   Focusable="False">
-                    <Grid MinHeight="{Binding ViewportHeight, RelativeSource={RelativeSource AncestorType=ScrollViewer}}">
+                    <Grid MinHeight="{Binding ViewportHeight, RelativeSource={RelativeSource AncestorType=ScrollViewer}}"
+                          Margin="0,0,16,0">
                         <Grid.RowDefinitions>
                             <RowDefinition x:Name="ScopesRow" Height="Auto"/>
                             <RowDefinition x:Name="RecentRow" Height="Auto"/>
@@ -184,38 +185,67 @@
                             <Expander x:Name="ScopesSection" Grid.Row="0"
                                       Header="SCOPES" Style="{StaticResource NavSectionExpanderStyle}"
                                       Expanded="OnNavSectionToggled" Collapsed="OnNavSectionToggled">
-                                <StackPanel>
-                                    <Button Command="{Binding Search.ApplyFilePatternPresetCommand}" CommandParameter=""
-                                            Style="{StaticResource NavItemButtonStyle}">
-                                        <StackPanel Orientation="Horizontal">
-                                            <ui:FontIcon Glyph="&#xE8A5;" FontSize="14" Margin="0,0,11,0"/>
-                                            <TextBlock Text="All files" VerticalAlignment="Center"/>
-                                        </StackPanel>
-                                    </Button>
-                                    <Button Command="{Binding Search.ApplyFilePatternPresetCommand}"
-                                            CommandParameter="*.cs;*.xaml;*.csproj;*.sln;*.slnx;*.json;*.md"
-                                            Style="{StaticResource NavItemButtonStyle}">
-                                        <StackPanel Orientation="Horizontal">
-                                            <ui:FontIcon Glyph="&#xE943;" FontSize="14" Margin="0,0,11,0"/>
-                                            <TextBlock Text="Source and config" VerticalAlignment="Center"/>
-                                        </StackPanel>
-                                    </Button>
-                                    <Button Command="{Binding Search.ApplyFilePatternPresetCommand}"
-                                            CommandParameter="*.txt;*.md;*.rtf;*.docx;*.xlsx;*.pptx"
-                                            Style="{StaticResource NavItemButtonStyle}">
-                                        <StackPanel Orientation="Horizontal">
-                                            <ui:FontIcon Glyph="&#xE8A5;" FontSize="14" Margin="0,0,11,0"/>
-                                            <TextBlock Text="Documents" VerticalAlignment="Center"/>
-                                        </StackPanel>
-                                    </Button>
-                                    <Button Command="{Binding Search.ApplyFilePatternPresetCommand}" CommandParameter="*.pdf"
-                                            Style="{StaticResource NavItemButtonStyle}">
-                                        <StackPanel Orientation="Horizontal">
-                                            <ui:FontIcon Glyph="&#xEA90;" FontSize="14" Margin="0,0,11,0"/>
-                                            <TextBlock Text="PDFs" VerticalAlignment="Center"/>
-                                        </StackPanel>
-                                    </Button>
-                                    <ItemsControl ItemsSource="{Binding History.CustomScopes}" Margin="0,4,0,0">
+                                <DockPanel>
+                                    <StackPanel DockPanel.Dock="Bottom">
+                                        <Button Click="OnAddScopeClick" Style="{StaticResource NavItemButtonStyle}">
+                                            <StackPanel Orientation="Horizontal">
+                                                <ui:FontIcon Glyph="&#xE710;" FontSize="14" Margin="0,0,11,0"/>
+                                                <TextBlock Text="New scope" VerticalAlignment="Center"/>
+                                            </StackPanel>
+                                        </Button>
+                                        <Button Command="{Binding History.ClearCustomScopesCommand}" Style="{StaticResource NavItemButtonStyle}">
+                                            <StackPanel Orientation="Horizontal">
+                                                <ui:FontIcon Glyph="&#xE74D;" FontSize="14" Margin="0,0,11,0"/>
+                                                <TextBlock Text="Clear scopes" VerticalAlignment="Center"/>
+                                            </StackPanel>
+                                        </Button>
+                                    </StackPanel>
+
+                                    <Grid DockPanel.Dock="Bottom"
+                                          Margin="0,4,0,2"
+                                          Visibility="{Binding History.ScopeList.IsFooterVisible, Converter={StaticResource BoolToVisibility}}">
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="Auto"/>
+                                            <ColumnDefinition Width="*"/>
+                                            <ColumnDefinition Width="Auto"/>
+                                        </Grid.ColumnDefinitions>
+                                        <Button Command="{Binding History.ScopeList.PreviousPageCommand}"
+                                                Style="{StaticResource IconButtonStyle}"
+                                                Width="24" Height="24"
+                                                ToolTip="Previous page"
+                                                Visibility="{Binding History.ScopeList.IsPagerVisible, Converter={StaticResource BoolToVisibility}}">
+                                            <ui:FontIcon Glyph="&#xE72B;" FontSize="11"/>
+                                        </Button>
+                                        <TextBlock Grid.Column="1"
+                                                   Text="{Binding History.ScopeList.PageSummaryText}"
+                                                   Style="{StaticResource SidebarPagerTextStyle}"/>
+                                        <Button Grid.Column="2"
+                                                Command="{Binding History.ScopeList.NextPageCommand}"
+                                                Style="{StaticResource IconButtonStyle}"
+                                                Width="24" Height="24"
+                                                ToolTip="Next page"
+                                                Visibility="{Binding History.ScopeList.IsPagerVisible, Converter={StaticResource BoolToVisibility}}">
+                                            <ui:FontIcon Glyph="&#xE72A;" FontSize="11"/>
+                                        </Button>
+                                    </Grid>
+
+                                    <Grid DockPanel.Dock="Top">
+                                        <TextBox Text="{Binding History.ScopeList.SearchText, UpdateSourceTrigger=PropertyChanged}"
+                                                 Style="{StaticResource SidebarSearchBoxStyle}"
+                                                 ui:ControlHelper.PlaceholderText="Search scopes"/>
+                                        <Button Command="{Binding History.ScopeList.ClearSearchCommand}"
+                                                Style="{StaticResource IconButtonStyle}"
+                                                Width="22" Height="22"
+                                                HorizontalAlignment="Right"
+                                                VerticalAlignment="Center"
+                                                Margin="0,0,4,2"
+                                                ToolTip="Clear search"
+                                                Visibility="{Binding History.ScopeList.HasSearchText, Converter={StaticResource BoolToVisibility}}">
+                                            <ui:FontIcon Glyph="&#xE711;" FontSize="10"/>
+                                        </Button>
+                                    </Grid>
+
+                                    <ItemsControl ItemsSource="{Binding History.ScopeList.Items}" Margin="0,4,0,0">
                                         <ItemsControl.ItemTemplate>
                                             <DataTemplate>
                                                 <Grid Margin="0,1">
@@ -223,50 +253,39 @@
                                                         <ColumnDefinition Width="*"/>
                                                         <ColumnDefinition Width="Auto"/>
                                                     </Grid.ColumnDefinitions>
-                                                    <Button Command="{Binding DataContext.Search.ApplyCustomScopeCommand, RelativeSource={RelativeSource AncestorType=ItemsControl}}"
-                                                            CommandParameter="{Binding}"
+                                                    <Button Command="{Binding DataContext.Search.ApplyFilePatternPresetCommand, RelativeSource={RelativeSource AncestorType=ItemsControl}}"
+                                                            CommandParameter="{Binding FileNamePattern}"
                                                             HorizontalContentAlignment="Stretch"
                                                             Style="{StaticResource NavItemButtonStyle}"
-                                                            ToolTip="{Binding FileNamePattern}">
+                                                            ToolTip="{Binding Summary}">
                                                         <Grid>
                                                             <Grid.ColumnDefinitions>
                                                                 <ColumnDefinition Width="Auto"/>
                                                                 <ColumnDefinition Width="*"/>
                                                             </Grid.ColumnDefinitions>
-                                                            <ui:FontIcon Glyph="&#xE8A5;" FontSize="14" Margin="0,0,11,0"/>
+                                                            <ui:FontIcon Glyph="{Binding Glyph}" FontSize="14" Margin="0,0,11,0"/>
                                                             <StackPanel Grid.Column="1">
                                                                 <TextBlock Text="{Binding Name}" TextTrimming="CharacterEllipsis"/>
-                                                                <TextBlock Text="{Binding FileNamePattern}" Style="{StaticResource MutedValueStyle}"/>
+                                                                <TextBlock Text="{Binding Summary}" Style="{StaticResource MutedValueStyle}"/>
                                                             </StackPanel>
                                                         </Grid>
                                                     </Button>
                                                     <Button Grid.Column="1"
                                                             Command="{Binding DataContext.History.RemoveCustomScopeCommand, RelativeSource={RelativeSource AncestorType=ItemsControl}}"
-                                                            CommandParameter="{Binding}"
+                                                            CommandParameter="{Binding CustomScope}"
                                                             Style="{StaticResource IconButtonStyle}"
                                                             Width="24" Height="24"
                                                             Margin="2,0,0,0"
                                                             VerticalAlignment="Center"
-                                                            ToolTip="Remove scope">
+                                                            ToolTip="Remove scope"
+                                                            Visibility="{Binding IsCustom, Converter={StaticResource BoolToVisibility}}">
                                                         <ui:FontIcon Glyph="&#xE74D;" FontSize="11"/>
                                                     </Button>
                                                 </Grid>
                                             </DataTemplate>
                                         </ItemsControl.ItemTemplate>
                                     </ItemsControl>
-                                    <Button Click="OnAddScopeClick" Style="{StaticResource NavItemButtonStyle}">
-                                        <StackPanel Orientation="Horizontal">
-                                            <ui:FontIcon Glyph="&#xE710;" FontSize="14" Margin="0,0,11,0"/>
-                                            <TextBlock Text="New scope" VerticalAlignment="Center"/>
-                                        </StackPanel>
-                                    </Button>
-                                    <Button Command="{Binding History.ClearCustomScopesCommand}" Style="{StaticResource NavItemButtonStyle}">
-                                        <StackPanel Orientation="Horizontal">
-                                            <ui:FontIcon Glyph="&#xE74D;" FontSize="14" Margin="0,0,11,0"/>
-                                            <TextBlock Text="Clear scopes" VerticalAlignment="Center"/>
-                                        </StackPanel>
-                                    </Button>
-                                </StackPanel>
+                                </DockPanel>
                             </Expander>
 
                             <Expander x:Name="RecentSection" Grid.Row="1"
@@ -281,7 +300,51 @@
                                             <TextBlock Text="Clear recent folders" VerticalAlignment="Center"/>
                                         </StackPanel>
                                     </Button>
-                                    <ListBox ItemsSource="{Binding History.RecentPaths}"
+                                    <Grid DockPanel.Dock="Bottom"
+                                          Margin="0,4,0,2"
+                                          Visibility="{Binding History.RecentPathList.IsFooterVisible, Converter={StaticResource BoolToVisibility}}">
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="Auto"/>
+                                            <ColumnDefinition Width="*"/>
+                                            <ColumnDefinition Width="Auto"/>
+                                        </Grid.ColumnDefinitions>
+                                        <Button Command="{Binding History.RecentPathList.PreviousPageCommand}"
+                                                Style="{StaticResource IconButtonStyle}"
+                                                Width="24" Height="24"
+                                                ToolTip="Previous page"
+                                                Visibility="{Binding History.RecentPathList.IsPagerVisible, Converter={StaticResource BoolToVisibility}}">
+                                            <ui:FontIcon Glyph="&#xE72B;" FontSize="11"/>
+                                        </Button>
+                                        <TextBlock Grid.Column="1"
+                                                   Text="{Binding History.RecentPathList.PageSummaryText}"
+                                                   Style="{StaticResource SidebarPagerTextStyle}"/>
+                                        <Button Grid.Column="2"
+                                                Command="{Binding History.RecentPathList.NextPageCommand}"
+                                                Style="{StaticResource IconButtonStyle}"
+                                                Width="24" Height="24"
+                                                ToolTip="Next page"
+                                                Visibility="{Binding History.RecentPathList.IsPagerVisible, Converter={StaticResource BoolToVisibility}}">
+                                            <ui:FontIcon Glyph="&#xE72A;" FontSize="11"/>
+                                        </Button>
+                                    </Grid>
+
+                                    <Grid DockPanel.Dock="Top">
+                                        <TextBox Text="{Binding History.RecentPathList.SearchText, UpdateSourceTrigger=PropertyChanged}"
+                                                 Style="{StaticResource SidebarSearchBoxStyle}"
+                                                 ui:ControlHelper.PlaceholderText="Search recent folders"/>
+                                        <Button Command="{Binding History.RecentPathList.ClearSearchCommand}"
+                                                Style="{StaticResource IconButtonStyle}"
+                                                Width="22" Height="22"
+                                                HorizontalAlignment="Right"
+                                                VerticalAlignment="Center"
+                                                Margin="0,0,4,2"
+                                                ToolTip="Clear search"
+                                                Visibility="{Binding History.RecentPathList.HasSearchText, Converter={StaticResource BoolToVisibility}}">
+                                            <ui:FontIcon Glyph="&#xE711;" FontSize="10"/>
+                                        </Button>
+                                    </Grid>
+
+                                    <ListBox ItemsSource="{Binding History.RecentPathList.Items}"
                                              SelectedItem="{Binding Search.SearchPath, Mode=TwoWay}"
                                              Style="{StaticResource NavListBoxStyle}"
                                              ItemContainerStyle="{StaticResource NavListBoxItemStyle}">
@@ -325,7 +388,51 @@
                                             <TextBlock Text="Manage locations" VerticalAlignment="Center"/>
                                         </StackPanel>
                                     </Button>
-                                    <ListBox ItemsSource="{Binding Index.IndexedLocations}"
+                                    <Grid DockPanel.Dock="Bottom"
+                                          Margin="0,4,0,2"
+                                          Visibility="{Binding Index.IndexedLocationList.IsFooterVisible, Converter={StaticResource BoolToVisibility}}">
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="Auto"/>
+                                            <ColumnDefinition Width="*"/>
+                                            <ColumnDefinition Width="Auto"/>
+                                        </Grid.ColumnDefinitions>
+                                        <Button Command="{Binding Index.IndexedLocationList.PreviousPageCommand}"
+                                                Style="{StaticResource IconButtonStyle}"
+                                                Width="24" Height="24"
+                                                ToolTip="Previous page"
+                                                Visibility="{Binding Index.IndexedLocationList.IsPagerVisible, Converter={StaticResource BoolToVisibility}}">
+                                            <ui:FontIcon Glyph="&#xE72B;" FontSize="11"/>
+                                        </Button>
+                                        <TextBlock Grid.Column="1"
+                                                   Text="{Binding Index.IndexedLocationList.PageSummaryText}"
+                                                   Style="{StaticResource SidebarPagerTextStyle}"/>
+                                        <Button Grid.Column="2"
+                                                Command="{Binding Index.IndexedLocationList.NextPageCommand}"
+                                                Style="{StaticResource IconButtonStyle}"
+                                                Width="24" Height="24"
+                                                ToolTip="Next page"
+                                                Visibility="{Binding Index.IndexedLocationList.IsPagerVisible, Converter={StaticResource BoolToVisibility}}">
+                                            <ui:FontIcon Glyph="&#xE72A;" FontSize="11"/>
+                                        </Button>
+                                    </Grid>
+
+                                    <Grid DockPanel.Dock="Top">
+                                        <TextBox Text="{Binding Index.IndexedLocationList.SearchText, UpdateSourceTrigger=PropertyChanged}"
+                                                 Style="{StaticResource SidebarSearchBoxStyle}"
+                                                 ui:ControlHelper.PlaceholderText="Search indexed locations"/>
+                                        <Button Command="{Binding Index.IndexedLocationList.ClearSearchCommand}"
+                                                Style="{StaticResource IconButtonStyle}"
+                                                Width="22" Height="22"
+                                                HorizontalAlignment="Right"
+                                                VerticalAlignment="Center"
+                                                Margin="0,0,4,2"
+                                                ToolTip="Clear search"
+                                                Visibility="{Binding Index.IndexedLocationList.HasSearchText, Converter={StaticResource BoolToVisibility}}">
+                                            <ui:FontIcon Glyph="&#xE711;" FontSize="10"/>
+                                        </Button>
+                                    </Grid>
+
+                                    <ListBox ItemsSource="{Binding Index.IndexedLocationList.Items}"
                                              SelectedItem="{Binding Index.SelectedIndexedLocation, Mode=TwoWay}"
                                              Style="{StaticResource NavListBoxStyle}"
                                              ItemContainerStyle="{StaticResource NavListBoxItemStyle}">
@@ -365,20 +472,64 @@
                                       Expanded="OnNavSectionToggled" Collapsed="OnNavSectionToggled">
                                 <DockPanel>
                                     <Button DockPanel.Dock="Bottom"
-                                            Command="{Binding History.ClearRecentQueriesCommand}"
+                                            Command="{Binding History.ClearSavedSearchesCommand}"
                                             Style="{StaticResource NavItemButtonStyle}">
                                         <StackPanel Orientation="Horizontal">
                                             <ui:FontIcon Glyph="&#xE74D;" FontSize="14" Margin="0,0,11,0"/>
                                             <TextBlock Text="Clear saved searches" VerticalAlignment="Center"/>
                                         </StackPanel>
                                     </Button>
-                                    <ListBox ItemsSource="{Binding History.RecentQueries}"
-                                             SelectedItem="{Binding Search.QueryText, Mode=TwoWay}"
+                                    <Grid DockPanel.Dock="Bottom"
+                                          Margin="0,4,0,2"
+                                          Visibility="{Binding History.SavedSearchList.IsFooterVisible, Converter={StaticResource BoolToVisibility}}">
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="Auto"/>
+                                            <ColumnDefinition Width="*"/>
+                                            <ColumnDefinition Width="Auto"/>
+                                        </Grid.ColumnDefinitions>
+                                        <Button Command="{Binding History.SavedSearchList.PreviousPageCommand}"
+                                                Style="{StaticResource IconButtonStyle}"
+                                                Width="24" Height="24"
+                                                ToolTip="Previous page"
+                                                Visibility="{Binding History.SavedSearchList.IsPagerVisible, Converter={StaticResource BoolToVisibility}}">
+                                            <ui:FontIcon Glyph="&#xE72B;" FontSize="11"/>
+                                        </Button>
+                                        <TextBlock Grid.Column="1"
+                                                   Text="{Binding History.SavedSearchList.PageSummaryText}"
+                                                   Style="{StaticResource SidebarPagerTextStyle}"/>
+                                        <Button Grid.Column="2"
+                                                Command="{Binding History.SavedSearchList.NextPageCommand}"
+                                                Style="{StaticResource IconButtonStyle}"
+                                                Width="24" Height="24"
+                                                ToolTip="Next page"
+                                                Visibility="{Binding History.SavedSearchList.IsPagerVisible, Converter={StaticResource BoolToVisibility}}">
+                                            <ui:FontIcon Glyph="&#xE72A;" FontSize="11"/>
+                                        </Button>
+                                    </Grid>
+
+                                    <Grid DockPanel.Dock="Top">
+                                        <TextBox Text="{Binding History.SavedSearchList.SearchText, UpdateSourceTrigger=PropertyChanged}"
+                                                 Style="{StaticResource SidebarSearchBoxStyle}"
+                                                 ui:ControlHelper.PlaceholderText="Search saved searches"/>
+                                        <Button Command="{Binding History.SavedSearchList.ClearSearchCommand}"
+                                                Style="{StaticResource IconButtonStyle}"
+                                                Width="22" Height="22"
+                                                HorizontalAlignment="Right"
+                                                VerticalAlignment="Center"
+                                                Margin="0,0,4,2"
+                                                ToolTip="Clear search"
+                                                Visibility="{Binding History.SavedSearchList.HasSearchText, Converter={StaticResource BoolToVisibility}}">
+                                            <ui:FontIcon Glyph="&#xE711;" FontSize="10"/>
+                                        </Button>
+                                    </Grid>
+
+                                    <ListBox ItemsSource="{Binding History.SavedSearchList.Items}"
+                                             SelectedItem="{Binding Search.SelectedSavedSearch, Mode=TwoWay}"
                                              Style="{StaticResource NavListBoxStyle}"
                                              ItemContainerStyle="{StaticResource NavListBoxItemStyle}">
                                         <ListBox.ItemTemplate>
                                             <DataTemplate>
-                                                <Grid>
+                                                <Grid ToolTip="{Binding Summary}">
                                                     <Grid.ColumnDefinitions>
                                                         <ColumnDefinition Width="Auto"/>
                                                         <ColumnDefinition Width="*"/>
@@ -386,9 +537,15 @@
                                                     </Grid.ColumnDefinitions>
                                                     <Ellipse Width="8" Height="8" Fill="{DynamicResource Atlas.AccentBrush}"
                                                              Margin="1,0,12,0" VerticalAlignment="Center"/>
-                                                    <TextBlock Grid.Column="1" Text="{Binding}" TextTrimming="CharacterEllipsis" VerticalAlignment="Center"/>
+                                                    <StackPanel Grid.Column="1" VerticalAlignment="Center">
+                                                        <TextBlock Text="{Binding DisplayName}"
+                                                                   TextTrimming="CharacterEllipsis"/>
+                                                        <TextBlock Text="{Binding Summary}"
+                                                                   Style="{StaticResource MutedValueStyle}"
+                                                                   TextTrimming="CharacterEllipsis"/>
+                                                    </StackPanel>
                                                     <Button Grid.Column="2"
-                                                            Command="{Binding DataContext.History.RemoveRecentQueryCommand, RelativeSource={RelativeSource AncestorType=ListBox}}"
+                                                            Command="{Binding DataContext.History.RemoveSavedSearchCommand, RelativeSource={RelativeSource AncestorType=ListBox}}"
                                                             CommandParameter="{Binding}"
                                                             Style="{StaticResource IconButtonStyle}"
                                                             Width="24" Height="24"

@@ -206,6 +206,25 @@
         </Setter>
     </Style>
 
+    <Style x:Key="SidebarSearchBoxStyle" TargetType="TextBox" BasedOn="{StaticResource {x:Type TextBox}}">
+        <Setter Property="MinHeight" Value="30"/>
+        <Setter Property="Padding" Value="8,4,28,4"/>
+        <Setter Property="Margin" Value="0,2,0,4"/>
+        <Setter Property="FontSize" Value="12.5"/>
+        <Setter Property="Foreground" Value="{DynamicResource Atlas.InkBrush}"/>
+        <Setter Property="Background" Value="{DynamicResource Atlas.Surface2Brush}"/>
+        <Setter Property="BorderBrush" Value="{DynamicResource Atlas.Line2Brush}"/>
+        <Setter Property="BorderThickness" Value="1"/>
+    </Style>
+
+    <Style x:Key="SidebarPagerTextStyle" TargetType="TextBlock">
+        <Setter Property="FontSize" Value="11"/>
+        <Setter Property="Foreground" Value="{DynamicResource Atlas.Ink3Brush}"/>
+        <Setter Property="VerticalAlignment" Value="Center"/>
+        <Setter Property="HorizontalAlignment" Value="Center"/>
+        <Setter Property="TextTrimming" Value="CharacterEllipsis"/>
+    </Style>
+
     <Style x:Key="IndexStatusBadgeStyle" TargetType="Border">
         <Setter Property="HorizontalAlignment" Value="Left"/>
         <Setter Property="Background" Value="{DynamicResource Atlas.Surface2Brush}"/>

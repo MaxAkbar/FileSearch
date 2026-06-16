@@ -27,8 +27,14 @@ public sealed class AppSettings
     public string AdditionalPlainTextExtensions { get; set; } = string.Empty;
 
     /// <summary>
-    /// Most-recently-used search queries, most-recent first. Capped at
-    /// ~15 entries. Surfaced as the dropdown on the "Containing text" field.
+    /// Most-recently-used full search definitions, most-recent first. Capped
+    /// at ~15 entries. Surfaced in the Saved searches sidebar section.
+    /// </summary>
+    public List<SavedSearchSettings> SavedSearches { get; set; } = new();
+
+    /// <summary>
+    /// Legacy query-only search history. Retained for migration and for any
+    /// settings files created before saved searches became structured.
     /// </summary>
     public List<string> RecentQueries { get; set; } = new();
 

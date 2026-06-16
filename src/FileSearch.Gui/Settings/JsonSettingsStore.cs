@@ -63,6 +63,24 @@ public sealed class JsonSettingsStore : ISettingsStore
         if (s.RecentPaths.Count == 0 && !string.IsNullOrWhiteSpace(s.LastSearchPath))
             s.RecentPaths.Add(s.LastSearchPath);
 
+        if (s.SavedSearches.Count == 0 && s.RecentQueries.Count > 0)
+        {
+            var path = s.RecentPaths.FirstOrDefault() ?? string.Empty;
+            foreach (var query in s.RecentQueries)
+            {
+                if (string.IsNullOrWhiteSpace(query))
+                    continue;
+
+                s.SavedSearches.Add(new SavedSearchSettings
+                {
+                    QueryText = query.Trim(),
+                    SearchPath = path,
+                    SkipUnknownFileTypes = s.SkipUnknownFileTypes,
+                    UseIndex = s.UseIndex,
+                });
+            }
+        }
+
         s.LastQuery = null;
         s.LastSearchPath = null;
     }

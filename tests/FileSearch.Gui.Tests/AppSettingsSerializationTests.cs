@@ -1,5 +1,6 @@
 using System.Text.Json;
 using System.Text.Json.Serialization;
+using FileSearch.Core.Queries;
 using FileSearch.Gui.Settings;
 
 namespace FileSearch.Gui.Tests;
@@ -19,6 +20,29 @@ public sealed class AppSettingsSerializationTests
         var settings = new AppSettings
         {
             UseIndex = true,
+            SavedSearches =
+            [
+                new()
+                {
+                    QueryText = "needle",
+                    SearchPath = @"C:\Work",
+                    FileNamePattern = "*.cs",
+                    ExcludeFileNamePattern = "*.g.cs",
+                    IncludeSubfolders = false,
+                    SearchMode = QueryMode.Regex,
+                    MatchCase = true,
+                    EnableDocumentExtraction = false,
+                    SkipUnknownFileTypes = true,
+                    UseIndex = true,
+                    MinSizeKB = 4,
+                    MaxSizeKB = 128,
+                    ModifiedAfterEnabled = true,
+                    ModifiedAfter = new DateTime(2026, 1, 2),
+                    ModifiedBeforeEnabled = true,
+                    ModifiedBefore = new DateTime(2026, 2, 3),
+                    AdditionalPlainTextExtensions = ".tmpl",
+                },
+            ],
             IndexedLocations =
             [
                 new IndexedLocationSettings
@@ -79,7 +103,28 @@ public sealed class AppSettingsSerializationTests
         Assert.DoesNotContain(nameof(IndexedLocationSettings.RuntimeStatusDetail), json);
         Assert.DoesNotContain(nameof(IndexedLocationSettings.RuntimeStatusSummary), json);
         Assert.DoesNotContain(nameof(IndexFilterListSettings.Summary), json);
+        Assert.DoesNotContain(nameof(SavedSearchSettings.DisplayName), json);
+        Assert.DoesNotContain(nameof(SavedSearchSettings.Summary), json);
         Assert.NotNull(loaded);
+        var savedSearch = Assert.Single(loaded.SavedSearches);
+        Assert.Equal("needle", savedSearch.QueryText);
+        Assert.Equal(@"C:\Work", savedSearch.SearchPath);
+        Assert.Equal("*.cs", savedSearch.FileNamePattern);
+        Assert.Equal("*.g.cs", savedSearch.ExcludeFileNamePattern);
+        Assert.False(savedSearch.IncludeSubfolders);
+        Assert.Equal(QueryMode.Regex, savedSearch.SearchMode);
+        Assert.True(savedSearch.MatchCase);
+        Assert.False(savedSearch.EnableDocumentExtraction);
+        Assert.True(savedSearch.SkipUnknownFileTypes);
+        Assert.True(savedSearch.UseIndex);
+        Assert.Equal(4, savedSearch.MinSizeKB);
+        Assert.Equal(128, savedSearch.MaxSizeKB);
+        Assert.True(savedSearch.ModifiedAfterEnabled);
+        Assert.Equal(new DateTime(2026, 1, 2), savedSearch.ModifiedAfter);
+        Assert.True(savedSearch.ModifiedBeforeEnabled);
+        Assert.Equal(new DateTime(2026, 2, 3), savedSearch.ModifiedBefore);
+        Assert.Equal(".tmpl", savedSearch.AdditionalPlainTextExtensions);
+
         var location = Assert.Single(loaded.IndexedLocations);
         Assert.Equal(@"C:\Work", location.Root);
         Assert.False(location.Recursive);
