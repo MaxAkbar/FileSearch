@@ -555,9 +555,7 @@ public sealed partial class SearchViewModel : ObservableObject, IDisposable
             IncludeExtensions = settings.SkipUnknownFileTypes
                 ? BuildKnownTextExtensions()
                 : new HashSet<string>(StringComparer.OrdinalIgnoreCase),
-            ExcludeExtensions = settings.EnableDocumentExtraction
-                ? new HashSet<string>(StringComparer.OrdinalIgnoreCase)
-                : _fileTypeOptions.DocumentExtensions.ToHashSet(StringComparer.OrdinalIgnoreCase),
+            ExcludeExtensions = BuildIndexExcludedExtensions(settings),
             Recursive = settings.Recursive,
             IncludeHidden = settings.IncludeHidden,
             MinFileSizeBytes = 0,
@@ -565,6 +563,20 @@ public sealed partial class SearchViewModel : ObservableObject, IDisposable
             ModifiedAfterUtc = null,
             ModifiedBeforeUtc = null,
         };
+
+    private HashSet<string> BuildIndexExcludedExtensions(IndexedLocationSettings settings)
+    {
+        var extensions = ExtensionList.Parse(settings.ExcludedExtensions)
+            .ToHashSet(StringComparer.OrdinalIgnoreCase);
+
+        if (!settings.EnableDocumentExtraction)
+        {
+            foreach (var extension in _fileTypeOptions.DocumentExtensions)
+                extensions.Add(extension);
+        }
+
+        return extensions;
+    }
 
     private HashSet<string> BuildKnownTextExtensions()
     {

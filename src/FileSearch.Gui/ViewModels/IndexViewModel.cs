@@ -8,6 +8,7 @@ using System.Threading;
 using System.Threading.Tasks;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
+using FileSearch.Core;
 using FileSearch.Core.Indexing;
 using FileSearch.Gui.Services;
 using FileSearch.Gui.Settings;
@@ -22,6 +23,8 @@ namespace FileSearch.Gui.ViewModels;
 /// </summary>
 public sealed partial class IndexViewModel : ObservableObject, IDisposable
 {
+    private const string DefaultNewIndexExcludedExtensions = ".dll; .exe";
+
     private readonly IFileIndex _fileIndex;
     private readonly IIndexingService _indexingService;
     private readonly ISettingsService _settingsService;
@@ -50,6 +53,9 @@ public sealed partial class IndexViewModel : ObservableObject, IDisposable
         _dispatcher = dispatcher;
         _search = search;
         _status = status;
+        _newIndexRecursive = _search.IncludeSubfolders;
+        _newIndexEnableDocumentExtraction = _search.EnableDocumentExtraction;
+        _newIndexSkipUnknownFileTypes = _search.SkipUnknownFileTypes;
 
         foreach (var location in LoadIndexedLocations(_settingsService.Current))
             IndexedLocations.Add(location);
@@ -78,6 +84,11 @@ public sealed partial class IndexViewModel : ObservableObject, IDisposable
     [ObservableProperty] private string _indexDatabaseContentText = "No indexed content";
     [ObservableProperty] private string _indexDatabaseQueueText = "No pending index changes";
     [ObservableProperty] private string _indexDatabaseLastIndexedText = "Never indexed";
+    [ObservableProperty] private bool _newIndexRecursive = true;
+    [ObservableProperty] private bool _newIndexIncludeHidden;
+    [ObservableProperty] private bool _newIndexEnableDocumentExtraction = true;
+    [ObservableProperty] private bool _newIndexSkipUnknownFileTypes;
+    [ObservableProperty] private string _newIndexExcludedExtensions = DefaultNewIndexExcludedExtensions;
 
     public string IndexActivityText =>
         IsIndexingPaused
@@ -314,6 +325,7 @@ public sealed partial class IndexViewModel : ObservableObject, IDisposable
                     IncludeHidden = location.IncludeHidden,
                     EnableDocumentExtraction = location.EnableDocumentExtraction,
                     SkipUnknownFileTypes = location.SkipUnknownFileTypes,
+                    ExcludedExtensions = NormalizeExtensionList(location.ExcludedExtensions),
                     WatchEnabled = location.WatchEnabled,
                     LastIndexedUtcTicks = location.LastIndexedUtcTicks,
                     FileCount = location.FileCount,
@@ -351,6 +363,7 @@ public sealed partial class IndexViewModel : ObservableObject, IDisposable
                 continue;
 
             location.Root = normalizedRoot;
+            location.ExcludedExtensions = NormalizeExtensionList(location.ExcludedExtensions);
             yield return location;
         }
 
@@ -373,10 +386,11 @@ public sealed partial class IndexViewModel : ObservableObject, IDisposable
         new()
         {
             Root = IndexPath.NormalizeRoot(root),
-            Recursive = _search.IncludeSubfolders,
-            IncludeHidden = false,
-            EnableDocumentExtraction = _search.EnableDocumentExtraction,
-            SkipUnknownFileTypes = _search.SkipUnknownFileTypes,
+            Recursive = NewIndexRecursive,
+            IncludeHidden = NewIndexIncludeHidden,
+            EnableDocumentExtraction = NewIndexEnableDocumentExtraction,
+            SkipUnknownFileTypes = NewIndexSkipUnknownFileTypes,
+            ExcludedExtensions = NormalizeExtensionList(NewIndexExcludedExtensions),
             WatchEnabled = true,
         };
 
@@ -691,6 +705,9 @@ public sealed partial class IndexViewModel : ObservableObject, IDisposable
             1 => "1 pending index change",
             _ => $"{count:n0} pending index changes",
         };
+
+    private static string NormalizeExtensionList(string raw) =>
+        string.Join("; ", ExtensionList.Parse(raw));
 
     private static string FormatBytes(long bytes)
     {

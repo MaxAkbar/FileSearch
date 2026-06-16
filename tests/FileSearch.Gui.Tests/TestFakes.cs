@@ -72,11 +72,17 @@ internal sealed class FakeIndexingService : IIndexingService
 
     public List<string> RemovedLocations { get; } = new();
 
+    public List<IndexedLocation> AddedLocations { get; } = new();
+
     public Task StartAsync(IEnumerable<IndexedLocation> locations, CancellationToken cancellationToken) => Task.CompletedTask;
 
     public Task StopAsync(CancellationToken cancellationToken) => Task.CompletedTask;
 
-    public Task AddOrUpdateLocationAsync(IndexedLocation location, bool queueInitialRefresh, CancellationToken cancellationToken) => Task.CompletedTask;
+    public Task AddOrUpdateLocationAsync(IndexedLocation location, bool queueInitialRefresh, CancellationToken cancellationToken)
+    {
+        AddedLocations.Add(location);
+        return Task.CompletedTask;
+    }
 
     public Task RemoveLocationAsync(string root, CancellationToken cancellationToken)
     {

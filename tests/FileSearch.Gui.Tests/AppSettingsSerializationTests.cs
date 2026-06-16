@@ -28,6 +28,7 @@ public sealed class AppSettingsSerializationTests
                     IncludeHidden = true,
                     EnableDocumentExtraction = false,
                     SkipUnknownFileTypes = true,
+                    ExcludedExtensions = ".dll; exe",
                     WatchEnabled = true,
                     LastIndexedUtcTicks = 638851392000000000,
                     FileCount = 42,
@@ -63,6 +64,7 @@ public sealed class AppSettingsSerializationTests
         Assert.True(location.IncludeHidden);
         Assert.False(location.EnableDocumentExtraction);
         Assert.True(location.SkipUnknownFileTypes);
+        Assert.Equal(".dll; exe", location.ExcludedExtensions);
         Assert.True(location.WatchEnabled);
         Assert.Equal(638851392000000000, location.LastIndexedUtcTicks);
         Assert.Equal(42, location.FileCount);

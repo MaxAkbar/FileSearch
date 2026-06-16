@@ -1,6 +1,7 @@
 using System.ComponentModel;
 using System.Runtime.CompilerServices;
 using System.Text.Json.Serialization;
+using FileSearch.Core;
 
 namespace FileSearch.Gui.Settings;
 
@@ -26,6 +27,8 @@ public sealed class IndexedLocationSettings : INotifyPropertyChanged
     public bool EnableDocumentExtraction { get; set; } = true;
 
     public bool SkipUnknownFileTypes { get; set; }
+
+    public string ExcludedExtensions { get; set; } = string.Empty;
 
     public bool WatchEnabled { get; set; } = true;
 
@@ -155,8 +158,23 @@ public sealed class IndexedLocationSettings : INotifyPropertyChanged
     public string RecursionSummary => Recursive ? "Includes subfolders" : "Top folder only";
 
     [JsonIgnore]
-    public string TypeSummary =>
-        $"{(EnableDocumentExtraction ? "Documents on" : "Documents off")}, {(SkipUnknownFileTypes ? "Known types only" : "Unknown text allowed")}";
+    public string TypeSummary
+    {
+        get
+        {
+            var parts = new List<string>
+            {
+                EnableDocumentExtraction ? "Documents on" : "Documents off",
+                SkipUnknownFileTypes ? "Known types only" : "Unknown text allowed",
+            };
+
+            var excluded = ExtensionList.Parse(ExcludedExtensions);
+            if (excluded.Length > 0)
+                parts.Add($"Excludes {string.Join(", ", excluded)}");
+
+            return string.Join(", ", parts);
+        }
+    }
 
     [JsonIgnore]
     public string LastIndexedSummary =>

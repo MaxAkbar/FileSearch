@@ -124,6 +124,43 @@ public sealed class IndexViewModelTests
     }
 
     [Fact]
+    public async Task AddFolderToIndexUsesNewIndexOptions()
+    {
+        var root = Path.Combine(Path.GetTempPath(), "filesearch-add-index-options-" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(root);
+        var indexingService = new FakeIndexingService();
+        var (_, index) = Build(indexingService: indexingService);
+        index.NewIndexRecursive = false;
+        index.NewIndexIncludeHidden = true;
+        index.NewIndexEnableDocumentExtraction = false;
+        index.NewIndexSkipUnknownFileTypes = true;
+        index.NewIndexExcludedExtensions = ".dll; exe";
+
+        try
+        {
+            await index.AddFolderToIndexAsync(root);
+
+            var location = Assert.Single(index.IndexedLocations);
+            Assert.False(location.Recursive);
+            Assert.True(location.IncludeHidden);
+            Assert.False(location.EnableDocumentExtraction);
+            Assert.True(location.SkipUnknownFileTypes);
+            Assert.Equal(".dll; .exe", location.ExcludedExtensions);
+
+            var indexed = Assert.Single(indexingService.AddedLocations);
+            Assert.False(indexed.WalkerOptions.Recursive);
+            Assert.True(indexed.WalkerOptions.IncludeHidden);
+            Assert.Contains(".dll", indexed.WalkerOptions.ExcludeExtensions);
+            Assert.Contains(".exe", indexed.WalkerOptions.ExcludeExtensions);
+            Assert.Contains(".pdf", indexed.WalkerOptions.ExcludeExtensions);
+        }
+        finally
+        {
+            Directory.Delete(root, recursive: true);
+        }
+    }
+
+    [Fact]
     public async Task CompactCommandRunsMaintenanceAndRefreshesDatabaseInfo()
     {
         var fileIndex = new FakeFileIndex

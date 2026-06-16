@@ -45,7 +45,7 @@
                 <RowDefinition Height="Auto"/>
             </Grid.RowDefinitions>
             <Grid.ColumnDefinitions>
-                <ColumnDefinition Width="320"/>
+                <ColumnDefinition Width="360"/>
                 <ColumnDefinition Width="16"/>
                 <ColumnDefinition Width="*"/>
             </Grid.ColumnDefinitions>
@@ -79,40 +79,69 @@
                                 <TextBlock Text="Add folder..."/>
                             </StackPanel>
                         </Button>
+                        <Expander Header="NEW INDEX OPTIONS"
+                                  IsExpanded="True"
+                                  Margin="0,12,0,0">
+                            <StackPanel Margin="2,8,2,0">
+                                <UniformGrid Columns="2" Margin="0,0,0,8">
+                                    <CheckBox Content="Subfolders"
+                                              IsChecked="{Binding Index.NewIndexRecursive}"
+                                              Margin="0,0,8,6"/>
+                                    <CheckBox Content="Hidden files"
+                                              IsChecked="{Binding Index.NewIndexIncludeHidden}"
+                                              Margin="0,0,0,6"/>
+                                    <CheckBox Content="Documents"
+                                              IsChecked="{Binding Index.NewIndexEnableDocumentExtraction}"
+                                              Margin="0,0,8,0"/>
+                                    <CheckBox Content="Known types only"
+                                              IsChecked="{Binding Index.NewIndexSkipUnknownFileTypes}"
+                                              Margin="0"/>
+                                </UniformGrid>
+                                <TextBlock Text="Exclude extensions"
+                                           Style="{StaticResource FieldLabelStyle}"
+                                           Margin="0,0,0,4"/>
+                                <TextBox Text="{Binding Index.NewIndexExcludedExtensions, UpdateSourceTrigger=PropertyChanged}"
+                                         ToolTip="Example: .dll; .exe; .pdb"/>
+                            </StackPanel>
+                        </Expander>
                     </StackPanel>
 
-                    <ListBox ItemsSource="{Binding Index.IndexedLocations}"
-                             SelectedItem="{Binding Index.SelectedIndexedLocation, Mode=TwoWay}"
-                             Style="{StaticResource NavListBoxStyle}"
-                             ItemContainerStyle="{StaticResource NavListBoxItemStyle}">
-                        <ListBox.ItemTemplate>
-                            <DataTemplate>
-                                <Grid ToolTip="{Binding Root}">
-                                    <Grid.ColumnDefinitions>
-                                        <ColumnDefinition Width="Auto"/>
-                                        <ColumnDefinition Width="*"/>
-                                    </Grid.ColumnDefinitions>
-                                    <ui:FontIcon Glyph="&#xE8B7;" FontSize="14" Margin="0,0,10,0"
-                                                 Foreground="{DynamicResource Atlas.AccentBrush}"
-                                                 VerticalAlignment="Center"/>
-                                    <StackPanel Grid.Column="1">
-                                        <TextBlock Text="{Binding DisplayName}" TextTrimming="CharacterEllipsis"/>
-                                        <WrapPanel>
-                                            <Border Style="{StaticResource IndexStatusBadgeStyle}" Margin="0,3,4,3">
-                                                <TextBlock Text="{Binding RuntimeStatusSummary}"
-                                                           Style="{StaticResource IndexStatusBadgeTextStyle}"/>
-                                            </Border>
-                                            <Border Style="{StaticResource WatchStatusBadgeStyle}" Margin="0,3,0,3">
-                                                <TextBlock Text="{Binding WatchSummary}"
-                                                           Style="{StaticResource IndexStatusBadgeTextStyle}"/>
-                                            </Border>
-                                        </WrapPanel>
-                                        <TextBlock Text="{Binding Summary}" Style="{StaticResource MutedValueStyle}"/>
-                                    </StackPanel>
-                                </Grid>
-                            </DataTemplate>
-                        </ListBox.ItemTemplate>
-                    </ListBox>
+                    <ScrollViewer VerticalScrollBarVisibility="Auto"
+                                  HorizontalScrollBarVisibility="Disabled"
+                                  Margin="0,2,0,0">
+                        <ListBox ItemsSource="{Binding Index.IndexedLocations}"
+                                 SelectedItem="{Binding Index.SelectedIndexedLocation, Mode=TwoWay}"
+                                 Style="{StaticResource NavListBoxStyle}"
+                                 ItemContainerStyle="{StaticResource NavListBoxItemStyle}">
+                            <ListBox.ItemTemplate>
+                                <DataTemplate>
+                                    <Grid ToolTip="{Binding Root}">
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="Auto"/>
+                                            <ColumnDefinition Width="*"/>
+                                        </Grid.ColumnDefinitions>
+                                        <ui:FontIcon Glyph="&#xE8B7;" FontSize="14" Margin="0,0,10,0"
+                                                     Foreground="{DynamicResource Atlas.AccentBrush}"
+                                                     VerticalAlignment="Center"/>
+                                        <StackPanel Grid.Column="1">
+                                            <TextBlock Text="{Binding DisplayName}" TextTrimming="CharacterEllipsis"/>
+                                            <WrapPanel>
+                                                <Border Style="{StaticResource IndexStatusBadgeStyle}" Margin="0,3,4,3">
+                                                    <TextBlock Text="{Binding RuntimeStatusSummary}"
+                                                               Style="{StaticResource IndexStatusBadgeTextStyle}"/>
+                                                </Border>
+                                                <Border Style="{StaticResource WatchStatusBadgeStyle}" Margin="0,3,0,3">
+                                                    <TextBlock Text="{Binding WatchSummary}"
+                                                               Style="{StaticResource IndexStatusBadgeTextStyle}"/>
+                                                </Border>
+                                            </WrapPanel>
+                                            <TextBlock Text="{Binding Summary}" Style="{StaticResource MutedValueStyle}"/>
+                                        </StackPanel>
+                                    </Grid>
+                                </DataTemplate>
+                            </ListBox.ItemTemplate>
+                        </ListBox>
+                    </ScrollViewer>
                 </DockPanel>
             </Border>
 
