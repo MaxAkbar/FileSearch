@@ -101,6 +101,14 @@ internal static class Sql
 
         public void AppendFormatted(long value) => _builder.Append(value.ToString(CultureInfo.InvariantCulture));
 
+        public void AppendFormatted(long? value)
+        {
+            if (value is { } number)
+                AppendFormatted(number);
+            else
+                _builder.Append("NULL");
+        }
+
         public void AppendFormatted(int value) => _builder.Append(value.ToString(CultureInfo.InvariantCulture));
 
         public void AppendFormatted(Identifier identifier) => _builder.Append(identifier.Name);

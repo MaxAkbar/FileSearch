@@ -21,6 +21,14 @@ internal sealed record ExistingFileRow(long Id, string Path, long SizeBytes, lon
 
 internal sealed record RootRow(long Id, long IndexedUtcTicks, string OptionsHash);
 
+internal sealed record VolumeRow(
+    long Id,
+    string VolumeKey,
+    ulong? JournalId,
+    long LastCommittedUsn,
+    string Health,
+    string? LastError);
+
 internal sealed record IndexedLine(
     string Path,
     string FileName,
@@ -54,7 +62,9 @@ internal static class IndexTables
 
         var id = await GetNextIdAsync(db, "index_roots", cancellationToken).ConfigureAwait(false);
         await db.ExecuteAsync(
-            Sql.Format($"INSERT INTO index_roots VALUES ({id}, {root}, 0, {profile})"),
+                Sql.Format(
+                    $"INSERT INTO index_roots (id, root_path, indexed_utc_ticks, options_hash, volume_id, last_full_scan_utc_ticks) " +
+                $"VALUES ({id}, {root}, 0, {profile}, {(long?)null}, {(long?)null})"),
             cancellationToken).ConfigureAwait(false);
         return id;
     }
@@ -102,11 +112,83 @@ internal static class IndexTables
     public static Task MarkRootRefreshedAsync(Database db, long rootId, string profile, CancellationToken cancellationToken) =>
         ExecuteAsync(
             db,
-            Sql.Format($"UPDATE index_roots SET indexed_utc_ticks = {DateTime.UtcNow.Ticks}, options_hash = {profile} WHERE id = {rootId}"),
+            Sql.Format(
+                $"UPDATE index_roots SET indexed_utc_ticks = {DateTime.UtcNow.Ticks}, " +
+                $"options_hash = {profile}, last_full_scan_utc_ticks = {DateTime.UtcNow.Ticks} WHERE id = {rootId}"),
             cancellationToken);
 
     public static Task DeleteRootAsync(Database db, long rootId, CancellationToken cancellationToken) =>
         ExecuteAsync(db, Sql.Format($"DELETE FROM index_roots WHERE id = {rootId}"), cancellationToken);
+
+    public static Task SetRootVolumeAsync(Database db, long rootId, long volumeId, CancellationToken cancellationToken) =>
+        ExecuteAsync(db, Sql.Format($"UPDATE index_roots SET volume_id = {volumeId} WHERE id = {rootId}"), cancellationToken);
+
+    // ----- index_volumes -----
+
+    public static async Task<long> EnsureVolumeAsync(
+        Database db,
+        IndexVolumeInfo volume,
+        CancellationToken cancellationToken)
+    {
+        var existing = await GetVolumeRowAsync(db, volume.VolumeKey, cancellationToken).ConfigureAwait(false);
+        var now = DateTime.UtcNow.Ticks;
+        if (existing is not null)
+        {
+            await db.ExecuteAsync(
+                Sql.Format(
+                    $"UPDATE index_volumes SET volume_serial = {volume.VolumeSerial}, filesystem_name = {volume.FileSystemName}, " +
+                    $"is_remote = {Bool(volume.IsRemote)}, usn_supported = {Bool(volume.UsnSupported)}, " +
+                    $"last_checked_utc_ticks = {now} WHERE id = {existing.Id}"),
+                cancellationToken).ConfigureAwait(false);
+            return existing.Id;
+        }
+
+        var id = await GetNextIdAsync(db, "index_volumes", cancellationToken).ConfigureAwait(false);
+        await db.ExecuteAsync(
+                Sql.Format(
+                    $"INSERT INTO index_volumes (id, volume_key, volume_serial, filesystem_name, is_remote, usn_supported, journal_id, last_committed_usn, health, last_checked_utc_ticks, last_error) " +
+                $"VALUES ({id}, {volume.VolumeKey}, {volume.VolumeSerial}, {volume.FileSystemName}, {Bool(volume.IsRemote)}, {Bool(volume.UsnSupported)}, {(string?)null}, 0, {"unknown"}, {now}, {(string?)null})"),
+            cancellationToken).ConfigureAwait(false);
+        return id;
+    }
+
+    public static async Task<VolumeRow?> GetVolumeRowAsync(
+        Database db,
+        string volumeKey,
+        CancellationToken cancellationToken)
+    {
+        await using var result = await db.ExecuteAsync(
+            Sql.Format($"SELECT id, volume_key, journal_id, last_committed_usn, health, last_error FROM index_volumes WHERE volume_key = {volumeKey}"),
+            cancellationToken).ConfigureAwait(false);
+
+        if (!await result.MoveNextAsync(cancellationToken).ConfigureAwait(false))
+            return null;
+
+        var journalText = result.Current[2].IsNull ? null : result.Current[2].AsText;
+        return new VolumeRow(
+            result.Current[0].AsInteger,
+            result.Current[1].AsText,
+            ulong.TryParse(journalText, out var journalId) ? journalId : null,
+            result.Current[3].AsInteger,
+            result.Current[4].AsText,
+            result.Current[5].IsNull ? null : result.Current[5].AsText);
+    }
+
+    public static Task UpdateVolumeCheckpointAsync(
+        Database db,
+        long volumeId,
+        ulong journalId,
+        long lastCommittedUsn,
+        string health,
+        string? error,
+        CancellationToken cancellationToken) =>
+        ExecuteAsync(
+            db,
+            Sql.Format(
+                $"UPDATE index_volumes SET journal_id = {journalId.ToString(System.Globalization.CultureInfo.InvariantCulture)}, " +
+                $"last_committed_usn = {lastCommittedUsn}, health = {health}, last_checked_utc_ticks = {DateTime.UtcNow.Ticks}, " +
+                $"last_error = {error} WHERE id = {volumeId}"),
+            cancellationToken);
 
     // ----- files -----
 
@@ -162,33 +244,57 @@ internal static class IndexTables
         FileInfo info,
         string status,
         string? error,
+        IndexedFileIdentity? identity,
         CancellationToken cancellationToken)
     {
         var fileName = Path.GetFileName(path);
         var extension = Path.GetExtension(path).ToLowerInvariant();
-        var existing = await ReadIdsAsync(
-            db,
-            Sql.Format($"SELECT id FROM files WHERE root_id = {rootId} AND path = {path}"),
-            cancellationToken).ConfigureAwait(false);
+        var existingByIdentity = identity is null
+            ? new List<long>()
+            : await ReadIdsAsync(
+                db,
+                Sql.Format(
+                    $"SELECT id FROM files WHERE root_id = {rootId} AND volume_id = {identity.VolumeId} " +
+                    $"AND file_reference_number = {identity.FileReferenceNumber}"),
+                cancellationToken).ConfigureAwait(false);
+        var existingByPath = await ReadIdsAsync(
+                db,
+                Sql.Format($"SELECT id FROM files WHERE root_id = {rootId} AND path = {path}"),
+                cancellationToken).ConfigureAwait(false);
         var now = DateTime.UtcNow.Ticks;
+        var fileId = existingByIdentity.FirstOrDefault();
+        var pathId = existingByPath.FirstOrDefault();
 
-        if (existing.Count == 0)
+        if (fileId > 0 && pathId > 0 && fileId != pathId)
+            await DeleteFileByIdAsync(db, pathId, cancellationToken).ConfigureAwait(false);
+
+        foreach (var duplicateId in existingByIdentity.Skip(1))
+            await DeleteFileByIdAsync(db, duplicateId, cancellationToken).ConfigureAwait(false);
+
+        if (fileId == 0)
+            fileId = pathId;
+
+        if (fileId == 0)
         {
             var id = await GetNextIdAsync(db, "files", cancellationToken).ConfigureAwait(false);
             await db.ExecuteAsync(
                 Sql.Format(
-                    $"INSERT INTO files VALUES ({id}, {rootId}, {path}, {fileName}, {extension}, " +
-                    $"{info.Length}, {info.LastWriteTimeUtc.Ticks}, {now}, {status}, {error})"),
+                    $"INSERT INTO files (id, root_id, path, file_name, extension, size_bytes, modified_utc_ticks, indexed_utc_ticks, status, error, volume_id, file_reference_number, parent_file_reference_number, last_observed_usn) " +
+                    $"VALUES ({id}, {rootId}, {path}, {fileName}, {extension}, {info.Length}, {info.LastWriteTimeUtc.Ticks}, " +
+                    $"{now}, {status}, {error}, {identity?.VolumeId}, {identity?.FileReferenceNumber}, " +
+                    $"{identity?.ParentFileReferenceNumber}, {identity?.LastObservedUsn})"),
                 cancellationToken).ConfigureAwait(false);
             return id;
         }
 
-        var fileId = existing[0];
         await db.ExecuteAsync(
             Sql.Format(
-                $"UPDATE files SET file_name = {fileName}, extension = {extension}, size_bytes = {info.Length}, " +
+                $"UPDATE files SET path = {path}, file_name = {fileName}, extension = {extension}, size_bytes = {info.Length}, " +
                 $"modified_utc_ticks = {info.LastWriteTimeUtc.Ticks}, indexed_utc_ticks = {now}, " +
-                $"status = {status}, error = {error} WHERE id = {fileId}"),
+                $"status = {status}, error = {error}, volume_id = {identity?.VolumeId}, " +
+                $"file_reference_number = {identity?.FileReferenceNumber}, " +
+                $"parent_file_reference_number = {identity?.ParentFileReferenceNumber}, " +
+                $"last_observed_usn = {identity?.LastObservedUsn} WHERE id = {fileId}"),
             cancellationToken).ConfigureAwait(false);
         return fileId;
     }
@@ -222,6 +328,21 @@ internal static class IndexTables
         }
     }
 
+    public static async Task DeleteFilesByIdentityAsync(
+        Database db,
+        long volumeId,
+        string fileReferenceNumber,
+        CancellationToken cancellationToken)
+    {
+        var ids = await ReadIdsAsync(
+            db,
+            Sql.Format($"SELECT id FROM files WHERE volume_id = {volumeId} AND file_reference_number = {fileReferenceNumber}"),
+            cancellationToken).ConfigureAwait(false);
+
+        foreach (var id in ids)
+            await DeleteFileByIdAsync(db, id, cancellationToken).ConfigureAwait(false);
+    }
+
     public static Task<List<long>> ReadFileIdsForRootAsync(Database db, long rootId, CancellationToken cancellationToken) =>
         ReadIdsAsync(db, Sql.Format($"SELECT id FROM files WHERE root_id = {rootId}"), cancellationToken);
 
@@ -235,6 +356,12 @@ internal static class IndexTables
 
     public static Task DeleteLinesAsync(Database db, long fileId, CancellationToken cancellationToken) =>
         ExecuteAsync(db, Sql.Format($"DELETE FROM lines WHERE file_id = {fileId}"), cancellationToken);
+
+    private static async Task DeleteFileByIdAsync(Database db, long fileId, CancellationToken cancellationToken)
+    {
+        await DeleteLinesAsync(db, fileId, cancellationToken).ConfigureAwait(false);
+        await db.ExecuteAsync(Sql.Format($"DELETE FROM files WHERE id = {fileId}"), cancellationToken).ConfigureAwait(false);
+    }
 
     public static Task DeleteLinesForFilesAsync(Database db, IEnumerable<long> fileIds, CancellationToken cancellationToken) =>
         ExecuteAsync(db, Sql.Format($"DELETE FROM lines WHERE file_id IN ({new Sql.IdList(fileIds)})"), cancellationToken);
@@ -361,6 +488,8 @@ internal static class IndexTables
     {
         await db.ExecuteAsync(sql, cancellationToken).ConfigureAwait(false);
     }
+
+    private static int Bool(bool value) => value ? 1 : 0;
 
     private static async Task<long> GetCountAsync(Database db, string sql, CancellationToken cancellationToken)
     {

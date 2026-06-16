@@ -18,6 +18,7 @@ public sealed class IndexingService : IIndexingService
     private readonly IFileIndex _index;
     private readonly IIndexQueue _queue;
     private readonly IIndexWatcherService _watchers;
+    private readonly IIndexStartupCatchUpService? _startupCatchUp;
     private readonly object _sync = new();
     private readonly Dictionary<string, IndexedLocation> _locations = new(StringComparer.OrdinalIgnoreCase);
 
@@ -40,11 +41,13 @@ public sealed class IndexingService : IIndexingService
         IFileIndex index,
         IIndexQueue queue,
         IIndexWatcherService watchers,
-        ILogger<IndexingService>? logger = null)
+        ILogger<IndexingService>? logger = null,
+        IIndexStartupCatchUpService? startupCatchUp = null)
     {
         _index = index;
         _queue = queue;
         _watchers = watchers;
+        _startupCatchUp = startupCatchUp;
         _logger = logger ?? NullLogger<IndexingService>.Instance;
     }
 
@@ -72,10 +75,17 @@ public sealed class IndexingService : IIndexingService
 
         await _queue.LoadPendingAsync(SnapshotLocationMap(), cancellationToken).ConfigureAwait(false);
 
+        var catchUp = await CatchUpStartupChangesAsync(cancellationToken).ConfigureAwait(false);
+
         foreach (var location in SnapshotLocations())
         {
-            if (Directory.Exists(location.Root))
-                await EnqueueRootRefreshAsync(location.Root, location.WalkerOptions, IndexQueuePriority.Low, cancellationToken).ConfigureAwait(false);
+            if (!Directory.Exists(location.Root))
+                continue;
+
+            if (catchUp.HandledRoots.Contains(IndexPath.NormalizeRoot(location.Root)))
+                continue;
+
+            await EnqueueRootRefreshAsync(location.Root, location.WalkerOptions, IndexQueuePriority.Low, cancellationToken).ConfigureAwait(false);
         }
 
         lock (_sync)
@@ -88,6 +98,26 @@ public sealed class IndexingService : IIndexingService
         }
 
         Publish(false, "Background indexing ready.", force: true);
+    }
+
+    private async Task<IndexStartupCatchUpResult> CatchUpStartupChangesAsync(CancellationToken cancellationToken)
+    {
+        if (_startupCatchUp is null)
+            return IndexStartupCatchUpResult.Empty;
+
+        try
+        {
+            return await _startupCatchUp.CatchUpAsync(SnapshotLocations(), cancellationToken).ConfigureAwait(false);
+        }
+        catch (OperationCanceledException)
+        {
+            throw;
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Startup USN catch-up failed; falling back to startup root refresh.");
+            return IndexStartupCatchUpResult.Empty;
+        }
     }
 
     public async Task StopAsync(CancellationToken cancellationToken)

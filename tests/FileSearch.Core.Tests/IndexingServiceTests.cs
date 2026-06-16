@@ -34,6 +34,73 @@ public sealed class IndexingServiceTests
     }
 
     [Fact]
+    public async Task StartAsyncSkipsRootRefreshForCatchUpHandledLocation()
+    {
+        var index = new BlockingFileIndex();
+        var queue = new RecordingQueue();
+        var root = Path.Combine(Path.GetTempPath(), "filesearch-start-catchup-" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(root);
+        var catchUp = new StaticStartupCatchUp(new IndexStartupCatchUpResult(
+            new HashSet<string>(StringComparer.OrdinalIgnoreCase) { IndexPath.NormalizeRoot(root) },
+            new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)));
+        var service = new IndexingService(
+            index,
+            queue,
+            new IndexWatcherService(queue),
+            startupCatchUp: catchUp);
+
+        await service.StartAsync(
+            new[] { new IndexedLocation(root, new WalkerOptions(), WatchEnabled: false) },
+            TestContext.Current.CancellationToken);
+
+        try
+        {
+            Assert.Empty(queue.Enqueued);
+        }
+        finally
+        {
+            await service.StopAsync(TestContext.Current.CancellationToken);
+            Directory.Delete(root, recursive: true);
+        }
+    }
+
+    [Fact]
+    public async Task StartAsyncQueuesRootRefreshForCatchUpFallbackLocation()
+    {
+        var index = new BlockingFileIndex();
+        var queue = new RecordingQueue();
+        var root = Path.Combine(Path.GetTempPath(), "filesearch-start-fallback-" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(root);
+        var catchUp = new StaticStartupCatchUp(new IndexStartupCatchUpResult(
+            new HashSet<string>(StringComparer.OrdinalIgnoreCase),
+            new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
+            {
+                [IndexPath.NormalizeRoot(root)] = "No checkpoint.",
+            }));
+        var service = new IndexingService(
+            index,
+            queue,
+            new IndexWatcherService(queue),
+            startupCatchUp: catchUp);
+
+        await service.StartAsync(
+            new[] { new IndexedLocation(root, new WalkerOptions(), WatchEnabled: false) },
+            TestContext.Current.CancellationToken);
+
+        try
+        {
+            var item = Assert.Single(queue.Enqueued);
+            Assert.Equal(IndexPath.NormalizeRoot(root), item.Root);
+            Assert.Equal(IndexChangeKind.RefreshRoot, item.Kind);
+        }
+        finally
+        {
+            await service.StopAsync(TestContext.Current.CancellationToken);
+            Directory.Delete(root, recursive: true);
+        }
+    }
+
+    [Fact]
     public async Task ForegroundSearchDefersRunningRootRefresh()
     {
         var index = new BlockingFileIndex();
@@ -219,6 +286,18 @@ public sealed class IndexingServiceTests
             Task.CompletedTask;
     }
 
+    private sealed class StaticStartupCatchUp : IIndexStartupCatchUpService
+    {
+        private readonly IndexStartupCatchUpResult _result;
+
+        public StaticStartupCatchUp(IndexStartupCatchUpResult result) => _result = result;
+
+        public Task<IndexStartupCatchUpResult> CatchUpAsync(
+            IReadOnlyCollection<IndexedLocation> locations,
+            CancellationToken cancellationToken) =>
+            Task.FromResult(_result);
+    }
+
     private sealed class BlockingFileIndex : IFileIndex
     {
         public TaskCompletionSource RefreshStarted { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
@@ -271,7 +350,7 @@ public sealed class IndexingServiceTests
             Task.FromResult<IReadOnlyList<IndexedLocationInfo>>(Array.Empty<IndexedLocationInfo>());
 
         public Task<IndexDatabaseInfo> GetDatabaseInfoAsync(CancellationToken cancellationToken) =>
-            Task.FromResult(new IndexDatabaseInfo(DatabasePath, false, false, "3", 0, 0, 0, 0, 0, 0, 0, null));
+            Task.FromResult(new IndexDatabaseInfo(DatabasePath, false, false, "4", 0, 0, 0, 0, 0, 0, 0, null));
 
         public Task CompactAsync(CancellationToken cancellationToken) =>
             Task.CompletedTask;

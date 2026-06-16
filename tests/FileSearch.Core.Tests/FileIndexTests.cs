@@ -812,7 +812,7 @@ public sealed class FileIndexTests : IDisposable
         Assert.Equal(_dbPath, info.DatabasePath);
         Assert.True(info.Exists);
         Assert.True(info.IsCompatible);
-        Assert.Equal("3", info.SchemaVersion);
+        Assert.Equal("4", info.SchemaVersion);
         Assert.True(info.DatabaseBytes > 0);
         Assert.True(info.TotalBytes >= info.DatabaseBytes);
         Assert.Equal(1, info.LocationCount);
@@ -820,6 +820,66 @@ public sealed class FileIndexTests : IDisposable
         Assert.Equal(3, info.TotalLineCount);
         Assert.Equal(1, info.PendingChangeCount);
         Assert.NotNull(info.LastIndexedUtc);
+    }
+
+    [Fact]
+    public async Task RefreshPersistsVolumeCheckpoint_WhenJournalIsAvailable()
+    {
+        File.WriteAllText(Path.Combine(_root, "checkpoint.txt"), "checkpoint needle\n");
+        var volume = FakeVolume(_root);
+        var resolver = new FakeVolumeResolver(volume);
+        var journal = new FakeUsnJournalReader(new UsnJournalSnapshot(123, 1, 50));
+        using var index = new CSharpDbFileIndex(
+            new FileIndexOptions { DatabasePath = _dbPath },
+            new FileWalker(),
+            _registry,
+            searchOptions: null,
+            logger: null,
+            resolver,
+            journal);
+
+        await index.BuildOrRefreshAsync(
+            new IndexRequest(_root, new WalkerOptions()),
+            TestContext.Current.CancellationToken);
+
+        var checkpoint = await index.GetVolumeCheckpointCoreAsync(volume, TestContext.Current.CancellationToken);
+
+        Assert.NotNull(checkpoint);
+        Assert.Equal((ulong)123, checkpoint.JournalId);
+        Assert.Equal(50, checkpoint.LastCommittedUsn);
+        Assert.Equal("healthy", checkpoint.Health);
+    }
+
+    [Fact]
+    public async Task UpsertUsesFileIdentityToMoveExistingRowAfterRename()
+    {
+        var oldPath = Path.Combine(_root, "old-name.txt");
+        var newPath = Path.Combine(_root, "new-name.txt");
+        File.WriteAllText(oldPath, "rename needle\n");
+        var resolver = new FakeVolumeResolver(FakeVolume(_root), "42");
+        using var index = new CSharpDbFileIndex(
+            new FileIndexOptions { DatabasePath = _dbPath },
+            new FileWalker(),
+            _registry,
+            searchOptions: null,
+            logger: null,
+            resolver,
+            journalReader: null);
+
+        await index.BuildOrRefreshAsync(
+            new IndexRequest(_root, new WalkerOptions()),
+            TestContext.Current.CancellationToken);
+
+        File.Move(oldPath, newPath);
+        await index.UpsertFileAsync(_root, newPath, new WalkerOptions(), TestContext.Current.CancellationToken);
+
+        var request = new SearchRequest(new TermQuery("needle"), new[] { _root }, new WalkerOptions(), UseIndex: true);
+        var hits = new List<Hit>();
+        await foreach (var hit in index.SearchAsync(request, TestContext.Current.CancellationToken))
+            hits.Add(hit);
+
+        var found = Assert.Single(hits);
+        Assert.EndsWith("new-name.txt", found.Path);
     }
 
     [Fact]
@@ -888,6 +948,16 @@ public sealed class FileIndexTests : IDisposable
             .Order(StringComparer.Ordinal)
             .ToList();
 
+    private static IndexVolumeInfo FakeVolume(string root) =>
+        new(
+            "fake-volume",
+            Path.GetPathRoot(root) ?? root,
+            @"\\.\C:",
+            "123",
+            "NTFS",
+            IsRemote: false,
+            UsnSupported: true);
+
     private static async ValueTask SafeDisposeAsync(Database db)
     {
         try
@@ -896,6 +966,65 @@ public sealed class FileIndexTests : IDisposable
         }
         catch (Exception ex) when (ex.Message.Contains("WAL file", StringComparison.OrdinalIgnoreCase))
         {
+        }
+    }
+
+    private sealed class FakeVolumeResolver : IIndexVolumeResolver
+    {
+        private readonly IndexVolumeInfo _volume;
+        private readonly string _fileId;
+
+        public FakeVolumeResolver(IndexVolumeInfo volume, string fileId = "1")
+        {
+            _volume = volume;
+            _fileId = fileId;
+        }
+
+        public bool TryResolveVolume(string root, out IndexVolumeInfo volume, out string fallbackReason)
+        {
+            volume = _volume;
+            fallbackReason = string.Empty;
+            return true;
+        }
+
+        public bool TryGetFileIdentity(string path, out ResolvedFileIdentity identity)
+        {
+            identity = new ResolvedFileIdentity(_fileId, ParentFileReferenceNumber: null);
+            return true;
+        }
+
+        public bool TryResolvePathFromFileId(
+            IndexVolumeInfo volume,
+            string fileReferenceNumber,
+            out string path,
+            out string fallbackReason)
+        {
+            path = string.Empty;
+            fallbackReason = "Not used by this test.";
+            return false;
+        }
+    }
+
+    private sealed class FakeUsnJournalReader : IUsnJournalReader
+    {
+        private readonly UsnJournalSnapshot _snapshot;
+
+        public FakeUsnJournalReader(UsnJournalSnapshot snapshot) => _snapshot = snapshot;
+
+        public Task<UsnJournalSnapshot> QueryAsync(
+            IndexVolumeInfo volume,
+            CancellationToken cancellationToken) =>
+            Task.FromResult(_snapshot);
+
+        public async IAsyncEnumerable<UsnChangeRecord> ReadChangesAsync(
+            IndexVolumeInfo volume,
+            long startUsn,
+            long stopAtUsn,
+            ulong journalId,
+            [System.Runtime.CompilerServices.EnumeratorCancellation] CancellationToken cancellationToken)
+        {
+            await Task.CompletedTask;
+            yield break;
         }
     }
 
@@ -967,7 +1096,7 @@ public sealed class FileIndexTests : IDisposable
             Task.FromResult<IReadOnlyList<IndexedLocationInfo>>(Array.Empty<IndexedLocationInfo>());
 
         public Task<IndexDatabaseInfo> GetDatabaseInfoAsync(CancellationToken cancellationToken) =>
-            Task.FromResult(new IndexDatabaseInfo(DatabasePath, false, false, "3", 0, 0, 0, 0, 0, 0, 0, null));
+            Task.FromResult(new IndexDatabaseInfo(DatabasePath, false, false, "4", 0, 0, 0, 0, 0, 0, 0, null));
 
         public Task CompactAsync(CancellationToken cancellationToken) => Task.CompletedTask;
 
@@ -1016,7 +1145,7 @@ public sealed class FileIndexTests : IDisposable
             Task.FromResult<IReadOnlyList<IndexedLocationInfo>>(Array.Empty<IndexedLocationInfo>());
 
         public Task<IndexDatabaseInfo> GetDatabaseInfoAsync(CancellationToken cancellationToken) =>
-            Task.FromResult(new IndexDatabaseInfo(DatabasePath, false, false, "3", 0, 0, 0, 0, 0, 0, 0, null));
+            Task.FromResult(new IndexDatabaseInfo(DatabasePath, false, false, "4", 0, 0, 0, 0, 0, 0, 0, null));
 
         public Task CompactAsync(CancellationToken cancellationToken) => Task.CompletedTask;
 

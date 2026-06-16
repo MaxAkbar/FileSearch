@@ -48,12 +48,16 @@ public static class ServiceCollectionExtensions
         });
 
         services.TryAddSingleton<FileIndexOptions>();
+        services.TryAddSingleton<IIndexVolumeResolver, WindowsIndexVolumeResolver>();
+        services.TryAddSingleton<IUsnJournalReader, WindowsUsnJournalReader>();
         services.TryAddSingleton<IFileIndex>(sp => new CSharpDbFileIndex(
             sp.GetService<FileIndexOptions>(),
             sp.GetRequiredService<IFileWalker>(),
             sp.GetRequiredService<IExtractorRegistry>(),
             sp.GetService<SearchOptions>(),
-            sp.GetService<ILogger<CSharpDbFileIndex>>()));
+            sp.GetService<ILogger<CSharpDbFileIndex>>(),
+            sp.GetService<IIndexVolumeResolver>(),
+            sp.GetService<IUsnJournalReader>()));
 
         // Role-interface slices of the index, so consumers can depend on the
         // narrowest contract they need (ISP).
@@ -62,6 +66,8 @@ public static class ServiceCollectionExtensions
         services.TryAddSingleton<IIndexMaintenance>(sp => sp.GetRequiredService<IFileIndex>());
         services.TryAddSingleton<IPendingChangeStore>(sp => sp.GetRequiredService<IFileIndex>());
 
+        services.TryAddSingleton<IIndexCatchUpStore, CSharpDbIndexCatchUpStore>();
+        services.TryAddSingleton<IIndexStartupCatchUpService, IndexStartupCatchUpService>();
         services.TryAddSingleton<IIndexQueue, IndexQueue>();
         services.TryAddSingleton<IIndexWatcherService, IndexWatcherService>();
         services.TryAddSingleton<IIndexingService, IndexingService>();

@@ -31,6 +31,8 @@ public sealed class CSharpDbFileIndex : IFileIndex, IDisposable
     private readonly IFileWalker _walker;
     private readonly IExtractorRegistry _extractors;
     private readonly SearchOptions _searchOptions;
+    private readonly IIndexVolumeResolver? _volumeResolver;
+    private readonly IUsnJournalReader? _journalReader;
     private readonly ILogger _logger;
 
     public CSharpDbFileIndex(
@@ -39,10 +41,24 @@ public sealed class CSharpDbFileIndex : IFileIndex, IDisposable
         IExtractorRegistry extractors,
         SearchOptions? searchOptions = null,
         ILogger<CSharpDbFileIndex>? logger = null)
+        : this(options, walker, extractors, searchOptions, logger, null, null)
+    {
+    }
+
+    internal CSharpDbFileIndex(
+        FileIndexOptions? options,
+        IFileWalker walker,
+        IExtractorRegistry extractors,
+        SearchOptions? searchOptions,
+        ILogger<CSharpDbFileIndex>? logger,
+        IIndexVolumeResolver? volumeResolver,
+        IUsnJournalReader? journalReader)
     {
         _walker = walker ?? throw new ArgumentNullException(nameof(walker));
         _extractors = extractors ?? throw new ArgumentNullException(nameof(extractors));
         _searchOptions = searchOptions ?? new SearchOptions();
+        _volumeResolver = volumeResolver;
+        _journalReader = journalReader;
         _logger = logger ?? NullLogger<CSharpDbFileIndex>.Instance;
         _database = new IndexDatabase((options ?? new FileIndexOptions()).DatabasePath, _logger);
     }
@@ -88,6 +104,7 @@ public sealed class CSharpDbFileIndex : IFileIndex, IDisposable
 
             var profile = IndexProfile.FromWalkerOptions(indexingOptions).ToStorageString();
             var rootId = await IndexTables.EnsureRootAsync(db, normalizedRoot, profile, cancellationToken).ConfigureAwait(false);
+            var volumeContext = await TryPrepareVolumeAsync(db, rootId, normalizedRoot, cancellationToken).ConfigureAwait(false);
 
             if (!File.Exists(normalizedPath))
             {
@@ -96,9 +113,22 @@ public sealed class CSharpDbFileIndex : IFileIndex, IDisposable
             }
 
             var info = new FileInfo(normalizedPath);
+            var identity = TryGetIndexedFileIdentity(volumeContext?.VolumeId, normalizedPath, lastObservedUsn: null);
             if (ShouldSkipSingleFile(normalizedRoot, info, indexingOptions))
             {
-                await IndexTables.DeleteFileAsync(db, rootId, normalizedPath, cancellationToken).ConfigureAwait(false);
+                if (identity is not null)
+                {
+                    await IndexTables.DeleteFilesByIdentityAsync(
+                        db,
+                        identity.VolumeId,
+                        identity.FileReferenceNumber,
+                        cancellationToken).ConfigureAwait(false);
+                }
+                else
+                {
+                    await IndexTables.DeleteFileAsync(db, rootId, normalizedPath, cancellationToken).ConfigureAwait(false);
+                }
+
                 return;
             }
 
@@ -108,7 +138,7 @@ public sealed class CSharpDbFileIndex : IFileIndex, IDisposable
             if (existingRow is not null && IsUnchanged(existingRow, info))
                 return;
 
-            await IndexSingleFileAsync(db, rootId, normalizedPath, info, cancellationToken).ConfigureAwait(false);
+            await IndexSingleFileAsync(db, rootId, normalizedPath, info, identity, cancellationToken).ConfigureAwait(false);
         }, cancellationToken).ConfigureAwait(false);
     }
 
@@ -425,6 +455,74 @@ public sealed class CSharpDbFileIndex : IFileIndex, IDisposable
             cancellationToken).ConfigureAwait(false);
     }
 
+    internal async Task<IndexVolumeCheckpoint?> GetVolumeCheckpointCoreAsync(
+        IndexVolumeInfo volume,
+        CancellationToken cancellationToken)
+    {
+        var db = await _database.OpenExistingAsync(cancellationToken).ConfigureAwait(false);
+        if (db is null)
+            return null;
+
+        try
+        {
+            var row = await IndexTables.GetVolumeRowAsync(db, volume.VolumeKey, cancellationToken).ConfigureAwait(false);
+            return row is null
+                ? null
+                : new IndexVolumeCheckpoint(
+                    row.Id,
+                    row.VolumeKey,
+                    row.JournalId,
+                    row.LastCommittedUsn,
+                    row.Health,
+                    row.LastError);
+        }
+        finally
+        {
+            await IndexDatabase.CloseQuietlyAsync(db).ConfigureAwait(false);
+        }
+    }
+
+    internal async Task DeleteFileByIdentityCoreAsync(
+        string volumeKey,
+        string fileReferenceNumber,
+        CancellationToken cancellationToken)
+    {
+        await _database.RunExclusiveWriteAsync(async db =>
+        {
+            var volume = await IndexTables.GetVolumeRowAsync(db, volumeKey, cancellationToken).ConfigureAwait(false);
+            if (volume is null)
+                return;
+
+            await IndexTables.DeleteFilesByIdentityAsync(
+                db,
+                volume.Id,
+                fileReferenceNumber,
+                cancellationToken).ConfigureAwait(false);
+        }, cancellationToken).ConfigureAwait(false);
+    }
+
+    internal async Task UpdateVolumeCheckpointCoreAsync(
+        IndexVolumeInfo volume,
+        ulong journalId,
+        long lastCommittedUsn,
+        string health,
+        string? error,
+        CancellationToken cancellationToken)
+    {
+        await _database.RunExclusiveWriteAsync(async db =>
+        {
+            var volumeId = await IndexTables.EnsureVolumeAsync(db, volume, cancellationToken).ConfigureAwait(false);
+            await IndexTables.UpdateVolumeCheckpointAsync(
+                db,
+                volumeId,
+                journalId,
+                lastCommittedUsn,
+                health,
+                error,
+                cancellationToken).ConfigureAwait(false);
+        }, cancellationToken).ConfigureAwait(false);
+    }
+
     private async Task RefreshRootCoreAsync(
         Database db,
         IndexRequest request,
@@ -435,6 +533,8 @@ public sealed class CSharpDbFileIndex : IFileIndex, IDisposable
         var walkerOptions = IndexWalkerOptions.ForIndexing(request.WalkerOptions);
         var profile = IndexProfile.FromWalkerOptions(walkerOptions).ToStorageString();
         var rootId = await IndexTables.EnsureRootAsync(db, root, profile, cancellationToken).ConfigureAwait(false);
+        var volumeContext = await TryPrepareVolumeAsync(db, rootId, root, cancellationToken).ConfigureAwait(false);
+        var beforeJournal = await TryQueryJournalAsync(volumeContext?.Volume, cancellationToken).ConfigureAwait(false);
         await IndexTables.MarkRootRefreshStartedAsync(db, rootId, profile, cancellationToken).ConfigureAwait(false);
         var existing = await IndexTables.LoadExistingFilesAsync(db, rootId, cancellationToken).ConfigureAwait(false);
 
@@ -480,7 +580,8 @@ public sealed class CSharpDbFileIndex : IFileIndex, IDisposable
                     continue;
                 }
 
-                var indexedLines = await IndexSingleFileAsync(db, rootId, normalizedPath, info, cancellationToken).ConfigureAwait(false);
+                var identity = TryGetIndexedFileIdentity(volumeContext?.VolumeId, normalizedPath, lastObservedUsn: null);
+                var indexedLines = await IndexSingleFileAsync(db, rootId, normalizedPath, info, identity, cancellationToken).ConfigureAwait(false);
                 linesIndexed += indexedLines;
                 filesIndexed++;
             }
@@ -513,7 +614,86 @@ public sealed class CSharpDbFileIndex : IFileIndex, IDisposable
         }
 
         await IndexTables.MarkRootRefreshedAsync(db, rootId, profile, cancellationToken).ConfigureAwait(false);
+        await TryCommitRefreshCheckpointAsync(db, volumeContext, beforeJournal, cancellationToken).ConfigureAwait(false);
         Publish();
+    }
+
+    private async Task<IndexVolumeContext?> TryPrepareVolumeAsync(
+        Database db,
+        long rootId,
+        string root,
+        CancellationToken cancellationToken)
+    {
+        if (_volumeResolver is null)
+            return null;
+
+        if (!_volumeResolver.TryResolveVolume(root, out var volume, out var reason))
+        {
+            _logger.LogDebug("Could not resolve index volume for {Root}: {Reason}", root, reason);
+            return null;
+        }
+
+        var volumeId = await IndexTables.EnsureVolumeAsync(db, volume, cancellationToken).ConfigureAwait(false);
+        await IndexTables.SetRootVolumeAsync(db, rootId, volumeId, cancellationToken).ConfigureAwait(false);
+        return new IndexVolumeContext(volumeId, volume);
+    }
+
+    private async Task<UsnJournalSnapshot?> TryQueryJournalAsync(
+        IndexVolumeInfo? volume,
+        CancellationToken cancellationToken)
+    {
+        if (volume is null || _journalReader is null || volume.IsRemote || !volume.UsnSupported)
+            return null;
+
+        try
+        {
+            return await _journalReader.QueryAsync(volume, cancellationToken).ConfigureAwait(false);
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or InvalidOperationException or System.ComponentModel.Win32Exception or PlatformNotSupportedException)
+        {
+            _logger.LogDebug(ex, "Could not query USN journal for volume {VolumeKey}.", volume.VolumeKey);
+            return null;
+        }
+    }
+
+    private async Task TryCommitRefreshCheckpointAsync(
+        Database db,
+        IndexVolumeContext? volumeContext,
+        UsnJournalSnapshot? beforeJournal,
+        CancellationToken cancellationToken)
+    {
+        if (volumeContext is null || beforeJournal is null)
+            return;
+
+        var afterJournal = await TryQueryJournalAsync(volumeContext.Volume, cancellationToken).ConfigureAwait(false);
+        if (afterJournal is null || afterJournal.JournalId != beforeJournal.JournalId)
+            return;
+
+        await IndexTables.UpdateVolumeCheckpointAsync(
+            db,
+            volumeContext.VolumeId,
+            afterJournal.JournalId,
+            afterJournal.NextUsn,
+            "healthy",
+            null,
+            cancellationToken).ConfigureAwait(false);
+    }
+
+    private IndexedFileIdentity? TryGetIndexedFileIdentity(
+        long? volumeId,
+        string path,
+        long? lastObservedUsn)
+    {
+        if (volumeId is null || _volumeResolver is null)
+            return null;
+
+        return _volumeResolver.TryGetFileIdentity(path, out var identity)
+            ? new IndexedFileIdentity(
+                volumeId.Value,
+                identity.FileReferenceNumber,
+                identity.ParentFileReferenceNumber,
+                lastObservedUsn)
+            : null;
     }
 
     private async Task<long> IndexSingleFileAsync(
@@ -521,9 +701,10 @@ public sealed class CSharpDbFileIndex : IFileIndex, IDisposable
         long rootId,
         string path,
         FileInfo info,
+        IndexedFileIdentity? identity,
         CancellationToken cancellationToken)
     {
-        var fileId = await IndexTables.EnsureFileRowAsync(db, rootId, path, info, FileStatus.Indexing, null, cancellationToken).ConfigureAwait(false);
+        var fileId = await IndexTables.EnsureFileRowAsync(db, rootId, path, info, FileStatus.Indexing, null, identity, cancellationToken).ConfigureAwait(false);
         await IndexTables.DeleteLinesAsync(db, fileId, cancellationToken).ConfigureAwait(false);
 
         var extractor = _extractors.GetFor(path);
@@ -704,4 +885,6 @@ public sealed class CSharpDbFileIndex : IFileIndex, IDisposable
             !relative.StartsWith("..", StringComparison.Ordinal) &&
             !Path.IsPathRooted(relative);
     }
+
+    private sealed record IndexVolumeContext(long VolumeId, IndexVolumeInfo Volume);
 }

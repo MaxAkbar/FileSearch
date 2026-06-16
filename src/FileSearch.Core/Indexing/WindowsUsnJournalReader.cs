@@ -1,0 +1,165 @@
+using System;
+using System.Buffers.Binary;
+using System.Collections.Generic;
+using System.ComponentModel;
+using System.IO;
+using System.Runtime.CompilerServices;
+using System.Runtime.InteropServices;
+using System.Threading;
+using Microsoft.Win32.SafeHandles;
+
+namespace FileSearch.Core.Indexing;
+
+internal sealed class WindowsUsnJournalReader : IUsnJournalReader
+{
+    private const uint FsctlReadUsnJournal = 0x000900bb;
+    private const uint FsctlQueryUsnJournal = 0x000900f4;
+    private const uint FileShareReadWriteDelete = 0x00000001 | 0x00000002 | 0x00000004;
+    private const uint OpenExisting = 3;
+    private const uint FileFlagBackupSemantics = 0x02000000;
+    private const int QueryOutputBytes = 256;
+    private const int ReadInputBytes = 40;
+    private const int ReadOutputBytes = 1024 * 1024;
+    private const int ErrorJournalEntryDeleted = 1177;
+
+    public Task<UsnJournalSnapshot> QueryAsync(
+        IndexVolumeInfo volume,
+        CancellationToken cancellationToken)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        if (!OperatingSystem.IsWindows())
+            throw new PlatformNotSupportedException("USN journal access is only available on Windows.");
+
+        using var handle = OpenVolume(volume);
+        var output = new byte[QueryOutputBytes];
+        if (!DeviceIoControl(
+                handle,
+                FsctlQueryUsnJournal,
+                Array.Empty<byte>(),
+                0,
+                output,
+                output.Length,
+                out _,
+                IntPtr.Zero))
+        {
+            throw CreateWin32Exception();
+        }
+
+        return Task.FromResult(new UsnJournalSnapshot(
+            BinaryPrimitives.ReadUInt64LittleEndian(output.AsSpan(0, 8)),
+            BinaryPrimitives.ReadInt64LittleEndian(output.AsSpan(8, 8)),
+            BinaryPrimitives.ReadInt64LittleEndian(output.AsSpan(16, 8))));
+    }
+
+    public async IAsyncEnumerable<UsnChangeRecord> ReadChangesAsync(
+        IndexVolumeInfo volume,
+        long startUsn,
+        long stopAtUsn,
+        ulong journalId,
+        [EnumeratorCancellation] CancellationToken cancellationToken)
+    {
+        if (!OperatingSystem.IsWindows())
+            throw new PlatformNotSupportedException("USN journal access is only available on Windows.");
+
+        using var handle = OpenVolume(volume);
+        var cursor = startUsn;
+
+        while (cursor < stopAtUsn)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            await Task.Yield();
+
+            var input = BuildReadInput(cursor, journalId);
+            var output = new byte[ReadOutputBytes];
+            if (!DeviceIoControl(
+                    handle,
+                    FsctlReadUsnJournal,
+                    input,
+                    input.Length,
+                    output,
+                    output.Length,
+                    out var bytesReturned,
+                    IntPtr.Zero))
+            {
+                throw CreateWin32Exception();
+            }
+
+            if (!UsnRecordParser.TryParseBuffer(output, bytesReturned, out var nextUsn, out var records, out var error))
+                throw new InvalidOperationException(error);
+
+            foreach (var record in records)
+            {
+                if (record.Usn >= stopAtUsn)
+                    yield break;
+
+                yield return record;
+            }
+
+            if (nextUsn <= cursor)
+                yield break;
+
+            cursor = nextUsn;
+        }
+    }
+
+    private static SafeFileHandle OpenVolume(IndexVolumeInfo volume)
+    {
+        if (string.IsNullOrWhiteSpace(volume.DevicePath))
+            throw new InvalidOperationException("Volume device path is required for USN replay.");
+
+        var handle = CreateFileW(
+            volume.DevicePath,
+            0,
+            FileShareReadWriteDelete,
+            IntPtr.Zero,
+            OpenExisting,
+            FileFlagBackupSemantics,
+            IntPtr.Zero);
+
+        return handle.IsInvalid
+            ? throw CreateWin32Exception()
+            : handle;
+    }
+
+    private static byte[] BuildReadInput(long startUsn, ulong journalId)
+    {
+        var input = new byte[ReadInputBytes];
+        BinaryPrimitives.WriteInt64LittleEndian(input.AsSpan(0, 8), startUsn);
+        BinaryPrimitives.WriteUInt32LittleEndian(input.AsSpan(8, 4), uint.MaxValue);
+        BinaryPrimitives.WriteUInt32LittleEndian(input.AsSpan(12, 4), 0);
+        BinaryPrimitives.WriteUInt64LittleEndian(input.AsSpan(16, 8), 0);
+        BinaryPrimitives.WriteUInt64LittleEndian(input.AsSpan(24, 8), 0);
+        BinaryPrimitives.WriteUInt64LittleEndian(input.AsSpan(32, 8), journalId);
+        return input;
+    }
+
+    private static Exception CreateWin32Exception()
+    {
+        var error = Marshal.GetLastWin32Error();
+        var exception = new Win32Exception(error);
+        return error == ErrorJournalEntryDeleted
+            ? new IOException(exception.Message, exception)
+            : exception;
+    }
+
+    [DllImport("kernel32.dll", SetLastError = true, CharSet = CharSet.Unicode)]
+    private static extern SafeFileHandle CreateFileW(
+        string fileName,
+        uint desiredAccess,
+        uint shareMode,
+        IntPtr securityAttributes,
+        uint creationDisposition,
+        uint flagsAndAttributes,
+        IntPtr templateFile);
+
+    [DllImport("kernel32.dll", SetLastError = true)]
+    private static extern bool DeviceIoControl(
+        SafeFileHandle device,
+        uint ioControlCode,
+        byte[] inBuffer,
+        int inBufferSize,
+        byte[] outBuffer,
+        int outBufferSize,
+        out int bytesReturned,
+        IntPtr overlapped);
+}
