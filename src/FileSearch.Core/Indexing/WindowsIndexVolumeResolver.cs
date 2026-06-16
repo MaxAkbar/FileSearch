@@ -282,13 +282,13 @@ internal sealed class WindowsIndexVolumeResolver : IIndexVolumeResolver
 
     private static string ToVolumeDevicePath(string volumeRoot, string guidPath)
     {
-        if (!string.IsNullOrWhiteSpace(guidPath))
-            return guidPath.TrimEnd('\\');
+        var trimmedRoot = volumeRoot.TrimEnd('\\');
+        if (trimmedRoot.EndsWith(':'))
+            return @"\\.\" + trimmedRoot + "\\";
 
-        var trimmed = volumeRoot.TrimEnd('\\');
-        return trimmed.EndsWith(':')
-            ? @"\\.\" + trimmed
-            : trimmed;
+        return !string.IsNullOrWhiteSpace(guidPath)
+            ? EnsureTrailingSlash(guidPath)
+            : EnsureTrailingSlash(trimmedRoot);
     }
 
     private static string EnsureTrailingSlash(string path) =>

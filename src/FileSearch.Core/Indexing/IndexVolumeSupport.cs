@@ -33,6 +33,16 @@ internal sealed record IndexedFileIdentity(
     string? ParentFileReferenceNumber,
     long? LastObservedUsn);
 
+internal sealed record IndexReplayReferenceSet(
+    IReadOnlySet<string> FileReferences,
+    IReadOnlySet<string> DirectoryReferences)
+{
+    public static IndexReplayReferenceSet Empty { get; } =
+        new(
+            new HashSet<string>(StringComparer.Ordinal),
+            new HashSet<string>(StringComparer.Ordinal));
+}
+
 internal sealed record UsnJournalSnapshot(
     ulong JournalId,
     long FirstUsn,
@@ -51,6 +61,7 @@ internal enum IndexReplayChangeKind
 {
     Upsert,
     DeleteByIdentity,
+    EnsureDirectory,
 }
 
 internal sealed record IndexReplayChange(
@@ -92,6 +103,10 @@ internal interface IIndexCatchUpStore
         IndexVolumeInfo volume,
         CancellationToken cancellationToken);
 
+    Task<IndexReplayReferenceSet> GetReplayReferencesAsync(
+        IndexVolumeInfo volume,
+        CancellationToken cancellationToken);
+
     Task DeleteFileByIdentityAsync(
         string volumeKey,
         string fileReferenceNumber,
@@ -99,6 +114,19 @@ internal interface IIndexCatchUpStore
 
     Task UpdateVolumeCheckpointAsync(
         IndexVolumeInfo volume,
+        ulong journalId,
+        long lastCommittedUsn,
+        string health,
+        string? error,
+        CancellationToken cancellationToken);
+}
+
+internal interface IIndexReplayWriter
+{
+    Task ApplyReplayBatchAsync(
+        IndexVolumeInfo volume,
+        IReadOnlyCollection<IndexedLocation> locations,
+        IReadOnlyList<IndexReplayChange> changes,
         ulong journalId,
         long lastCommittedUsn,
         string health,

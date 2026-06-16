@@ -848,6 +848,99 @@ public sealed class FileIndexTests : IDisposable
         Assert.Equal((ulong)123, checkpoint.JournalId);
         Assert.Equal(50, checkpoint.LastCommittedUsn);
         Assert.Equal("healthy", checkpoint.Health);
+
+        var info = await index.GetDatabaseInfoAsync(TestContext.Current.CancellationToken);
+        var health = Assert.Single(info.VolumeHealth!);
+        Assert.Equal(volume.VolumeKey, health.VolumeKey);
+        Assert.Equal(volume.FileSystemName, health.FileSystemName);
+        Assert.True(health.UsnSupported);
+        Assert.Equal((ulong)123, health.JournalId);
+        Assert.Equal(50, health.LastCommittedUsn);
+        Assert.Equal("healthy", health.Health);
+
+        var references = await index.GetReplayReferencesCoreAsync(volume, TestContext.Current.CancellationToken);
+        Assert.Contains("1", references.FileReferences);
+        Assert.Contains("1", references.DirectoryReferences);
+    }
+
+    [Fact]
+    public async Task ReplayBatchCanAdvanceCheckpointWithoutFileChanges()
+    {
+        File.WriteAllText(Path.Combine(_root, "checkpoint.txt"), "checkpoint needle\n");
+        var volume = FakeVolume(_root);
+        var resolver = new FakeVolumeResolver(volume);
+        var journal = new FakeUsnJournalReader(new UsnJournalSnapshot(123, 1, 50));
+        using var index = new CSharpDbFileIndex(
+            new FileIndexOptions { DatabasePath = _dbPath },
+            new FileWalker(),
+            _registry,
+            searchOptions: null,
+            logger: null,
+            resolver,
+            journal);
+
+        await index.BuildOrRefreshAsync(
+            new IndexRequest(_root, new WalkerOptions()),
+            TestContext.Current.CancellationToken);
+
+        await ((IIndexReplayWriter)index).ApplyReplayBatchAsync(
+            volume,
+            new[] { new IndexedLocation(_root, new WalkerOptions(), WatchEnabled: false) },
+            Array.Empty<IndexReplayChange>(),
+            journalId: 123,
+            lastCommittedUsn: 75,
+            health: "healthy",
+            error: null,
+            TestContext.Current.CancellationToken);
+
+        var checkpoint = await index.GetVolumeCheckpointCoreAsync(volume, TestContext.Current.CancellationToken);
+        Assert.NotNull(checkpoint);
+        Assert.Equal(75, checkpoint.LastCommittedUsn);
+    }
+
+    [Fact]
+    public async Task ReplayBatchPersistsEnsuredDirectoryIdentity()
+    {
+        var volume = FakeVolume(_root);
+        var resolver = new FakeVolumeResolver(volume);
+        resolver.FileIdsByPath[IndexPath.NormalizeRoot(_root)] = "root-dir";
+        using var index = new CSharpDbFileIndex(
+            new FileIndexOptions { DatabasePath = _dbPath },
+            new FileWalker(),
+            _registry,
+            searchOptions: null,
+            logger: null,
+            resolver,
+            journalReader: null);
+
+        await index.BuildOrRefreshAsync(
+            new IndexRequest(_root, new WalkerOptions()),
+            TestContext.Current.CancellationToken);
+
+        var directory = Path.Combine(_root, "created");
+        Directory.CreateDirectory(directory);
+        resolver.FileIdsByPath[IndexPath.NormalizeRoot(directory)] = "created-dir";
+
+        await ((IIndexReplayWriter)index).ApplyReplayBatchAsync(
+            volume,
+            new[] { new IndexedLocation(_root, new WalkerOptions(), WatchEnabled: false) },
+            new[]
+            {
+                new IndexReplayChange(
+                    IndexReplayChangeKind.EnsureDirectory,
+                    IndexPath.NormalizeRoot(_root),
+                    IndexPath.NormalizeFile(directory),
+                    "created-dir"),
+            },
+            journalId: 123,
+            lastCommittedUsn: 75,
+            health: "healthy",
+            error: null,
+            TestContext.Current.CancellationToken);
+
+        var references = await index.GetReplayReferencesCoreAsync(volume, TestContext.Current.CancellationToken);
+        Assert.Contains("created-dir", references.DirectoryReferences);
+        Assert.DoesNotContain("created-dir", references.FileReferences);
     }
 
     [Fact]
@@ -980,6 +1073,8 @@ public sealed class FileIndexTests : IDisposable
             _fileId = fileId;
         }
 
+        public Dictionary<string, string> FileIdsByPath { get; } = new(StringComparer.OrdinalIgnoreCase);
+
         public bool TryResolveVolume(string root, out IndexVolumeInfo volume, out string fallbackReason)
         {
             volume = _volume;
@@ -989,7 +1084,11 @@ public sealed class FileIndexTests : IDisposable
 
         public bool TryGetFileIdentity(string path, out ResolvedFileIdentity identity)
         {
-            identity = new ResolvedFileIdentity(_fileId, ParentFileReferenceNumber: null);
+            var normalizedPath = IndexPath.NormalizeRoot(path);
+            var fileId = FileIdsByPath.TryGetValue(normalizedPath, out var resolvedFileId)
+                ? resolvedFileId
+                : _fileId;
+            identity = new ResolvedFileIdentity(fileId, ParentFileReferenceNumber: null);
             return true;
         }
 

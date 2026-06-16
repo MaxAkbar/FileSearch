@@ -16,6 +16,13 @@ internal sealed class CSharpDbIndexCatchUpStore : IIndexCatchUpStore
             ? Task.FromResult<IndexVolumeCheckpoint?>(null)
             : _index.GetVolumeCheckpointCoreAsync(volume, cancellationToken);
 
+    public Task<IndexReplayReferenceSet> GetReplayReferencesAsync(
+        IndexVolumeInfo volume,
+        CancellationToken cancellationToken) =>
+        _index is null
+            ? Task.FromResult(IndexReplayReferenceSet.Empty)
+            : _index.GetReplayReferencesCoreAsync(volume, cancellationToken);
+
     public Task DeleteFileByIdentityAsync(
         string volumeKey,
         string fileReferenceNumber,

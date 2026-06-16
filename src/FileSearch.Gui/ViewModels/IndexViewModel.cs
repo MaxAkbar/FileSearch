@@ -101,6 +101,7 @@ public sealed partial class IndexViewModel : ObservableObject, IDisposable
     [ObservableProperty] private string _indexDatabaseSizeText = "No database file yet";
     [ObservableProperty] private string _indexDatabaseContentText = "No indexed content";
     [ObservableProperty] private string _indexDatabaseQueueText = "No pending index changes";
+    [ObservableProperty] private string _indexDatabaseVolumeHealthText = "No volume checkpoints";
     [ObservableProperty] private string _indexDatabaseLastIndexedText = "Never indexed";
     [ObservableProperty] private bool _newIndexRecursive = true;
     [ObservableProperty] private bool _newIndexIncludeHidden;
@@ -686,6 +687,7 @@ public sealed partial class IndexViewModel : ObservableObject, IDisposable
         IndexDatabaseSizeText = FormatDatabaseSize(info);
         IndexDatabaseContentText = FormatDatabaseContent(info);
         IndexDatabaseQueueText = FormatPendingChanges(info.PendingChangeCount);
+        IndexDatabaseVolumeHealthText = FormatVolumeHealth(info);
         IndexDatabaseLastIndexedText = info.LastIndexedUtc is { } indexedUtc
             ? $"Last indexed {indexedUtc.ToLocalTime():g}"
             : "Never indexed";
@@ -916,6 +918,28 @@ public sealed partial class IndexViewModel : ObservableObject, IDisposable
             1 => "1 pending index change",
             _ => $"{count:n0} pending index changes",
         };
+
+    private static string FormatVolumeHealth(IndexDatabaseInfo info)
+    {
+        var volumes = info.VolumeHealth ?? Array.Empty<IndexVolumeHealthInfo>();
+        if (volumes.Count == 0)
+            return "No volume checkpoints";
+
+        return string.Join(
+            Environment.NewLine,
+            volumes.Select(volume =>
+            {
+                var health = string.IsNullOrWhiteSpace(volume.Health) ? "unknown" : volume.Health;
+                var capability = volume.IsRemote
+                    ? "remote"
+                    : volume.UsnSupported ? $"{volume.FileSystemName} USN" : $"{volume.FileSystemName} no USN";
+                var checkpoint = volume.JournalId is null || volume.LastCommittedUsn <= 0
+                    ? "no checkpoint"
+                    : $"USN {volume.LastCommittedUsn:n0}";
+                var error = string.IsNullOrWhiteSpace(volume.LastError) ? string.Empty : $"; {volume.LastError}";
+                return $"{health}: {capability}, {checkpoint}{error}";
+            }));
+    }
 
     private static string NormalizeExtensionList(string raw) =>
         string.Join("; ", ExtensionList.Parse(raw));

@@ -1,6 +1,18 @@
 using System;
+using System.Collections.Generic;
 
 namespace FileSearch.Core.Indexing;
+
+public sealed record IndexVolumeHealthInfo(
+    string VolumeKey,
+    string FileSystemName,
+    bool IsRemote,
+    bool UsnSupported,
+    ulong? JournalId,
+    long LastCommittedUsn,
+    string Health,
+    string? LastError,
+    DateTime? LastCheckedUtc);
 
 public sealed record IndexDatabaseInfo(
     string DatabasePath,
@@ -14,7 +26,8 @@ public sealed record IndexDatabaseInfo(
     long TotalFileCount,
     long TotalLineCount,
     int PendingChangeCount,
-    DateTime? LastIndexedUtc)
+    DateTime? LastIndexedUtc,
+    IReadOnlyList<IndexVolumeHealthInfo>? VolumeHealth = null)
 {
     public long TotalBytes => DatabaseBytes + WalBytes + ShmBytes;
 }

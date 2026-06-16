@@ -22,7 +22,7 @@ namespace FileSearch.Core.Indexing;
 /// lifecycle and locking to <see cref="IndexDatabase"/> and all SQL to
 /// <see cref="IndexTables"/>.
 /// </summary>
-public sealed class CSharpDbFileIndex : IFileIndex, IDisposable
+public sealed class CSharpDbFileIndex : IFileIndex, IIndexReplayWriter, IDisposable
 {
     private const int LineInsertBatchSize = 250;
     private const int IdQueryBatchSize = 500;
@@ -106,39 +106,14 @@ public sealed class CSharpDbFileIndex : IFileIndex, IDisposable
             var rootId = await IndexTables.EnsureRootAsync(db, normalizedRoot, profile, cancellationToken).ConfigureAwait(false);
             var volumeContext = await TryPrepareVolumeAsync(db, rootId, normalizedRoot, cancellationToken).ConfigureAwait(false);
 
-            if (!File.Exists(normalizedPath))
-            {
-                await IndexTables.DeleteFileAsync(db, rootId, normalizedPath, cancellationToken).ConfigureAwait(false);
-                return;
-            }
-
-            var info = new FileInfo(normalizedPath);
-            var identity = TryGetIndexedFileIdentity(volumeContext?.VolumeId, normalizedPath, lastObservedUsn: null);
-            if (ShouldSkipSingleFile(normalizedRoot, info, indexingOptions))
-            {
-                if (identity is not null)
-                {
-                    await IndexTables.DeleteFilesByIdentityAsync(
-                        db,
-                        identity.VolumeId,
-                        identity.FileReferenceNumber,
-                        cancellationToken).ConfigureAwait(false);
-                }
-                else
-                {
-                    await IndexTables.DeleteFileAsync(db, rootId, normalizedPath, cancellationToken).ConfigureAwait(false);
-                }
-
-                return;
-            }
-
-            // Same short-circuit as the root refresh: don't re-extract a file
-            // whose size and timestamp match what's already indexed.
-            var existingRow = await IndexTables.GetFileRowAsync(db, rootId, normalizedPath, cancellationToken).ConfigureAwait(false);
-            if (existingRow is not null && IsUnchanged(existingRow, info))
-                return;
-
-            await IndexSingleFileAsync(db, rootId, normalizedPath, info, identity, cancellationToken).ConfigureAwait(false);
+            await UpsertFileCoreAsync(
+                db,
+                rootId,
+                normalizedRoot,
+                normalizedPath,
+                indexingOptions,
+                volumeContext,
+                cancellationToken).ConfigureAwait(false);
         }, cancellationToken).ConfigureAwait(false);
     }
 
@@ -348,6 +323,7 @@ public sealed class CSharpDbFileIndex : IFileIndex, IDisposable
         long totalFiles = 0;
         long totalLines = 0;
         var pendingChangeCount = 0;
+        IReadOnlyList<IndexVolumeHealthInfo> volumeHealth = Array.Empty<IndexVolumeHealthInfo>();
         DateTime? lastIndexedUtc = null;
 
         try
@@ -370,6 +346,7 @@ public sealed class CSharpDbFileIndex : IFileIndex, IDisposable
             }
 
             pendingChangeCount = (await IndexTables.ReadPendingChangesAsync(db, cancellationToken).ConfigureAwait(false)).Count;
+            volumeHealth = await IndexTables.ListVolumeHealthAsync(db, cancellationToken).ConfigureAwait(false);
         }
         finally
         {
@@ -382,7 +359,8 @@ public sealed class CSharpDbFileIndex : IFileIndex, IDisposable
             totalFiles,
             totalLines,
             pendingChangeCount,
-            lastIndexedUtc);
+            lastIndexedUtc,
+            volumeHealth);
     }
 
     public Task CompactAsync(CancellationToken cancellationToken) =>
@@ -402,6 +380,7 @@ public sealed class CSharpDbFileIndex : IFileIndex, IDisposable
                 await IndexTables.DeleteLinesForFilesAsync(db, batch, cancellationToken).ConfigureAwait(false);
 
             await IndexTables.DeleteFilesForRootAsync(db, rootId.Value, cancellationToken).ConfigureAwait(false);
+            await IndexTables.DeleteDirectoriesForRootAsync(db, rootId.Value, cancellationToken).ConfigureAwait(false);
             await IndexTables.DeleteRootAsync(db, rootId.Value, cancellationToken).ConfigureAwait(false);
             await IndexTables.DeletePendingChangesForRootAsync(db, normalizedRoot, cancellationToken).ConfigureAwait(false);
         }, cancellationToken).ConfigureAwait(false);
@@ -501,6 +480,119 @@ public sealed class CSharpDbFileIndex : IFileIndex, IDisposable
         }, cancellationToken).ConfigureAwait(false);
     }
 
+    internal async Task<IndexReplayReferenceSet> GetReplayReferencesCoreAsync(
+        IndexVolumeInfo volume,
+        CancellationToken cancellationToken)
+    {
+        var db = await _database.OpenExistingAsync(cancellationToken).ConfigureAwait(false);
+        if (db is null)
+            return IndexReplayReferenceSet.Empty;
+
+        try
+        {
+            var row = await IndexTables.GetVolumeRowAsync(db, volume.VolumeKey, cancellationToken).ConfigureAwait(false);
+            return row is null
+                ? IndexReplayReferenceSet.Empty
+                : await IndexTables.ReadReplayReferencesAsync(db, row.Id, cancellationToken).ConfigureAwait(false);
+        }
+        finally
+        {
+            await IndexDatabase.CloseQuietlyAsync(db).ConfigureAwait(false);
+        }
+    }
+
+    async Task IIndexReplayWriter.ApplyReplayBatchAsync(
+        IndexVolumeInfo volume,
+        IReadOnlyCollection<IndexedLocation> locations,
+        IReadOnlyList<IndexReplayChange> changes,
+        ulong journalId,
+        long lastCommittedUsn,
+        string health,
+        string? error,
+        CancellationToken cancellationToken)
+    {
+        await _database.RunExclusiveWriteAsync(async db =>
+        {
+            var volumeId = await IndexTables.EnsureVolumeAsync(db, volume, cancellationToken).ConfigureAwait(false);
+
+            var locationByRoot = locations.ToDictionary(
+                location => IndexPath.NormalizeRoot(location.Root),
+                location => location,
+                StringComparer.OrdinalIgnoreCase);
+            var rootContexts = new Dictionary<string, ReplayRootContext>(StringComparer.OrdinalIgnoreCase);
+
+            async Task<ReplayRootContext?> GetContextAsync(IndexReplayChange change)
+            {
+                if (change.Root is null || !locationByRoot.TryGetValue(change.Root, out var location))
+                    return null;
+
+                if (rootContexts.TryGetValue(change.Root, out var context))
+                    return context;
+
+                var indexingOptions = IndexWalkerOptions.ForIndexing(location.WalkerOptions);
+                var profile = IndexProfile.FromWalkerOptions(indexingOptions).ToStorageString();
+                var rootId = await IndexTables.EnsureRootAsync(db, change.Root, profile, cancellationToken).ConfigureAwait(false);
+                var volumeContext = await TryPrepareVolumeAsync(db, rootId, change.Root, cancellationToken).ConfigureAwait(false);
+                context = new ReplayRootContext(rootId, indexingOptions, volumeContext);
+                rootContexts[change.Root] = context;
+                return context;
+            }
+
+            foreach (var change in changes)
+            {
+                cancellationToken.ThrowIfCancellationRequested();
+                if (change.Kind == IndexReplayChangeKind.DeleteByIdentity)
+                {
+                    await IndexTables.DeleteFilesByIdentityAsync(
+                        db,
+                        volumeId,
+                        change.FileReferenceNumber,
+                        cancellationToken).ConfigureAwait(false);
+                    continue;
+                }
+
+                if (change is not { Root: not null, Path: not null })
+                    continue;
+
+                var context = await GetContextAsync(change).ConfigureAwait(false);
+                if (context is null)
+                {
+                    continue;
+                }
+
+                if (change.Kind == IndexReplayChangeKind.EnsureDirectory)
+                {
+                    await EnsureDirectoryIdentityChainAsync(
+                        db,
+                        context.RootId,
+                        change.Root,
+                        change.Path,
+                        context.VolumeContext,
+                        cancellationToken).ConfigureAwait(false);
+                    continue;
+                }
+
+                await UpsertFileCoreAsync(
+                    db,
+                    context.RootId,
+                    change.Root,
+                    change.Path,
+                    context.Options,
+                    context.VolumeContext,
+                    cancellationToken).ConfigureAwait(false);
+            }
+
+            await IndexTables.UpdateVolumeCheckpointAsync(
+                db,
+                volumeId,
+                journalId,
+                lastCommittedUsn,
+                health,
+                error,
+                cancellationToken).ConfigureAwait(false);
+        }, cancellationToken).ConfigureAwait(false);
+    }
+
     internal async Task UpdateVolumeCheckpointCoreAsync(
         IndexVolumeInfo volume,
         ulong journalId,
@@ -536,6 +628,7 @@ public sealed class CSharpDbFileIndex : IFileIndex, IDisposable
         var volumeContext = await TryPrepareVolumeAsync(db, rootId, root, cancellationToken).ConfigureAwait(false);
         var beforeJournal = await TryQueryJournalAsync(volumeContext?.Volume, cancellationToken).ConfigureAwait(false);
         await IndexTables.MarkRootRefreshStartedAsync(db, rootId, profile, cancellationToken).ConfigureAwait(false);
+        await RefreshDirectoryIdentitiesAsync(db, rootId, root, walkerOptions, volumeContext, cancellationToken).ConfigureAwait(false);
         var existing = await IndexTables.LoadExistingFilesAsync(db, rootId, cancellationToken).ConfigureAwait(false);
 
         long filesEnumerated = 0;
@@ -679,6 +772,193 @@ public sealed class CSharpDbFileIndex : IFileIndex, IDisposable
             cancellationToken).ConfigureAwait(false);
     }
 
+    private async Task RefreshDirectoryIdentitiesAsync(
+        Database db,
+        long rootId,
+        string root,
+        WalkerOptions options,
+        IndexVolumeContext? volumeContext,
+        CancellationToken cancellationToken)
+    {
+        await IndexTables.DeleteDirectoriesForRootAsync(db, rootId, cancellationToken).ConfigureAwait(false);
+        if (volumeContext is null)
+            return;
+
+        foreach (var directory in EnumerateIndexDirectories(root, options, cancellationToken))
+        {
+            var identity = TryGetIndexedFileIdentity(volumeContext.VolumeId, directory, lastObservedUsn: null);
+            if (identity is null)
+                continue;
+
+            await IndexTables.EnsureDirectoryAsync(db, rootId, directory, identity, cancellationToken)
+                .ConfigureAwait(false);
+        }
+    }
+
+    private async Task EnsureParentDirectoryIdentitiesAsync(
+        Database db,
+        long rootId,
+        string root,
+        string filePath,
+        IndexVolumeContext? volumeContext,
+        CancellationToken cancellationToken)
+    {
+        var directory = Path.GetDirectoryName(filePath);
+        if (string.IsNullOrWhiteSpace(directory))
+            return;
+
+        await EnsureDirectoryIdentityChainAsync(
+            db,
+            rootId,
+            root,
+            directory,
+            volumeContext,
+            cancellationToken).ConfigureAwait(false);
+    }
+
+    private async Task EnsureDirectoryIdentityChainAsync(
+        Database db,
+        long rootId,
+        string root,
+        string directoryPath,
+        IndexVolumeContext? volumeContext,
+        CancellationToken cancellationToken)
+    {
+        if (volumeContext is null)
+            return;
+
+        var directories = new Stack<string>();
+        var directory = directoryPath;
+        while (!string.IsNullOrWhiteSpace(directory))
+        {
+            var normalized = IndexPath.NormalizeRoot(directory);
+            if (!IndexPath.EqualsPath(normalized, root) && !IsUnderRoot(root, normalized))
+                break;
+
+            directories.Push(normalized);
+            if (IndexPath.EqualsPath(normalized, root))
+                break;
+
+            directory = Path.GetDirectoryName(normalized);
+        }
+
+        while (directories.Count > 0)
+        {
+            var current = directories.Pop();
+            var identity = TryGetIndexedFileIdentity(volumeContext.VolumeId, current, lastObservedUsn: null);
+            if (identity is null)
+                continue;
+
+            await IndexTables.EnsureDirectoryAsync(db, rootId, current, identity, cancellationToken)
+                .ConfigureAwait(false);
+        }
+    }
+
+    private async Task UpsertFileCoreAsync(
+        Database db,
+        long rootId,
+        string root,
+        string path,
+        WalkerOptions indexingOptions,
+        IndexVolumeContext? volumeContext,
+        CancellationToken cancellationToken)
+    {
+        if (!File.Exists(path))
+        {
+            await IndexTables.DeleteFileAsync(db, rootId, path, cancellationToken).ConfigureAwait(false);
+            return;
+        }
+
+        var info = new FileInfo(path);
+        var identity = TryGetIndexedFileIdentity(volumeContext?.VolumeId, path, lastObservedUsn: null);
+        await EnsureParentDirectoryIdentitiesAsync(db, rootId, root, path, volumeContext, cancellationToken)
+            .ConfigureAwait(false);
+        if (ShouldSkipSingleFile(root, info, indexingOptions))
+        {
+            if (identity is not null)
+            {
+                await IndexTables.DeleteFilesByIdentityAsync(
+                    db,
+                    identity.VolumeId,
+                    identity.FileReferenceNumber,
+                    cancellationToken).ConfigureAwait(false);
+            }
+            else
+            {
+                await IndexTables.DeleteFileAsync(db, rootId, path, cancellationToken).ConfigureAwait(false);
+            }
+
+            return;
+        }
+
+        var existingRow = await IndexTables.GetFileRowAsync(db, rootId, path, cancellationToken).ConfigureAwait(false);
+        if (existingRow is not null && IsUnchanged(existingRow, info))
+            return;
+
+        await IndexSingleFileAsync(db, rootId, path, info, identity, cancellationToken).ConfigureAwait(false);
+    }
+
+    private static IEnumerable<string> EnumerateIndexDirectories(
+        string root,
+        WalkerOptions options,
+        CancellationToken cancellationToken)
+    {
+        yield return IndexPath.NormalizeRoot(root);
+
+        if (!options.Recursive)
+            yield break;
+
+        var stack = new Stack<string>();
+        stack.Push(root);
+        while (stack.Count > 0)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            var current = stack.Pop();
+            List<string> children;
+            try
+            {
+                children = Directory.EnumerateDirectories(current).ToList();
+            }
+            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+            {
+                continue;
+            }
+
+            foreach (var child in children)
+            {
+                cancellationToken.ThrowIfCancellationRequested();
+                if (ShouldSkipDirectoryIdentity(child, options))
+                    continue;
+
+                var normalized = IndexPath.NormalizeRoot(child);
+                yield return normalized;
+                stack.Push(normalized);
+            }
+        }
+    }
+
+    private static bool ShouldSkipDirectoryIdentity(string directory, WalkerOptions options)
+    {
+        var name = Path.GetFileName(directory.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar));
+        if (!string.IsNullOrWhiteSpace(name) && options.ExcludeDirectories.Contains(name))
+            return true;
+
+        try
+        {
+            if (!options.IncludeHidden &&
+                (File.GetAttributes(directory) & (FileAttributes.Hidden | FileAttributes.System)) != 0)
+            {
+                return true;
+            }
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            return true;
+        }
+
+        return false;
+    }
+
     private IndexedFileIdentity? TryGetIndexedFileIdentity(
         long? volumeId,
         string path,
@@ -775,7 +1055,8 @@ public sealed class CSharpDbFileIndex : IFileIndex, IDisposable
         long totalFileCount = 0,
         long totalLineCount = 0,
         int pendingChangeCount = 0,
-        DateTime? lastIndexedUtc = null)
+        DateTime? lastIndexedUtc = null,
+        IReadOnlyList<IndexVolumeHealthInfo>? volumeHealth = null)
     {
         var databaseBytes = GetFileLength(DatabasePath);
         var walBytes = GetFileLength(DatabasePath + ".wal");
@@ -793,7 +1074,8 @@ public sealed class CSharpDbFileIndex : IFileIndex, IDisposable
             totalFileCount,
             totalLineCount,
             pendingChangeCount,
-            lastIndexedUtc);
+            lastIndexedUtc,
+            volumeHealth);
     }
 
     private static long GetFileLength(string path)
@@ -887,4 +1169,9 @@ public sealed class CSharpDbFileIndex : IFileIndex, IDisposable
     }
 
     private sealed record IndexVolumeContext(long VolumeId, IndexVolumeInfo Volume);
+
+    private sealed record ReplayRootContext(
+        long RootId,
+        WalkerOptions Options,
+        IndexVolumeContext? VolumeContext);
 }

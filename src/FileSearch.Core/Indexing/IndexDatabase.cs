@@ -237,6 +237,7 @@ internal sealed class IndexDatabase : IDisposable
     {
         await db.ExecuteAsync("CREATE TABLE IF NOT EXISTS index_volumes (id INTEGER PRIMARY KEY, volume_key TEXT, volume_serial TEXT, filesystem_name TEXT, is_remote INTEGER, usn_supported INTEGER, journal_id TEXT, last_committed_usn INTEGER, health TEXT, last_checked_utc_ticks INTEGER, last_error TEXT)", cancellationToken).ConfigureAwait(false);
         await db.ExecuteAsync("CREATE TABLE IF NOT EXISTS index_roots (id INTEGER PRIMARY KEY, root_path TEXT, indexed_utc_ticks INTEGER, options_hash TEXT, volume_id INTEGER, last_full_scan_utc_ticks INTEGER)", cancellationToken).ConfigureAwait(false);
+        await db.ExecuteAsync("CREATE TABLE IF NOT EXISTS index_directories (id INTEGER PRIMARY KEY, root_id INTEGER, path TEXT, volume_id INTEGER, directory_reference_number TEXT, parent_file_reference_number TEXT, observed_utc_ticks INTEGER)", cancellationToken).ConfigureAwait(false);
         await db.ExecuteAsync("CREATE TABLE IF NOT EXISTS files (id INTEGER PRIMARY KEY, root_id INTEGER, path TEXT, file_name TEXT, extension TEXT, size_bytes INTEGER, modified_utc_ticks INTEGER, indexed_utc_ticks INTEGER, status TEXT, error TEXT, volume_id INTEGER, file_reference_number TEXT, parent_file_reference_number TEXT, last_observed_usn INTEGER)", cancellationToken).ConfigureAwait(false);
         await db.ExecuteAsync("CREATE TABLE IF NOT EXISTS lines (id INTEGER PRIMARY KEY, file_id INTEGER, line_number INTEGER, content TEXT)", cancellationToken).ConfigureAwait(false);
         await db.ExecuteAsync("CREATE TABLE IF NOT EXISTS pending_changes (id INTEGER PRIMARY KEY, root_path TEXT, path TEXT, kind INTEGER, queued_utc_ticks INTEGER)", cancellationToken).ConfigureAwait(false);
@@ -244,6 +245,8 @@ internal sealed class IndexDatabase : IDisposable
         await TryExecuteAsync(db, "CREATE UNIQUE INDEX IF NOT EXISTS idx_index_roots_path ON index_roots(root_path)", cancellationToken).ConfigureAwait(false);
         await TryExecuteAsync(db, "CREATE UNIQUE INDEX IF NOT EXISTS idx_index_volumes_key ON index_volumes(volume_key)", cancellationToken).ConfigureAwait(false);
         await TryExecuteAsync(db, "CREATE INDEX IF NOT EXISTS idx_index_roots_volume ON index_roots(volume_id)", cancellationToken).ConfigureAwait(false);
+        await TryExecuteAsync(db, "CREATE UNIQUE INDEX IF NOT EXISTS idx_index_directories_root_path ON index_directories(root_id, path)", cancellationToken).ConfigureAwait(false);
+        await TryExecuteAsync(db, "CREATE INDEX IF NOT EXISTS idx_index_directories_volume_ref ON index_directories(volume_id, directory_reference_number)", cancellationToken).ConfigureAwait(false);
         // Paths are unique per root, not globally: overlapping indexed roots
         // (e.g. C:\Code and C:\Code\ProjectA) each keep their own row for the
         // same file instead of silently failing to index the nested root.

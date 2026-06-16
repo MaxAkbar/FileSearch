@@ -111,7 +111,20 @@ public sealed class IndexViewModelTests
                 TotalFileCount: 3,
                 TotalLineCount: 10,
                 PendingChangeCount: 1,
-                LastIndexedUtc: new DateTime(2026, 6, 14, 12, 0, 0, DateTimeKind.Utc)),
+                LastIndexedUtc: new DateTime(2026, 6, 14, 12, 0, 0, DateTimeKind.Utc),
+                VolumeHealth: new[]
+                {
+                    new IndexVolumeHealthInfo(
+                        @"\\?\Volume{abc}",
+                        "NTFS",
+                        IsRemote: false,
+                        UsnSupported: true,
+                        JournalId: 12,
+                        LastCommittedUsn: 345,
+                        Health: "healthy",
+                        LastError: null,
+                        LastCheckedUtc: new DateTime(2026, 6, 14, 12, 5, 0, DateTimeKind.Utc)),
+                }),
         };
 
         var (_, index) = Build(fileIndex);
@@ -122,6 +135,7 @@ public sealed class IndexViewModelTests
         Assert.Contains("db 2.0 KB", index.IndexDatabaseSizeText);
         Assert.Equal("2 locations, 3 files, 10 lines", index.IndexDatabaseContentText);
         Assert.Equal("1 pending index change", index.IndexDatabaseQueueText);
+        Assert.Equal("healthy: NTFS USN, USN 345", index.IndexDatabaseVolumeHealthText);
         Assert.StartsWith("Last indexed ", index.IndexDatabaseLastIndexedText);
     }
 

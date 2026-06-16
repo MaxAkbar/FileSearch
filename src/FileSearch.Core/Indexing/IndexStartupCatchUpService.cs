@@ -13,6 +13,7 @@ namespace FileSearch.Core.Indexing;
 
 internal sealed class IndexStartupCatchUpService : IIndexStartupCatchUpService
 {
+    private const int MaxReplayBatchRecords = 512;
     private const uint UsnReasonFileDelete = 0x00000200;
     private const uint UsnReasonRenameOldName = 0x00001000;
     private const uint UsnReasonRenameNewName = 0x00002000;
@@ -85,7 +86,14 @@ internal sealed class IndexStartupCatchUpService : IIndexStartupCatchUpService
                     continue;
                 }
 
-                if (!await TryReplayGroupAsync(group, checkpoint, journal, fallback, cancellationToken).ConfigureAwait(false))
+                var references = await _store.GetReplayReferencesAsync(group.Volume, cancellationToken).ConfigureAwait(false);
+                if (references.DirectoryReferences.Count == 0)
+                {
+                    AddFallback(group, fallback, "No directory identity checkpoint has been established yet.");
+                    continue;
+                }
+
+                if (!await TryReplayGroupAsync(group, checkpoint, journal, references, fallback, cancellationToken).ConfigureAwait(false))
                     continue;
 
                 foreach (var location in group.Locations)
@@ -105,10 +113,113 @@ internal sealed class IndexStartupCatchUpService : IIndexStartupCatchUpService
         VolumeLocationGroup group,
         IndexVolumeCheckpoint checkpoint,
         UsnJournalSnapshot journal,
+        IndexReplayReferenceSet references,
         Dictionary<string, string> fallback,
         CancellationToken cancellationToken)
     {
-        var changes = new List<IndexReplayChange>();
+        var fileReferences = new HashSet<string>(references.FileReferences, StringComparer.Ordinal);
+        var directoryReferences = new HashSet<string>(references.DirectoryReferences, StringComparer.Ordinal);
+        var changesByFile = new Dictionary<string, List<IndexReplayChange>>(StringComparer.Ordinal);
+        var recordsInBatch = 0;
+        var batchCheckpointUsn = checkpoint.LastCommittedUsn;
+        void SetDelete(string fileReferenceNumber) =>
+            changesByFile[fileReferenceNumber] = new List<IndexReplayChange>
+            {
+                new(
+                    IndexReplayChangeKind.DeleteByIdentity,
+                    Root: null,
+                    Path: null,
+                    fileReferenceNumber),
+            };
+
+        void SetUpserts(string fileReferenceNumber, IEnumerable<IndexedLocation> matchingRoots, string normalizedPath)
+        {
+            var changes = new List<IndexReplayChange>();
+            foreach (var location in matchingRoots)
+            {
+                changes.Add(new IndexReplayChange(
+                    IndexReplayChangeKind.Upsert,
+                    IndexPath.NormalizeRoot(location.Root),
+                    normalizedPath,
+                    fileReferenceNumber));
+            }
+
+            changesByFile[fileReferenceNumber] = changes;
+            fileReferences.Add(fileReferenceNumber);
+        }
+
+        void SetDirectory(string directoryReferenceNumber, IEnumerable<IndexedLocation> matchingRoots, string normalizedPath)
+        {
+            var changes = new List<IndexReplayChange>();
+            foreach (var location in matchingRoots)
+            {
+                changes.Add(new IndexReplayChange(
+                    IndexReplayChangeKind.EnsureDirectory,
+                    IndexPath.NormalizeRoot(location.Root),
+                    normalizedPath,
+                    directoryReferenceNumber));
+            }
+
+            changesByFile[directoryReferenceNumber] = changes;
+            directoryReferences.Add(directoryReferenceNumber);
+        }
+
+        async Task CommitBatchAsync(long committedUsn)
+        {
+            var changes = changesByFile.Values.SelectMany(static x => x).ToArray();
+            if (_indexWriter is IIndexReplayWriter replayWriter)
+            {
+                await replayWriter.ApplyReplayBatchAsync(
+                    group.Volume,
+                    group.Locations,
+                    changes,
+                    journal.JournalId,
+                    committedUsn,
+                    "healthy",
+                    null,
+                    cancellationToken).ConfigureAwait(false);
+            }
+            else
+            {
+                if (changes.Any(static change => change.Kind == IndexReplayChangeKind.EnsureDirectory))
+                    throw new InvalidOperationException("USN replay requires directory identity persistence.");
+
+                foreach (var change in changes)
+                {
+                    cancellationToken.ThrowIfCancellationRequested();
+                    if (change.Kind == IndexReplayChangeKind.DeleteByIdentity)
+                    {
+                        await _store.DeleteFileByIdentityAsync(
+                            group.Volume.VolumeKey,
+                            change.FileReferenceNumber,
+                            cancellationToken).ConfigureAwait(false);
+                    }
+                    else if (change is { Root: not null, Path: not null })
+                    {
+                        var location = group.Locations.First(x =>
+                            string.Equals(IndexPath.NormalizeRoot(x.Root), change.Root, StringComparison.OrdinalIgnoreCase));
+                        await _indexWriter.UpsertFileAsync(
+                            change.Root,
+                            change.Path,
+                            location.WalkerOptions,
+                            cancellationToken).ConfigureAwait(false);
+                    }
+                }
+
+                await _store.UpdateVolumeCheckpointAsync(
+                    group.Volume,
+                    journal.JournalId,
+                    committedUsn,
+                    "healthy",
+                    null,
+                    cancellationToken).ConfigureAwait(false);
+            }
+
+            changesByFile.Clear();
+            recordsInBatch = 0;
+            batchCheckpointUsn = committedUsn;
+        }
+
         await foreach (var record in _journalReader.ReadChangesAsync(
                            group.Volume,
                            checkpoint.LastCommittedUsn,
@@ -116,89 +227,88 @@ internal sealed class IndexStartupCatchUpService : IIndexStartupCatchUpService
                            journal.JournalId,
                            cancellationToken).ConfigureAwait(false))
         {
-            if (RequiresDirectoryFallback(record))
+            if (recordsInBatch >= MaxReplayBatchRecords)
+                await CommitBatchAsync(batchCheckpointUsn).ConfigureAwait(false);
+
+            recordsInBatch++;
+            batchCheckpointUsn = Math.Max(batchCheckpointUsn, NextCheckpointUsn(record.Usn, journal.NextUsn));
+
+            var fileIsKnown = fileReferences.Contains(record.FileReferenceNumber);
+            var directoryIsKnown = directoryReferences.Contains(record.FileReferenceNumber);
+            var parentDirectoryIsKnown = directoryReferences.Contains(record.ParentFileReferenceNumber);
+
+            if (record.FileAttributes.HasFlag(FileAttributes.Directory))
             {
-                AddFallback(group, fallback, "Directory rename/delete requires root validation scan in V1.");
-                return false;
+                if (RequiresDirectoryFallback(record))
+                {
+                    if (directoryIsKnown || parentDirectoryIsKnown)
+                    {
+                        AddFallback(group, fallback, "Directory change requires root validation scan in V1.");
+                        return false;
+                    }
+
+                    continue;
+                }
+
+                if (directoryIsKnown)
+                    continue;
+
+                if (!parentDirectoryIsKnown)
+                    continue;
+
+                if (!_volumeResolver.TryResolvePathFromFileId(
+                        group.Volume,
+                        record.FileReferenceNumber,
+                        out var resolvedDirectory,
+                        out var resolveReason))
+                {
+                    AddFallback(group, fallback, $"Could not resolve changed directory path: {resolveReason}");
+                    return false;
+                }
+
+                var normalizedDirectory = IndexPath.NormalizeFile(resolvedDirectory);
+                var matchingDirectoryRoots = MatchingRoots(group.Locations, normalizedDirectory).ToArray();
+                if (matchingDirectoryRoots.Length > 0)
+                    SetDirectory(record.FileReferenceNumber, matchingDirectoryRoots, normalizedDirectory);
+
+                continue;
             }
 
             if (IsDelete(record))
             {
-                changes.Add(new IndexReplayChange(
-                    IndexReplayChangeKind.DeleteByIdentity,
-                    Root: null,
-                    Path: null,
-                    record.FileReferenceNumber));
+                if (fileIsKnown)
+                    SetDelete(record.FileReferenceNumber);
+
                 continue;
             }
+
+            if (!fileIsKnown && !parentDirectoryIsKnown)
+                continue;
 
             if (!_volumeResolver.TryResolvePathFromFileId(
                     group.Volume,
                     record.FileReferenceNumber,
                     out var resolvedPath,
-                    out var resolveReason))
+                    out _))
             {
-                AddFallback(group, fallback, $"Could not resolve changed file path: {resolveReason}");
-                return false;
-            }
-
-            var normalizedPath = IndexPath.NormalizeFile(resolvedPath);
-            var matchingRoots = MatchingRoots(group.Locations, normalizedPath).ToArray();
-            if (matchingRoots.Length == 0)
-            {
-                changes.Add(new IndexReplayChange(
-                    IndexReplayChangeKind.DeleteByIdentity,
-                    Root: null,
-                    Path: null,
-                    record.FileReferenceNumber));
+                SetDelete(record.FileReferenceNumber);
                 continue;
             }
 
-            changes.Add(new IndexReplayChange(
-                IndexReplayChangeKind.DeleteByIdentity,
-                Root: null,
-                Path: null,
-                record.FileReferenceNumber));
-
-            foreach (var location in matchingRoots)
+            var normalizedPath = IndexPath.NormalizeFile(resolvedPath);
+            var matchingFileRoots = MatchingRoots(group.Locations, normalizedPath).ToArray();
+            if (matchingFileRoots.Length == 0)
             {
-                changes.Add(new IndexReplayChange(
-                    IndexReplayChangeKind.Upsert,
-                    IndexPath.NormalizeRoot(location.Root),
-                    normalizedPath,
-                    record.FileReferenceNumber));
+                SetDelete(record.FileReferenceNumber);
+                continue;
             }
+
+            SetUpserts(record.FileReferenceNumber, matchingFileRoots, normalizedPath);
         }
 
-        foreach (var change in changes)
-        {
-            cancellationToken.ThrowIfCancellationRequested();
-            if (change.Kind == IndexReplayChangeKind.DeleteByIdentity)
-            {
-                await _store.DeleteFileByIdentityAsync(
-                    group.Volume.VolumeKey,
-                    change.FileReferenceNumber,
-                    cancellationToken).ConfigureAwait(false);
-            }
-            else if (change is { Root: not null, Path: not null })
-            {
-                var location = group.Locations.First(x =>
-                    string.Equals(IndexPath.NormalizeRoot(x.Root), change.Root, StringComparison.OrdinalIgnoreCase));
-                await _indexWriter.UpsertFileAsync(
-                    change.Root,
-                    change.Path,
-                    location.WalkerOptions,
-                    cancellationToken).ConfigureAwait(false);
-            }
-        }
+        if (recordsInBatch > 0 || batchCheckpointUsn < journal.NextUsn)
+            await CommitBatchAsync(journal.NextUsn).ConfigureAwait(false);
 
-        await _store.UpdateVolumeCheckpointAsync(
-            group.Volume,
-            journal.JournalId,
-            journal.NextUsn,
-            "healthy",
-            null,
-            cancellationToken).ConfigureAwait(false);
         return true;
     }
 
@@ -290,6 +400,16 @@ internal sealed class IndexStartupCatchUpService : IIndexStartupCatchUpService
 
     private static bool HasReason(UsnChangeRecord record, uint reason) =>
         (record.Reason & reason) != 0;
+
+    private static long NextCheckpointUsn(long recordUsn, long journalNextUsn)
+    {
+        if (recordUsn >= journalNextUsn)
+            return journalNextUsn;
+
+        return recordUsn == long.MaxValue
+            ? journalNextUsn
+            : Math.Min(recordUsn + 1, journalNextUsn);
+    }
 
     private static bool IsUnderRoot(string root, string path)
     {

@@ -123,6 +123,42 @@ internal static class IndexTables
     public static Task SetRootVolumeAsync(Database db, long rootId, long volumeId, CancellationToken cancellationToken) =>
         ExecuteAsync(db, Sql.Format($"UPDATE index_roots SET volume_id = {volumeId} WHERE id = {rootId}"), cancellationToken);
 
+    // ----- index_directories -----
+
+    public static Task DeleteDirectoriesForRootAsync(Database db, long rootId, CancellationToken cancellationToken) =>
+        ExecuteAsync(db, Sql.Format($"DELETE FROM index_directories WHERE root_id = {rootId}"), cancellationToken);
+
+    public static async Task EnsureDirectoryAsync(
+        Database db,
+        long rootId,
+        string path,
+        IndexedFileIdentity identity,
+        CancellationToken cancellationToken)
+    {
+        var existing = await ReadIdsAsync(
+            db,
+            Sql.Format($"SELECT id FROM index_directories WHERE root_id = {rootId} AND path = {path}"),
+            cancellationToken).ConfigureAwait(false);
+        if (existing.Count > 0)
+        {
+            await db.ExecuteAsync(
+                Sql.Format(
+                    $"UPDATE index_directories SET volume_id = {identity.VolumeId}, " +
+                    $"directory_reference_number = {identity.FileReferenceNumber}, " +
+                    $"parent_file_reference_number = {identity.ParentFileReferenceNumber}, " +
+                    $"observed_utc_ticks = {DateTime.UtcNow.Ticks} WHERE id = {existing[0]}"),
+                cancellationToken).ConfigureAwait(false);
+            return;
+        }
+
+        var id = await GetNextIdAsync(db, "index_directories", cancellationToken).ConfigureAwait(false);
+        await db.ExecuteAsync(
+            Sql.Format(
+                $"INSERT INTO index_directories (id, root_id, path, volume_id, directory_reference_number, parent_file_reference_number, observed_utc_ticks) " +
+                $"VALUES ({id}, {rootId}, {path}, {identity.VolumeId}, {identity.FileReferenceNumber}, {identity.ParentFileReferenceNumber}, {DateTime.UtcNow.Ticks})"),
+            cancellationToken).ConfigureAwait(false);
+    }
+
     // ----- index_volumes -----
 
     public static async Task<long> EnsureVolumeAsync(
@@ -172,6 +208,64 @@ internal static class IndexTables
             result.Current[3].AsInteger,
             result.Current[4].AsText,
             result.Current[5].IsNull ? null : result.Current[5].AsText);
+    }
+
+    public static async Task<List<IndexVolumeHealthInfo>> ListVolumeHealthAsync(
+        Database db,
+        CancellationToken cancellationToken)
+    {
+        var volumes = new List<IndexVolumeHealthInfo>();
+        await using var result = await db.ExecuteAsync(
+            "SELECT volume_key, filesystem_name, is_remote, usn_supported, journal_id, " +
+            "last_committed_usn, health, last_error, last_checked_utc_ticks " +
+            "FROM index_volumes ORDER BY volume_key",
+            cancellationToken).ConfigureAwait(false);
+
+        while (await result.MoveNextAsync(cancellationToken).ConfigureAwait(false))
+        {
+            var row = result.Current;
+            var journalText = row[4].IsNull ? null : row[4].AsText;
+            var lastCheckedTicks = row[8].IsNull ? 0 : row[8].AsInteger;
+            volumes.Add(new IndexVolumeHealthInfo(
+                row[0].AsText,
+                row[1].AsText,
+                row[2].AsInteger != 0,
+                row[3].AsInteger != 0,
+                ulong.TryParse(journalText, out var journalId) ? journalId : null,
+                row[5].AsInteger,
+                row[6].AsText,
+                row[7].IsNull ? null : row[7].AsText,
+                lastCheckedTicks > 0 ? new DateTime(lastCheckedTicks, DateTimeKind.Utc) : null));
+        }
+
+        return volumes;
+    }
+
+    public static async Task<IndexReplayReferenceSet> ReadReplayReferencesAsync(
+        Database db,
+        long volumeId,
+        CancellationToken cancellationToken)
+    {
+        var fileReferences = new HashSet<string>(StringComparer.Ordinal);
+        var directoryReferences = new HashSet<string>(StringComparer.Ordinal);
+
+        await using (var result = await db.ExecuteAsync(
+            Sql.Format($"SELECT file_reference_number FROM files WHERE volume_id = {volumeId} AND file_reference_number IS NOT NULL"),
+            cancellationToken).ConfigureAwait(false))
+        {
+            while (await result.MoveNextAsync(cancellationToken).ConfigureAwait(false))
+                fileReferences.Add(result.Current[0].AsText);
+        }
+
+        await using (var result = await db.ExecuteAsync(
+            Sql.Format($"SELECT directory_reference_number FROM index_directories WHERE volume_id = {volumeId} AND directory_reference_number IS NOT NULL"),
+            cancellationToken).ConfigureAwait(false))
+        {
+            while (await result.MoveNextAsync(cancellationToken).ConfigureAwait(false))
+                directoryReferences.Add(result.Current[0].AsText);
+        }
+
+        return new IndexReplayReferenceSet(fileReferences, directoryReferences);
     }
 
     public static Task UpdateVolumeCheckpointAsync(

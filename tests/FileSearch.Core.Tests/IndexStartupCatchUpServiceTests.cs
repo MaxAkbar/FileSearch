@@ -33,7 +33,9 @@ public sealed class IndexStartupCatchUpServiceTests : IDisposable
     {
         var root = IndexPath.NormalizeRoot(_root);
         var volume = CreateVolume(usnSupported: true);
-        var store = new FakeCatchUpStore(new IndexVolumeCheckpoint(1, volume.VolumeKey, 7, 10, "healthy", null));
+        var store = new FakeCatchUpStore(
+            new IndexVolumeCheckpoint(1, volume.VolumeKey, 7, 10, "healthy", null),
+            DirectoryReferences: new[] { "1" });
         var service = new IndexStartupCatchUpService(
             new FakeIndexWriter(),
             store,
@@ -96,7 +98,10 @@ public sealed class IndexStartupCatchUpServiceTests : IDisposable
         var path = Path.Combine(root, "changed.txt");
         File.WriteAllText(path, "changed needle\n");
         var volume = CreateVolume(usnSupported: true);
-        var store = new FakeCatchUpStore(new IndexVolumeCheckpoint(1, volume.VolumeKey, 7, 10, "healthy", null));
+        var store = new FakeCatchUpStore(
+            new IndexVolumeCheckpoint(1, volume.VolumeKey, 7, 10, "healthy", null),
+            FileReferences: new[] { "55" },
+            DirectoryReferences: new[] { "1" });
         var writer = new FakeIndexWriter();
         var resolver = new FakeVolumeResolver(volume);
         resolver.PathsByFileId["55"] = path;
@@ -113,7 +118,7 @@ public sealed class IndexStartupCatchUpServiceTests : IDisposable
             TestContext.Current.CancellationToken);
 
         Assert.Contains(root, result.HandledRoots);
-        Assert.Equal(new[] { "55" }, store.DeletedFileReferences);
+        Assert.Empty(store.DeletedFileReferences);
         var upsert = Assert.Single(writer.Upserts);
         Assert.Equal(root, upsert.Root);
         Assert.Equal(path, upsert.Path);
@@ -121,11 +126,233 @@ public sealed class IndexStartupCatchUpServiceTests : IDisposable
     }
 
     [Fact]
+    public async Task CatchUpAsyncAppliesNewFileWhenParentDirectoryIsKnown()
+    {
+        var root = IndexPath.NormalizeRoot(_root);
+        var path = Path.Combine(root, "new.txt");
+        File.WriteAllText(path, "new needle\n");
+        var volume = CreateVolume(usnSupported: true);
+        var store = new FakeCatchUpStore(
+            new IndexVolumeCheckpoint(1, volume.VolumeKey, 7, 10, "healthy", null),
+            DirectoryReferences: new[] { "parent-1" });
+        var writer = new FakeIndexWriter();
+        var resolver = new FakeVolumeResolver(volume);
+        resolver.PathsByFileId["56"] = path;
+        var service = new IndexStartupCatchUpService(
+            writer,
+            store,
+            resolver,
+            new FakeJournalReader(
+                new UsnJournalSnapshot(7, 1, 20),
+                Change("56", UsnReasonDataOverwrite, FileAttributes.Archive, "new.txt", parent: "parent-1")));
+
+        var result = await service.CatchUpAsync(
+            new[] { new IndexedLocation(root, new WalkerOptions(), WatchEnabled: false) },
+            TestContext.Current.CancellationToken);
+
+        Assert.Contains(root, result.HandledRoots);
+        var upsert = Assert.Single(writer.Upserts);
+        Assert.Equal(path, upsert.Path);
+    }
+
+    [Fact]
+    public async Task CatchUpAsyncCoalescesRepeatedFileRecords()
+    {
+        var root = IndexPath.NormalizeRoot(_root);
+        var path = Path.Combine(root, "changed.txt");
+        File.WriteAllText(path, "changed needle\n");
+        var volume = CreateVolume(usnSupported: true);
+        var store = new FakeCatchUpStore(
+            new IndexVolumeCheckpoint(1, volume.VolumeKey, 7, 10, "healthy", null),
+            FileReferences: new[] { "57" },
+            DirectoryReferences: new[] { "1" });
+        var writer = new FakeIndexWriter();
+        var resolver = new FakeVolumeResolver(volume);
+        resolver.PathsByFileId["57"] = path;
+        var service = new IndexStartupCatchUpService(
+            writer,
+            store,
+            resolver,
+            new FakeJournalReader(
+                new UsnJournalSnapshot(7, 1, 20),
+                Change("57", UsnReasonDataOverwrite, FileAttributes.Archive, "changed.txt"),
+                Change("57", UsnReasonDataOverwrite, FileAttributes.Archive, "changed.txt"),
+                Change("57", UsnReasonDataOverwrite, FileAttributes.Archive, "changed.txt")));
+
+        var result = await service.CatchUpAsync(
+            new[] { new IndexedLocation(root, new WalkerOptions(), WatchEnabled: false) },
+            TestContext.Current.CancellationToken);
+
+        Assert.Contains(root, result.HandledRoots);
+        Assert.Single(writer.Upserts);
+        Assert.Empty(store.DeletedFileReferences);
+    }
+
+    [Fact]
+    public async Task CatchUpAsyncCommitsReplayInBoundedBatches()
+    {
+        var root = IndexPath.NormalizeRoot(_root);
+        var volume = CreateVolume(usnSupported: true);
+        var store = new FakeCatchUpStore(
+            new IndexVolumeCheckpoint(1, volume.VolumeKey, 7, 10, "healthy", null),
+            DirectoryReferences: new[] { "known-dir" });
+        var writer = new FakeReplayIndexWriter();
+        var records = Enumerable.Range(0, 513)
+            .Select(i => Change(
+                $"unrelated-{i}",
+                UsnReasonDataOverwrite,
+                FileAttributes.Archive,
+                string.Empty,
+                parent: "unrelated-dir",
+                usn: 10 + i))
+            .ToArray();
+        var service = new IndexStartupCatchUpService(
+            writer,
+            store,
+            new FakeVolumeResolver(volume),
+            new FakeJournalReader(new UsnJournalSnapshot(7, 1, 1000), records));
+
+        var result = await service.CatchUpAsync(
+            new[] { new IndexedLocation(root, new WalkerOptions(), WatchEnabled: false) },
+            TestContext.Current.CancellationToken);
+
+        Assert.Contains(root, result.HandledRoots);
+        Assert.Equal(new long[] { 522, 1000 }, writer.CommittedUsns);
+        Assert.All(writer.BatchChanges, Assert.Empty);
+        Assert.Equal(0, store.LastCommittedUsn);
+    }
+
+    [Fact]
+    public async Task CatchUpAsyncSkipsUnrelatedFileRecordWithoutResolvingPath()
+    {
+        var root = IndexPath.NormalizeRoot(_root);
+        var volume = CreateVolume(usnSupported: true);
+        var store = new FakeCatchUpStore(
+            new IndexVolumeCheckpoint(1, volume.VolumeKey, 7, 10, "healthy", null),
+            FileReferences: new[] { "known-file" },
+            DirectoryReferences: new[] { "known-dir" });
+        var writer = new FakeIndexWriter();
+        var resolver = new FakeVolumeResolver(volume);
+        var service = new IndexStartupCatchUpService(
+            writer,
+            store,
+            resolver,
+            new FakeJournalReader(
+                new UsnJournalSnapshot(7, 1, 20),
+                Change("unrelated-file", UsnReasonDataOverwrite, FileAttributes.Archive, string.Empty, parent: "unrelated-dir")));
+
+        var result = await service.CatchUpAsync(
+            new[] { new IndexedLocation(root, new WalkerOptions(), WatchEnabled: false) },
+            TestContext.Current.CancellationToken);
+
+        Assert.Contains(root, result.HandledRoots);
+        Assert.Empty(writer.Upserts);
+        Assert.Empty(store.DeletedFileReferences);
+        Assert.Equal(0, resolver.ResolvePathCallCount);
+    }
+
+    [Fact]
+    public async Task CatchUpAsyncEnsuresNewDirectoryWhenParentDirectoryIsKnown()
+    {
+        var root = IndexPath.NormalizeRoot(_root);
+        var directory = Path.Combine(root, "new-dir");
+        Directory.CreateDirectory(directory);
+        var volume = CreateVolume(usnSupported: true);
+        var store = new FakeCatchUpStore(
+            new IndexVolumeCheckpoint(1, volume.VolumeKey, 7, 10, "healthy", null),
+            DirectoryReferences: new[] { "root-dir" });
+        var writer = new FakeReplayIndexWriter();
+        var resolver = new FakeVolumeResolver(volume);
+        resolver.PathsByFileId["dir-1"] = directory;
+        var service = new IndexStartupCatchUpService(
+            writer,
+            store,
+            resolver,
+            new FakeJournalReader(
+                new UsnJournalSnapshot(7, 1, 20),
+                Change("dir-1", UsnReasonDataOverwrite, FileAttributes.Directory, "new-dir", parent: "root-dir")));
+
+        var result = await service.CatchUpAsync(
+            new[] { new IndexedLocation(root, new WalkerOptions(), WatchEnabled: false) },
+            TestContext.Current.CancellationToken);
+
+        Assert.Contains(root, result.HandledRoots);
+        Assert.Empty(result.FallbackReasons);
+        var change = Assert.Single(writer.BatchChanges.SelectMany(static batch => batch));
+        Assert.Equal(IndexReplayChangeKind.EnsureDirectory, change.Kind);
+        Assert.Equal(root, change.Root);
+        Assert.Equal(directory, change.Path);
+        Assert.Equal("dir-1", change.FileReferenceNumber);
+    }
+
+    [Fact]
+    public async Task CatchUpAsyncReplaysFileCreatedUnderNewDirectory()
+    {
+        var root = IndexPath.NormalizeRoot(_root);
+        var directory = Path.Combine(root, "new-dir");
+        var path = Path.Combine(directory, "new.txt");
+        Directory.CreateDirectory(directory);
+        File.WriteAllText(path, "nested needle\n");
+        var volume = CreateVolume(usnSupported: true);
+        var store = new FakeCatchUpStore(
+            new IndexVolumeCheckpoint(1, volume.VolumeKey, 7, 10, "healthy", null),
+            DirectoryReferences: new[] { "root-dir" });
+        var writer = new FakeReplayIndexWriter();
+        var resolver = new FakeVolumeResolver(volume);
+        resolver.PathsByFileId["dir-1"] = directory;
+        resolver.PathsByFileId["file-1"] = path;
+        var service = new IndexStartupCatchUpService(
+            writer,
+            store,
+            resolver,
+            new FakeJournalReader(
+                new UsnJournalSnapshot(7, 1, 20),
+                Change("dir-1", UsnReasonDataOverwrite, FileAttributes.Directory, "new-dir", parent: "root-dir", usn: 11),
+                Change("file-1", UsnReasonDataOverwrite, FileAttributes.Archive, "new.txt", parent: "dir-1", usn: 12)));
+
+        var result = await service.CatchUpAsync(
+            new[] { new IndexedLocation(root, new WalkerOptions(), WatchEnabled: false) },
+            TestContext.Current.CancellationToken);
+
+        Assert.Contains(root, result.HandledRoots);
+        Assert.Empty(result.FallbackReasons);
+        var changes = writer.BatchChanges.SelectMany(static batch => batch).ToArray();
+        Assert.Contains(changes, change => change.Kind == IndexReplayChangeKind.EnsureDirectory && change.Path == directory);
+        Assert.Contains(changes, change => change.Kind == IndexReplayChangeKind.Upsert && change.Path == path);
+    }
+
+    [Fact]
+    public async Task CatchUpAsyncFallsBackWhenDirectoryReferencesAreMissing()
+    {
+        var root = IndexPath.NormalizeRoot(_root);
+        var volume = CreateVolume(usnSupported: true);
+        var store = new FakeCatchUpStore(
+            new IndexVolumeCheckpoint(1, volume.VolumeKey, 7, 10, "healthy", null),
+            FileReferences: new[] { "55" });
+        var service = new IndexStartupCatchUpService(
+            new FakeIndexWriter(),
+            store,
+            new FakeVolumeResolver(volume),
+            new FakeJournalReader(new UsnJournalSnapshot(7, 1, 20)));
+
+        var result = await service.CatchUpAsync(
+            new[] { new IndexedLocation(root, new WalkerOptions(), WatchEnabled: false) },
+            TestContext.Current.CancellationToken);
+
+        Assert.Empty(result.HandledRoots);
+        Assert.Contains(root, result.FallbackReasons.Keys);
+        Assert.Contains("directory identity", result.FallbackReasons[root], StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
     public async Task CatchUpAsyncAppliesDeleteByIdentity()
     {
         var root = IndexPath.NormalizeRoot(_root);
         var volume = CreateVolume(usnSupported: true);
-        var store = new FakeCatchUpStore(new IndexVolumeCheckpoint(1, volume.VolumeKey, 7, 10, "healthy", null));
+        var store = new FakeCatchUpStore(
+            new IndexVolumeCheckpoint(1, volume.VolumeKey, 7, 10, "healthy", null),
+            FileReferences: new[] { "77" },
+            DirectoryReferences: new[] { "1" });
         var writer = new FakeIndexWriter();
         var service = new IndexStartupCatchUpService(
             writer,
@@ -146,6 +373,35 @@ public sealed class IndexStartupCatchUpServiceTests : IDisposable
     }
 
     [Fact]
+    public async Task CatchUpAsyncDeletesIdentityForUnresolvedFileRecord()
+    {
+        var root = IndexPath.NormalizeRoot(_root);
+        var volume = CreateVolume(usnSupported: true);
+        var store = new FakeCatchUpStore(
+            new IndexVolumeCheckpoint(1, volume.VolumeKey, 7, 10, "healthy", null),
+            FileReferences: new[] { "79" },
+            DirectoryReferences: new[] { "1" });
+        var writer = new FakeIndexWriter();
+        var service = new IndexStartupCatchUpService(
+            writer,
+            store,
+            new FakeVolumeResolver(volume),
+            new FakeJournalReader(
+                new UsnJournalSnapshot(7, 1, 20),
+                Change("79", UsnReasonDataOverwrite, FileAttributes.Archive, string.Empty)));
+
+        var result = await service.CatchUpAsync(
+            new[] { new IndexedLocation(root, new WalkerOptions(), WatchEnabled: false) },
+            TestContext.Current.CancellationToken);
+
+        Assert.Contains(root, result.HandledRoots);
+        Assert.Empty(result.FallbackReasons);
+        Assert.Equal(new[] { "79" }, store.DeletedFileReferences);
+        Assert.Empty(writer.Upserts);
+        Assert.Equal(20, store.LastCommittedUsn);
+    }
+
+    [Fact]
     public async Task CatchUpAsyncDeletesIdentityWhenResolvedPathIsOutsideIndexedRoots()
     {
         var root = IndexPath.NormalizeRoot(_root);
@@ -155,7 +411,10 @@ public sealed class IndexStartupCatchUpServiceTests : IDisposable
         {
             File.WriteAllText(outside, "outside\n");
             var volume = CreateVolume(usnSupported: true);
-            var store = new FakeCatchUpStore(new IndexVolumeCheckpoint(1, volume.VolumeKey, 7, 10, "healthy", null));
+            var store = new FakeCatchUpStore(
+                new IndexVolumeCheckpoint(1, volume.VolumeKey, 7, 10, "healthy", null),
+                FileReferences: new[] { "88" },
+                DirectoryReferences: new[] { "1" });
             var writer = new FakeIndexWriter();
             var resolver = new FakeVolumeResolver(volume);
             resolver.PathsByFileId["88"] = outside;
@@ -186,7 +445,9 @@ public sealed class IndexStartupCatchUpServiceTests : IDisposable
     {
         var root = IndexPath.NormalizeRoot(_root);
         var volume = CreateVolume(usnSupported: true);
-        var store = new FakeCatchUpStore(new IndexVolumeCheckpoint(1, volume.VolumeKey, 7, 10, "healthy", null));
+        var store = new FakeCatchUpStore(
+            new IndexVolumeCheckpoint(1, volume.VolumeKey, 7, 10, "healthy", null),
+            DirectoryReferences: new[] { "1" });
         var service = new IndexStartupCatchUpService(
             new FakeIndexWriter(),
             store,
@@ -219,11 +480,13 @@ public sealed class IndexStartupCatchUpServiceTests : IDisposable
         string fileReferenceNumber,
         uint reason,
         FileAttributes attributes,
-        string name) =>
+        string name,
+        string parent = "1",
+        long usn = 11) =>
         new(
             fileReferenceNumber,
-            "1",
-            11,
+            parent,
+            usn,
             DateTime.UtcNow,
             reason,
             attributes,
@@ -236,6 +499,8 @@ public sealed class IndexStartupCatchUpServiceTests : IDisposable
         public FakeVolumeResolver(IndexVolumeInfo volume) => _volume = volume;
 
         public Dictionary<string, string> PathsByFileId { get; } = new(StringComparer.Ordinal);
+
+        public int ResolvePathCallCount { get; private set; }
 
         public bool TryResolveVolume(string root, out IndexVolumeInfo volume, out string fallbackReason)
         {
@@ -256,6 +521,7 @@ public sealed class IndexStartupCatchUpServiceTests : IDisposable
             out string path,
             out string fallbackReason)
         {
+            ResolvePathCallCount++;
             if (PathsByFileId.TryGetValue(fileReferenceNumber, out path!))
             {
                 fallbackReason = string.Empty;
@@ -300,8 +566,18 @@ public sealed class IndexStartupCatchUpServiceTests : IDisposable
     private sealed class FakeCatchUpStore : IIndexCatchUpStore
     {
         private readonly IndexVolumeCheckpoint? _checkpoint;
+        private readonly IndexReplayReferenceSet _references;
 
-        public FakeCatchUpStore(IndexVolumeCheckpoint? checkpoint) => _checkpoint = checkpoint;
+        public FakeCatchUpStore(
+            IndexVolumeCheckpoint? checkpoint,
+            IReadOnlyCollection<string>? FileReferences = null,
+            IReadOnlyCollection<string>? DirectoryReferences = null)
+        {
+            _checkpoint = checkpoint;
+            _references = new IndexReplayReferenceSet(
+                new HashSet<string>(FileReferences ?? Array.Empty<string>(), StringComparer.Ordinal),
+                new HashSet<string>(DirectoryReferences ?? Array.Empty<string>(), StringComparer.Ordinal));
+        }
 
         public long LastCommittedUsn { get; private set; }
 
@@ -311,6 +587,11 @@ public sealed class IndexStartupCatchUpServiceTests : IDisposable
             IndexVolumeInfo volume,
             CancellationToken cancellationToken) =>
             Task.FromResult(_checkpoint);
+
+        public Task<IndexReplayReferenceSet> GetReplayReferencesAsync(
+            IndexVolumeInfo volume,
+            CancellationToken cancellationToken) =>
+            Task.FromResult(_references);
 
         public Task DeleteFileByIdentityAsync(
             string volumeKey,
@@ -355,6 +636,47 @@ public sealed class IndexStartupCatchUpServiceTests : IDisposable
             Upserts.Add((root, path));
             return Task.CompletedTask;
         }
+
+        public Task DeleteFileAsync(string root, string path, CancellationToken cancellationToken) => Task.CompletedTask;
+
+        public Task ClearAsync(string root, CancellationToken cancellationToken) => Task.CompletedTask;
+    }
+
+    private sealed class FakeReplayIndexWriter : IIndexWriter, IIndexReplayWriter
+    {
+        public List<IReadOnlyList<IndexReplayChange>> BatchChanges { get; } = new();
+
+        public List<long> CommittedUsns { get; } = new();
+
+        public Task ApplyReplayBatchAsync(
+            IndexVolumeInfo volume,
+            IReadOnlyCollection<IndexedLocation> locations,
+            IReadOnlyList<IndexReplayChange> changes,
+            ulong journalId,
+            long lastCommittedUsn,
+            string health,
+            string? error,
+            CancellationToken cancellationToken)
+        {
+            BatchChanges.Add(changes.ToArray());
+            CommittedUsns.Add(lastCommittedUsn);
+            return Task.CompletedTask;
+        }
+
+        public Task BuildOrRefreshAsync(IndexRequest request, CancellationToken cancellationToken) => Task.CompletedTask;
+
+        public Task RefreshRootAsync(
+            IndexRequest request,
+            IndexRefreshMode mode,
+            CancellationToken cancellationToken) =>
+            Task.CompletedTask;
+
+        public Task UpsertFileAsync(
+            string root,
+            string path,
+            WalkerOptions options,
+            CancellationToken cancellationToken) =>
+            Task.CompletedTask;
 
         public Task DeleteFileAsync(string root, string path, CancellationToken cancellationToken) => Task.CompletedTask;
 

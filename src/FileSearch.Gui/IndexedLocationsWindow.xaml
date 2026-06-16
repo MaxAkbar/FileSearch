@@ -273,6 +273,7 @@
                                 <RowDefinition Height="Auto"/>
                                 <RowDefinition Height="Auto"/>
                                 <RowDefinition Height="Auto"/>
+                                <RowDefinition Height="Auto"/>
                             </Grid.RowDefinitions>
 
                             <TextBlock Grid.Row="0" Text="Status" Style="{StaticResource MetaKeyStyle}" Margin="0,0,0,8"/>
@@ -373,7 +374,15 @@
                             <TextBlock Grid.Row="5" Grid.Column="1"
                                        Text="{Binding Index.IndexDatabaseLastIndexedText}"
                                        Style="{StaticResource MetaValueStyle}"
-                                       TextAlignment="Left"/>
+                                       TextAlignment="Left"
+                                       Margin="0,0,0,8"/>
+
+                            <TextBlock Grid.Row="6" Text="Volumes" Style="{StaticResource MetaKeyStyle}"/>
+                            <TextBlock Grid.Row="6" Grid.Column="1"
+                                       Text="{Binding Index.IndexDatabaseVolumeHealthText}"
+                                       Style="{StaticResource MetaValueStyle}"
+                                       TextAlignment="Left"
+                                       TextWrapping="Wrap"/>
                         </Grid>
 
                         <WrapPanel>
