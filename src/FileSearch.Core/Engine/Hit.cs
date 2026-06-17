@@ -3,6 +3,12 @@ using FileSearch.Core.Queries;
 
 namespace FileSearch.Core.Engine;
 
+public enum HitKind
+{
+    Content,
+    Metadata,
+}
+
 /// <summary>
 /// A single match found by the search engine.
 /// </summary>
@@ -10,4 +16,8 @@ public sealed record Hit(
     string Path,
     int LineNumber,
     string LineContent,
-    IReadOnlyList<MatchSpan> Highlights);
+    IReadOnlyList<MatchSpan> Highlights,
+    HitKind Kind = HitKind.Content,
+    double Score = 0,
+    long? SizeBytes = null,
+    DateTime? ModifiedUtc = null);

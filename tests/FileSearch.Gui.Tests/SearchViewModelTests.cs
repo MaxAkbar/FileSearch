@@ -333,6 +333,24 @@ public sealed class SearchViewModelTests
         }, searcher);
     }
 
+    [Fact]
+    public async Task FileResultOpenCommandRecordsUsage()
+    {
+        var recordedPaths = new List<string>();
+        var result = new FileResultViewModel(
+            @"C:\results\Component.cs",
+            new FakeFileLauncher(),
+            (path, _) =>
+            {
+                recordedPaths.Add(path);
+                return Task.CompletedTask;
+            });
+
+        await result.OpenCommand.ExecuteAsync(null);
+
+        Assert.Equal(@"C:\results\Component.cs", Assert.Single(recordedPaths));
+    }
+
     private static void RunWithPump(
         Action<PumpingSynchronizationContext, SearchViewModel, HistoryViewModel, StatusBarViewModel, FakeSettingsService> body,
         ISearcher? searcher = null)

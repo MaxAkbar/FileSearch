@@ -2,6 +2,8 @@ using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
+using System.Threading;
+using System.Threading.Tasks;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 using FileSearch.Core.Engine;
@@ -21,17 +23,22 @@ public sealed partial class FileResultViewModel : ObservableObject
 
     private readonly List<Hit> _hits = new();
     private readonly IFileLauncher _launcher;
+    private readonly Func<string, CancellationToken, Task>? _recordOpenedAsync;
 
     private string? _sizeText;
     private string? _modifiedText;
 
-    public FileResultViewModel(string fullPath, IFileLauncher launcher)
+    public FileResultViewModel(
+        string fullPath,
+        IFileLauncher launcher,
+        Func<string, CancellationToken, Task>? recordOpenedAsync = null)
     {
         FullPath = fullPath;
         FileName = Path.GetFileName(fullPath);
         Directory = Path.GetDirectoryName(fullPath) ?? string.Empty;
         Extension = Path.GetExtension(fullPath).TrimStart('.').ToLowerInvariant();
         _launcher = launcher;
+        _recordOpenedAsync = recordOpenedAsync;
     }
 
     public string FullPath { get; }
@@ -102,7 +109,22 @@ public sealed partial class FileResultViewModel : ObservableObject
     // ----- row-level commands -----
 
     [RelayCommand] private void ToggleExpand() => IsExpanded = !IsExpanded;
-    [RelayCommand] private void Open() => _launcher.Open(FullPath);
+    [RelayCommand]
+    private async Task OpenAsync()
+    {
+        _launcher.Open(FullPath);
+        if (_recordOpenedAsync is null)
+            return;
+
+        try
+        {
+            await _recordOpenedAsync(FullPath, CancellationToken.None).ConfigureAwait(false);
+        }
+        catch
+        {
+            // Usage tracking should never block opening a result.
+        }
+    }
     [RelayCommand] private void RevealInExplorer() => _launcher.RevealInExplorer(FullPath);
     [RelayCommand] private void CopyPath() => _launcher.CopyToClipboard(FullPath);
     [RelayCommand] private void CopyFolderPath() => _launcher.CopyToClipboard(Directory);

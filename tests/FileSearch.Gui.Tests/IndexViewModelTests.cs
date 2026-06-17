@@ -92,6 +92,9 @@ public sealed class IndexViewModelTests
 
         var location = Assert.Single(index.IndexedLocations);
         Assert.Equal("Scanning 10; 2 changed, 8 unchanged", location.RuntimeStatusSummary);
+        Assert.Equal(10, location.FileCount);
+        Assert.Equal(20, location.LineCount);
+        Assert.Equal("1 location, 10 files, 20 lines (scanning)", index.IndexDatabaseContentText);
     }
 
     [Fact]

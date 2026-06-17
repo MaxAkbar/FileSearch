@@ -12,6 +12,7 @@ using CommunityToolkit.Mvvm.Input;
 using FileSearch.Core;
 using FileSearch.Core.Engine;
 using FileSearch.Core.Extractors;
+using FileSearch.Core.Indexing;
 using FileSearch.Core.Queries;
 using FileSearch.Core.Walker;
 using FileSearch.Gui.Services;
@@ -35,6 +36,7 @@ public sealed partial class SearchViewModel : ObservableObject, IDisposable
     private readonly IFilePreviewService _previewService;
     private readonly IFileLauncher _fileLauncher;
     private readonly ISettingsService _settingsService;
+    private readonly IIndexUsageStore? _indexUsageStore;
     private readonly IFileTypeOptionsStore _fileTypeOptionsStore;
     private readonly FileTypeOptions _fileTypeOptions;
     private readonly IFolderPicker _folderPicker;
@@ -59,7 +61,8 @@ public sealed partial class SearchViewModel : ObservableObject, IDisposable
         IFileTypeOptionsStore fileTypeOptionsStore,
         IFolderPicker folderPicker,
         HistoryViewModel history,
-        StatusBarViewModel status)
+        StatusBarViewModel status,
+        IIndexUsageStore? indexUsageStore = null)
     {
         _searcher = searcher;
         _extractorRegistry = extractorRegistry;
@@ -67,6 +70,7 @@ public sealed partial class SearchViewModel : ObservableObject, IDisposable
         _previewService = previewService;
         _fileLauncher = fileLauncher;
         _settingsService = settingsService;
+        _indexUsageStore = indexUsageStore;
         _fileTypeOptionsStore = fileTypeOptionsStore;
         _fileTypeOptions = _fileTypeOptionsStore.Load();
         _folderPicker = folderPicker;
@@ -404,7 +408,9 @@ public sealed partial class SearchViewModel : ObservableObject, IDisposable
                 {
                     routeStatus = message;
                     _status.Text = message;
-                });
+                },
+                QueryText,
+                SearchMode);
 
             // Consume the hit stream on the thread pool and flush to the UI
             // in timed batches — applying hits one at a time marshalled every
@@ -468,7 +474,10 @@ public sealed partial class SearchViewModel : ObservableObject, IDisposable
         {
             if (!_filesByPath.TryGetValue(hit.Path, out var file))
             {
-                file = new FileResultViewModel(hit.Path, _fileLauncher);
+                var recordOpened = _indexUsageStore is null
+                    ? null
+                    : new Func<string, CancellationToken, Task>(_indexUsageStore.RecordFileOpenedAsync);
+                file = new FileResultViewModel(hit.Path, _fileLauncher, recordOpened);
                 _filesByPath[hit.Path] = file;
                 Files.Add(file);
             }
@@ -700,7 +709,10 @@ public sealed partial class SearchViewModel : ObservableObject, IDisposable
         var token = _previewCts.Token;
         try
         {
-            var hitLines = file.Hits.Select(h => h.LineNumber).ToList();
+            var hitLines = file.Hits
+                .Where(h => h.Kind == HitKind.Content && h.LineNumber > 0)
+                .Select(h => h.LineNumber)
+                .ToList();
             var content = await _previewService
                 .LoadHitsPreviewAsync(file.FullPath, hitLines, contextLines: 3, token)
                 .ConfigureAwait(true);

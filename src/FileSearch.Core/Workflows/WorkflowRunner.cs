@@ -197,7 +197,7 @@ public sealed partial class WorkflowRunner : IWorkflowRunner
             searcher = new Searcher(new FixedListFileWalker(source.Files.ToArray()), _extractors, _searchOptions,
                 _loggerFactory?.CreateLogger<Searcher>());
             request = new SearchRequest(query, Array.Empty<string>(), new WalkerOptions(),
-                Progress: p => progress = p, Status: run.Observer.OnLog);
+                Progress: p => progress = p, Status: run.Observer.OnLog, RawQuery: queryText, Mode: step.Mode);
         }
         else
         {
@@ -211,7 +211,7 @@ public sealed partial class WorkflowRunner : IWorkflowRunner
 
             searcher = _searcher;
             request = new SearchRequest(query, roots, walkerOptions,
-                Progress: p => progress = p, UseIndex: step.UseIndex, Status: run.Observer.OnLog);
+                Progress: p => progress = p, UseIndex: step.UseIndex, Status: run.Observer.OnLog, RawQuery: queryText, Mode: step.Mode);
         }
 
         var results = new StepResults();

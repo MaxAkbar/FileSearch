@@ -804,6 +804,7 @@ public sealed partial class IndexViewModel : ObservableObject, IDisposable
         IndexQueueLength = status.QueueLength;
         ActiveIndexingRoot = status.ActiveRoot ?? string.Empty;
         ApplyIndexingRuntimeStatus(status);
+        ApplyActiveIndexProgressStats(status);
 
         if (!_search.IsSearching)
             _status.Text = status.Message;
@@ -823,6 +824,34 @@ public sealed partial class IndexViewModel : ObservableObject, IDisposable
         }
 
         RunQueuedIndexDatabaseCompactionIfReady();
+    }
+
+    private void ApplyActiveIndexProgressStats(IndexingStatus status)
+    {
+        if (!status.IsProcessing ||
+            status.ActiveKind != IndexChangeKind.RefreshRoot ||
+            string.IsNullOrWhiteSpace(status.ActiveRoot) ||
+            status.ActiveProgress is not { } progress)
+        {
+            return;
+        }
+
+        var location = IndexedLocations.FirstOrDefault(x =>
+            string.Equals(x.Root, status.ActiveRoot, StringComparison.OrdinalIgnoreCase));
+        if (location is null)
+            return;
+
+        // Provisional UI counters keep rebuild progress visible while the
+        // database is being repopulated. Final persisted totals still come
+        // from the database when the refresh completes.
+        location.FileCount = Math.Max(location.FileCount, progress.FilesEnumerated);
+        location.LineCount = Math.Max(location.LineCount, progress.LinesIndexed);
+
+        IndexDatabaseContentText = FormatDatabaseContent(
+            IndexedLocations.Count,
+            IndexedLocations.Sum(x => x.FileCount),
+            IndexedLocations.Sum(x => x.LineCount),
+            " (scanning)");
     }
 
     private async Task RefreshIndexedLocationStatsAsync(string root)
@@ -1121,10 +1150,19 @@ public sealed partial class IndexViewModel : ObservableObject, IDisposable
 
     private static string FormatDatabaseContent(IndexDatabaseInfo info)
     {
-        var locations = info.LocationCount == 1
+        return FormatDatabaseContent(info.LocationCount, info.TotalFileCount, info.TotalLineCount);
+    }
+
+    private static string FormatDatabaseContent(
+        int locationCount,
+        long totalFileCount,
+        long totalLineCount,
+        string suffix = "")
+    {
+        var locations = locationCount == 1
             ? "1 location"
-            : $"{info.LocationCount:n0} locations";
-        return $"{locations}, {info.TotalFileCount:n0} files, {info.TotalLineCount:n0} lines";
+            : $"{locationCount:n0} locations";
+        return $"{locations}, {totalFileCount:n0} files, {totalLineCount:n0} lines{suffix}";
     }
 
     private static string FormatPendingChanges(int count) =>

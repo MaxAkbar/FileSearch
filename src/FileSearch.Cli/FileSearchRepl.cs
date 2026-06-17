@@ -210,7 +210,9 @@ internal sealed class FileSearchRepl
             walkerOptions,
             Progress: p => progress = p,
             UseIndex: _state.UseIndex,
-            Status: message => statusMessages.Enqueue(message));
+            Status: message => statusMessages.Enqueue(message),
+            RawQuery: queryText,
+            Mode: _state.Mode);
 
         await AnsiConsole.Status()
             .Spinner(Spinner.Known.Dots)

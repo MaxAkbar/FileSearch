@@ -812,7 +812,7 @@ public sealed class FileIndexTests : IDisposable
         Assert.Equal(_dbPath, info.DatabasePath);
         Assert.True(info.Exists);
         Assert.True(info.IsCompatible);
-        Assert.Equal("5", info.SchemaVersion);
+        Assert.Equal(IndexDatabase.CurrentSchemaVersion, info.SchemaVersion);
         Assert.True(info.DatabaseBytes > 0);
         Assert.True(info.TotalBytes >= info.DatabaseBytes);
         Assert.Equal(1, info.LocationCount);
@@ -1047,6 +1047,126 @@ public sealed class FileIndexTests : IDisposable
         Assert.EndsWith("compact.txt", hit.Path);
     }
 
+    [Fact]
+    public async Task MetadataSearchFindsFilenameWithoutContentMatch()
+    {
+        File.WriteAllText(Path.Combine(_root, "folder1-report.txt"), "unrelated content\n");
+        await BuildAsync();
+
+        var hits = await RawIndexedSearchAsync(
+            new TermQuery("folder1"),
+            rawQuery: "folder1",
+            mode: QueryMode.Boolean);
+
+        var hit = Assert.Single(hits);
+        Assert.EndsWith("folder1-report.txt", hit.Path);
+        Assert.Equal(HitKind.Metadata, hit.Kind);
+        Assert.Equal(0, hit.LineNumber);
+        Assert.Contains("folder1", hit.LineContent, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public async Task MetadataSearchRanksExactFilenameBeforePrefixMatch()
+    {
+        File.WriteAllText(Path.Combine(_root, "folder1-extra.txt"), "unrelated\n");
+        File.WriteAllText(Path.Combine(_root, "folder1.txt"), "unrelated\n");
+        await BuildAsync();
+
+        var hits = await RawIndexedSearchAsync(
+            new TermQuery("folder1"),
+            rawQuery: "folder1",
+            mode: QueryMode.Boolean);
+
+        Assert.True(hits.Count >= 2);
+        Assert.EndsWith("folder1.txt", hits[0].Path);
+        Assert.Equal(HitKind.Metadata, hits[0].Kind);
+        Assert.True(hits[0].Score > hits[1].Score);
+    }
+
+    [Fact]
+    public async Task MetadataSearchUsesPrefixTokensForFilenameLookup()
+    {
+        File.WriteAllText(Path.Combine(_root, "folder1-report.txt"), "unrelated\n");
+        await BuildAsync();
+
+        var hit = Assert.Single(await RawIndexedSearchAsync(
+            new TermQuery("fold"),
+            rawQuery: "fold",
+            mode: QueryMode.Boolean));
+
+        Assert.EndsWith("folder1-report.txt", hit.Path);
+        Assert.Equal(HitKind.Metadata, hit.Kind);
+    }
+
+    [Fact]
+    public async Task MetadataSearchRanksFrequentlyOpenedFilesHigher()
+    {
+        var alpha = Path.Combine(_root, "open-alpha.txt");
+        var beta = Path.Combine(_root, "open-beta.txt");
+        File.WriteAllText(alpha, "unrelated\n");
+        File.WriteAllText(beta, "unrelated\n");
+        await BuildAsync();
+
+        await _index.RecordFileOpenedAsync(beta, TestContext.Current.CancellationToken);
+        await _index.RecordFileOpenedAsync(beta, TestContext.Current.CancellationToken);
+
+        var hits = await RawIndexedSearchAsync(
+            new TermQuery("open"),
+            rawQuery: "open",
+            mode: QueryMode.Boolean);
+
+        Assert.True(hits.Count >= 2);
+        Assert.EndsWith("open-beta.txt", hits[0].Path);
+        Assert.True(hits[0].Score > hits[1].Score);
+    }
+
+    [Fact]
+    public async Task MetadataSearchStreamsContentMatchesAfterMetadataHits()
+    {
+        File.WriteAllText(Path.Combine(_root, "folder1.txt"), "unrelated\n");
+        File.WriteAllText(Path.Combine(_root, "content.txt"), "folder1 content\n");
+        await BuildAsync();
+
+        var hits = await RawIndexedSearchAsync(
+            new TermQuery("folder1"),
+            rawQuery: "folder1",
+            mode: QueryMode.Boolean);
+
+        Assert.True(hits.Count >= 2);
+        Assert.Equal(HitKind.Metadata, hits[0].Kind);
+        Assert.Contains(hits, hit => hit.Kind == HitKind.Content && hit.Path.EndsWith("content.txt", StringComparison.OrdinalIgnoreCase));
+    }
+
+    [Fact]
+    public async Task MetadataSearchFallsBackToContentWhenMetadataDoesNotMatch()
+    {
+        File.WriteAllText(Path.Combine(_root, "notes.txt"), "needle content\n");
+        await BuildAsync();
+
+        var hit = Assert.Single(await RawIndexedSearchAsync(
+            new TermQuery("needle"),
+            rawQuery: "needle",
+            mode: QueryMode.Boolean));
+
+        Assert.Equal(HitKind.Content, hit.Kind);
+        Assert.Equal(1, hit.LineNumber);
+        Assert.Equal("needle content", hit.LineContent);
+    }
+
+    [Fact]
+    public async Task RegexSearchDoesNotReturnFilenameMetadataMatches()
+    {
+        File.WriteAllText(Path.Combine(_root, "needle-name.txt"), "unrelated content\n");
+        await BuildAsync();
+
+        var hits = await RawIndexedSearchAsync(
+            new RegexQuery("needle.*"),
+            rawQuery: "needle.*",
+            mode: QueryMode.Regex);
+
+        Assert.Empty(hits);
+    }
+
     private async Task BuildAsync(WalkerOptions? options = null)
     {
         await _index.BuildOrRefreshAsync(
@@ -1082,9 +1202,19 @@ public sealed class FileIndexTests : IDisposable
         return hits;
     }
 
-    private async Task<List<Hit>> RawIndexedSearchAsync(Query query, WalkerOptions? options = null)
+    private async Task<List<Hit>> RawIndexedSearchAsync(
+        Query query,
+        WalkerOptions? options = null,
+        string? rawQuery = null,
+        QueryMode? mode = null)
     {
-        var request = new SearchRequest(query, new[] { _root }, options ?? new WalkerOptions(), UseIndex: true);
+        var request = new SearchRequest(
+            query,
+            new[] { _root },
+            options ?? new WalkerOptions(),
+            UseIndex: true,
+            RawQuery: rawQuery,
+            Mode: mode);
         var hits = new List<Hit>();
         await foreach (var hit in _index.SearchAsync(request, TestContext.Current.CancellationToken))
             hits.Add(hit);

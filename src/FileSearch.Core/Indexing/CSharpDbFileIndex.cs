@@ -22,10 +22,11 @@ namespace FileSearch.Core.Indexing;
 /// lifecycle and locking to <see cref="IndexDatabase"/> and all SQL to
 /// <see cref="IndexTables"/>.
 /// </summary>
-public sealed class CSharpDbFileIndex : IFileIndex, IIndexReplayWriter, IDisposable
+public sealed class CSharpDbFileIndex : IFileIndex, IIndexReplayWriter, IIndexUsageStore, IDisposable
 {
     private const int LineInsertBatchSize = 250;
     private const int IdQueryBatchSize = 500;
+    private const int MetadataHitLimit = 200;
 
     private readonly IndexDatabase _database;
     private readonly IFileWalker _walker;
@@ -160,6 +161,30 @@ public sealed class CSharpDbFileIndex : IFileIndex, IIndexReplayWriter, IDisposa
             var hitsByPath = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
             var fileFilterVerdicts = new Dictionary<string, bool>(StringComparer.OrdinalIgnoreCase);
             var ftsQueries = QueryFtsTerms.BuildCandidateQueries(request.Expression);
+            HashSet<string>? metadataHitPaths = null;
+
+            if (MetadataSearchSpec.TryCreate(request, out var metadataSpec))
+            {
+                var metadataHits = await SearchMetadataAsync(
+                        db,
+                        rootId.Value,
+                        root,
+                        request.WalkerOptions,
+                        metadataSpec,
+                        cancellationToken)
+                    .ConfigureAwait(false);
+
+                if (metadataHits.Count > 0)
+                {
+                    request.Status?.Invoke("Using metadata index");
+                    metadataHitPaths = metadataHits
+                        .Select(hit => hit.Path)
+                        .ToHashSet(StringComparer.OrdinalIgnoreCase);
+
+                    foreach (var hit in metadataHits)
+                        yield return hit;
+                }
+            }
 
             if (ftsQueries.Count > 0)
             {
@@ -184,7 +209,12 @@ public sealed class CSharpDbFileIndex : IFileIndex, IIndexReplayWriter, IDisposa
                         await foreach (var line in ReadLineBatchAsync(db, rootId.Value, batchIds, cancellationToken).ConfigureAwait(false))
                         {
                             if (TryCreateHit(root, line, request.Expression, request.WalkerOptions, hitsByPath, fileFilterVerdicts, highlightBuffer, out var hit))
+                            {
+                                if (metadataHitPaths?.Contains(hit.Path) == true)
+                                    continue;
+
                                 yield return hit;
+                            }
                         }
 
                         batchIds.Clear();
@@ -196,7 +226,12 @@ public sealed class CSharpDbFileIndex : IFileIndex, IIndexReplayWriter, IDisposa
                     await foreach (var line in ReadLineBatchAsync(db, rootId.Value, batchIds, cancellationToken).ConfigureAwait(false))
                     {
                         if (TryCreateHit(root, line, request.Expression, request.WalkerOptions, hitsByPath, fileFilterVerdicts, highlightBuffer, out var hit))
+                        {
+                            if (metadataHitPaths?.Contains(hit.Path) == true)
+                                continue;
+
                             yield return hit;
+                        }
                     }
                 }
             }
@@ -206,7 +241,12 @@ public sealed class CSharpDbFileIndex : IFileIndex, IIndexReplayWriter, IDisposa
                 await foreach (var line in IndexTables.ReadLinesAsync(db, sql, cancellationToken).ConfigureAwait(false))
                 {
                     if (TryCreateHit(root, line, request.Expression, request.WalkerOptions, hitsByPath, fileFilterVerdicts, highlightBuffer, out var hit))
+                    {
+                        if (metadataHitPaths?.Contains(hit.Path) == true)
+                            continue;
+
                         yield return hit;
+                    }
                 }
             }
         }
@@ -225,6 +265,77 @@ public sealed class CSharpDbFileIndex : IFileIndex, IIndexReplayWriter, IDisposa
     {
         var sql = IndexTables.SelectLinesSql(rootId, lineIds);
         return IndexTables.ReadLinesAsync(db, sql, cancellationToken);
+    }
+
+    private static async Task<List<Hit>> SearchMetadataAsync(
+        Database db,
+        long rootId,
+        string root,
+        WalkerOptions options,
+        MetadataSearchSpec spec,
+        CancellationToken cancellationToken)
+    {
+        var hits = new List<Hit>();
+        var candidateTokens = IndexTables.BuildQueryMetadataTokens(spec.Terms);
+        var candidateIds = candidateTokens.Count == 0
+            ? new List<long>()
+            : await IndexTables.ReadMetadataCandidateFileIdsAsync(
+                    db,
+                    rootId,
+                    candidateTokens,
+                    spec.RequireAllTerms,
+                    cancellationToken)
+                .ConfigureAwait(false);
+        if (candidateTokens.Count > 0 && candidateIds.Count == 0)
+            return hits;
+
+        var files = candidateIds.Count > 0
+            ? IndexTables.ReadFileMetadataAsync(db, rootId, candidateIds, cancellationToken)
+            : IndexTables.ReadFileMetadataAsync(db, rootId, cancellationToken);
+
+        await foreach (var file in files.ConfigureAwait(false))
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+
+            if (!options.IncludeHidden &&
+                (((FileAttributes)file.Attributes) & (FileAttributes.Hidden | FileAttributes.System)) != 0)
+            {
+                continue;
+            }
+
+            if (!IndexedFileFilter.Matches(
+                    root,
+                    file.Path,
+                    file.FileName,
+                    file.Extension,
+                    file.SizeBytes,
+                    file.ModifiedUtcTicks,
+                    options))
+            {
+                continue;
+            }
+
+            var score = spec.Score(file, root, out var displayText);
+            if (score <= 0)
+                continue;
+
+            hits.Add(new Hit(
+                file.Path,
+                0,
+                displayText,
+                spec.CollectHighlights(displayText),
+                HitKind.Metadata,
+                score,
+                file.SizeBytes,
+                file.ModifiedUtcTicks > 0 ? new DateTime(file.ModifiedUtcTicks, DateTimeKind.Utc) : null));
+        }
+
+        return hits
+            .OrderByDescending(hit => hit.Score)
+            .ThenByDescending(hit => hit.ModifiedUtc ?? DateTime.MinValue)
+            .ThenBy(hit => hit.Path, StringComparer.OrdinalIgnoreCase)
+            .Take(MetadataHitLimit)
+            .ToList();
     }
 
     public async Task<IndexCoverage> GetCoverageAsync(SearchRequest request, CancellationToken cancellationToken)
@@ -373,6 +484,17 @@ public sealed class CSharpDbFileIndex : IFileIndex, IIndexReplayWriter, IDisposa
 
     public Task CompactAsync(CancellationToken cancellationToken) =>
         _database.CompactAsync(cancellationToken);
+
+    public async Task RecordFileOpenedAsync(string path, CancellationToken cancellationToken)
+    {
+        if (string.IsNullOrWhiteSpace(path))
+            return;
+
+        await _database.RunExclusiveWriteAsync(
+                db => IndexTables.RecordFileOpenedAsync(db, IndexPath.NormalizeFile(path), cancellationToken),
+                cancellationToken)
+            .ConfigureAwait(false);
+    }
 
     public async Task ClearAsync(string root, CancellationToken cancellationToken)
     {
@@ -1145,7 +1267,9 @@ public sealed class CSharpDbFileIndex : IFileIndex, IIndexReplayWriter, IDisposa
 
     private static bool IsUnchanged(ExistingFileRow row, FileInfo info) =>
         row.SizeBytes == info.Length &&
+        row.CreatedUtcTicks == info.CreationTimeUtc.Ticks &&
         row.ModifiedUtcTicks == info.LastWriteTimeUtc.Ticks &&
+        row.Attributes == (long)info.Attributes &&
         string.Equals(row.Status, FileStatus.Ok, StringComparison.OrdinalIgnoreCase) &&
         string.Equals(row.ContentVersion, IndexContentVersion.Current, StringComparison.Ordinal);
 

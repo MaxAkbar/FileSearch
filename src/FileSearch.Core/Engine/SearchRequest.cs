@@ -11,4 +11,6 @@ public sealed record SearchRequest(
     WalkerOptions WalkerOptions,
     Action<SearchProgress>? Progress = null,
     bool UseIndex = false,
-    Action<string>? Status = null);
+    Action<string>? Status = null,
+    string? RawQuery = null,
+    QueryMode? Mode = null);

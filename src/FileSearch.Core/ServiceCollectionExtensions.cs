@@ -66,6 +66,10 @@ public static class ServiceCollectionExtensions
         services.TryAddSingleton<IIndexWriter>(sp => sp.GetRequiredService<IFileIndex>());
         services.TryAddSingleton<IIndexMaintenance>(sp => sp.GetRequiredService<IFileIndex>());
         services.TryAddSingleton<IPendingChangeStore>(sp => sp.GetRequiredService<IFileIndex>());
+        services.TryAddSingleton<IIndexUsageStore>(sp =>
+            sp.GetRequiredService<IFileIndex>() is IIndexUsageStore usageStore
+                ? usageStore
+                : NullIndexUsageStore.Instance);
 
         services.TryAddSingleton<IIndexCatchUpStore, CSharpDbIndexCatchUpStore>();
         services.TryAddSingleton<IIndexStartupCatchUpService, IndexStartupCatchUpService>();
