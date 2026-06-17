@@ -1,10 +1,23 @@
 using System;
+using System.IO;
 using Microsoft.Win32;
 
 namespace FileSearch.Gui.Services;
 
 public sealed class StartupRegistrationService : IStartupRegistrationService
 {
+    private readonly Func<string> _executablePathResolver;
+
+    public StartupRegistrationService()
+        : this(() => BackgroundIndexerProcessService.ResolveDefaultExecutablePath())
+    {
+    }
+
+    internal StartupRegistrationService(Func<string> executablePathResolver)
+    {
+        _executablePathResolver = executablePathResolver;
+    }
+
     public bool IsBackgroundStartupEnabled()
     {
         try
@@ -37,11 +50,11 @@ public sealed class StartupRegistrationService : IStartupRegistrationService
         key?.DeleteValue(StartupRegistration.ValueName, throwOnMissingValue: false);
     }
 
-    private static string GetExecutablePath()
+    private string GetExecutablePath()
     {
-        var executablePath = Environment.ProcessPath;
-        if (string.IsNullOrWhiteSpace(executablePath))
-            throw new InvalidOperationException("Could not resolve the FileSearch executable path.");
+        var executablePath = _executablePathResolver();
+        if (string.IsNullOrWhiteSpace(executablePath) || !File.Exists(executablePath))
+            throw new InvalidOperationException("Could not resolve the FileSearch background indexer executable path.");
 
         return executablePath;
     }

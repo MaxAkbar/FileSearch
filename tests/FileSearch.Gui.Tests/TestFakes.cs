@@ -84,6 +84,129 @@ internal sealed class FakeStartupRegistrationService : IStartupRegistrationServi
     }
 }
 
+internal sealed class FakeBackgroundIndexerProcessService : IBackgroundIndexerProcessService
+{
+    public bool EnsureRunningResult { get; set; } = true;
+
+    public bool CommandResult { get; set; } = true;
+
+    public IndexingStatus? Status { get; set; }
+
+    public int EnsureRunningCallCount { get; private set; }
+
+    public int GetStatusCallCount { get; private set; }
+
+    public int AddOrUpdateCallCount { get; private set; }
+
+    public int RemoveCallCount { get; private set; }
+
+    public int RefreshCallCount { get; private set; }
+
+    public int PauseCallCount { get; private set; }
+
+    public int ResumeCallCount { get; private set; }
+
+    public int SetResourceProfileCallCount { get; private set; }
+
+    public int SetRuntimeOptionsCallCount { get; private set; }
+
+    public int SetForegroundSearchActiveCallCount { get; private set; }
+
+    public int QueueRootRefreshCallCount { get; private set; }
+
+    public int CompactDatabaseCallCount { get; private set; }
+
+    public List<IndexedLocation> AddedLocations { get; } = new();
+
+    public List<string> RemovedRoots { get; } = new();
+
+    public List<IndexedLocation> RefreshedLocations { get; } = new();
+
+    public List<IndexedLocation> QueuedRefreshLocations { get; } = new();
+
+    public Task<bool> EnsureRunningAsync(CancellationToken cancellationToken)
+    {
+        EnsureRunningCallCount++;
+        return Task.FromResult(EnsureRunningResult);
+    }
+
+    public Task<bool> ShutdownIfRunningAsync(CancellationToken cancellationToken) =>
+        Task.FromResult(CommandResult);
+
+    public Task<IndexingStatus?> GetStatusAsync(CancellationToken cancellationToken)
+    {
+        GetStatusCallCount++;
+        return Task.FromResult(Status);
+    }
+
+    public Task<bool> PauseAsync(CancellationToken cancellationToken)
+    {
+        PauseCallCount++;
+        return Task.FromResult(CommandResult);
+    }
+
+    public Task<bool> ResumeAsync(CancellationToken cancellationToken)
+    {
+        ResumeCallCount++;
+        return Task.FromResult(CommandResult);
+    }
+
+    public Task<bool> SetResourceProfileAsync(IndexerResourceProfile profile, CancellationToken cancellationToken)
+    {
+        SetResourceProfileCallCount++;
+        return Task.FromResult(CommandResult);
+    }
+
+    public Task<bool> SetRuntimeOptionsAsync(IndexerRuntimeOptions options, CancellationToken cancellationToken)
+    {
+        SetRuntimeOptionsCallCount++;
+        return Task.FromResult(CommandResult);
+    }
+
+    public Task<bool> SetForegroundSearchActiveAsync(bool isActive, CancellationToken cancellationToken)
+    {
+        SetForegroundSearchActiveCallCount++;
+        return Task.FromResult(CommandResult);
+    }
+
+    public Task<bool> AddOrUpdateLocationAsync(IndexedLocation location, CancellationToken cancellationToken)
+    {
+        AddOrUpdateCallCount++;
+        AddedLocations.Add(location);
+        return Task.FromResult(CommandResult);
+    }
+
+    public Task<bool> RemoveLocationAsync(string root, CancellationToken cancellationToken)
+    {
+        RemoveCallCount++;
+        RemovedRoots.Add(IndexPath.NormalizeRoot(root));
+        return Task.FromResult(CommandResult);
+    }
+
+    public Task<bool> RefreshRootAsync(IndexedLocation location, CancellationToken cancellationToken)
+    {
+        RefreshCallCount++;
+        RefreshedLocations.Add(location);
+        return Task.FromResult(CommandResult);
+    }
+
+    public Task<bool> QueueRootRefreshAsync(
+        IndexedLocation location,
+        IndexQueuePriority priority,
+        CancellationToken cancellationToken)
+    {
+        QueueRootRefreshCallCount++;
+        QueuedRefreshLocations.Add(location);
+        return Task.FromResult(CommandResult);
+    }
+
+    public Task<bool> CompactDatabaseAsync(CancellationToken cancellationToken)
+    {
+        CompactDatabaseCallCount++;
+        return Task.FromResult(CommandResult);
+    }
+}
+
 internal sealed class InlineDispatcher : IUiDispatcher
 {
     public void Post(Action action) => action();
@@ -99,9 +222,13 @@ internal sealed class FakeIndexingService : IIndexingService
 
     public IndexerResourceProfile ResourceProfile { get; private set; } = IndexerResourceProfile.Balanced;
 
+    public IndexerRuntimeOptions RuntimeOptions { get; private set; } = IndexerRuntimeOptions.Default;
+
     public int PauseCallCount { get; private set; }
 
     public int ResumeCallCount { get; private set; }
+
+    public int EnqueuedRootRefreshCount { get; private set; }
 
     public TaskCompletionSource? RemoveLocationCompletion { get; set; }
 
@@ -125,7 +252,11 @@ internal sealed class FakeIndexingService : IIndexingService
         return RemoveLocationCompletion?.Task ?? Task.CompletedTask;
     }
 
-    public Task EnqueueRootRefreshAsync(string root, WalkerOptions options, IndexQueuePriority priority, CancellationToken cancellationToken) => Task.CompletedTask;
+    public Task EnqueueRootRefreshAsync(string root, WalkerOptions options, IndexQueuePriority priority, CancellationToken cancellationToken)
+    {
+        EnqueuedRootRefreshCount++;
+        return Task.CompletedTask;
+    }
 
     public void SetForegroundSearchActive(bool isActive)
     {
@@ -134,6 +265,11 @@ internal sealed class FakeIndexingService : IIndexingService
     public void SetResourceProfile(IndexerResourceProfile profile)
     {
         ResourceProfile = profile;
+    }
+
+    public void SetRuntimeOptions(IndexerRuntimeOptions options)
+    {
+        RuntimeOptions = options.Normalize();
     }
 
     public void Pause()

@@ -91,6 +91,90 @@
                                   VerticalAlignment="Center"/>
                     </Grid>
 
+                    <Grid Margin="0,14,0,0">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="*"/>
+                            <ColumnDefinition Width="Auto"/>
+                        </Grid.ColumnDefinitions>
+
+                        <StackPanel Grid.Column="0" Margin="0,0,20,0">
+                            <TextBlock Text="Pause indexing on battery"
+                                       Style="{StaticResource FieldLabelStyle}"/>
+                            <TextBlock Text="{Binding PauseIndexingOnBatterySummary}"
+                                       Style="{StaticResource MutedValueStyle}"
+                                       TextWrapping="Wrap"
+                                       Margin="0,4,0,0"/>
+                        </StackPanel>
+
+                        <CheckBox Grid.Column="1"
+                                  IsChecked="{Binding PauseIndexingOnBattery, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
+                                  VerticalAlignment="Center"/>
+                    </Grid>
+
+                    <Grid Margin="0,14,0,0">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="*"/>
+                            <ColumnDefinition Width="Auto"/>
+                        </Grid.ColumnDefinitions>
+
+                        <StackPanel Grid.Column="0" Margin="0,0,20,0">
+                            <TextBlock Text="Index only when idle"
+                                       Style="{StaticResource FieldLabelStyle}"/>
+                            <TextBlock Text="{Binding IndexOnlyWhenIdleSummary}"
+                                       Style="{StaticResource MutedValueStyle}"
+                                       TextWrapping="Wrap"
+                                       Margin="0,4,0,0"/>
+                        </StackPanel>
+
+                        <CheckBox Grid.Column="1"
+                                  IsChecked="{Binding IndexOnlyWhenIdle, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
+                                  VerticalAlignment="Center"/>
+                    </Grid>
+
+                    <Grid Margin="0,14,0,0">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="*"/>
+                            <ColumnDefinition Width="Auto"/>
+                        </Grid.ColumnDefinitions>
+
+                        <StackPanel Grid.Column="0" Margin="0,0,20,0">
+                            <TextBlock Text="CPU limit"
+                                       Style="{StaticResource FieldLabelStyle}"/>
+                            <TextBlock Text="{Binding IndexerCpuLimitSummary}"
+                                       Style="{StaticResource MutedValueStyle}"
+                                       TextWrapping="Wrap"
+                                       Margin="0,4,0,0"/>
+                        </StackPanel>
+
+                        <ComboBox Grid.Column="1"
+                                  ItemsSource="{Binding IndexerCpuLimitOptions}"
+                                  SelectedItem="{Binding IndexerCpuLimitPercent, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
+                                  MinWidth="90"
+                                  VerticalAlignment="Center"/>
+                    </Grid>
+
+                    <Grid Margin="0,14,0,0">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="*"/>
+                            <ColumnDefinition Width="Auto"/>
+                        </Grid.ColumnDefinitions>
+
+                        <StackPanel Grid.Column="0" Margin="0,0,20,0">
+                            <TextBlock Text="Disk I/O delay"
+                                       Style="{StaticResource FieldLabelStyle}"/>
+                            <TextBlock Text="{Binding IndexerDiskPauseSummary}"
+                                       Style="{StaticResource MutedValueStyle}"
+                                       TextWrapping="Wrap"
+                                       Margin="0,4,0,0"/>
+                        </StackPanel>
+
+                        <ComboBox Grid.Column="1"
+                                  ItemsSource="{Binding IndexerDiskPauseOptions}"
+                                  SelectedItem="{Binding IndexerDiskPauseMilliseconds, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
+                                  MinWidth="90"
+                                  VerticalAlignment="Center"/>
+                    </Grid>
+
                     <Border Height="1"
                             Background="{DynamicResource Atlas.LineBrush}"
                             Margin="0,18"/>
@@ -103,16 +187,36 @@
                         </Grid.ColumnDefinitions>
 
                         <StackPanel Grid.Column="0" Margin="0,0,20,0">
-                            <TextBlock Text="Run FileSearch in background at Windows sign-in"
+                            <TextBlock Text="Keep index updated after closing window"
                                        Style="{StaticResource FieldLabelStyle}"/>
-                            <TextBlock Text="{Binding RunInBackgroundSummary}"
+                            <TextBlock Text="{Binding KeepIndexUpdatedAfterCloseSummary}"
                                        Style="{StaticResource MutedValueStyle}"
                                        TextWrapping="Wrap"
                                        Margin="0,4,0,0"/>
                         </StackPanel>
 
                         <CheckBox Grid.Column="1"
-                                  IsChecked="{Binding RunInBackground, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
+                                  IsChecked="{Binding KeepIndexUpdatedAfterClose, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
+                                  VerticalAlignment="Center"/>
+                    </Grid>
+
+                    <Grid Margin="0,14,0,0">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="*"/>
+                            <ColumnDefinition Width="Auto"/>
+                        </Grid.ColumnDefinitions>
+
+                        <StackPanel Grid.Column="0" Margin="0,0,20,0">
+                            <TextBlock Text="Start background indexer when Windows starts"
+                                       Style="{StaticResource FieldLabelStyle}"/>
+                            <TextBlock Text="{Binding StartBackgroundIndexerAtSignInSummary}"
+                                       Style="{StaticResource MutedValueStyle}"
+                                       TextWrapping="Wrap"
+                                       Margin="0,4,0,0"/>
+                        </StackPanel>
+
+                        <CheckBox Grid.Column="1"
+                                  IsChecked="{Binding StartBackgroundIndexerAtSignIn, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
                                   VerticalAlignment="Center"/>
                     </Grid>
                 </StackPanel>

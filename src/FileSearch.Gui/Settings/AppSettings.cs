@@ -22,7 +22,21 @@ public sealed class AppSettings
     /// </summary>
     public IndexerResourceProfile IndexerResourceProfile { get; set; } = IndexerResourceProfile.Balanced;
 
-    public bool RunInBackground { get; set; }
+    public bool KeepIndexUpdatedAfterClose { get; set; }
+
+    public bool StartBackgroundIndexerAtSignIn { get; set; }
+
+    public bool PauseIndexingOnBattery { get; set; }
+
+    public bool IndexOnlyWhenIdle { get; set; }
+
+    public int IndexerCpuLimitPercent { get; set; }
+
+    public int IndexerDiskPauseMilliseconds { get; set; }
+
+    // Legacy setting migrated into KeepIndexUpdatedAfterClose and
+    // StartBackgroundIndexerAtSignIn on load.
+    public bool? RunInBackground { get; set; }
 
     public bool SkipUnknownFileTypes { get; set; }
 

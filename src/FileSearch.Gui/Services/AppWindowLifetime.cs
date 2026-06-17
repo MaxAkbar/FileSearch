@@ -8,6 +8,8 @@ internal static class AppWindowLifetime
     public static bool ShouldShowOnActivation(AppStartupOptions options) =>
         !options.StartInBackground || !string.IsNullOrWhiteSpace(options.StartupFolder);
 
-    public static bool ShouldHideOnMainWindowClose(bool runInBackground, bool explicitExitRequested) =>
-        runInBackground && !explicitExitRequested;
+    public static bool ShouldStartBackgroundIndexerOnMainWindowClose(
+        bool keepIndexUpdatedAfterClose,
+        bool explicitExitRequested) =>
+        keepIndexUpdatedAfterClose && !explicitExitRequested;
 }

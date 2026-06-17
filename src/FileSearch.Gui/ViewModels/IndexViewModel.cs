@@ -33,10 +33,13 @@ public sealed partial class IndexViewModel : ObservableObject, IDisposable
     private readonly IUiDispatcher _dispatcher;
     private readonly SearchViewModel _search;
     private readonly StatusBarViewModel _status;
+    private readonly IBackgroundIndexerProcessService? _backgroundIndexer;
 
     private string? _pendingStatsRoot;
     private bool _isIndexingOperationActive;
     private bool _resumeIndexingAfterCompaction;
+    private CancellationTokenSource? _workerStatusCts;
+    private bool _usingBackgroundIndexer;
 
     public IndexViewModel(
         IFileIndex fileIndex,
@@ -46,7 +49,8 @@ public sealed partial class IndexViewModel : ObservableObject, IDisposable
         IFileLauncher fileLauncher,
         IUiDispatcher dispatcher,
         SearchViewModel search,
-        StatusBarViewModel status)
+        StatusBarViewModel status,
+        IBackgroundIndexerProcessService? backgroundIndexer = null)
     {
         _fileIndex = fileIndex;
         _indexingService = indexingService;
@@ -56,7 +60,9 @@ public sealed partial class IndexViewModel : ObservableObject, IDisposable
         _dispatcher = dispatcher;
         _search = search;
         _status = status;
+        _backgroundIndexer = backgroundIndexer;
         _indexingService.SetResourceProfile(_applicationSettings.IndexerResourceProfile);
+        _indexingService.SetRuntimeOptions(BuildRuntimeOptions());
         _newIndexRecursive = _search.IncludeSubfolders;
         _newIndexEnableDocumentExtraction = _search.EnableDocumentExtraction;
         _newIndexSkipUnknownFileTypes = _search.SkipUnknownFileTypes;
@@ -191,8 +197,12 @@ public sealed partial class IndexViewModel : ObservableObject, IDisposable
         AddOrReplaceIndexedLocation(location);
         SelectedIndexedLocation = location;
 
-        await _indexingService.AddOrUpdateLocationAsync(ToIndexedLocation(location), queueInitialRefresh: true, CancellationToken.None)
-            .ConfigureAwait(true);
+        if (!await AddOrUpdateIndexLocationAsync(location).ConfigureAwait(true))
+        {
+            RemoveIndexedLocation(location.Root);
+            _status.Text = "Couldn't queue the index update.";
+            return;
+        }
 
         _search.UseIndex = true;
         SaveLocations();
@@ -283,11 +293,22 @@ public sealed partial class IndexViewModel : ObservableObject, IDisposable
         if (location is null)
             return;
 
-        await _indexingService.EnqueueRootRefreshAsync(
-            location.Root,
-            ToIndexedLocation(location).WalkerOptions,
-            IndexQueuePriority.High,
-            CancellationToken.None).ConfigureAwait(true);
+        if (UseBackgroundIndexerMode && _backgroundIndexer is not null)
+        {
+            if (!await _backgroundIndexer.RefreshRootAsync(ToIndexedLocation(location), CancellationToken.None).ConfigureAwait(true))
+            {
+                _status.Text = "Couldn't queue the index rebuild.";
+                return;
+            }
+        }
+        else
+        {
+            await _indexingService.EnqueueRootRefreshAsync(
+                location.Root,
+                ToIndexedLocation(location).WalkerOptions,
+                IndexQueuePriority.High,
+                CancellationToken.None).ConfigureAwait(true);
+        }
 
         _status.Text = "Index rebuild queued.";
     }
@@ -302,7 +323,19 @@ public sealed partial class IndexViewModel : ObservableObject, IDisposable
 
         try
         {
-            await _fileIndex.ClearAsync(_search.SearchPath, CancellationToken.None).ConfigureAwait(true);
+            if (UseBackgroundIndexerMode && _backgroundIndexer is not null)
+            {
+                if (!await _backgroundIndexer.RemoveLocationAsync(_search.SearchPath, CancellationToken.None).ConfigureAwait(true))
+                {
+                    _status.Text = "Couldn't clear index for current folder.";
+                    return;
+                }
+            }
+            else
+            {
+                await _fileIndex.ClearAsync(_search.SearchPath, CancellationToken.None).ConfigureAwait(true);
+            }
+
             RemoveIndexedLocation(_search.SearchPath);
             _status.Text = "Index cleared for current folder.";
             SaveLocations();
@@ -338,7 +371,19 @@ public sealed partial class IndexViewModel : ObservableObject, IDisposable
     {
         try
         {
-            await _indexingService.RemoveLocationAsync(root, CancellationToken.None).ConfigureAwait(true);
+            if (UseBackgroundIndexerMode && _backgroundIndexer is not null)
+            {
+                if (!await _backgroundIndexer.RemoveLocationAsync(root, CancellationToken.None).ConfigureAwait(true))
+                {
+                    _status.Text = "Couldn't clear removed index data.";
+                    return;
+                }
+            }
+            else
+            {
+                await _indexingService.RemoveLocationAsync(root, CancellationToken.None).ConfigureAwait(true);
+            }
+
             await RefreshIndexDatabaseInfoAsync().ConfigureAwait(true);
         }
         catch (Exception ex)
@@ -348,18 +393,26 @@ public sealed partial class IndexViewModel : ObservableObject, IDisposable
     }
 
     [RelayCommand(CanExecute = nameof(CanPauseBackgroundIndexing))]
-    private void PauseBackgroundIndexing()
+    private async Task PauseBackgroundIndexing()
     {
-        _indexingService.Pause();
+        if (UseBackgroundIndexerMode && _backgroundIndexer is not null)
+            await _backgroundIndexer.PauseAsync(CancellationToken.None).ConfigureAwait(true);
+        else
+            _indexingService.Pause();
+
         IsIndexingPaused = true;
     }
 
     private bool CanPauseBackgroundIndexing() => !IsIndexingPaused;
 
     [RelayCommand(CanExecute = nameof(CanResumeBackgroundIndexing))]
-    private void ResumeBackgroundIndexing()
+    private async Task ResumeBackgroundIndexing()
     {
-        _indexingService.Resume();
+        if (UseBackgroundIndexerMode && _backgroundIndexer is not null)
+            await _backgroundIndexer.ResumeAsync(CancellationToken.None).ConfigureAwait(true);
+        else
+            _indexingService.Resume();
+
         IsIndexingPaused = false;
     }
 
@@ -378,7 +431,7 @@ public sealed partial class IndexViewModel : ObservableObject, IDisposable
     {
         if (_isIndexingOperationActive || IndexQueueLength > 0 || _search.IsSearching)
         {
-            QueueIndexDatabaseCompaction();
+            await QueueIndexDatabaseCompactionAsync().ConfigureAwait(true);
             RunQueuedIndexDatabaseCompactionIfReady();
             return;
         }
@@ -394,6 +447,27 @@ public sealed partial class IndexViewModel : ObservableObject, IDisposable
 
     public async Task StartBackgroundIndexingAsync()
     {
+        if (UseBackgroundIndexerMode && _backgroundIndexer is not null)
+        {
+            if (await _backgroundIndexer.EnsureRunningAsync(CancellationToken.None).ConfigureAwait(true))
+            {
+                _usingBackgroundIndexer = true;
+                await _backgroundIndexer.SetResourceProfileAsync(
+                    _applicationSettings.IndexerResourceProfile,
+                    CancellationToken.None).ConfigureAwait(true);
+                await _backgroundIndexer.SetRuntimeOptionsAsync(
+                    BuildRuntimeOptions(),
+                    CancellationToken.None).ConfigureAwait(true);
+                await ApplyWorkerStatusAsync(CancellationToken.None).ConfigureAwait(true);
+                StartWorkerStatusPolling();
+                await RefreshIndexDatabaseInfoAsync().ConfigureAwait(true);
+                return;
+            }
+
+            _status.Text = "Couldn't start the background indexer; using in-window indexing.";
+        }
+
+        _usingBackgroundIndexer = false;
         await _indexingService.StartAsync(
             IndexedLocations.Select(ToIndexedLocation),
             CancellationToken.None).ConfigureAwait(true);
@@ -402,6 +476,13 @@ public sealed partial class IndexViewModel : ObservableObject, IDisposable
 
     public async Task StopBackgroundIndexingAsync()
     {
+        _workerStatusCts?.Cancel();
+        _workerStatusCts?.Dispose();
+        _workerStatusCts = null;
+
+        if (_usingBackgroundIndexer)
+            return;
+
         // ConfigureAwait(false): the exit path blocks the UI thread on this
         // task, so resuming on the dispatcher would deadlock shutdown.
         await _indexingService.StopAsync(CancellationToken.None).ConfigureAwait(false);
@@ -409,6 +490,8 @@ public sealed partial class IndexViewModel : ObservableObject, IDisposable
 
     public void Dispose()
     {
+        _workerStatusCts?.Cancel();
+        _workerStatusCts?.Dispose();
         _indexingService.StatusChanged -= OnIndexingStatusChanged;
         _search.PropertyChanged -= OnSearchPropertyChanged;
         _applicationSettings.PropertyChanged -= OnApplicationSettingsPropertyChanged;
@@ -473,8 +556,105 @@ public sealed partial class IndexViewModel : ObservableObject, IDisposable
         }
         else if (e.PropertyName == nameof(ApplicationSettingsViewModel.IndexerResourceProfile))
         {
-            _indexingService.SetResourceProfile(_applicationSettings.IndexerResourceProfile);
+            if (UseBackgroundIndexerMode && _backgroundIndexer is not null)
+            {
+                _ = _backgroundIndexer.SetResourceProfileAsync(
+                    _applicationSettings.IndexerResourceProfile,
+                    CancellationToken.None);
+            }
+            else
+            {
+                _indexingService.SetResourceProfile(_applicationSettings.IndexerResourceProfile);
+            }
         }
+        else if (e.PropertyName is
+                 nameof(ApplicationSettingsViewModel.PauseIndexingOnBattery) or
+                 nameof(ApplicationSettingsViewModel.IndexOnlyWhenIdle) or
+                 nameof(ApplicationSettingsViewModel.IndexerCpuLimitPercent) or
+                 nameof(ApplicationSettingsViewModel.IndexerDiskPauseMilliseconds))
+        {
+            _ = ApplyRuntimeOptionsAsync();
+        }
+    }
+
+    private bool UseBackgroundIndexerMode =>
+        _backgroundIndexer is not null &&
+        (_applicationSettings.KeepIndexUpdatedAfterClose ||
+         _applicationSettings.StartBackgroundIndexerAtSignIn);
+
+    private bool UseActiveBackgroundIndexer =>
+        _usingBackgroundIndexer && _backgroundIndexer is not null;
+
+    private IndexerRuntimeOptions BuildRuntimeOptions() =>
+        new(
+            _applicationSettings.PauseIndexingOnBattery,
+            _applicationSettings.IndexOnlyWhenIdle,
+            _applicationSettings.IndexerCpuLimitPercent,
+            _applicationSettings.IndexerDiskPauseMilliseconds);
+
+    private async Task ApplyRuntimeOptionsAsync()
+    {
+        var options = BuildRuntimeOptions();
+        if (UseBackgroundIndexerMode && _backgroundIndexer is not null)
+        {
+            await _backgroundIndexer.SetRuntimeOptionsAsync(options, CancellationToken.None).ConfigureAwait(true);
+            return;
+        }
+
+        _indexingService.SetRuntimeOptions(options);
+    }
+
+    private async Task<bool> AddOrUpdateIndexLocationAsync(IndexedLocationSettings location)
+    {
+        if (UseBackgroundIndexerMode && _backgroundIndexer is not null)
+        {
+            return await _backgroundIndexer.AddOrUpdateLocationAsync(
+                    ToIndexedLocation(location),
+                    CancellationToken.None)
+                .ConfigureAwait(true);
+        }
+
+        await _indexingService.AddOrUpdateLocationAsync(
+                ToIndexedLocation(location),
+                queueInitialRefresh: true,
+                CancellationToken.None)
+            .ConfigureAwait(true);
+        return true;
+    }
+
+    private void StartWorkerStatusPolling()
+    {
+        _workerStatusCts?.Cancel();
+        _workerStatusCts?.Dispose();
+        _workerStatusCts = new CancellationTokenSource();
+        _ = PollWorkerStatusAsync(_workerStatusCts.Token);
+    }
+
+    private async Task PollWorkerStatusAsync(CancellationToken cancellationToken)
+    {
+        try
+        {
+            while (!cancellationToken.IsCancellationRequested)
+            {
+                await ApplyWorkerStatusAsync(cancellationToken).ConfigureAwait(false);
+                await Task.Delay(TimeSpan.FromSeconds(1), cancellationToken).ConfigureAwait(false);
+            }
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+        }
+    }
+
+    private async Task ApplyWorkerStatusAsync(CancellationToken cancellationToken)
+    {
+        if (_backgroundIndexer is null)
+            return;
+
+        var status = await _backgroundIndexer.GetStatusAsync(cancellationToken).ConfigureAwait(false);
+        if (status is null)
+            return;
+
+        _dispatcher.Post(() => ApplyIndexingStatus(status));
     }
 
     private static IEnumerable<IndexFilterListSettings> LoadFilterLists(IEnumerable<IndexFilterListSettings> lists)
@@ -613,34 +793,36 @@ public sealed partial class IndexViewModel : ObservableObject, IDisposable
 
     private void OnIndexingStatusChanged(object? sender, IndexingStatus status)
     {
-        _dispatcher.Post(() =>
+        _dispatcher.Post(() => ApplyIndexingStatus(status));
+    }
+
+    private void ApplyIndexingStatus(IndexingStatus status)
+    {
+        _isIndexingOperationActive = status.IsProcessing;
+        IsIndexing = status.IsProcessing || status.QueueLength > 0;
+        IsIndexingPaused = status.IsPaused;
+        IndexQueueLength = status.QueueLength;
+        ActiveIndexingRoot = status.ActiveRoot ?? string.Empty;
+        ApplyIndexingRuntimeStatus(status);
+
+        if (!_search.IsSearching)
+            _status.Text = status.Message;
+
+        // Refresh stats only for a root that just finished processing —
+        // re-counting every root on every idle status was a full scan of
+        // the lines table per root.
+        if (status.IsProcessing && !string.IsNullOrWhiteSpace(status.ActiveRoot))
         {
-            _isIndexingOperationActive = status.IsProcessing;
-            IsIndexing = status.IsProcessing || status.QueueLength > 0;
-            IsIndexingPaused = status.IsPaused;
-            IndexQueueLength = status.QueueLength;
-            ActiveIndexingRoot = status.ActiveRoot ?? string.Empty;
-            ApplyIndexingRuntimeStatus(status);
+            _pendingStatsRoot = status.ActiveRoot;
+        }
+        else if (!status.IsProcessing && _pendingStatsRoot is { } completedRoot)
+        {
+            _pendingStatsRoot = null;
+            _ = RefreshIndexedLocationStatsAsync(completedRoot);
+            _ = RefreshIndexDatabaseInfoAsync();
+        }
 
-            if (!_search.IsSearching)
-                _status.Text = status.Message;
-
-            // Refresh stats only for a root that just finished processing —
-            // re-counting every root on every idle status was a full scan of
-            // the lines table per root.
-            if (status.IsProcessing && !string.IsNullOrWhiteSpace(status.ActiveRoot))
-            {
-                _pendingStatsRoot = status.ActiveRoot;
-            }
-            else if (!status.IsProcessing && _pendingStatsRoot is { } completedRoot)
-            {
-                _pendingStatsRoot = null;
-                _ = RefreshIndexedLocationStatsAsync(completedRoot);
-                _ = RefreshIndexDatabaseInfoAsync();
-            }
-
-            RunQueuedIndexDatabaseCompactionIfReady();
-        });
+        RunQueuedIndexDatabaseCompactionIfReady();
     }
 
     private async Task RefreshIndexedLocationStatsAsync(string root)
@@ -694,15 +876,15 @@ public sealed partial class IndexViewModel : ObservableObject, IDisposable
         CompactIndexDatabaseCommand.NotifyCanExecuteChanged();
     }
 
-    private void QueueIndexDatabaseCompaction()
+    private async Task QueueIndexDatabaseCompactionAsync()
     {
         IsIndexDatabaseCompactionQueued = true;
-        _resumeIndexingAfterCompaction |= !_indexingService.IsPaused;
+        _resumeIndexingAfterCompaction |= !IsIndexingPaused;
 
-        if (!_indexingService.IsPaused)
+        if (!IsIndexingPaused)
         {
-            _indexingService.Pause();
             IsIndexingPaused = true;
+            await PauseIndexingForCompactionAsync().ConfigureAwait(true);
         }
 
         _status.Text = "Index database compaction queued. Indexing will pause, compact, then resume.";
@@ -731,9 +913,19 @@ public sealed partial class IndexViewModel : ObservableObject, IDisposable
 
         try
         {
-            await _fileIndex.CompactAsync(CancellationToken.None).ConfigureAwait(true);
-            await RefreshIndexDatabaseInfoAsync().ConfigureAwait(true);
-            _status.Text = "Index database compacted.";
+            var compacted = UseActiveBackgroundIndexer
+                ? await _backgroundIndexer!.CompactDatabaseAsync(CancellationToken.None).ConfigureAwait(true)
+                : await CompactLocalIndexDatabaseAsync().ConfigureAwait(true);
+
+            if (compacted)
+            {
+                await RefreshIndexDatabaseInfoAsync().ConfigureAwait(true);
+                _status.Text = "Index database compacted.";
+            }
+            else
+            {
+                _status.Text = "Couldn't compact index database.";
+            }
         }
         catch (Exception ex)
         {
@@ -745,10 +937,32 @@ public sealed partial class IndexViewModel : ObservableObject, IDisposable
 
             if (resumeIndexing)
             {
-                _indexingService.Resume();
+                await ResumeIndexingAfterCompactionAsync().ConfigureAwait(true);
                 IsIndexingPaused = false;
             }
         }
+    }
+
+    private async Task PauseIndexingForCompactionAsync()
+    {
+        if (UseActiveBackgroundIndexer)
+            await _backgroundIndexer!.PauseAsync(CancellationToken.None).ConfigureAwait(false);
+        else
+            _indexingService.Pause();
+    }
+
+    private async Task ResumeIndexingAfterCompactionAsync()
+    {
+        if (UseActiveBackgroundIndexer)
+            await _backgroundIndexer!.ResumeAsync(CancellationToken.None).ConfigureAwait(false);
+        else
+            _indexingService.Resume();
+    }
+
+    private async Task<bool> CompactLocalIndexDatabaseAsync()
+    {
+        await _fileIndex.CompactAsync(CancellationToken.None).ConfigureAwait(true);
+        return true;
     }
 
     partial void OnIsIndexingChanged(bool value)

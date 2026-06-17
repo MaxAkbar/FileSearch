@@ -11,25 +11,40 @@ public sealed class IndexedSearcher : ISearcher
     private readonly ISearcher _liveSearcher;
     private readonly IIndexSearch _index;
     private readonly IndexCoverageService _coverageService;
-    private readonly IIndexingService? _indexingService;
+    private readonly IIndexingSearchCoordinator? _indexingCoordinator;
 
     public IndexedSearcher(
         ISearcher liveSearcher,
         IIndexSearch index,
         IndexCoverageService coverageService,
         IIndexingService? indexingService = null)
+        : this(
+            liveSearcher,
+            index,
+            coverageService,
+            indexingService is null ? null : new IndexingServiceSearchCoordinator(indexingService))
+    {
+    }
+
+    public IndexedSearcher(
+        ISearcher liveSearcher,
+        IIndexSearch index,
+        IndexCoverageService coverageService,
+        IIndexingSearchCoordinator? indexingCoordinator)
     {
         _liveSearcher = liveSearcher ?? throw new ArgumentNullException(nameof(liveSearcher));
         _index = index ?? throw new ArgumentNullException(nameof(index));
         _coverageService = coverageService ?? throw new ArgumentNullException(nameof(coverageService));
-        _indexingService = indexingService;
+        _indexingCoordinator = indexingCoordinator;
     }
 
     public async IAsyncEnumerable<Hit> SearchAsync(
         SearchRequest request,
         [EnumeratorCancellation] CancellationToken cancellationToken)
     {
-        _indexingService?.SetForegroundSearchActive(true);
+        if (_indexingCoordinator is not null)
+            await _indexingCoordinator.SetForegroundSearchActiveAsync(true, cancellationToken).ConfigureAwait(false);
+
         try
         {
             if (!request.UseIndex)
@@ -39,7 +54,11 @@ public sealed class IndexedSearcher : ISearcher
                 yield break;
             }
 
-            if (_indexingService?.CurrentStatus.IsProcessing == true)
+            var indexingStatus = _indexingCoordinator is null
+                ? null
+                : await _indexingCoordinator.GetStatusAsync(cancellationToken).ConfigureAwait(false);
+
+            if (indexingStatus?.IsProcessing == true)
             {
                 // The writer is actively rebuilding; reads could see a
                 // half-built index, so fall back to a live scan and let the
@@ -50,7 +69,7 @@ public sealed class IndexedSearcher : ISearcher
                 yield break;
             }
 
-            if (HasQueuedWorkForRequestRoot(request))
+            if (HasQueuedWorkForRequestRoot(request, indexingStatus))
             {
                 request.Status?.Invoke("Index has pending updates; using live scan");
                 await foreach (var hit in _liveSearcher.SearchAsync(request with { UseIndex = false }, cancellationToken).ConfigureAwait(false))
@@ -79,16 +98,17 @@ public sealed class IndexedSearcher : ISearcher
         }
         finally
         {
-            _indexingService?.SetForegroundSearchActive(false);
+            if (_indexingCoordinator is not null)
+                await _indexingCoordinator.SetForegroundSearchActiveAsync(false, CancellationToken.None).ConfigureAwait(false);
         }
     }
 
-    private bool HasQueuedWorkForRequestRoot(SearchRequest request)
+    private bool HasQueuedWorkForRequestRoot(SearchRequest request, IndexingStatus? indexingStatus)
     {
-        if (_indexingService is null || request.Roots.Count != 1)
+        if (indexingStatus is null || request.Roots.Count != 1)
             return false;
 
-        var queued = _indexingService.CurrentStatus.QueuedRootCounts;
+        var queued = indexingStatus.QueuedRootCounts;
         if (queued is null || queued.Count == 0)
             return false;
 
@@ -107,10 +127,10 @@ public sealed class IndexedSearcher : ISearcher
 
     private void QueueRootRefresh(SearchRequest request)
     {
-        if (_indexingService is null || request.Roots.Count != 1)
+        if (_indexingCoordinator is null || request.Roots.Count != 1)
             return;
 
-        _ = _indexingService.EnqueueRootRefreshAsync(
+        _ = _indexingCoordinator.EnqueueRootRefreshAsync(
             request.Roots[0],
             request.WalkerOptions,
             IndexQueuePriority.Low,

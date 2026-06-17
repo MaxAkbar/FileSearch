@@ -1193,6 +1193,8 @@ public sealed class FileIndexTests : IDisposable
 
         public IndexerResourceProfile ResourceProfile { get; private set; } = IndexerResourceProfile.Balanced;
 
+        public IndexerRuntimeOptions RuntimeOptions { get; private set; } = IndexerRuntimeOptions.Default;
+
         public bool ForegroundSearchWasSet { get; private set; }
 
         public Task StartAsync(IEnumerable<IndexedLocation> locations, CancellationToken cancellationToken) => Task.CompletedTask;
@@ -1215,6 +1217,8 @@ public sealed class FileIndexTests : IDisposable
         }
 
         public void SetResourceProfile(IndexerResourceProfile profile) => ResourceProfile = profile;
+
+        public void SetRuntimeOptions(IndexerRuntimeOptions options) => RuntimeOptions = options.Normalize();
 
         public void Pause() { }
 

@@ -48,6 +48,7 @@ public static class ServiceCollectionExtensions
         });
 
         services.TryAddSingleton<FileIndexOptions>();
+        services.TryAddSingleton<IIndexerRuntimeCondition, WindowsIndexerRuntimeCondition>();
         services.TryAddSingleton<IIndexVolumeResolver, WindowsIndexVolumeResolver>();
         services.TryAddSingleton<IUsnJournalReader, WindowsUsnJournalReader>();
         services.TryAddSingleton<IFileIndex>(sp => new CSharpDbFileIndex(
@@ -71,6 +72,8 @@ public static class ServiceCollectionExtensions
         services.TryAddSingleton<IIndexQueue, IndexQueue>();
         services.TryAddSingleton<IIndexWatcherService, IndexWatcherService>();
         services.TryAddSingleton<IIndexingService, IndexingService>();
+        services.TryAddSingleton<IIndexingSearchCoordinator>(sp =>
+            new IndexingServiceSearchCoordinator(sp.GetRequiredService<IIndexingService>()));
         services.TryAddSingleton<IndexCoverageService>();
 
         services.TryAddSingleton(sp => new Searcher(
@@ -83,7 +86,7 @@ public static class ServiceCollectionExtensions
             sp.GetRequiredService<Searcher>(),
             sp.GetRequiredService<IFileIndex>(),
             sp.GetRequiredService<IndexCoverageService>(),
-            sp.GetService<IIndexingService>()));
+            sp.GetService<IIndexingSearchCoordinator>()));
 
         services.TryAddSingleton<IWorkflowStore>(_ => new JsonWorkflowStore());
         services.TryAddSingleton<IWorkflowRunner>(sp => new WorkflowRunner(

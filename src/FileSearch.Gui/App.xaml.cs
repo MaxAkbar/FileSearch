@@ -4,6 +4,7 @@ using System.IO;
 using System.Linq;
 using System.Windows;
 using FileSearch.Core;
+using FileSearch.Core.Indexing;
 using FileSearch.Core.Logging;
 using FileSearch.Gui.Services;
 using FileSearch.Gui.Settings;
@@ -25,6 +26,7 @@ public partial class App : System.Windows.Application
     private Icon? _trayIconImage;
     private SingleInstanceCoordinator? _singleInstance;
     private bool _explicitExitRequested;
+    private bool _backgroundWorkerHandoffRequested;
 
     protected override void OnStartup(StartupEventArgs e)
     {
@@ -60,6 +62,8 @@ public partial class App : System.Windows.Application
                 services.AddSingleton<IFileLauncher, FileLauncher>();
                 services.AddSingleton<IShellIntegrationService, ShellIntegrationService>();
                 services.AddSingleton<IStartupRegistrationService, StartupRegistrationService>();
+                services.AddSingleton<IBackgroundIndexerProcessService, BackgroundIndexerProcessService>();
+                services.AddSingleton<IIndexingSearchCoordinator, BackgroundIndexerSearchCoordinator>();
                 services.AddSingleton<IFolderPicker, FolderPicker>();
                 services.AddSingleton<IUiDispatcher, WpfUiDispatcher>();
                 services.AddSingleton<StatusBarViewModel>();
@@ -87,11 +91,13 @@ public partial class App : System.Windows.Application
         window.DataContext = viewModel;
         window.Closing += (_, args) =>
         {
-            if (!AppWindowLifetime.ShouldHideOnMainWindowClose(viewModel.Settings.RunInBackground, _explicitExitRequested))
+            if (!AppWindowLifetime.ShouldStartBackgroundIndexerOnMainWindowClose(
+                    viewModel.Settings.KeepIndexUpdatedAfterClose,
+                    _explicitExitRequested))
                 return;
 
             args.Cancel = true;
-            window.Hide();
+            _ = HandoffToBackgroundWorkerAndExitAsync(window, viewModel);
         };
         window.Closed += (_, _) =>
         {
@@ -100,6 +106,25 @@ public partial class App : System.Windows.Application
         };
         CreateTrayIcon(window, viewModel);
         _singleInstance.StartServer(options => Dispatcher.Invoke(() => ActivateFromOptions(window, viewModel, options)));
+
+        var backgroundIndexer = _host.Services.GetRequiredService<IBackgroundIndexerProcessService>();
+        if (startupOptions.StartInBackground && viewModel.Settings.StartBackgroundIndexerAtSignIn)
+        {
+            _ = StartBackgroundWorkerAndExitAsync(backgroundIndexer);
+            return;
+        }
+
+        if (!viewModel.Settings.KeepIndexUpdatedAfterClose &&
+            !viewModel.Settings.StartBackgroundIndexerAtSignIn)
+        {
+            try
+            {
+                _ = backgroundIndexer.ShutdownIfRunningAsync(CancellationToken.None).GetAwaiter().GetResult();
+            }
+            catch
+            {
+            }
+        }
 
         if (AppWindowLifetime.ShouldShowOnStartup(startupOptions))
             window.Show();
@@ -133,6 +158,32 @@ public partial class App : System.Windows.Application
     {
         _explicitExitRequested = true;
         Shutdown();
+    }
+
+    private async Task StartBackgroundWorkerAndExitAsync(IBackgroundIndexerProcessService backgroundIndexer)
+    {
+        await backgroundIndexer.EnsureRunningAsync(CancellationToken.None).ConfigureAwait(true);
+        _backgroundWorkerHandoffRequested = true;
+        RequestExit();
+    }
+
+    private async Task HandoffToBackgroundWorkerAndExitAsync(MainWindow window, MainViewModel viewModel)
+    {
+        if (_backgroundWorkerHandoffRequested)
+            return;
+
+        _backgroundWorkerHandoffRequested = true;
+        var backgroundIndexer = _host?.Services.GetRequiredService<IBackgroundIndexerProcessService>();
+        if (backgroundIndexer is null ||
+            !await backgroundIndexer.EnsureRunningAsync(CancellationToken.None).ConfigureAwait(true))
+        {
+            _backgroundWorkerHandoffRequested = false;
+            window.Show();
+            viewModel.Status.Text = "Couldn't start the background indexer.";
+            return;
+        }
+
+        RequestExit();
     }
 
     private static void ActivateFromOptions(
@@ -188,6 +239,14 @@ public partial class App : System.Windows.Application
 
                 vm.PersistSettings();
                 fileTypeStore.Save(vm.BuildFileTypeOptions());
+
+                if (_explicitExitRequested && !_backgroundWorkerHandoffRequested)
+                {
+                    _ = Task.Run(() => _host.Services
+                            .GetRequiredService<IBackgroundIndexerProcessService>()
+                            .ShutdownIfRunningAsync(CancellationToken.None))
+                        .Wait(TimeSpan.FromSeconds(3));
+                }
 
                 // Stop indexing off the dispatcher and with a hard bound:
                 // blocking the UI thread on a dispatcher-resuming task

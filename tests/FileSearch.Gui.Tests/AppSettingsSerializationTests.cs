@@ -23,7 +23,12 @@ public sealed class AppSettingsSerializationTests
             UseIndex = true,
             SidebarPageSize = 15,
             IndexerResourceProfile = IndexerResourceProfile.Low,
-            RunInBackground = true,
+            KeepIndexUpdatedAfterClose = true,
+            StartBackgroundIndexerAtSignIn = true,
+            PauseIndexingOnBattery = true,
+            IndexOnlyWhenIdle = true,
+            IndexerCpuLimitPercent = 25,
+            IndexerDiskPauseMilliseconds = 100,
             SavedSearches =
             [
                 new()
@@ -112,7 +117,13 @@ public sealed class AppSettingsSerializationTests
         Assert.NotNull(loaded);
         Assert.Equal(15, loaded.SidebarPageSize);
         Assert.Equal(IndexerResourceProfile.Low, loaded.IndexerResourceProfile);
-        Assert.True(loaded.RunInBackground);
+        Assert.True(loaded.KeepIndexUpdatedAfterClose);
+        Assert.True(loaded.StartBackgroundIndexerAtSignIn);
+        Assert.True(loaded.PauseIndexingOnBattery);
+        Assert.True(loaded.IndexOnlyWhenIdle);
+        Assert.Equal(25, loaded.IndexerCpuLimitPercent);
+        Assert.Equal(100, loaded.IndexerDiskPauseMilliseconds);
+        Assert.Null(loaded.RunInBackground);
 
         var savedSearch = Assert.Single(loaded.SavedSearches);
         Assert.Equal("needle", savedSearch.QueryText);
@@ -157,5 +168,24 @@ public sealed class AppSettingsSerializationTests
         Assert.Equal("Build output", excludeList.Name);
         Assert.Equal(".dll; .exe", excludeList.Extensions);
         Assert.Equal("bin; obj", excludeList.Folders);
+    }
+
+    [Fact]
+    public void LegacyRunInBackgroundMigratesToSplitBackgroundSettings()
+    {
+        var settings = JsonSerializer.Deserialize<AppSettings>(
+            """
+            {
+              "RunInBackground": true
+            }
+            """,
+            s_options);
+
+        Assert.NotNull(settings);
+        JsonSettingsStore.MigrateLegacyFields(settings);
+
+        Assert.True(settings.KeepIndexUpdatedAfterClose);
+        Assert.True(settings.StartBackgroundIndexerAtSignIn);
+        Assert.Null(settings.RunInBackground);
     }
 }

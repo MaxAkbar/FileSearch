@@ -19,6 +19,7 @@ public sealed class IndexingService : IIndexingService
     private readonly IIndexQueue _queue;
     private readonly IIndexWatcherService _watchers;
     private readonly IIndexStartupCatchUpService? _startupCatchUp;
+    private readonly IIndexerRuntimeCondition _runtimeCondition;
     private readonly object _sync = new();
     private readonly Dictionary<string, IndexedLocation> _locations = new(StringComparer.OrdinalIgnoreCase);
     private readonly Dictionary<string, string> _rootStatusDetails = new(StringComparer.OrdinalIgnoreCase);
@@ -33,6 +34,7 @@ public sealed class IndexingService : IIndexingService
     private bool _currentItemCanceledForRemoval;
     private string? _currentItemRemovalRoot;
     private IndexerResourceProfile _resourceProfile = IndexerResourceProfile.Balanced;
+    private IndexerRuntimeOptions _runtimeOptions = IndexerRuntimeOptions.Default;
     private long _lastStatusNotificationTicks;
     private IndexingStatus _status = new(false, false, false, 0, "Indexing idle.");
 
@@ -43,12 +45,14 @@ public sealed class IndexingService : IIndexingService
         IIndexQueue queue,
         IIndexWatcherService watchers,
         ILogger<IndexingService>? logger = null,
-        IIndexStartupCatchUpService? startupCatchUp = null)
+        IIndexStartupCatchUpService? startupCatchUp = null,
+        IIndexerRuntimeCondition? runtimeCondition = null)
     {
         _index = index;
         _queue = queue;
         _watchers = watchers;
         _startupCatchUp = startupCatchUp;
+        _runtimeCondition = runtimeCondition ?? new WindowsIndexerRuntimeCondition();
         _logger = logger ?? NullLogger<IndexingService>.Instance;
     }
 
@@ -59,6 +63,8 @@ public sealed class IndexingService : IIndexingService
     public bool IsPaused => _paused;
 
     public IndexerResourceProfile ResourceProfile => _resourceProfile;
+
+    public IndexerRuntimeOptions RuntimeOptions => _runtimeOptions;
 
     public async Task StartAsync(IEnumerable<IndexedLocation> locations, CancellationToken cancellationToken)
     {
@@ -231,6 +237,16 @@ public sealed class IndexingService : IIndexingService
         Publish(CurrentStatus.IsProcessing, $"Indexer resource use set to {normalized}.", force: true);
     }
 
+    public void SetRuntimeOptions(IndexerRuntimeOptions options)
+    {
+        var normalized = options.Normalize();
+        if (_runtimeOptions == normalized)
+            return;
+
+        _runtimeOptions = normalized;
+        Publish(CurrentStatus.IsProcessing, "Indexer runtime limits updated.", force: true);
+    }
+
     public void Pause()
     {
         _paused = true;
@@ -276,7 +292,14 @@ public sealed class IndexingService : IIndexingService
 
     private async Task RunIterationAsync(Stopwatch burst, CancellationToken cancellationToken)
     {
-        var policy = IndexingResourcePolicy.For(_resourceProfile);
+        var policy = IndexingResourcePolicy.For(_resourceProfile, _runtimeOptions);
+
+        if (ShouldDeferForRuntimeOptions(out var deferMessage))
+        {
+            Publish(false, deferMessage);
+            await Task.Delay(TimeSpan.FromSeconds(5), cancellationToken).ConfigureAwait(false);
+            return;
+        }
 
         // Rest BEFORE dequeuing — resting after used to hold a dequeued item
         // across a 5s delay, where a shutdown silently dropped it (the same
@@ -360,6 +383,25 @@ public sealed class IndexingService : IIndexingService
         }
     }
 
+    private bool ShouldDeferForRuntimeOptions(out string message)
+    {
+        if (_runtimeOptions.PauseOnBattery && _runtimeCondition.IsOnBattery)
+        {
+            message = "Indexing paused while on battery power.";
+            return true;
+        }
+
+        if (_runtimeOptions.IndexOnlyWhenIdle &&
+            !_runtimeCondition.IsUserIdle(TimeSpan.FromMinutes(5)))
+        {
+            message = "Indexing waiting for the computer to be idle.";
+            return true;
+        }
+
+        message = string.Empty;
+        return false;
+    }
+
     private async Task ProcessAsync(IndexQueueItem item, CancellationToken cancellationToken)
     {
         Publish(true, Describe(item));
@@ -375,7 +417,7 @@ public sealed class IndexingService : IIndexingService
                             item.Root,
                             item.WalkerOptions,
                             progress => Publish(true, FormatProgress(progress), progress: progress),
-                            IndexingResourcePolicy.For(_resourceProfile).Throttle),
+                            IndexingResourcePolicy.For(_resourceProfile, _runtimeOptions).Throttle),
                         IndexRefreshMode.Incremental,
                         cancellationToken).ConfigureAwait(false);
                     await _index.RemovePendingChangeAsync(item.Root, null, item.Kind, cancellationToken)

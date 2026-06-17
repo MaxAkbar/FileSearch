@@ -56,8 +56,16 @@ public sealed class JsonSettingsStore : ISettingsStore
     /// those values into the recent-history lists and clear the legacy
     /// fields so the next save doesn't keep them around.
     /// </summary>
-    private static void MigrateLegacyFields(AppSettings s)
+    internal static void MigrateLegacyFields(AppSettings s)
     {
+        if (s.RunInBackground == true)
+        {
+            s.KeepIndexUpdatedAfterClose = true;
+            s.StartBackgroundIndexerAtSignIn = true;
+        }
+
+        s.RunInBackground = null;
+
         if (s.RecentQueries.Count == 0 && !string.IsNullOrWhiteSpace(s.LastQuery))
             s.RecentQueries.Add(s.LastQuery);
         if (s.RecentPaths.Count == 0 && !string.IsNullOrWhiteSpace(s.LastSearchPath))

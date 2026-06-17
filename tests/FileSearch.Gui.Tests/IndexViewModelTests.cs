@@ -252,6 +252,34 @@ public sealed class IndexViewModelTests
     }
 
     [Fact]
+    public async Task AddFolderToIndexUsesWorkerWhenBackgroundIndexerModeIsEnabled()
+    {
+        var root = Path.Combine(Path.GetTempPath(), "filesearch-add-index-worker-" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(root);
+        var indexingService = new FakeIndexingService();
+        var backgroundIndexer = new FakeBackgroundIndexerProcessService();
+        var (_, index) = Build(
+            indexingService: indexingService,
+            backgroundIndexer: backgroundIndexer,
+            configureSettings: settings => settings.KeepIndexUpdatedAfterClose = true);
+
+        try
+        {
+            await index.AddFolderToIndexAsync(root);
+
+            Assert.Empty(indexingService.AddedLocations);
+            var added = Assert.Single(backgroundIndexer.AddedLocations);
+            Assert.Equal(IndexPath.NormalizeRoot(root), added.Root);
+            Assert.Equal(1, backgroundIndexer.AddOrUpdateCallCount);
+        }
+        finally
+        {
+            Directory.Delete(root, recursive: true);
+            index.Dispose();
+        }
+    }
+
+    [Fact]
     public void NamedIndexFilterListsCanBeSavedAndSelected()
     {
         var (_, index) = Build();
@@ -405,6 +433,46 @@ public sealed class IndexViewModelTests
     }
 
     [Fact]
+    public async Task CompactCommandUsesWorkerWhenBackgroundIndexerIsActive()
+    {
+        var fileIndex = new FakeFileIndex
+        {
+            DatabaseInfo = new IndexDatabaseInfo(
+                @"C:\Index\filesearch.db",
+                Exists: true,
+                IsCompatible: true,
+                SchemaVersion: "5",
+                DatabaseBytes: 2048,
+                WalBytes: 512,
+                ShmBytes: 0,
+                LocationCount: 1,
+                TotalFileCount: 1,
+                TotalLineCount: 2,
+                PendingChangeCount: 0,
+                LastIndexedUtc: null),
+        };
+        var backgroundIndexer = new FakeBackgroundIndexerProcessService
+        {
+            Status = new IndexingStatus(
+                IsRunning: true,
+                IsPaused: false,
+                IsProcessing: false,
+                QueueLength: 0,
+                Message: "Ready"),
+        };
+        var (_, index) = Build(
+            fileIndex,
+            backgroundIndexer: backgroundIndexer,
+            configureSettings: settings => settings.KeepIndexUpdatedAfterClose = true);
+
+        await index.StartBackgroundIndexingAsync();
+        await index.CompactIndexDatabaseCommand.ExecuteAsync(null);
+
+        Assert.Equal(1, backgroundIndexer.CompactDatabaseCallCount);
+        Assert.Equal(0, fileIndex.CompactCallCount);
+    }
+
+    [Fact]
     public void IndexerResourceProfileSettingUpdatesIndexingService()
     {
         var status = new StatusBarViewModel();
@@ -448,6 +516,7 @@ public sealed class IndexViewModelTests
     private static (SearchViewModel Search, IndexViewModel Index) Build(
         FakeFileIndex? fileIndex = null,
         FakeIndexingService? indexingService = null,
+        FakeBackgroundIndexerProcessService? backgroundIndexer = null,
         Action<AppSettings>? configureSettings = null)
     {
         var status = new StatusBarViewModel();
@@ -474,7 +543,8 @@ public sealed class IndexViewModelTests
             new FakeFileLauncher(),
             new InlineDispatcher(),
             search,
-            status);
+            status,
+            backgroundIndexer);
         return (search, index);
     }
 

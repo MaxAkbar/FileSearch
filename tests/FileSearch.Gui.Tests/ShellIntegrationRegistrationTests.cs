@@ -54,21 +54,39 @@ public sealed class ShellIntegrationRegistrationTests
     [Fact]
     public void BuildBackgroundStartupCommand_QuotesExecutableAndBackgroundArgument()
     {
-        const string executable = @"C:\Program Files\FileSearch\FileSearch.Gui.exe";
+        const string executable = @"C:\Program Files\FileSearch\FileSearch.Indexer.exe";
 
         var command = StartupRegistration.BuildBackgroundStartupCommand(executable);
 
-        Assert.Equal(@"""C:\Program Files\FileSearch\FileSearch.Gui.exe"" --background", command);
+        Assert.Equal(@"""C:\Program Files\FileSearch\FileSearch.Indexer.exe"" --background", command);
     }
 
     [Fact]
     public void IsExpectedBackgroundStartupCommand_MatchesExpectedRunCommand()
     {
-        const string executable = @"C:\Program Files\FileSearch\FileSearch.Gui.exe";
+        const string executable = @"C:\Program Files\FileSearch\FileSearch.Indexer.exe";
         var command = StartupRegistration.BuildBackgroundStartupCommand(executable);
 
         Assert.True(StartupRegistration.IsExpectedBackgroundStartupCommand(command, executable));
-        Assert.False(StartupRegistration.IsExpectedBackgroundStartupCommand(@"""C:\Other\FileSearch.Gui.exe"" --background", executable));
+        Assert.False(StartupRegistration.IsExpectedBackgroundStartupCommand(@"""C:\Other\FileSearch.Indexer.exe"" --background", executable));
+    }
+
+    [Fact]
+    public void BackgroundIndexerPathResolver_UsesSiblingIndexerWhenPresent()
+    {
+        var baseDirectory = Path.Combine(Path.GetTempPath(), "filesearch-indexer-resolver-" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(baseDirectory);
+        var indexerPath = Path.Combine(baseDirectory, "FileSearch.Indexer.exe");
+        File.WriteAllText(indexerPath, string.Empty);
+
+        try
+        {
+            Assert.Equal(indexerPath, BackgroundIndexerProcessService.ResolveDefaultExecutablePath(baseDirectory));
+        }
+        finally
+        {
+            Directory.Delete(baseDirectory, recursive: true);
+        }
     }
 
     [Fact]

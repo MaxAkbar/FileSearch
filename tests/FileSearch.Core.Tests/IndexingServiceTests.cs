@@ -222,6 +222,37 @@ public sealed class IndexingServiceTests
     }
 
     [Fact]
+    public async Task RuntimeOptionsAddThrottleToRootRefreshRequests()
+    {
+        var index = new BlockingFileIndex();
+        var queue = new IndexQueue(index);
+        var service = new IndexingService(index, queue, new IndexWatcherService(queue));
+        var root = Path.Combine(Path.GetTempPath(), "filesearch-runtime-throttle-" + Guid.NewGuid().ToString("N"));
+
+        await service.StartAsync(Array.Empty<IndexedLocation>(), TestContext.Current.CancellationToken);
+        try
+        {
+            service.SetRuntimeOptions(new IndexerRuntimeOptions(CpuLimitPercent: 25, DiskPauseMilliseconds: 100));
+            await service.EnqueueRootRefreshAsync(root, new WalkerOptions(), IndexQueuePriority.High, TestContext.Current.CancellationToken);
+
+            await index.RefreshStarted.Task.WaitAsync(TimeSpan.FromSeconds(5), TestContext.Current.CancellationToken);
+
+            Assert.Equal(25, service.RuntimeOptions.CpuLimitPercent);
+            Assert.NotNull(index.RefreshRequest);
+            Assert.NotNull(index.RefreshRequest.Throttle);
+            var throttle = index.RefreshRequest.Throttle!;
+            Assert.True(throttle.IsEnabled);
+            Assert.Equal(1, throttle.FilesPerPause);
+            Assert.True(throttle.Pause >= TimeSpan.FromMilliseconds(100));
+        }
+        finally
+        {
+            await service.StopAsync(TestContext.Current.CancellationToken);
+        }
+    }
+
+
+    [Fact]
     public async Task PausedWorkerKeepsItemsInQueueInsteadOfHoldingThem()
     {
         var index = new BlockingFileIndex();
