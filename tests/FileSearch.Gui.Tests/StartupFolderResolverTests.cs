@@ -38,4 +38,55 @@ public sealed class StartupFolderResolverTests
 
         Assert.Null(result);
     }
+
+    [Fact]
+    public void AppStartupOptionsParse_ReturnsDefaultsForNoArgs()
+    {
+        var options = AppStartupOptions.Parse(Array.Empty<string>(), _ => false);
+
+        Assert.False(options.StartInBackground);
+        Assert.Null(options.StartupFolder);
+    }
+
+    [Fact]
+    public void AppStartupOptionsParse_KeepsExplorerFolderArgument()
+    {
+        const string folder = @"C:\Work";
+
+        var options = AppStartupOptions.Parse(new[] { $"\"{folder}\"" }, path => path == folder);
+
+        Assert.False(options.StartInBackground);
+        Assert.Equal(folder, options.StartupFolder);
+    }
+
+    [Fact]
+    public void AppStartupOptionsParse_SupportsBackgroundArgument()
+    {
+        var options = AppStartupOptions.Parse(new[] { "--background" }, _ => false);
+
+        Assert.True(options.StartInBackground);
+        Assert.Null(options.StartupFolder);
+    }
+
+    [Fact]
+    public void AppStartupOptionsParse_SupportsBackgroundPlusFolder()
+    {
+        const string folder = @"C:\Work";
+
+        var options = AppStartupOptions.Parse(new[] { "--background", folder }, path => path == folder);
+
+        Assert.True(options.StartInBackground);
+        Assert.Equal(folder, options.StartupFolder);
+    }
+
+    [Fact]
+    public void AppStartupOptionsParse_IgnoresUnknownFlags()
+    {
+        const string folder = @"C:\Work";
+
+        var options = AppStartupOptions.Parse(new[] { "--unknown", folder }, path => path == folder);
+
+        Assert.False(options.StartInBackground);
+        Assert.Equal(folder, options.StartupFolder);
+    }
 }

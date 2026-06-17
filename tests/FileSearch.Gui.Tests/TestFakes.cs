@@ -51,6 +51,39 @@ internal sealed class FakeFolderPicker : IFolderPicker
     public string? PickFolder(string title, string? initialDirectory) => null;
 }
 
+internal sealed class FakeStartupRegistrationService : IStartupRegistrationService
+{
+    public bool IsEnabled { get; set; }
+
+    public bool ThrowOnEnable { get; set; }
+
+    public bool ThrowOnDisable { get; set; }
+
+    public int EnableCallCount { get; private set; }
+
+    public int DisableCallCount { get; private set; }
+
+    public bool IsBackgroundStartupEnabled() => IsEnabled;
+
+    public void EnableBackgroundStartup()
+    {
+        EnableCallCount++;
+        if (ThrowOnEnable)
+            throw new InvalidOperationException("enable failed");
+
+        IsEnabled = true;
+    }
+
+    public void DisableBackgroundStartup()
+    {
+        DisableCallCount++;
+        if (ThrowOnDisable)
+            throw new InvalidOperationException("disable failed");
+
+        IsEnabled = false;
+    }
+}
+
 internal sealed class InlineDispatcher : IUiDispatcher
 {
     public void Post(Action action) => action();

@@ -23,6 +23,7 @@ public sealed class AppSettingsSerializationTests
             UseIndex = true,
             SidebarPageSize = 15,
             IndexerResourceProfile = IndexerResourceProfile.Low,
+            RunInBackground = true,
             SavedSearches =
             [
                 new()
@@ -111,6 +112,7 @@ public sealed class AppSettingsSerializationTests
         Assert.NotNull(loaded);
         Assert.Equal(15, loaded.SidebarPageSize);
         Assert.Equal(IndexerResourceProfile.Low, loaded.IndexerResourceProfile);
+        Assert.True(loaded.RunInBackground);
 
         var savedSearch = Assert.Single(loaded.SavedSearches);
         Assert.Equal("needle", savedSearch.QueryText);

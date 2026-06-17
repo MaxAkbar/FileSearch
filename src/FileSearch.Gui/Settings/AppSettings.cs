@@ -22,6 +22,8 @@ public sealed class AppSettings
     /// </summary>
     public IndexerResourceProfile IndexerResourceProfile { get; set; } = IndexerResourceProfile.Balanced;
 
+    public bool RunInBackground { get; set; }
+
     public bool SkipUnknownFileTypes { get; set; }
 
     public bool UseIndex { get; set; }

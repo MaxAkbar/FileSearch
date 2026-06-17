@@ -50,4 +50,31 @@ public sealed class ShellIntegrationRegistrationTests
     {
         Assert.Equal("Search with FileSearch", ShellIntegrationRegistration.MenuText);
     }
+
+    [Fact]
+    public void BuildBackgroundStartupCommand_QuotesExecutableAndBackgroundArgument()
+    {
+        const string executable = @"C:\Program Files\FileSearch\FileSearch.Gui.exe";
+
+        var command = StartupRegistration.BuildBackgroundStartupCommand(executable);
+
+        Assert.Equal(@"""C:\Program Files\FileSearch\FileSearch.Gui.exe"" --background", command);
+    }
+
+    [Fact]
+    public void IsExpectedBackgroundStartupCommand_MatchesExpectedRunCommand()
+    {
+        const string executable = @"C:\Program Files\FileSearch\FileSearch.Gui.exe";
+        var command = StartupRegistration.BuildBackgroundStartupCommand(executable);
+
+        Assert.True(StartupRegistration.IsExpectedBackgroundStartupCommand(command, executable));
+        Assert.False(StartupRegistration.IsExpectedBackgroundStartupCommand(@"""C:\Other\FileSearch.Gui.exe"" --background", executable));
+    }
+
+    [Fact]
+    public void StartupRegistrationConstants_TargetCurrentUserRunValue()
+    {
+        Assert.Equal(@"Software\Microsoft\Windows\CurrentVersion\Run", StartupRegistration.RunKeyPath);
+        Assert.Equal("FileSearch", StartupRegistration.ValueName);
+    }
 }

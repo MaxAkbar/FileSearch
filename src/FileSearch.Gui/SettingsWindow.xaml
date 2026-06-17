@@ -90,6 +90,31 @@
                                   MinWidth="130"
                                   VerticalAlignment="Center"/>
                     </Grid>
+
+                    <Border Height="1"
+                            Background="{DynamicResource Atlas.LineBrush}"
+                            Margin="0,18"/>
+
+                    <TextBlock Text="BACKGROUND" Style="{StaticResource SectionHeaderStyle}"/>
+                    <Grid Margin="0,8,0,0">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="*"/>
+                            <ColumnDefinition Width="Auto"/>
+                        </Grid.ColumnDefinitions>
+
+                        <StackPanel Grid.Column="0" Margin="0,0,20,0">
+                            <TextBlock Text="Run FileSearch in background at Windows sign-in"
+                                       Style="{StaticResource FieldLabelStyle}"/>
+                            <TextBlock Text="{Binding RunInBackgroundSummary}"
+                                       Style="{StaticResource MutedValueStyle}"
+                                       TextWrapping="Wrap"
+                                       Margin="0,4,0,0"/>
+                        </StackPanel>
+
+                        <CheckBox Grid.Column="1"
+                                  IsChecked="{Binding RunInBackground, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
+                                  VerticalAlignment="Center"/>
+                    </Grid>
                 </StackPanel>
             </Border>
 

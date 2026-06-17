@@ -23,10 +23,25 @@ public partial class App : System.Windows.Application
     private IHost? _host;
     private Forms.NotifyIcon? _trayIcon;
     private Icon? _trayIconImage;
+    private SingleInstanceCoordinator? _singleInstance;
+    private bool _explicitExitRequested;
 
     protected override void OnStartup(StartupEventArgs e)
     {
         base.OnStartup(e);
+        ShutdownMode = ShutdownMode.OnExplicitShutdown;
+
+        var startupOptions = AppStartupOptions.Parse(e.Args, Directory.Exists);
+        _singleInstance = new SingleInstanceCoordinator();
+        if (!_singleInstance.IsPrimary)
+        {
+            _ = SingleInstanceCoordinator
+                .TrySendActivationAsync(startupOptions, CancellationToken.None)
+                .GetAwaiter()
+                .GetResult();
+            Shutdown();
+            return;
+        }
 
         _host = Host.CreateDefaultBuilder()
             .ConfigureLogging(logging => logging.AddProvider(new FileLoggerProvider(
@@ -44,6 +59,7 @@ public partial class App : System.Windows.Application
                 services.AddSingleton<IThemeService, ThemeService>();
                 services.AddSingleton<IFileLauncher, FileLauncher>();
                 services.AddSingleton<IShellIntegrationService, ShellIntegrationService>();
+                services.AddSingleton<IStartupRegistrationService, StartupRegistrationService>();
                 services.AddSingleton<IFolderPicker, FolderPicker>();
                 services.AddSingleton<IUiDispatcher, WpfUiDispatcher>();
                 services.AddSingleton<StatusBarViewModel>();
@@ -65,15 +81,30 @@ public partial class App : System.Windows.Application
 
         var window = _host.Services.GetRequiredService<MainWindow>();
         var viewModel = _host.Services.GetRequiredService<MainViewModel>();
-        var startupFolder = StartupFolderResolver.ResolveFolderPath(e.Args, Directory.Exists);
-        if (startupFolder is not null)
-            viewModel.Search.SearchPath = startupFolder;
+        if (startupOptions.StartupFolder is not null)
+            viewModel.Search.SearchPath = startupOptions.StartupFolder;
 
         window.DataContext = viewModel;
-        window.Show();
-        _ = viewModel.StartBackgroundIndexingAsync();
+        window.Closing += (_, args) =>
+        {
+            if (!AppWindowLifetime.ShouldHideOnMainWindowClose(viewModel.Settings.RunInBackground, _explicitExitRequested))
+                return;
 
+            args.Cancel = true;
+            window.Hide();
+        };
+        window.Closed += (_, _) =>
+        {
+            if (!_explicitExitRequested)
+                RequestExit();
+        };
         CreateTrayIcon(window, viewModel);
+        _singleInstance.StartServer(options => Dispatcher.Invoke(() => ActivateFromOptions(window, viewModel, options)));
+
+        if (AppWindowLifetime.ShouldShowOnStartup(startupOptions))
+            window.Show();
+
+        _ = viewModel.StartBackgroundIndexingAsync();
     }
 
     private void CreateTrayIcon(MainWindow window, MainViewModel viewModel)
@@ -86,7 +117,7 @@ public partial class App : System.Windows.Application
         menu.Items.Add("Install Windows integration", null, (_, _) => Dispatcher.Invoke(() => viewModel.InstallWindowsIntegrationCommand.Execute(null)));
         menu.Items.Add("Remove Windows integration", null, (_, _) => Dispatcher.Invoke(() => viewModel.RemoveWindowsIntegrationCommand.Execute(null)));
         menu.Items.Add(new Forms.ToolStripSeparator());
-        menu.Items.Add("Exit", null, (_, _) => Dispatcher.Invoke(Shutdown));
+        menu.Items.Add("Exit", null, (_, _) => Dispatcher.Invoke(RequestExit));
 
         _trayIcon = new Forms.NotifyIcon
         {
@@ -96,6 +127,24 @@ public partial class App : System.Windows.Application
             Visible = true,
         };
         _trayIcon.DoubleClick += (_, _) => Dispatcher.Invoke(() => ShowMainWindow(window));
+    }
+
+    internal void RequestExit()
+    {
+        _explicitExitRequested = true;
+        Shutdown();
+    }
+
+    private static void ActivateFromOptions(
+        MainWindow window,
+        MainViewModel viewModel,
+        AppStartupOptions options)
+    {
+        if (options.StartupFolder is not null)
+            viewModel.Search.SearchPath = options.StartupFolder;
+
+        if (AppWindowLifetime.ShouldShowOnActivation(options))
+            ShowMainWindow(window);
     }
 
     private static void ShowMainWindow(Window window)
@@ -125,6 +174,7 @@ public partial class App : System.Windows.Application
     {
         _trayIcon?.Dispose();
         _trayIconImage?.Dispose();
+        _singleInstance?.Dispose();
 
         // Snapshot current state on the way out as a safety net. Theme and
         // history are saved eagerly whenever they change; the view model's

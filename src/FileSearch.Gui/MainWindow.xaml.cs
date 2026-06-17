@@ -19,7 +19,13 @@ public partial class MainWindow : Window
         ShellRoot.SizeChanged += OnShellRootSizeChanged;
     }
 
-    private void OnExitClick(object sender, RoutedEventArgs e) => Close();
+    private void OnExitClick(object sender, RoutedEventArgs e)
+    {
+        if (System.Windows.Application.Current is App app)
+            app.RequestExit();
+        else
+            Close();
+    }
 
     private void OnAboutClick(object sender, RoutedEventArgs e)
     {
