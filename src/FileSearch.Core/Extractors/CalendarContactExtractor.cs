@@ -11,6 +11,10 @@ namespace FileSearch.Core.Extractors;
 /// </summary>
 public sealed class CalendarContactExtractor : ITextExtractor
 {
+    public string ExtractorId => "filesearch.calendar-contact";
+
+    public string ExtractorVersion => "1";
+
     public IReadOnlyCollection<string> SupportedExtensions { get; } = new[] { ".ics", ".vcf" };
 
     public async IAsyncEnumerable<TextLine> ExtractAsync(

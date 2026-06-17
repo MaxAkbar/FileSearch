@@ -190,7 +190,8 @@ public sealed class IndexViewModelTests
                         Health: "healthy",
                         LastError: null,
                         LastCheckedUtc: new DateTime(2026, 6, 14, 12, 5, 0, DateTimeKind.Utc)),
-                }),
+                },
+                FailedFileCount: 2),
         };
 
         var (_, index) = Build(fileIndex);
@@ -199,7 +200,7 @@ public sealed class IndexViewModelTests
         Assert.Equal("Ready, schema 5", index.IndexDatabaseStatusText);
         Assert.Contains("2.6 KB total", index.IndexDatabaseSizeText);
         Assert.Contains("db 2.0 KB", index.IndexDatabaseSizeText);
-        Assert.Equal("2 locations, 3 files, 10 lines", index.IndexDatabaseContentText);
+        Assert.Equal("2 locations, 3 files, 10 lines, 2 failed", index.IndexDatabaseContentText);
         Assert.Equal("1 pending index change", index.IndexDatabaseQueueText);
         Assert.Equal("healthy: NTFS USN, USN 345", index.IndexDatabaseVolumeHealthText);
         Assert.StartsWith("Last indexed ", index.IndexDatabaseLastIndexedText);
@@ -476,6 +477,53 @@ public sealed class IndexViewModelTests
     }
 
     [Fact]
+    public async Task ExportIndexFailuresUsesSavePickerAndIndexExport()
+    {
+        var exportPath = Path.Combine(Path.GetTempPath(), "filesearch-failures.json");
+        var fileIndex = new FakeFileIndex
+        {
+            DatabaseInfo = new IndexDatabaseInfo(
+                @"C:\Index\filesearch.db",
+                Exists: true,
+                IsCompatible: true,
+                SchemaVersion: "10",
+                DatabaseBytes: 1,
+                WalBytes: 0,
+                ShmBytes: 0,
+                LocationCount: 1,
+                TotalFileCount: 1,
+                TotalLineCount: 2,
+                PendingChangeCount: 0,
+                LastIndexedUtc: null,
+                FailedFileCount: 1),
+            Failures = new[]
+            {
+                new IndexFailureInfo(
+                    @"C:\Root",
+                    @"C:\Root\archive.zip",
+                    "filesearch.zip",
+                    "1",
+                    "Archive member skipped.",
+                    1,
+                    DateTime.UtcNow,
+                    MemberPath: "nested/data.bin",
+                    FailureKind: "extraction_issue",
+                    IssueCode: "archive_member_unsupported_type",
+                    Severity: "warning"),
+            },
+        };
+        var savePicker = new FakeFileSavePicker { PathToReturn = exportPath };
+        var (_, index) = Build(fileIndex, savePicker: savePicker);
+
+        await index.ExportIndexFailuresCommand.ExecuteAsync(null);
+
+        Assert.Equal("Export failed index extractions", savePicker.LastTitle);
+        Assert.Equal(1, fileIndex.ExportFailuresCallCount);
+        Assert.Equal(exportPath, fileIndex.ExportFailuresPath);
+        Assert.Equal(IndexFailureExportFormat.Json, fileIndex.ExportFailuresFormat);
+    }
+
+    [Fact]
     public void IndexerResourceProfileSettingUpdatesIndexingService()
     {
         var status = new StatusBarViewModel();
@@ -520,6 +568,7 @@ public sealed class IndexViewModelTests
         FakeFileIndex? fileIndex = null,
         FakeIndexingService? indexingService = null,
         FakeBackgroundIndexerProcessService? backgroundIndexer = null,
+        FakeFileSavePicker? savePicker = null,
         Action<AppSettings>? configureSettings = null)
     {
         var status = new StatusBarViewModel();
@@ -547,7 +596,8 @@ public sealed class IndexViewModelTests
             new InlineDispatcher(),
             search,
             status,
-            backgroundIndexer);
+            backgroundIndexer,
+            savePicker);
         return (search, index);
     }
 

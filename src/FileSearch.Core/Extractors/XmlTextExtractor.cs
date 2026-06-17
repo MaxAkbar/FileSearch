@@ -10,6 +10,10 @@ namespace FileSearch.Core.Extractors;
 /// </summary>
 public sealed class XmlTextExtractor : ITextExtractor
 {
+    public string ExtractorId => "filesearch.xml";
+
+    public string ExtractorVersion => "1";
+
     public IReadOnlyCollection<string> SupportedExtensions { get; } = new[] { ".svg", ".xaml", ".resx" };
 
     public async IAsyncEnumerable<TextLine> ExtractAsync(

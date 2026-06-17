@@ -12,6 +12,10 @@ namespace FileSearch.Core.Extractors;
 /// </summary>
 public sealed class PdfExtractor : ITextExtractor
 {
+    public string ExtractorId => "filesearch.pdf-pdfpig";
+
+    public string ExtractorVersion => "1";
+
     public IReadOnlyCollection<string> SupportedExtensions { get; } = new[] { ".pdf" };
 
     public async IAsyncEnumerable<TextLine> ExtractAsync(

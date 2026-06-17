@@ -416,6 +416,16 @@
                                     <TextBlock Text="Open database"/>
                                 </StackPanel>
                             </Button>
+                            <Button Command="{Binding Index.ExportIndexFailuresCommand}"
+                                    Style="{StaticResource SecondaryButtonStyle}"
+                                    Height="34"
+                                    MinWidth="132"
+                                    Margin="0,0,8,8">
+                                <StackPanel Orientation="Horizontal">
+                                    <ui:FontIcon Glyph="&#xE74E;" FontSize="13" Margin="0,0,7,0"/>
+                                    <TextBlock Text="Export failures"/>
+                                </StackPanel>
+                            </Button>
                             <Button Command="{Binding Index.CompactIndexDatabaseCommand}"
                                     Style="{StaticResource SecondaryButtonStyle}"
                                     Height="34"

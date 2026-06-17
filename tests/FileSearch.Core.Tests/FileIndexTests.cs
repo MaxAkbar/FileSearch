@@ -108,6 +108,154 @@ public sealed class FileIndexTests : IDisposable
     }
 
     [Fact]
+    public async Task RefreshReindexesUnchangedFileWhenExtractorVersionChanges()
+    {
+        var file = Path.Combine(_root, "document.vtxt");
+        File.WriteAllText(file, "stable input\n");
+        var extractor = new VersionedTestExtractor(".vtxt") { ExtractorVersion = "1" };
+        using var index = new CSharpDbFileIndex(
+            new FileIndexOptions { DatabasePath = Path.Combine(Path.GetDirectoryName(_dbPath)!, "versioned.db") },
+            new FileWalker(),
+            new ExtractorRegistry(new ITextExtractor[] { extractor }));
+
+        await index.BuildOrRefreshAsync(new IndexRequest(_root, new WalkerOptions()), TestContext.Current.CancellationToken);
+
+        Assert.Single(await RawIndexedSearchAsync(index, new TermQuery("extractor-version-1")));
+
+        extractor.ExtractorVersion = "2";
+        await index.BuildOrRefreshAsync(new IndexRequest(_root, new WalkerOptions()), TestContext.Current.CancellationToken);
+
+        Assert.Empty(await RawIndexedSearchAsync(index, new TermQuery("extractor-version-1")));
+        Assert.Single(await RawIndexedSearchAsync(index, new TermQuery("extractor-version-2")));
+    }
+
+    [Fact]
+    public async Task CoverageRejectsIndexWhenExtractorVersionChanges()
+    {
+        var file = Path.Combine(_root, "document.vtxt");
+        File.WriteAllText(file, "stable input\n");
+        var extractor = new VersionedTestExtractor(".vtxt") { ExtractorVersion = "1" };
+        using var index = new CSharpDbFileIndex(
+            new FileIndexOptions { DatabasePath = Path.Combine(Path.GetDirectoryName(_dbPath)!, "coverage-versioned.db") },
+            new FileWalker(),
+            new ExtractorRegistry(new ITextExtractor[] { extractor }));
+
+        await index.BuildOrRefreshAsync(new IndexRequest(_root, new WalkerOptions()), TestContext.Current.CancellationToken);
+
+        var covered = await index.GetCoverageAsync(
+            new SearchRequest(new TermQuery("stable"), new[] { _root }, new WalkerOptions(), UseIndex: true),
+            TestContext.Current.CancellationToken);
+        Assert.Equal(IndexCoverageStatus.Covered, covered.Status);
+
+        extractor.ExtractorVersion = "2";
+        var stale = await index.GetCoverageAsync(
+            new SearchRequest(new TermQuery("stable"), new[] { _root }, new WalkerOptions(), UseIndex: true),
+            TestContext.Current.CancellationToken);
+
+        Assert.Equal(IndexCoverageStatus.Incompatible, stale.Status);
+        Assert.Contains("extractor versions", stale.Message, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public async Task FailedExtractionRowsTrackAttemptsAndExportAsCsvAndJson()
+    {
+        var file = Path.Combine(_root, "broken.bad");
+        File.WriteAllText(file, "stable input\n");
+        using var index = new CSharpDbFileIndex(
+            new FileIndexOptions { DatabasePath = Path.Combine(Path.GetDirectoryName(_dbPath)!, "failures.db") },
+            new FileWalker(),
+            new ExtractorRegistry(new ITextExtractor[] { new ThrowingTestExtractor(".bad") }));
+
+        await index.BuildOrRefreshAsync(new IndexRequest(_root, new WalkerOptions()), TestContext.Current.CancellationToken);
+        await index.BuildOrRefreshAsync(new IndexRequest(_root, new WalkerOptions()), TestContext.Current.CancellationToken);
+
+        var failure = Assert.Single(await index.GetFailedFilesAsync(TestContext.Current.CancellationToken));
+        Assert.Equal(IndexPath.NormalizeRoot(_root), failure.Root);
+        Assert.Equal(IndexPath.NormalizeFile(file), failure.Path);
+        Assert.Equal("test.throwing", failure.ExtractorId);
+        Assert.Equal("1", failure.ExtractorVersion);
+        Assert.Contains("broken parser", failure.Error);
+        Assert.Equal(2, failure.ExtractionAttemptCount);
+        Assert.Equal(1, failure.RetryCount);
+        Assert.NotNull(failure.LastAttemptUtc);
+        var info = await index.GetDatabaseInfoAsync(TestContext.Current.CancellationToken);
+        Assert.Equal(1, info.FailedFileCount);
+
+        var csvPath = Path.Combine(Path.GetDirectoryName(_dbPath)!, "failures.csv");
+        var jsonPath = Path.Combine(Path.GetDirectoryName(_dbPath)!, "failures.json");
+        await index.ExportFailedFilesAsync(csvPath, IndexFailureExportFormat.Csv, TestContext.Current.CancellationToken);
+        await index.ExportFailedFilesAsync(jsonPath, IndexFailureExportFormat.Json, TestContext.Current.CancellationToken);
+
+        var csv = await File.ReadAllTextAsync(csvPath, TestContext.Current.CancellationToken);
+        Assert.Contains("root,path,member_path,kind,code,severity,extractor_id,extractor_version,error,retry_count,attempt_count,last_attempt_utc", csv);
+        Assert.Contains("test.throwing", csv);
+        Assert.Contains("broken parser", csv);
+
+        var json = await File.ReadAllTextAsync(jsonPath, TestContext.Current.CancellationToken);
+        Assert.Contains("\"ExtractorId\": \"test.throwing\"", json);
+        Assert.Contains("\"RetryCount\": 1", json);
+    }
+
+    [Fact]
+    public async Task ZipArchiveMemberSkipsAreReportedAsExtractionIssues()
+    {
+        var archivePath = Path.Combine(_root, "archive.zip");
+        using (var archive = System.IO.Compression.ZipFile.Open(archivePath, System.IO.Compression.ZipArchiveMode.Create))
+        {
+            AddZipEntry(archive, "readme.txt", "needle\n");
+            AddZipEntry(archive, "image.bin", "skipped binary member\n");
+        }
+
+        var zip = new ZipExtractor();
+        using var index = new CSharpDbFileIndex(
+            new FileIndexOptions { DatabasePath = Path.Combine(Path.GetDirectoryName(_dbPath)!, "archive-issues.db") },
+            new FileWalker(),
+            new ExtractorRegistry(new ITextExtractor[] { zip }));
+
+        await index.BuildOrRefreshAsync(new IndexRequest(_root, new WalkerOptions()), TestContext.Current.CancellationToken);
+
+        var issue = Assert.Single(await index.GetFailedFilesAsync(TestContext.Current.CancellationToken));
+        Assert.Equal("extraction_issue", issue.FailureKind);
+        Assert.Equal("image.bin", issue.MemberPath);
+        Assert.Equal("archive_member_unsupported_type", issue.IssueCode);
+        Assert.Equal("filesearch.zip", issue.ExtractorId);
+
+        var info = await index.GetDatabaseInfoAsync(TestContext.Current.CancellationToken);
+        Assert.Equal(1, info.FailedFileCount);
+    }
+
+    [Fact]
+    public async Task IndexingCanUseOutOfProcessExtractionService()
+    {
+        var file = Path.Combine(_root, "hosted.host");
+        File.WriteAllText(file, "in-process content\n");
+        var extractor = new HostedTestExtractor();
+        var hostedExtraction = new FakeOutOfProcessExtractionService
+        {
+            Result = new OutOfProcessExtractionResult(
+                new[] { new TextLine(9, "hosted needle") },
+                new[] { new ExtractionIssue("member.bin", "archive_member_unsupported_type", "skipped member") }),
+        };
+        using var index = new CSharpDbFileIndex(
+            new FileIndexOptions { DatabasePath = Path.Combine(Path.GetDirectoryName(_dbPath)!, "hosted.db") },
+            new FileWalker(),
+            new ExtractorRegistry(new ITextExtractor[] { extractor }),
+            outOfProcessExtraction: hostedExtraction);
+
+        await index.BuildOrRefreshAsync(new IndexRequest(_root, new WalkerOptions()), TestContext.Current.CancellationToken);
+
+        Assert.Equal(1, hostedExtraction.CallCount);
+        Assert.Equal(file, hostedExtraction.Path);
+        Assert.Equal("test.hosted", hostedExtraction.ExtractorId);
+        Assert.Equal(
+            new[] { "hosted.host:9:hosted needle" },
+            Normalize(await RawIndexedSearchAsync(index, new TermQuery("needle"))));
+        var issue = Assert.Single(await index.GetFailedFilesAsync(TestContext.Current.CancellationToken));
+        Assert.Equal("member.bin", issue.MemberPath);
+        Assert.Equal("archive_member_unsupported_type", issue.IssueCode);
+    }
+
+    [Fact]
     public async Task IncrementalDeleteRemovesStaleHits()
     {
         var file = Path.Combine(_root, "gone.txt");
@@ -1221,6 +1369,15 @@ public sealed class FileIndexTests : IDisposable
         return hits;
     }
 
+    private async Task<List<Hit>> RawIndexedSearchAsync(CSharpDbFileIndex index, Query query)
+    {
+        var request = new SearchRequest(query, new[] { _root }, new WalkerOptions(), UseIndex: true);
+        var hits = new List<Hit>();
+        await foreach (var hit in index.SearchAsync(request, TestContext.Current.CancellationToken))
+            hits.Add(hit);
+        return hits;
+    }
+
     private static List<string> Normalize(IEnumerable<Hit> hits) =>
         hits
             .Select(hit => $"{Path.GetFileName(hit.Path)}:{hit.LineNumber}:{hit.LineContent}")
@@ -1245,6 +1402,100 @@ public sealed class FileIndexTests : IDisposable
         }
         catch (Exception ex) when (ex.Message.Contains("WAL file", StringComparison.OrdinalIgnoreCase))
         {
+        }
+    }
+
+    private static void AddZipEntry(System.IO.Compression.ZipArchive archive, string name, string content)
+    {
+        var entry = archive.CreateEntry(name);
+        using var writer = new StreamWriter(entry.Open());
+        writer.Write(content);
+    }
+
+    private sealed class VersionedTestExtractor : ITextExtractor
+    {
+        public VersionedTestExtractor(string extension) => SupportedExtensions = new[] { extension };
+
+        public string ExtractorId => "test.versioned";
+
+        public string ExtractorVersion { get; set; } = "1";
+
+        public IReadOnlyCollection<string> SupportedExtensions { get; }
+
+        public async IAsyncEnumerable<TextLine> ExtractAsync(
+            string path,
+            [System.Runtime.CompilerServices.EnumeratorCancellation] CancellationToken cancellationToken)
+        {
+            await Task.Yield();
+            cancellationToken.ThrowIfCancellationRequested();
+            yield return new TextLine(1, $"extractor-version-{ExtractorVersion}");
+        }
+    }
+
+    private sealed class ThrowingTestExtractor : ITextExtractor
+    {
+        public ThrowingTestExtractor(string extension) => SupportedExtensions = new[] { extension };
+
+        public string ExtractorId => "test.throwing";
+
+        public string ExtractorVersion => "1";
+
+        public IReadOnlyCollection<string> SupportedExtensions { get; }
+
+        public async IAsyncEnumerable<TextLine> ExtractAsync(
+            string path,
+            [System.Runtime.CompilerServices.EnumeratorCancellation] CancellationToken cancellationToken)
+        {
+            await Task.Yield();
+            cancellationToken.ThrowIfCancellationRequested();
+            throw new InvalidDataException("broken parser");
+#pragma warning disable CS0162
+            yield break;
+#pragma warning restore CS0162
+        }
+    }
+
+    private sealed class HostedTestExtractor : ITextExtractor
+    {
+        public string ExtractorId => "test.hosted";
+
+        public string ExtractorVersion => "1";
+
+        public IReadOnlyCollection<string> SupportedExtensions { get; } = new[] { ".host" };
+
+        public async IAsyncEnumerable<TextLine> ExtractAsync(
+            string path,
+            [System.Runtime.CompilerServices.EnumeratorCancellation] CancellationToken cancellationToken)
+        {
+            await Task.Yield();
+            cancellationToken.ThrowIfCancellationRequested();
+            yield return new TextLine(1, "in-process fallback");
+        }
+    }
+
+    private sealed class FakeOutOfProcessExtractionService : IOutOfProcessExtractionService
+    {
+        public int CallCount { get; private set; }
+
+        public string? Path { get; private set; }
+
+        public string? ExtractorId { get; private set; }
+
+        public OutOfProcessExtractionResult Result { get; init; } = new(
+            Array.Empty<TextLine>(),
+            Array.Empty<ExtractionIssue>());
+
+        public bool ShouldUse(ITextExtractor extractor) => true;
+
+        public Task<OutOfProcessExtractionResult> ExtractAsync(
+            string path,
+            ITextExtractor extractor,
+            CancellationToken cancellationToken)
+        {
+            CallCount++;
+            Path = path;
+            ExtractorId = extractor.ExtractorId;
+            return Task.FromResult(Result);
         }
     }
 

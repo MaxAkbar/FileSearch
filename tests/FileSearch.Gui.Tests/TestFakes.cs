@@ -51,6 +51,25 @@ internal sealed class FakeFolderPicker : IFolderPicker
     public string? PickFolder(string title, string? initialDirectory) => null;
 }
 
+internal sealed class FakeFileSavePicker : IFileSavePicker
+{
+    public string? PathToReturn { get; set; }
+
+    public string? LastTitle { get; private set; }
+
+    public string? LastFilter { get; private set; }
+
+    public string? LastDefaultFileName { get; private set; }
+
+    public string? PickSaveFile(string title, string filter, string defaultFileName)
+    {
+        LastTitle = title;
+        LastFilter = filter;
+        LastDefaultFileName = defaultFileName;
+        return PathToReturn;
+    }
+}
+
 internal sealed class FakeStartupRegistrationService : IStartupRegistrationService
 {
     public bool IsEnabled { get; set; }
@@ -312,6 +331,14 @@ internal sealed class FakeFileIndex : IFileIndex
 
     public int CompactCallCount { get; private set; }
 
+    public int ExportFailuresCallCount { get; private set; }
+
+    public string? ExportFailuresPath { get; private set; }
+
+    public IndexFailureExportFormat? ExportFailuresFormat { get; private set; }
+
+    public IReadOnlyList<IndexFailureInfo> Failures { get; set; } = Array.Empty<IndexFailureInfo>();
+
     public string DatabasePath => DatabaseInfo.DatabasePath;
 
     public Task BuildOrRefreshAsync(IndexRequest request, CancellationToken cancellationToken) => Task.CompletedTask;
@@ -339,6 +366,20 @@ internal sealed class FakeFileIndex : IFileIndex
 
     public Task<IndexDatabaseInfo> GetDatabaseInfoAsync(CancellationToken cancellationToken) =>
         Task.FromResult(DatabaseInfo);
+
+    public Task<IReadOnlyList<IndexFailureInfo>> GetFailedFilesAsync(CancellationToken cancellationToken) =>
+        Task.FromResult(Failures);
+
+    public Task ExportFailedFilesAsync(
+        string path,
+        IndexFailureExportFormat format,
+        CancellationToken cancellationToken)
+    {
+        ExportFailuresCallCount++;
+        ExportFailuresPath = path;
+        ExportFailuresFormat = format;
+        return Task.CompletedTask;
+    }
 
     public Task CompactAsync(CancellationToken cancellationToken)
     {

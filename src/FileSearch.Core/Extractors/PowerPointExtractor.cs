@@ -14,6 +14,10 @@ namespace FileSearch.Core.Extractors;
 /// </summary>
 public sealed class PowerPointExtractor : ITextExtractor
 {
+    public string ExtractorId => "filesearch.powerpoint-openxml";
+
+    public string ExtractorVersion => "1";
+
     public IReadOnlyCollection<string> SupportedExtensions { get; } = new[] { ".pptx" };
 
     public async IAsyncEnumerable<TextLine> ExtractAsync(

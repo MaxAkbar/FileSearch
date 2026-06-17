@@ -14,6 +14,10 @@ namespace FileSearch.Core.Extractors;
 /// </summary>
 public sealed class ExcelExtractor : ITextExtractor
 {
+    public string ExtractorId => "filesearch.excel-closedxml";
+
+    public string ExtractorVersion => "1";
+
     public IReadOnlyCollection<string> SupportedExtensions { get; } = new[] { ".xlsx" };
 
     public async IAsyncEnumerable<TextLine> ExtractAsync(

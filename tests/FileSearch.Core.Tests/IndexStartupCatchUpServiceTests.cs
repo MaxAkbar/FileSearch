@@ -52,6 +52,33 @@ public sealed class IndexStartupCatchUpServiceTests : IDisposable
     }
 
     [Fact]
+    public async Task CatchUpAsyncFallsBackWhenRootProfileIsStale()
+    {
+        var root = IndexPath.NormalizeRoot(_root);
+        var volume = CreateVolume(usnSupported: true);
+        var store = new FakeCatchUpStore(
+            new IndexVolumeCheckpoint(1, volume.VolumeKey, 7, 10, "healthy", null),
+            DirectoryReferences: new[] { "1" })
+        {
+            RootProfileCurrent = false,
+        };
+        var service = new IndexStartupCatchUpService(
+            new FakeIndexWriter(),
+            store,
+            new FakeVolumeResolver(volume),
+            new FakeJournalReader(new UsnJournalSnapshot(7, 1, 20)));
+
+        var result = await service.CatchUpAsync(
+            new[] { new IndexedLocation(root, new WalkerOptions(), WatchEnabled: false) },
+            TestContext.Current.CancellationToken);
+
+        Assert.Empty(result.HandledRoots);
+        Assert.Contains(root, result.FallbackReasons.Keys);
+        Assert.Contains("extractor versions", result.FallbackReasons[root], StringComparison.OrdinalIgnoreCase);
+        Assert.Equal(0, store.LastCommittedUsn);
+    }
+
+    [Fact]
     public async Task CatchUpAsyncFallsBackWhenVolumeDoesNotSupportUsn()
     {
         var root = IndexPath.NormalizeRoot(_root);
@@ -613,6 +640,8 @@ public sealed class IndexStartupCatchUpServiceTests : IDisposable
 
         public long LastCommittedUsn { get; private set; }
 
+        public bool RootProfileCurrent { get; set; } = true;
+
         public List<string> DeletedFileReferences { get; } = new();
 
         public Task<IndexVolumeCheckpoint?> GetVolumeCheckpointAsync(
@@ -629,6 +658,11 @@ public sealed class IndexStartupCatchUpServiceTests : IDisposable
             string root,
             CancellationToken cancellationToken) =>
             Task.FromResult(_rootIdentity);
+
+        public Task<bool> IsRootProfileCurrentAsync(
+            IndexedLocation location,
+            CancellationToken cancellationToken) =>
+            Task.FromResult(RootProfileCurrent);
 
         public Task DeleteFileByIdentityAsync(
             string volumeKey,

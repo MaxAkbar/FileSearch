@@ -7,6 +7,7 @@ using System.Threading;
 using System.Threading.Tasks;
 using CSharpDB.Engine;
 using CSharpDB.Primitives;
+using FileSearch.Core.Extractors;
 
 namespace FileSearch.Core.Indexing;
 
@@ -27,7 +28,9 @@ internal sealed record ExistingFileRow(
     long ModifiedUtcTicks,
     long Attributes,
     string Status,
-    string ContentVersion);
+    string ContentVersion,
+    string ExtractorId,
+    string ExtractorVersion);
 
 internal sealed record RootRow(
     long Id,
@@ -368,7 +371,7 @@ internal static partial class IndexTables
         CancellationToken cancellationToken)
     {
         await using var result = await db.ExecuteAsync(
-            Sql.Format($"SELECT id, path, size_bytes, created_utc_ticks, modified_utc_ticks, attributes, status, content_version FROM files WHERE root_id = {rootId} AND path = {path}"),
+            Sql.Format($"SELECT id, path, size_bytes, created_utc_ticks, modified_utc_ticks, attributes, status, content_version, extractor_id, extractor_version FROM files WHERE root_id = {rootId} AND path = {path}"),
             cancellationToken).ConfigureAwait(false);
 
         if (!await result.MoveNextAsync(cancellationToken).ConfigureAwait(false))
@@ -382,7 +385,9 @@ internal static partial class IndexTables
             result.Current[4].AsInteger,
             result.Current[5].AsInteger,
             result.Current[6].AsText,
-            result.Current[7].IsNull ? string.Empty : result.Current[7].AsText);
+            result.Current[7].IsNull ? string.Empty : result.Current[7].AsText,
+            result.Current[8].IsNull ? string.Empty : result.Current[8].AsText,
+            result.Current[9].IsNull ? string.Empty : result.Current[9].AsText);
     }
 
     public static async Task<Dictionary<string, ExistingFileRow>> LoadExistingFilesAsync(
@@ -392,7 +397,7 @@ internal static partial class IndexTables
     {
         var rows = new Dictionary<string, ExistingFileRow>(StringComparer.OrdinalIgnoreCase);
         await using var result = await db.ExecuteAsync(
-            Sql.Format($"SELECT id, path, size_bytes, created_utc_ticks, modified_utc_ticks, attributes, status, content_version FROM files WHERE root_id = {rootId}"),
+            Sql.Format($"SELECT id, path, size_bytes, created_utc_ticks, modified_utc_ticks, attributes, status, content_version, extractor_id, extractor_version FROM files WHERE root_id = {rootId}"),
             cancellationToken).ConfigureAwait(false);
 
         while (await result.MoveNextAsync(cancellationToken).ConfigureAwait(false))
@@ -405,7 +410,9 @@ internal static partial class IndexTables
                 result.Current[4].AsInteger,
                 result.Current[5].AsInteger,
                 result.Current[6].AsText,
-                result.Current[7].IsNull ? string.Empty : result.Current[7].AsText);
+                result.Current[7].IsNull ? string.Empty : result.Current[7].AsText,
+                result.Current[8].IsNull ? string.Empty : result.Current[8].AsText,
+                result.Current[9].IsNull ? string.Empty : result.Current[9].AsText);
             rows[row.Path] = row;
         }
 
@@ -420,6 +427,8 @@ internal static partial class IndexTables
         string status,
         string? error,
         IndexedFileIdentity? identity,
+        string extractorId,
+        string extractorVersion,
         CancellationToken cancellationToken)
     {
         var fileName = Path.GetFileName(path);
@@ -460,9 +469,9 @@ internal static partial class IndexTables
             var id = await GetNextIdAsync(db, "files", cancellationToken).ConfigureAwait(false);
             await db.ExecuteAsync(
                 Sql.Format(
-                    $"INSERT INTO files (id, root_id, path, path_lower, directory_path, directory_path_lower, file_name, file_name_lower, extension, size_bytes, created_utc_ticks, modified_utc_ticks, attributes, file_type_category, indexed_utc_ticks, status, error, volume_id, file_reference_number, parent_file_reference_number, last_observed_usn, content_version, open_count, last_opened_utc_ticks) " +
+                    $"INSERT INTO files (id, root_id, path, path_lower, directory_path, directory_path_lower, file_name, file_name_lower, extension, size_bytes, created_utc_ticks, modified_utc_ticks, attributes, file_type_category, indexed_utc_ticks, status, error, volume_id, file_reference_number, parent_file_reference_number, last_observed_usn, content_version, open_count, last_opened_utc_ticks, extractor_id, extractor_version, extraction_attempt_count, last_extraction_attempt_utc_ticks) " +
                     $"VALUES ({id}, {rootId}, {path}, {pathLower}, {directoryPath}, {directoryPathLower}, {fileName}, {fileNameLower}, {extension}, {info.Length}, {info.CreationTimeUtc.Ticks}, {info.LastWriteTimeUtc.Ticks}, {attributes}, {fileTypeCategory}, {now}, {status}, {error}, {identity?.VolumeId}, {identity?.FileReferenceNumber}, " +
-                    $"{identity?.ParentFileReferenceNumber}, {identity?.LastObservedUsn}, {IndexContentVersion.Current}, 0, 0)"),
+                    $"{identity?.ParentFileReferenceNumber}, {identity?.LastObservedUsn}, {IndexContentVersion.Current}, 0, 0, {extractorId}, {extractorVersion}, 0, 0)"),
                 cancellationToken).ConfigureAwait(false);
             await ReplaceMetadataTokensAsync(
                 db,
@@ -487,7 +496,8 @@ internal static partial class IndexTables
                 $"file_reference_number = {identity?.FileReferenceNumber}, " +
                 $"parent_file_reference_number = {identity?.ParentFileReferenceNumber}, " +
                 $"last_observed_usn = {identity?.LastObservedUsn}, " +
-                $"content_version = {IndexContentVersion.Current} WHERE id = {fileId}"),
+                $"content_version = {IndexContentVersion.Current}, extractor_id = {extractorId}, " +
+                $"extractor_version = {extractorVersion} WHERE id = {fileId}"),
             cancellationToken).ConfigureAwait(false);
         await ReplaceMetadataTokensAsync(
             db,
@@ -620,6 +630,118 @@ internal static partial class IndexTables
             Sql.Format($"UPDATE files SET status = {status}, error = {error}, indexed_utc_ticks = {DateTime.UtcNow.Ticks} WHERE id = {fileId}"),
             cancellationToken);
 
+    public static Task RecordExtractionAttemptAsync(
+        Database db,
+        long fileId,
+        string extractorId,
+        string extractorVersion,
+        CancellationToken cancellationToken) =>
+        ExecuteAsync(
+            db,
+            Sql.Format(
+                $"UPDATE files SET extractor_id = {extractorId}, extractor_version = {extractorVersion}, " +
+                $"extraction_attempt_count = extraction_attempt_count + 1, " +
+                $"last_extraction_attempt_utc_ticks = {DateTime.UtcNow.Ticks} WHERE id = {fileId}"),
+            cancellationToken);
+
+    public static async Task<IReadOnlyList<IndexFailureInfo>> ListFailedFilesAsync(
+        Database db,
+        CancellationToken cancellationToken)
+    {
+        var failures = new List<IndexFailureInfo>();
+        await using var result = await db.ExecuteAsync(
+            Sql.Format(
+                $"SELECT r.root_path, f.path, f.extractor_id, f.extractor_version, f.error, " +
+                $"f.extraction_attempt_count, f.last_extraction_attempt_utc_ticks " +
+                $"FROM files f INNER JOIN index_roots r ON r.id = f.root_id " +
+                $"WHERE f.status = {FileStatus.Error} ORDER BY f.path"),
+            cancellationToken).ConfigureAwait(false);
+
+        while (await result.MoveNextAsync(cancellationToken).ConfigureAwait(false))
+        {
+            var lastAttemptTicks = result.Current[6].IsNull ? 0 : result.Current[6].AsInteger;
+            failures.Add(new IndexFailureInfo(
+                result.Current[0].AsText,
+                result.Current[1].AsText,
+                result.Current[2].IsNull ? string.Empty : result.Current[2].AsText,
+                result.Current[3].IsNull ? string.Empty : result.Current[3].AsText,
+                result.Current[4].IsNull ? string.Empty : result.Current[4].AsText,
+                result.Current[5].IsNull ? 0 : result.Current[5].AsInteger,
+                lastAttemptTicks > 0
+                    ? new DateTime(lastAttemptTicks, DateTimeKind.Utc)
+                    : null));
+        }
+
+        await using var issueResult = await db.ExecuteAsync(
+            Sql.Format(
+                $"SELECT r.root_path, f.path, f.extractor_id, f.extractor_version, i.member_path, " +
+                $"i.code, i.message, i.severity, f.extraction_attempt_count, f.last_extraction_attempt_utc_ticks " +
+                $"FROM extraction_issues i INNER JOIN files f ON f.id = i.file_id " +
+                $"INNER JOIN index_roots r ON r.id = f.root_id ORDER BY f.path, i.member_path"),
+            cancellationToken).ConfigureAwait(false);
+
+        while (await issueResult.MoveNextAsync(cancellationToken).ConfigureAwait(false))
+        {
+            var lastAttemptTicks = issueResult.Current[9].IsNull ? 0 : issueResult.Current[9].AsInteger;
+            var code = issueResult.Current[5].IsNull ? string.Empty : issueResult.Current[5].AsText;
+            var message = issueResult.Current[6].IsNull ? string.Empty : issueResult.Current[6].AsText;
+            failures.Add(new IndexFailureInfo(
+                issueResult.Current[0].AsText,
+                issueResult.Current[1].AsText,
+                issueResult.Current[2].IsNull ? string.Empty : issueResult.Current[2].AsText,
+                issueResult.Current[3].IsNull ? string.Empty : issueResult.Current[3].AsText,
+                message,
+                issueResult.Current[8].IsNull ? 0 : issueResult.Current[8].AsInteger,
+                lastAttemptTicks > 0
+                    ? new DateTime(lastAttemptTicks, DateTimeKind.Utc)
+                    : null,
+                issueResult.Current[4].IsNull ? null : issueResult.Current[4].AsText,
+                "extraction_issue",
+                code,
+                issueResult.Current[7].IsNull ? null : issueResult.Current[7].AsText));
+        }
+
+        return failures
+            .OrderBy(static x => x.Path, StringComparer.OrdinalIgnoreCase)
+            .ThenBy(static x => x.MemberPath, StringComparer.OrdinalIgnoreCase)
+            .ToList();
+    }
+
+    public static async Task ReplaceExtractionIssuesAsync(
+        Database db,
+        long fileId,
+        IReadOnlyList<ExtractionIssue> issues,
+        CancellationToken cancellationToken)
+    {
+        await DeleteExtractionIssuesAsync(db, fileId, cancellationToken).ConfigureAwait(false);
+        if (issues.Count == 0)
+            return;
+
+        var id = await GetNextIdAsync(db, "extraction_issues", cancellationToken).ConfigureAwait(false);
+        var batch = db.PrepareInsertBatch("extraction_issues", 100);
+        var now = DateTime.UtcNow.Ticks;
+        foreach (var issue in issues)
+        {
+            batch.AddRow(
+                DbValue.FromInteger(id++),
+                DbValue.FromInteger(fileId),
+                DbValue.FromText(issue.MemberPath ?? string.Empty),
+                DbValue.FromText(issue.Code),
+                DbValue.FromText(issue.Message),
+                DbValue.FromText(issue.Severity),
+                DbValue.FromInteger(now));
+
+            if (batch.Count >= 100)
+            {
+                await batch.ExecuteAsync(cancellationToken).ConfigureAwait(false);
+                batch.Clear();
+            }
+        }
+
+        if (batch.Count > 0)
+            await batch.ExecuteAsync(cancellationToken).ConfigureAwait(false);
+    }
+
     /// <summary>Hard-deletes a file row and its lines (no tombstones).</summary>
     public static async Task DeleteFileAsync(
         Database db,
@@ -659,12 +781,30 @@ internal static partial class IndexTables
     {
         await ExecuteAsync(db, Sql.Format($"DELETE FROM file_metadata_tokens WHERE root_id = {rootId}"), cancellationToken)
             .ConfigureAwait(false);
+        await ExecuteAsync(
+                db,
+                Sql.Format($"DELETE FROM extraction_issues WHERE file_id IN (SELECT id FROM files WHERE root_id = {rootId})"),
+                cancellationToken)
+            .ConfigureAwait(false);
         await ExecuteAsync(db, Sql.Format($"DELETE FROM files WHERE root_id = {rootId}"), cancellationToken)
             .ConfigureAwait(false);
     }
 
     public static Task<long> CountOkFilesAsync(Database db, long rootId, CancellationToken cancellationToken) =>
         GetCountAsync(db, Sql.Format($"SELECT COUNT(*) FROM files WHERE root_id = {rootId} AND status = {FileStatus.Ok}"), cancellationToken);
+
+    public static async Task<long> CountFailedFilesAsync(Database db, CancellationToken cancellationToken)
+    {
+        var fileErrors = await GetCountAsync(
+            db,
+            Sql.Format($"SELECT COUNT(*) FROM files WHERE status = {FileStatus.Error}"),
+            cancellationToken).ConfigureAwait(false);
+        var extractionIssues = await GetCountAsync(
+            db,
+            "SELECT COUNT(*) FROM extraction_issues",
+            cancellationToken).ConfigureAwait(false);
+        return fileErrors + extractionIssues;
+    }
 
     // ----- lines -----
 
@@ -674,6 +814,7 @@ internal static partial class IndexTables
     private static async Task DeleteFileByIdAsync(Database db, long fileId, CancellationToken cancellationToken)
     {
         await DeleteMetadataTokensAsync(db, fileId, cancellationToken).ConfigureAwait(false);
+        await DeleteExtractionIssuesAsync(db, fileId, cancellationToken).ConfigureAwait(false);
         await DeleteLinesAsync(db, fileId, cancellationToken).ConfigureAwait(false);
         await db.ExecuteAsync(Sql.Format($"DELETE FROM files WHERE id = {fileId}"), cancellationToken).ConfigureAwait(false);
     }
@@ -697,6 +838,9 @@ internal static partial class IndexTables
 
     private static Task DeleteMetadataTokensAsync(Database db, long fileId, CancellationToken cancellationToken) =>
         ExecuteAsync(db, Sql.Format($"DELETE FROM file_metadata_tokens WHERE file_id = {fileId}"), cancellationToken);
+
+    private static Task DeleteExtractionIssuesAsync(Database db, long fileId, CancellationToken cancellationToken) =>
+        ExecuteAsync(db, Sql.Format($"DELETE FROM extraction_issues WHERE file_id = {fileId}"), cancellationToken);
 
     private static async Task ReplaceMetadataTokensAsync(
         Database db,

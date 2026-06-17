@@ -15,6 +15,10 @@ namespace FileSearch.Core.Extractors;
 /// </summary>
 public sealed class WordExtractor : ITextExtractor
 {
+    public string ExtractorId => "filesearch.word-openxml";
+
+    public string ExtractorVersion => "1";
+
     public IReadOnlyCollection<string> SupportedExtensions { get; } = new[] { ".docx" };
 
     public async IAsyncEnumerable<TextLine> ExtractAsync(

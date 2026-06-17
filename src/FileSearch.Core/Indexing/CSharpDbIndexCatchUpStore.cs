@@ -30,6 +30,13 @@ internal sealed class CSharpDbIndexCatchUpStore : IIndexCatchUpStore
             ? Task.FromResult<IndexRootIdentity?>(null)
             : _index.GetRootIdentityCoreAsync(root, cancellationToken);
 
+    public Task<bool> IsRootProfileCurrentAsync(
+        IndexedLocation location,
+        CancellationToken cancellationToken) =>
+        _index is null
+            ? Task.FromResult(true)
+            : _index.IsRootProfileCurrentCoreAsync(location, cancellationToken);
+
     public Task DeleteFileByIdentityAsync(
         string volumeKey,
         string fileReferenceNumber,

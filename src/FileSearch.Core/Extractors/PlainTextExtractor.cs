@@ -13,6 +13,10 @@ namespace FileSearch.Core.Extractors;
 /// </summary>
 public sealed class PlainTextExtractor : ITextExtractor
 {
+    public string ExtractorId => "filesearch.plain-text";
+
+    public string ExtractorVersion => "1";
+
     public IReadOnlyCollection<string> SupportedExtensions => TextFileExtensions.All;
 
     private const int BinarySniffBytes = 8192;

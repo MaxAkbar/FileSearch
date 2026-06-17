@@ -12,6 +12,10 @@ namespace FileSearch.Core.Extractors;
 /// </summary>
 public sealed class RtfExtractor : ITextExtractor
 {
+    public string ExtractorId => "filesearch.rtf";
+
+    public string ExtractorVersion => "1";
+
     /// <summary>Cap on how much of a document is read; the rest isn't searched.</summary>
     private const int MaxContentChars = 10 * 1024 * 1024;
 

@@ -286,12 +286,19 @@ internal sealed class FileSearchRepl
             case "locations":
                 await RenderLocationsAsync(cancellationToken).ConfigureAwait(false);
                 return;
+            case "failures":
+            case "failed":
+                if (tokens.Count >= 3 && tokens[2].Equals("export", StringComparison.OrdinalIgnoreCase))
+                    await ExportIndexFailuresAsync(tokens, cancellationToken).ConfigureAwait(false);
+                else
+                    await RenderIndexFailuresAsync(cancellationToken).ConfigureAwait(false);
+                return;
             case "db":
                 RenderDatabasePath();
                 return;
             default:
                 AnsiConsole.MarkupLine($"[red]Unknown index command:[/] {Markup.Escape(action)}");
-                AnsiConsole.MarkupLine("Try [cyan]index build[/], [cyan]index stats[/], [cyan]index locations[/], or [cyan]index on[/].");
+                AnsiConsole.MarkupLine("Try [cyan]index build[/], [cyan]index stats[/], [cyan]index failures[/], [cyan]index locations[/], or [cyan]index on[/].");
                 return;
         }
     }
@@ -376,6 +383,55 @@ internal sealed class FileSearchRepl
         }
 
         AnsiConsole.Write(table);
+    }
+
+    private async Task RenderIndexFailuresAsync(CancellationToken cancellationToken)
+    {
+        var failures = await _index.GetFailedFilesAsync(cancellationToken).ConfigureAwait(false);
+        if (failures.Count == 0)
+        {
+            AnsiConsole.MarkupLine("[green]No failed index extractions found.[/]");
+            return;
+        }
+
+        var table = new Table().Border(TableBorder.Rounded).Title("[bold]Failed index extractions[/]");
+        table.AddColumn("Path");
+        table.AddColumn("Extractor");
+        table.AddColumn("Attempts");
+        table.AddColumn("Last attempt");
+        table.AddColumn("Error");
+
+        foreach (var failure in failures)
+        {
+            table.AddRow(
+                Markup.Escape(FormatFailurePath(failure)),
+                Markup.Escape(FormatExtractor(failure)),
+                failure.ExtractionAttemptCount.ToString("n0", CultureInfo.CurrentCulture),
+                FormatDate(failure.LastAttemptUtc),
+                Markup.Escape(FormatFailureMessage(failure)));
+        }
+
+        AnsiConsole.Write(table);
+        AnsiConsole.MarkupLine("[grey]Export with [cyan]index failures export failures.csv[/] or [cyan]index failures export failures.json json[/].[/]");
+    }
+
+    private async Task ExportIndexFailuresAsync(
+        IReadOnlyList<string> tokens,
+        CancellationToken cancellationToken)
+    {
+        if (tokens.Count < 4)
+        {
+            AnsiConsole.MarkupLine("[red]Usage:[/] index failures export PATH [csv|json]");
+            return;
+        }
+
+        var path = tokens[3];
+        var format = tokens.Count >= 5
+            ? ParseFailureExportFormat(tokens[4])
+            : GuessFailureExportFormat(path);
+
+        await _index.ExportFailedFilesAsync(path, format, cancellationToken).ConfigureAwait(false);
+        AnsiConsole.MarkupLine($"[green]Exported index failures to:[/] {Markup.Escape(Path.GetFullPath(path))}");
     }
 
     private void RenderSearchSummary(
@@ -471,6 +527,8 @@ internal sealed class FileSearchRepl
         table.AddRow("[cyan]index build[/] FOLDER / [cyan]index rebuild[/] FOLDER", "Refresh the CSharpDB index for a folder. Folder is optional.");
         table.AddRow("[cyan]index stats[/] FOLDER", "Show index stats for a folder. Folder is optional.");
         table.AddRow("[cyan]index locations[/]", "Show all indexed roots in the database.");
+        table.AddRow("[cyan]index failures[/]", "Show failed index extractions.");
+        table.AddRow("[cyan]index failures export[/] PATH [csv|json]", "Export failed index extractions.");
         table.AddRow("[cyan]options[/]", "Show current REPL settings.");
         table.AddRow("[cyan]clear-filters[/]", "Reset filters to defaults.");
         table.AddRow("[cyan]exit[/]", "Quit the REPL.");
@@ -507,7 +565,7 @@ internal sealed class FileSearchRepl
         AnsiConsole.Write(new Panel(new Markup(
                 $"[bold]Indexed search:[/] {Bool(_state.UseIndex)}\n" +
                 $"[bold]Database:[/] {Markup.Escape(_index.DatabasePath)}\n" +
-                "[grey]Use index build, index stats, index locations, or index clear for maintenance.[/]"))
+                "[grey]Use index build, index stats, index failures, index locations, or index clear for maintenance.[/]"))
             .Header("[bold]Index[/]")
             .Border(BoxBorder.Rounded));
     }
@@ -829,6 +887,37 @@ internal sealed class FileSearchRepl
 
         return Markup.Escape(utc.Value.ToLocalTime().ToString("g", CultureInfo.CurrentCulture));
     }
+
+    private static string FormatExtractor(IndexFailureInfo failure) =>
+        string.IsNullOrWhiteSpace(failure.ExtractorVersion)
+            ? failure.ExtractorId
+            : $"{failure.ExtractorId} v{failure.ExtractorVersion}";
+
+    private string FormatFailurePath(IndexFailureInfo failure)
+    {
+        var path = RelativePath(failure.Path);
+        return string.IsNullOrWhiteSpace(failure.MemberPath)
+            ? path
+            : $"{path}!{failure.MemberPath}";
+    }
+
+    private static string FormatFailureMessage(IndexFailureInfo failure) =>
+        string.IsNullOrWhiteSpace(failure.IssueCode)
+            ? failure.Error
+            : $"{failure.IssueCode}: {failure.Error}";
+
+    private static IndexFailureExportFormat GuessFailureExportFormat(string path) =>
+        Path.GetExtension(path).Equals(".json", StringComparison.OrdinalIgnoreCase)
+            ? IndexFailureExportFormat.Json
+            : IndexFailureExportFormat.Csv;
+
+    private static IndexFailureExportFormat ParseFailureExportFormat(string value) =>
+        value.ToLowerInvariant() switch
+        {
+            "csv" => IndexFailureExportFormat.Csv,
+            "json" => IndexFailureExportFormat.Json,
+            _ => throw new ArgumentException("Failure export format must be csv or json."),
+        };
 
     private static string ExpandHome(string path)
     {

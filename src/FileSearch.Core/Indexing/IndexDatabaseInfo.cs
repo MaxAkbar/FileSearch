@@ -27,7 +27,8 @@ public sealed record IndexDatabaseInfo(
     long TotalLineCount,
     int PendingChangeCount,
     DateTime? LastIndexedUtc,
-    IReadOnlyList<IndexVolumeHealthInfo>? VolumeHealth = null)
+    IReadOnlyList<IndexVolumeHealthInfo>? VolumeHealth = null,
+    long FailedFileCount = 0)
 {
     public long TotalBytes => DatabaseBytes + WalBytes + ShmBytes;
 }

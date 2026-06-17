@@ -1,8 +1,12 @@
 using System;
 using System.Collections.Generic;
+using System.Globalization;
 using System.IO;
 using System.Linq;
 using System.Runtime.CompilerServices;
+using System.Security.Cryptography;
+using System.Text;
+using System.Text.Json;
 using System.Threading;
 using System.Threading.Tasks;
 using CSharpDB.Engine;
@@ -27,6 +31,7 @@ public sealed class CSharpDbFileIndex : IFileIndex, IIndexReplayWriter, IIndexUs
     private const int LineInsertBatchSize = 250;
     private const int IdQueryBatchSize = 500;
     private const int MetadataHitLimit = 200;
+    private static readonly JsonSerializerOptions s_failureJsonOptions = new() { WriteIndented = true };
 
     private readonly IndexDatabase _database;
     private readonly IFileWalker _walker;
@@ -34,6 +39,7 @@ public sealed class CSharpDbFileIndex : IFileIndex, IIndexReplayWriter, IIndexUs
     private readonly SearchOptions _searchOptions;
     private readonly IIndexVolumeResolver? _volumeResolver;
     private readonly IUsnJournalReader? _journalReader;
+    private readonly IOutOfProcessExtractionService? _outOfProcessExtraction;
     private readonly ILogger _logger;
 
     public CSharpDbFileIndex(
@@ -41,8 +47,9 @@ public sealed class CSharpDbFileIndex : IFileIndex, IIndexReplayWriter, IIndexUs
         IFileWalker walker,
         IExtractorRegistry extractors,
         SearchOptions? searchOptions = null,
-        ILogger<CSharpDbFileIndex>? logger = null)
-        : this(options, walker, extractors, searchOptions, logger, null, null)
+        ILogger<CSharpDbFileIndex>? logger = null,
+        IOutOfProcessExtractionService? outOfProcessExtraction = null)
+        : this(options, walker, extractors, searchOptions, logger, null, null, outOfProcessExtraction)
     {
     }
 
@@ -53,13 +60,15 @@ public sealed class CSharpDbFileIndex : IFileIndex, IIndexReplayWriter, IIndexUs
         SearchOptions? searchOptions,
         ILogger<CSharpDbFileIndex>? logger,
         IIndexVolumeResolver? volumeResolver,
-        IUsnJournalReader? journalReader)
+        IUsnJournalReader? journalReader,
+        IOutOfProcessExtractionService? outOfProcessExtraction = null)
     {
         _walker = walker ?? throw new ArgumentNullException(nameof(walker));
         _extractors = extractors ?? throw new ArgumentNullException(nameof(extractors));
         _searchOptions = searchOptions ?? new SearchOptions();
         _volumeResolver = volumeResolver;
         _journalReader = journalReader;
+        _outOfProcessExtraction = outOfProcessExtraction;
         _logger = logger ?? NullLogger<CSharpDbFileIndex>.Instance;
         _database = new IndexDatabase((options ?? new FileIndexOptions()).DatabasePath, _logger);
     }
@@ -103,7 +112,7 @@ public sealed class CSharpDbFileIndex : IFileIndex, IIndexReplayWriter, IIndexUs
             if (!IsUnderRoot(normalizedRoot, normalizedPath))
                 return;
 
-            var profile = IndexProfile.FromWalkerOptions(indexingOptions).ToStorageString();
+            var profile = BuildIndexProfile(indexingOptions);
             var rootId = await IndexTables.EnsureRootAsync(db, normalizedRoot, profile, cancellationToken).ConfigureAwait(false);
             var volumeContext = await TryPrepareVolumeAsync(db, rootId, normalizedRoot, cancellationToken).ConfigureAwait(false);
             if (volumeContext?.RootIdentityChanged == true)
@@ -365,6 +374,9 @@ public sealed class CSharpDbFileIndex : IFileIndex, IIndexReplayWriter, IIndexUs
                 if (!string.Equals(rootRow.ContentVersion, IndexContentVersion.Current, StringComparison.Ordinal))
                     return new IndexCoverage(IndexCoverageStatus.Incompatible, "Index content version is out of date");
 
+                if (!IsExtractorProfileCurrent(rootRow.OptionsHash))
+                    return new IndexCoverage(IndexCoverageStatus.Incompatible, "Index extractor versions are out of date");
+
                 if (!IsRootIdentityCurrent(root, rootRow))
                     return new IndexCoverage(IndexCoverageStatus.Incompatible, "Indexed folder identity changed");
 
@@ -441,6 +453,7 @@ public sealed class CSharpDbFileIndex : IFileIndex, IIndexReplayWriter, IIndexUs
         var locationCount = 0;
         long totalFiles = 0;
         long totalLines = 0;
+        long failedFileCount = 0;
         var pendingChangeCount = 0;
         IReadOnlyList<IndexVolumeHealthInfo> volumeHealth = Array.Empty<IndexVolumeHealthInfo>();
         DateTime? lastIndexedUtc = null;
@@ -465,6 +478,7 @@ public sealed class CSharpDbFileIndex : IFileIndex, IIndexReplayWriter, IIndexUs
             }
 
             pendingChangeCount = (await IndexTables.ReadPendingChangesAsync(db, cancellationToken).ConfigureAwait(false)).Count;
+            failedFileCount = await IndexTables.CountFailedFilesAsync(db, cancellationToken).ConfigureAwait(false);
             volumeHealth = await IndexTables.ListVolumeHealthAsync(db, cancellationToken).ConfigureAwait(false);
         }
         finally
@@ -479,7 +493,60 @@ public sealed class CSharpDbFileIndex : IFileIndex, IIndexReplayWriter, IIndexUs
             totalLines,
             pendingChangeCount,
             lastIndexedUtc,
-            volumeHealth);
+            volumeHealth,
+            failedFileCount);
+    }
+
+    public async Task<IReadOnlyList<IndexFailureInfo>> GetFailedFilesAsync(CancellationToken cancellationToken)
+    {
+        var db = await _database.OpenExistingAsync(cancellationToken).ConfigureAwait(false);
+        if (db is null)
+            return Array.Empty<IndexFailureInfo>();
+
+        try
+        {
+            return await IndexTables.ListFailedFilesAsync(db, cancellationToken).ConfigureAwait(false);
+        }
+        finally
+        {
+            await IndexDatabase.CloseQuietlyAsync(db).ConfigureAwait(false);
+        }
+    }
+
+    public async Task ExportFailedFilesAsync(
+        string path,
+        IndexFailureExportFormat format,
+        CancellationToken cancellationToken)
+    {
+        if (string.IsNullOrWhiteSpace(path))
+            throw new ArgumentException("Export path is required.", nameof(path));
+
+        var failures = await GetFailedFilesAsync(cancellationToken).ConfigureAwait(false);
+        var fullPath = Path.GetFullPath(path);
+        var directory = Path.GetDirectoryName(fullPath);
+        if (!string.IsNullOrWhiteSpace(directory))
+            Directory.CreateDirectory(directory);
+
+        switch (format)
+        {
+            case IndexFailureExportFormat.Csv:
+                await File.WriteAllTextAsync(fullPath, BuildFailureCsv(failures), cancellationToken).ConfigureAwait(false);
+                break;
+            case IndexFailureExportFormat.Json:
+                await using (var stream = File.Create(fullPath))
+                {
+                    await JsonSerializer.SerializeAsync(
+                            stream,
+                            failures,
+                            s_failureJsonOptions,
+                            cancellationToken)
+                        .ConfigureAwait(false);
+                }
+
+                break;
+            default:
+                throw new ArgumentOutOfRangeException(nameof(format), format, "Unknown failure export format.");
+        }
     }
 
     public Task CompactAsync(CancellationToken cancellationToken) =>
@@ -652,6 +719,31 @@ public sealed class CSharpDbFileIndex : IFileIndex, IIndexReplayWriter, IIndexUs
         }
     }
 
+    internal async Task<bool> IsRootProfileCurrentCoreAsync(
+        IndexedLocation location,
+        CancellationToken cancellationToken)
+    {
+        var db = await _database.OpenExistingAsync(cancellationToken).ConfigureAwait(false);
+        if (db is null)
+            return false;
+
+        try
+        {
+            var root = IndexPath.NormalizeRoot(location.Root);
+            var row = await IndexTables.GetRootAsync(db, root, cancellationToken).ConfigureAwait(false);
+            if (row is null || row.IndexedUtcTicks <= 0)
+                return false;
+
+            var profile = BuildIndexProfile(IndexWalkerOptions.ForIndexing(location.WalkerOptions));
+            return string.Equals(row.OptionsHash, profile, StringComparison.Ordinal) &&
+                string.Equals(row.ContentVersion, IndexContentVersion.Current, StringComparison.Ordinal);
+        }
+        finally
+        {
+            await IndexDatabase.CloseQuietlyAsync(db).ConfigureAwait(false);
+        }
+    }
+
     async Task IIndexReplayWriter.ApplyReplayBatchAsync(
         IndexVolumeInfo volume,
         IReadOnlyCollection<IndexedLocation> locations,
@@ -681,7 +773,7 @@ public sealed class CSharpDbFileIndex : IFileIndex, IIndexReplayWriter, IIndexUs
                     return context;
 
                 var indexingOptions = IndexWalkerOptions.ForIndexing(location.WalkerOptions);
-                var profile = IndexProfile.FromWalkerOptions(indexingOptions).ToStorageString();
+                var profile = BuildIndexProfile(indexingOptions);
                 var rootId = await IndexTables.EnsureRootAsync(db, change.Root, profile, cancellationToken).ConfigureAwait(false);
                 var volumeContext = await TryPrepareVolumeAsync(db, rootId, change.Root, cancellationToken).ConfigureAwait(false);
                 context = new ReplayRootContext(rootId, indexingOptions, volumeContext);
@@ -774,7 +866,7 @@ public sealed class CSharpDbFileIndex : IFileIndex, IIndexReplayWriter, IIndexUs
     {
         var root = IndexPath.NormalizeRoot(request.Root);
         var walkerOptions = IndexWalkerOptions.ForIndexing(request.WalkerOptions);
-        var profile = IndexProfile.FromWalkerOptions(walkerOptions).ToStorageString();
+        var profile = BuildIndexProfile(walkerOptions);
         var rootId = await IndexTables.EnsureRootAsync(db, root, profile, cancellationToken).ConfigureAwait(false);
         var volumeContext = await TryPrepareVolumeAsync(db, rootId, root, cancellationToken).ConfigureAwait(false);
         var beforeJournal = await TryQueryJournalAsync(volumeContext?.Volume, cancellationToken).ConfigureAwait(false);
@@ -820,7 +912,8 @@ public sealed class CSharpDbFileIndex : IFileIndex, IIndexReplayWriter, IIndexUs
 
                 var info = new FileInfo(normalizedPath);
                 var existingFile = existing.TryGetValue(normalizedPath, out var row) ? row : null;
-                if (existingFile is not null && IsUnchanged(existingFile, info))
+                var extractor = _extractors.GetFor(normalizedPath);
+                if (existingFile is not null && IsUnchanged(existingFile, info, extractor))
                 {
                     filesSkipped++;
                     Publish();
@@ -828,7 +921,7 @@ public sealed class CSharpDbFileIndex : IFileIndex, IIndexReplayWriter, IIndexUs
                 }
 
                 var identity = TryGetIndexedFileIdentity(volumeContext?.VolumeId, normalizedPath, lastObservedUsn: null);
-                var indexedLines = await IndexSingleFileAsync(db, rootId, normalizedPath, info, identity, cancellationToken).ConfigureAwait(false);
+                var indexedLines = await IndexSingleFileAsync(db, rootId, normalizedPath, info, identity, extractor, cancellationToken).ConfigureAwait(false);
                 linesIndexed += indexedLines;
                 filesIndexed++;
             }
@@ -1053,11 +1146,12 @@ public sealed class CSharpDbFileIndex : IFileIndex, IIndexReplayWriter, IIndexUs
             return;
         }
 
+        var extractor = _extractors.GetFor(path);
         var existingRow = await IndexTables.GetFileRowAsync(db, rootId, path, cancellationToken).ConfigureAwait(false);
-        if (existingRow is not null && IsUnchanged(existingRow, info))
+        if (existingRow is not null && IsUnchanged(existingRow, info, extractor))
             return;
 
-        await IndexSingleFileAsync(db, rootId, path, info, identity, cancellationToken).ConfigureAwait(false);
+        await IndexSingleFileAsync(db, rootId, path, info, identity, extractor, cancellationToken).ConfigureAwait(false);
     }
 
     private static IEnumerable<string> EnumerateIndexDirectories(
@@ -1157,12 +1251,25 @@ public sealed class CSharpDbFileIndex : IFileIndex, IIndexReplayWriter, IIndexUs
         string path,
         FileInfo info,
         IndexedFileIdentity? identity,
+        ITextExtractor? extractor,
         CancellationToken cancellationToken)
     {
-        var fileId = await IndexTables.EnsureFileRowAsync(db, rootId, path, info, FileStatus.Indexing, null, identity, cancellationToken).ConfigureAwait(false);
+        var extractorId = GetExtractorId(extractor);
+        var extractorVersion = GetExtractorVersion(extractor);
+        var fileId = await IndexTables.EnsureFileRowAsync(
+            db,
+            rootId,
+            path,
+            info,
+            FileStatus.Indexing,
+            null,
+            identity,
+            extractorId,
+            extractorVersion,
+            cancellationToken).ConfigureAwait(false);
         await IndexTables.DeleteLinesAsync(db, fileId, cancellationToken).ConfigureAwait(false);
+        await IndexTables.ReplaceExtractionIssuesAsync(db, fileId, Array.Empty<ExtractionIssue>(), cancellationToken).ConfigureAwait(false);
 
-        var extractor = _extractors.GetFor(path);
         if (extractor is null)
         {
             await IndexTables.SetFileStatusAsync(db, fileId, FileStatus.Skipped, "No extractor registered.", cancellationToken).ConfigureAwait(false);
@@ -1170,24 +1277,44 @@ public sealed class CSharpDbFileIndex : IFileIndex, IIndexReplayWriter, IIndexUs
         }
 
         long linesIndexed = 0;
+        var issueSink = new ListExtractionIssueSink();
         try
         {
+            await IndexTables.RecordExtractionAttemptAsync(db, fileId, extractorId, extractorVersion, cancellationToken).ConfigureAwait(false);
             var nextLineId = await IndexTables.GetNextIdAsync(db, "lines", cancellationToken).ConfigureAwait(false);
             var batch = db.PrepareInsertBatch("lines", LineInsertBatchSize);
-            await foreach (var line in extractor.ExtractAsync(path, cancellationToken).ConfigureAwait(false))
-            {
-                batch.AddRow(
-                    DbValue.FromInteger(nextLineId++),
-                    DbValue.FromInteger(fileId),
-                    DbValue.FromInteger(line.Number),
-                    DbValue.FromText(line.Content));
 
-                linesIndexed++;
-                if (batch.Count >= LineInsertBatchSize)
-                    await FlushBatchAsync(batch, cancellationToken).ConfigureAwait(false);
+            if (_outOfProcessExtraction?.ShouldUse(extractor) == true)
+            {
+                var result = await _outOfProcessExtraction.ExtractAsync(path, extractor, cancellationToken).ConfigureAwait(false);
+                foreach (var issue in result.Issues)
+                    issueSink.Report(issue);
+
+                foreach (var line in result.Lines)
+                {
+                    AddLineToBatch(batch, nextLineId++, fileId, line);
+                    linesIndexed++;
+                    if (batch.Count >= LineInsertBatchSize)
+                        await FlushBatchAsync(batch, cancellationToken).ConfigureAwait(false);
+                }
+            }
+            else
+            {
+                var lines = extractor is IDiagnosticTextExtractor diagnosticExtractor
+                    ? diagnosticExtractor.ExtractAsync(path, issueSink, cancellationToken)
+                    : extractor.ExtractAsync(path, cancellationToken);
+
+                await foreach (var line in lines.ConfigureAwait(false))
+                {
+                    AddLineToBatch(batch, nextLineId++, fileId, line);
+                    linesIndexed++;
+                    if (batch.Count >= LineInsertBatchSize)
+                        await FlushBatchAsync(batch, cancellationToken).ConfigureAwait(false);
+                }
             }
 
             await FlushBatchAsync(batch, cancellationToken).ConfigureAwait(false);
+            await IndexTables.ReplaceExtractionIssuesAsync(db, fileId, issueSink.Issues, cancellationToken).ConfigureAwait(false);
             await IndexTables.SetFileStatusAsync(db, fileId, FileStatus.Ok, null, cancellationToken).ConfigureAwait(false);
             return linesIndexed;
         }
@@ -1201,9 +1328,21 @@ public sealed class CSharpDbFileIndex : IFileIndex, IIndexReplayWriter, IIndexUs
             // unreadable files are routine during background indexing.
             _logger.LogDebug(ex, "Indexing failed for file {Path}.", path);
             await IndexTables.DeleteLinesAsync(db, fileId, cancellationToken).ConfigureAwait(false);
-            await IndexTables.SetFileStatusAsync(db, fileId, FileStatus.Error, ex.Message, cancellationToken).ConfigureAwait(false);
+            var error = ex is ExtractorHostException hostException
+                ? $"{hostException.Code}: {hostException.Message}"
+                : ex.Message;
+            await IndexTables.SetFileStatusAsync(db, fileId, FileStatus.Error, error, cancellationToken).ConfigureAwait(false);
             return 0;
         }
+    }
+
+    private static void AddLineToBatch(InsertBatch batch, long lineId, long fileId, TextLine line)
+    {
+        batch.AddRow(
+            DbValue.FromInteger(lineId),
+            DbValue.FromInteger(fileId),
+            DbValue.FromInteger(line.Number),
+            DbValue.FromText(line.Content));
     }
 
     private static async Task<IndexedLocationInfo?> GetLocationInfoAsync(
@@ -1231,7 +1370,8 @@ public sealed class CSharpDbFileIndex : IFileIndex, IIndexReplayWriter, IIndexUs
         long totalLineCount = 0,
         int pendingChangeCount = 0,
         DateTime? lastIndexedUtc = null,
-        IReadOnlyList<IndexVolumeHealthInfo>? volumeHealth = null)
+        IReadOnlyList<IndexVolumeHealthInfo>? volumeHealth = null,
+        long failedFileCount = 0)
     {
         var databaseBytes = GetFileLength(DatabasePath);
         var walBytes = GetFileLength(DatabasePath + ".wal");
@@ -1250,7 +1390,8 @@ public sealed class CSharpDbFileIndex : IFileIndex, IIndexReplayWriter, IIndexUs
             totalLineCount,
             pendingChangeCount,
             lastIndexedUtc,
-            volumeHealth);
+            volumeHealth,
+            failedFileCount);
     }
 
     private static long GetFileLength(string path)
@@ -1265,13 +1406,108 @@ public sealed class CSharpDbFileIndex : IFileIndex, IIndexReplayWriter, IIndexUs
         }
     }
 
-    private static bool IsUnchanged(ExistingFileRow row, FileInfo info) =>
+    private string BuildIndexProfile(WalkerOptions options) =>
+        $"{IndexProfile.FromWalkerOptions(options).ToStorageString()}|extractorProfile={BuildExtractorProfileHash()}";
+
+    private bool IsExtractorProfileCurrent(string storedProfile) =>
+        storedProfile.Contains($"|extractorProfile={BuildExtractorProfileHash()}", StringComparison.Ordinal);
+
+    private string BuildExtractorProfileHash()
+    {
+        var builder = new StringBuilder();
+        foreach (var extension in _extractors.SupportedExtensions.OrderBy(x => x, StringComparer.OrdinalIgnoreCase))
+        {
+            var extractor = _extractors.GetFor("probe" + extension);
+            builder
+                .Append(extension)
+                .Append('\t')
+                .Append(GetExtractorId(extractor))
+                .Append('\t')
+                .Append(GetExtractorVersion(extractor))
+                .Append('\n');
+        }
+
+        var fallback = _extractors.GetFor("filesearch-unknown-extension");
+        if (fallback is not null)
+        {
+            builder
+                .Append("<fallback>")
+                .Append('\t')
+                .Append(GetExtractorId(fallback))
+                .Append('\t')
+                .Append(GetExtractorVersion(fallback))
+                .Append('\n');
+        }
+
+        return Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(builder.ToString())));
+    }
+
+    private static bool IsUnchanged(ExistingFileRow row, FileInfo info, ITextExtractor? extractor) =>
         row.SizeBytes == info.Length &&
         row.CreatedUtcTicks == info.CreationTimeUtc.Ticks &&
         row.ModifiedUtcTicks == info.LastWriteTimeUtc.Ticks &&
         row.Attributes == (long)info.Attributes &&
         string.Equals(row.Status, FileStatus.Ok, StringComparison.OrdinalIgnoreCase) &&
-        string.Equals(row.ContentVersion, IndexContentVersion.Current, StringComparison.Ordinal);
+        string.Equals(row.ContentVersion, IndexContentVersion.Current, StringComparison.Ordinal) &&
+        string.Equals(row.ExtractorId, GetExtractorId(extractor), StringComparison.Ordinal) &&
+        string.Equals(row.ExtractorVersion, GetExtractorVersion(extractor), StringComparison.Ordinal);
+
+    private static string GetExtractorId(ITextExtractor? extractor) => extractor?.ExtractorId ?? string.Empty;
+
+    private static string GetExtractorVersion(ITextExtractor? extractor) => extractor?.ExtractorVersion ?? string.Empty;
+
+    private static string BuildFailureCsv(IReadOnlyList<IndexFailureInfo> failures)
+    {
+        var builder = new StringBuilder();
+        builder.AppendLine("root,path,member_path,kind,code,severity,extractor_id,extractor_version,error,retry_count,attempt_count,last_attempt_utc");
+        foreach (var failure in failures)
+        {
+            AppendCsvField(builder, failure.Root);
+            builder.Append(',');
+            AppendCsvField(builder, failure.Path);
+            builder.Append(',');
+            AppendCsvField(builder, failure.MemberPath ?? string.Empty);
+            builder.Append(',');
+            AppendCsvField(builder, failure.FailureKind);
+            builder.Append(',');
+            AppendCsvField(builder, failure.IssueCode ?? string.Empty);
+            builder.Append(',');
+            AppendCsvField(builder, failure.Severity ?? string.Empty);
+            builder.Append(',');
+            AppendCsvField(builder, failure.ExtractorId);
+            builder.Append(',');
+            AppendCsvField(builder, failure.ExtractorVersion);
+            builder.Append(',');
+            AppendCsvField(builder, failure.Error);
+            builder.Append(',');
+            builder.Append(failure.RetryCount.ToString(CultureInfo.InvariantCulture));
+            builder.Append(',');
+            builder.Append(failure.ExtractionAttemptCount.ToString(CultureInfo.InvariantCulture));
+            builder.Append(',');
+            AppendCsvField(builder, failure.LastAttemptUtc?.ToString("O", CultureInfo.InvariantCulture) ?? string.Empty);
+            builder.AppendLine();
+        }
+
+        return builder.ToString();
+    }
+
+    private static void AppendCsvField(StringBuilder builder, string value)
+    {
+        var needsQuotes =
+            value.Contains(',', StringComparison.Ordinal) ||
+            value.Contains('"', StringComparison.Ordinal) ||
+            value.Contains('\r', StringComparison.Ordinal) ||
+            value.Contains('\n', StringComparison.Ordinal);
+        if (!needsQuotes)
+        {
+            builder.Append(value);
+            return;
+        }
+
+        builder.Append('"');
+        builder.Append(value.Replace("\"", "\"\"", StringComparison.Ordinal));
+        builder.Append('"');
+    }
 
     private bool IsRootIdentityCurrent(string root, RootRow rootRow)
     {

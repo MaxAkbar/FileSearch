@@ -2,6 +2,7 @@
   <Folder Name="/src/">
     <Project Path="src/FileSearch.Cli/FileSearch.Cli.csproj" />
     <Project Path="src/FileSearch.Core/FileSearch.Core.csproj" />
+    <Project Path="src/FileSearch.ExtractorHost/FileSearch.ExtractorHost.csproj" />
     <Project Path="src/FileSearch.Gui/FileSearch.Gui.csproj" />
     <Project Path="src/FileSearch.Indexer/FileSearch.Indexer.csproj" />
   </Folder>

@@ -46,6 +46,15 @@ public interface IIndexMaintenance
 
     Task<IndexDatabaseInfo> GetDatabaseInfoAsync(CancellationToken cancellationToken);
 
+    Task<IReadOnlyList<IndexFailureInfo>> GetFailedFilesAsync(CancellationToken cancellationToken) =>
+        Task.FromResult<IReadOnlyList<IndexFailureInfo>>(System.Array.Empty<IndexFailureInfo>());
+
+    Task ExportFailedFilesAsync(
+        string path,
+        IndexFailureExportFormat format,
+        CancellationToken cancellationToken) =>
+        Task.CompletedTask;
+
     Task CompactAsync(CancellationToken cancellationToken);
 }
 

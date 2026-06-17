@@ -12,6 +12,18 @@ namespace FileSearch.Core.Extractors;
 public interface ITextExtractor
 {
     /// <summary>
+    /// Stable identifier stored with indexed file rows so extractor changes
+    /// can invalidate only the affected files.
+    /// </summary>
+    string ExtractorId => GetType().FullName ?? GetType().Name;
+
+    /// <summary>
+    /// Increment when this extractor's output can change for unchanged input
+    /// files. Existing rows with an older version will be reindexed.
+    /// </summary>
+    string ExtractorVersion => "1";
+
+    /// <summary>
     /// File extensions (including the leading dot, lowercase) this extractor
     /// supports. Used by <see cref="IExtractorRegistry"/> to dispatch.
     /// </summary>

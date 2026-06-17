@@ -67,6 +67,9 @@ internal sealed class IndexStartupCatchUpService : IIndexStartupCatchUpService
                     continue;
                 }
 
+                if (!await ValidateRootProfilesAsync(group, fallback, cancellationToken).ConfigureAwait(false))
+                    continue;
+
                 if (!await ValidateRootIdentitiesAsync(group, fallback, cancellationToken).ConfigureAwait(false))
                     continue;
 
@@ -311,6 +314,23 @@ internal sealed class IndexStartupCatchUpService : IIndexStartupCatchUpService
 
         if (recordsInBatch > 0 || batchCheckpointUsn < journal.NextUsn)
             await CommitBatchAsync(journal.NextUsn).ConfigureAwait(false);
+
+        return true;
+    }
+
+    private async Task<bool> ValidateRootProfilesAsync(
+        VolumeLocationGroup group,
+        Dictionary<string, string> fallback,
+        CancellationToken cancellationToken)
+    {
+        foreach (var location in group.Locations)
+        {
+            if (await _store.IsRootProfileCurrentAsync(location, cancellationToken).ConfigureAwait(false))
+                continue;
+
+            AddFallback(group, fallback, "Index profile or extractor versions changed since the last full scan.");
+            return false;
+        }
 
         return true;
     }

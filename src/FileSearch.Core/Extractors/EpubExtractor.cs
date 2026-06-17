@@ -13,6 +13,10 @@ namespace FileSearch.Core.Extractors;
 /// </summary>
 public sealed class EpubExtractor : ITextExtractor
 {
+    public string ExtractorId => "filesearch.epub";
+
+    public string ExtractorVersion => "1";
+
     private static readonly HashSet<string> s_contentExtensions = new(StringComparer.OrdinalIgnoreCase)
     {
         ".html", ".htm", ".xhtml", ".xml"

@@ -13,6 +13,10 @@ namespace FileSearch.Core.Extractors;
 /// </summary>
 public sealed class EmlExtractor : ITextExtractor
 {
+    public string ExtractorId => "filesearch.eml";
+
+    public string ExtractorVersion => "1";
+
     /// <summary>Cap on how much of a message is read; the rest isn't searched.</summary>
     private const int MaxContentChars = 10 * 1024 * 1024;
 

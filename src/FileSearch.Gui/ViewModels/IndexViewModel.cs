@@ -30,6 +30,7 @@ public sealed partial class IndexViewModel : ObservableObject, IDisposable
     private readonly ISettingsService _settingsService;
     private readonly ApplicationSettingsViewModel _applicationSettings;
     private readonly IFileLauncher _fileLauncher;
+    private readonly IFileSavePicker? _fileSavePicker;
     private readonly IUiDispatcher _dispatcher;
     private readonly SearchViewModel _search;
     private readonly StatusBarViewModel _status;
@@ -50,13 +51,15 @@ public sealed partial class IndexViewModel : ObservableObject, IDisposable
         IUiDispatcher dispatcher,
         SearchViewModel search,
         StatusBarViewModel status,
-        IBackgroundIndexerProcessService? backgroundIndexer = null)
+        IBackgroundIndexerProcessService? backgroundIndexer = null,
+        IFileSavePicker? fileSavePicker = null)
     {
         _fileIndex = fileIndex;
         _indexingService = indexingService;
         _settingsService = settingsService;
         _applicationSettings = applicationSettings;
         _fileLauncher = fileLauncher;
+        _fileSavePicker = fileSavePicker;
         _dispatcher = dispatcher;
         _search = search;
         _status = status;
@@ -109,6 +112,7 @@ public sealed partial class IndexViewModel : ObservableObject, IDisposable
     [ObservableProperty] private string _indexDatabaseQueueText = "No pending index changes";
     [ObservableProperty] private string _indexDatabaseVolumeHealthText = "No volume checkpoints";
     [ObservableProperty] private string _indexDatabaseLastIndexedText = "Never indexed";
+    [ObservableProperty] private long _indexDatabaseFailedFileCount;
     [ObservableProperty] private bool _newIndexRecursive = true;
     [ObservableProperty] private bool _newIndexIncludeHidden;
     [ObservableProperty] private bool _newIndexEnableDocumentExtraction = true;
@@ -444,6 +448,40 @@ public sealed partial class IndexViewModel : ObservableObject, IDisposable
         IndexDatabaseIsCompatible &&
         !IsCompactingIndexDatabase &&
         !IsIndexDatabaseCompactionQueued;
+
+    [RelayCommand(CanExecute = nameof(CanExportIndexFailures))]
+    private async Task ExportIndexFailuresAsync()
+    {
+        var failures = await _fileIndex.GetFailedFilesAsync(CancellationToken.None).ConfigureAwait(true);
+        if (failures.Count == 0)
+        {
+            _status.Text = "No failed index extractions to export.";
+            await RefreshIndexDatabaseInfoAsync().ConfigureAwait(true);
+            return;
+        }
+
+        if (_fileSavePicker is null)
+        {
+            _status.Text = "No save-file picker is available.";
+            return;
+        }
+
+        var path = _fileSavePicker.PickSaveFile(
+            "Export failed index extractions",
+            "CSV files (*.csv)|*.csv|JSON files (*.json)|*.json",
+            "filesearch-index-failures.csv");
+        if (string.IsNullOrWhiteSpace(path))
+            return;
+
+        var format = Path.GetExtension(path).Equals(".json", StringComparison.OrdinalIgnoreCase)
+            ? IndexFailureExportFormat.Json
+            : IndexFailureExportFormat.Csv;
+
+        await _fileIndex.ExportFailedFilesAsync(path, format, CancellationToken.None).ConfigureAwait(true);
+        _status.Text = $"Exported {failures.Count:n0} index failure report rows.";
+    }
+
+    private bool CanExportIndexFailures() => IndexDatabaseFailedFileCount > 0;
 
     public async Task StartBackgroundIndexingAsync()
     {
@@ -851,7 +889,7 @@ public sealed partial class IndexViewModel : ObservableObject, IDisposable
             IndexedLocations.Count,
             IndexedLocations.Sum(x => x.FileCount),
             IndexedLocations.Sum(x => x.LineCount),
-            " (scanning)");
+            suffix: " (scanning)");
     }
 
     private async Task RefreshIndexedLocationStatsAsync(string root)
@@ -899,10 +937,12 @@ public sealed partial class IndexViewModel : ObservableObject, IDisposable
         IndexDatabaseContentText = FormatDatabaseContent(info);
         IndexDatabaseQueueText = FormatPendingChanges(info.PendingChangeCount);
         IndexDatabaseVolumeHealthText = FormatVolumeHealth(info);
+        IndexDatabaseFailedFileCount = info.FailedFileCount;
         IndexDatabaseLastIndexedText = info.LastIndexedUtc is { } indexedUtc
             ? $"Last indexed {indexedUtc.ToLocalTime():g}"
             : "Never indexed";
         CompactIndexDatabaseCommand.NotifyCanExecuteChanged();
+        ExportIndexFailuresCommand.NotifyCanExecuteChanged();
     }
 
     private async Task QueueIndexDatabaseCompactionAsync()
@@ -1081,6 +1121,9 @@ public sealed partial class IndexViewModel : ObservableObject, IDisposable
         OnPropertyChanged(nameof(CompactIndexDatabaseActionText));
     }
 
+    partial void OnIndexDatabaseFailedFileCountChanged(long value) =>
+        ExportIndexFailuresCommand.NotifyCanExecuteChanged();
+
     private void NotifyIndexCommandStateChanged()
     {
         OnPropertyChanged(nameof(IsCurrentFolderIndexed));
@@ -1150,19 +1193,25 @@ public sealed partial class IndexViewModel : ObservableObject, IDisposable
 
     private static string FormatDatabaseContent(IndexDatabaseInfo info)
     {
-        return FormatDatabaseContent(info.LocationCount, info.TotalFileCount, info.TotalLineCount);
+        return FormatDatabaseContent(
+            info.LocationCount,
+            info.TotalFileCount,
+            info.TotalLineCount,
+            failedFileCount: info.FailedFileCount);
     }
 
     private static string FormatDatabaseContent(
         int locationCount,
         long totalFileCount,
         long totalLineCount,
+        long failedFileCount = 0,
         string suffix = "")
     {
         var locations = locationCount == 1
             ? "1 location"
             : $"{locationCount:n0} locations";
-        return $"{locations}, {totalFileCount:n0} files, {totalLineCount:n0} lines{suffix}";
+        var failures = failedFileCount > 0 ? $", {failedFileCount:n0} failed" : string.Empty;
+        return $"{locations}, {totalFileCount:n0} files, {totalLineCount:n0} lines{failures}{suffix}";
     }
 
     private static string FormatPendingChanges(int count) =>

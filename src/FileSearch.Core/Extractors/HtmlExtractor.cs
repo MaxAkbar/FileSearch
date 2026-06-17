@@ -10,6 +10,10 @@ namespace FileSearch.Core.Extractors;
 /// </summary>
 public sealed class HtmlExtractor : ITextExtractor
 {
+    public string ExtractorId => "filesearch.html";
+
+    public string ExtractorVersion => "1";
+
     public IReadOnlyCollection<string> SupportedExtensions { get; } = new[] { ".html", ".htm" };
 
     public async IAsyncEnumerable<TextLine> ExtractAsync(

@@ -116,6 +116,11 @@ internal interface IIndexCatchUpStore
         string root,
         CancellationToken cancellationToken);
 
+    Task<bool> IsRootProfileCurrentAsync(
+        IndexedLocation location,
+        CancellationToken cancellationToken) =>
+        Task.FromResult(true);
+
     Task DeleteFileByIdentityAsync(
         string volumeKey,
         string fileReferenceNumber,

@@ -11,6 +11,10 @@ namespace FileSearch.Core.Extractors;
 /// </summary>
 public sealed class OpenDocumentExtractor : ITextExtractor
 {
+    public string ExtractorId => "filesearch.opendocument";
+
+    public string ExtractorVersion => "1";
+
     public IReadOnlyCollection<string> SupportedExtensions { get; } = new[] { ".odt", ".ods", ".odp" };
 
     public async IAsyncEnumerable<TextLine> ExtractAsync(
