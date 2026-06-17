@@ -152,8 +152,10 @@ public sealed class IndexedLocationSettings : INotifyPropertyChanged
             if (IsIndexing)
                 return string.IsNullOrWhiteSpace(RuntimeStatusDetail) ? "Indexing now" : RuntimeStatusDetail;
             if (IsQueued)
-                return QueuedWorkCount <= 1 ? "Queued" : $"{QueuedWorkCount:n0} queued";
-            return "Ready";
+                return string.IsNullOrWhiteSpace(RuntimeStatusDetail)
+                    ? (QueuedWorkCount <= 1 ? "Queued" : $"{QueuedWorkCount:n0} queued")
+                    : RuntimeStatusDetail;
+            return string.IsNullOrWhiteSpace(RuntimeStatusDetail) ? "Ready" : RuntimeStatusDetail;
         }
     }
 

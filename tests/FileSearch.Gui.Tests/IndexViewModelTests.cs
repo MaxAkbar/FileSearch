@@ -95,6 +95,69 @@ public sealed class IndexViewModelTests
     }
 
     [Fact]
+    public void StartupCatchUpDetailsUpdateLocationRuntimeSummary()
+    {
+        var root = IndexPath.NormalizeRoot(Path.GetTempPath());
+        var status = new StatusBarViewModel();
+        var settings = new FakeSettingsService();
+        settings.Current.IndexedLocations.Add(new() { Root = root });
+        var appSettings = new ApplicationSettingsViewModel(settings, status);
+        var history = new HistoryViewModel(settings, appSettings, status);
+        var search = new SearchViewModel(
+            new NullSearcher(),
+            new ExtractorRegistry(Array.Empty<ITextExtractor>()),
+            new QueryFactory(),
+            new FakePreviewService(),
+            new FakeFileLauncher(),
+            settings,
+            new FakeFileTypeOptionsStore(),
+            new FakeFolderPicker(),
+            history,
+            status);
+        var indexingService = new FakeIndexingService();
+        var index = new IndexViewModel(
+            new FakeFileIndex(),
+            indexingService,
+            settings,
+            appSettings,
+            new FakeFileLauncher(),
+            new InlineDispatcher(),
+            search,
+            status);
+
+        indexingService.RaiseStatus(new IndexingStatus(
+            IsRunning: true,
+            IsPaused: false,
+            IsProcessing: false,
+            QueueLength: 1,
+            Message: "Background indexing ready.",
+            QueuedRootCounts: new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase)
+            {
+                [root] = 1,
+            },
+            RootStatusDetails: new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
+            {
+                [root] = "Full scan queued: No checkpoint.",
+            }));
+
+        var location = Assert.Single(index.IndexedLocations);
+        Assert.Equal("Full scan queued: No checkpoint.", location.RuntimeStatusSummary);
+
+        indexingService.RaiseStatus(new IndexingStatus(
+            IsRunning: true,
+            IsPaused: false,
+            IsProcessing: false,
+            QueueLength: 0,
+            Message: "Background indexing ready.",
+            RootStatusDetails: new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
+            {
+                [root] = "Caught up via USN journal",
+            }));
+
+        Assert.Equal("Caught up via USN journal", location.RuntimeStatusSummary);
+    }
+
+    [Fact]
     public void DatabaseInfoIsFormattedForIndexedLocationsPanel()
     {
         var fileIndex = new FakeFileIndex

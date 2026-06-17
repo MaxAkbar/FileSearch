@@ -21,6 +21,7 @@ public sealed class IndexingService : IIndexingService
     private readonly IIndexStartupCatchUpService? _startupCatchUp;
     private readonly object _sync = new();
     private readonly Dictionary<string, IndexedLocation> _locations = new(StringComparer.OrdinalIgnoreCase);
+    private readonly Dictionary<string, string> _rootStatusDetails = new(StringComparer.OrdinalIgnoreCase);
 
     private CancellationTokenSource? _workerCts;
     private Task? _worker;
@@ -79,11 +80,22 @@ public sealed class IndexingService : IIndexingService
 
         foreach (var location in SnapshotLocations())
         {
-            if (!Directory.Exists(location.Root))
-                continue;
+            var normalizedRoot = IndexPath.NormalizeRoot(location.Root);
 
-            if (catchUp.HandledRoots.Contains(IndexPath.NormalizeRoot(location.Root)))
+            if (catchUp.HandledRoots.Contains(normalizedRoot))
+            {
+                SetRootStatusDetail(normalizedRoot, "Caught up via USN journal");
                 continue;
+            }
+
+            if (!Directory.Exists(location.Root))
+            {
+                SetRootStatusDetail(normalizedRoot, "Full scan skipped: folder is unavailable");
+                continue;
+            }
+
+            if (catchUp.FallbackReasons.TryGetValue(normalizedRoot, out var fallbackReason))
+                SetRootStatusDetail(normalizedRoot, $"Full scan queued: {fallbackReason}");
 
             await EnqueueRootRefreshAsync(location.Root, location.WalkerOptions, IndexQueuePriority.Low, cancellationToken).ConfigureAwait(false);
         }
@@ -156,6 +168,8 @@ public sealed class IndexingService : IIndexingService
         lock (_sync)
             _locations[normalized.Root] = normalized;
 
+        ClearRootStatusDetail(normalized.Root);
+
         if (normalized.WatchEnabled)
             _watchers.StartWatching(normalized);
         else
@@ -177,6 +191,7 @@ public sealed class IndexingService : IIndexingService
         _watchers.StopWatching(normalizedRoot);
         _queue.RemoveRoot(normalizedRoot);
         CancelCurrentItemForRemoval(normalizedRoot);
+        ClearRootStatusDetail(normalizedRoot);
         await _index.ClearAsync(normalizedRoot, cancellationToken).ConfigureAwait(false);
         Publish(false, $"Removed indexed location: {normalizedRoot}", force: true);
     }
@@ -231,6 +246,7 @@ public sealed class IndexingService : IIndexingService
 
     private async Task EnqueueAsync(IndexQueueItem item, CancellationToken cancellationToken)
     {
+        SetQueuedRootStatusDetail(item);
         await _queue.EnqueueAsync(item, cancellationToken).ConfigureAwait(false);
         Publish(CurrentStatus.IsProcessing, $"Indexing {_queue.Count:n0} files queued.");
     }
@@ -353,6 +369,7 @@ public sealed class IndexingService : IIndexingService
             switch (item.Kind)
             {
                 case IndexChangeKind.RefreshRoot:
+                    SetRootStatusDetail(item.Root, "Full scan running");
                     await _index.RefreshRootAsync(
                         new IndexRequest(
                             item.Root,
@@ -363,6 +380,7 @@ public sealed class IndexingService : IIndexingService
                         cancellationToken).ConfigureAwait(false);
                     await _index.RemovePendingChangeAsync(item.Root, null, item.Kind, cancellationToken)
                         .ConfigureAwait(false);
+                    SetRootStatusDetail(item.Root, "Full scan complete");
                     break;
                 case IndexChangeKind.UpsertFile:
                     if (item.Path is not null)
@@ -466,7 +484,8 @@ public sealed class IndexingService : IIndexingService
             ActiveRoot: activeItem?.Root,
             ActiveKind: activeItem?.Kind,
             QueuedRootCounts: _queue.GetQueuedRootCounts(),
-            ActiveProgress: progress);
+            ActiveProgress: progress,
+            RootStatusDetails: SnapshotRootStatusDetails());
 
         if (StatusesEquivalent(previous, next))
             return;
@@ -499,7 +518,8 @@ public sealed class IndexingService : IIndexingService
         string.Equals(left.ActiveRoot, right.ActiveRoot, StringComparison.OrdinalIgnoreCase) &&
         left.ActiveKind == right.ActiveKind &&
         QueuedRootCountsEqual(left.QueuedRootCounts, right.QueuedRootCounts) &&
-        Equals(left.ActiveProgress, right.ActiveProgress);
+        Equals(left.ActiveProgress, right.ActiveProgress) &&
+        RootStatusDetailsEqual(left.RootStatusDetails, right.RootStatusDetails);
 
     private static bool QueuedRootCountsEqual(
         IReadOnlyDictionary<string, int>? left,
@@ -513,6 +533,70 @@ public sealed class IndexingService : IIndexingService
         foreach (var (root, count) in left)
             if (!right.TryGetValue(root, out var otherCount) || otherCount != count)
                 return false;
+
+        return true;
+    }
+
+    private void SetRootStatusDetail(string root, string detail)
+    {
+        var normalizedRoot = IndexPath.NormalizeRoot(root);
+        lock (_sync)
+            _rootStatusDetails[normalizedRoot] = detail;
+    }
+
+    private void ClearRootStatusDetail(string root)
+    {
+        var normalizedRoot = IndexPath.NormalizeRoot(root);
+        lock (_sync)
+            _rootStatusDetails.Remove(normalizedRoot);
+    }
+
+    private void SetQueuedRootStatusDetail(IndexQueueItem item)
+    {
+        var normalizedRoot = IndexPath.NormalizeRoot(item.Root);
+        lock (_sync)
+        {
+            if (item.Kind == IndexChangeKind.RefreshRoot)
+            {
+                if (!_rootStatusDetails.TryGetValue(normalizedRoot, out var existingDetail) ||
+                    !existingDetail.StartsWith("Full scan queued:", StringComparison.Ordinal))
+                {
+                    _rootStatusDetails[normalizedRoot] = "Full scan queued";
+                }
+
+                return;
+            }
+
+            _rootStatusDetails.Remove(normalizedRoot);
+        }
+    }
+
+    private Dictionary<string, string>? SnapshotRootStatusDetails()
+    {
+        lock (_sync)
+        {
+            if (_rootStatusDetails.Count == 0)
+                return null;
+
+            return new Dictionary<string, string>(_rootStatusDetails, StringComparer.OrdinalIgnoreCase);
+        }
+    }
+
+    private static bool RootStatusDetailsEqual(
+        IReadOnlyDictionary<string, string>? left,
+        IReadOnlyDictionary<string, string>? right)
+    {
+        if (ReferenceEquals(left, right))
+            return true;
+        if (left is null || right is null || left.Count != right.Count)
+            return false;
+
+        foreach (var (root, detail) in left)
+            if (!right.TryGetValue(root, out var otherDetail) ||
+                !string.Equals(detail, otherDetail, StringComparison.Ordinal))
+            {
+                return false;
+            }
 
         return true;
     }

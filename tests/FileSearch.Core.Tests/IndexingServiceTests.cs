@@ -56,6 +56,11 @@ public sealed class IndexingServiceTests
         try
         {
             Assert.Empty(queue.Enqueued);
+            Assert.NotNull(service.CurrentStatus.RootStatusDetails);
+            var details = service.CurrentStatus.RootStatusDetails!;
+            Assert.Equal(
+                "Caught up via USN journal",
+                details[IndexPath.NormalizeRoot(root)]);
         }
         finally
         {
@@ -92,6 +97,11 @@ public sealed class IndexingServiceTests
             var item = Assert.Single(queue.Enqueued);
             Assert.Equal(IndexPath.NormalizeRoot(root), item.Root);
             Assert.Equal(IndexChangeKind.RefreshRoot, item.Kind);
+            Assert.NotNull(service.CurrentStatus.RootStatusDetails);
+            var details = service.CurrentStatus.RootStatusDetails!;
+            Assert.Equal(
+                "Full scan queued: No checkpoint.",
+                details[IndexPath.NormalizeRoot(root)]);
         }
         finally
         {

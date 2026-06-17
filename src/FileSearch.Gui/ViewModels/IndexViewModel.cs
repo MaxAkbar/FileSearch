@@ -851,16 +851,18 @@ public sealed partial class IndexViewModel : ObservableObject, IDisposable
     private void ApplyIndexingRuntimeStatus(IndexingStatus status)
     {
         var queued = status.QueuedRootCounts ?? new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
+        var rootDetails = status.RootStatusDetails ?? new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
         foreach (var location in IndexedLocations)
         {
             var isActive = !string.IsNullOrWhiteSpace(status.ActiveRoot) &&
                 string.Equals(location.Root, status.ActiveRoot, StringComparison.OrdinalIgnoreCase);
             var queuedCount = queued.TryGetValue(location.Root, out var count) ? count : 0;
+            var rootDetail = rootDetails.TryGetValue(location.Root, out var detail) ? detail : string.Empty;
 
             location.IsIndexing = status.IsProcessing && isActive;
             location.RuntimeStatusDetail = location.IsIndexing
                 ? FormatRuntimeStatus(status)
-                : string.Empty;
+                : rootDetail;
             location.QueuedWorkCount = queuedCount;
             location.IsQueued = queuedCount > 0;
             location.IsIndexingPaused = status.IsPaused && (location.IsIndexing || location.IsQueued);
