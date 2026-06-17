@@ -33,6 +33,11 @@ internal sealed record IndexedFileIdentity(
     string? ParentFileReferenceNumber,
     long? LastObservedUsn);
 
+internal sealed record IndexRootIdentity(
+    string VolumeKey,
+    string FileReferenceNumber,
+    string? ParentFileReferenceNumber);
+
 internal sealed record IndexReplayReferenceSet(
     IReadOnlySet<string> FileReferences,
     IReadOnlySet<string> DirectoryReferences)
@@ -105,6 +110,10 @@ internal interface IIndexCatchUpStore
 
     Task<IndexReplayReferenceSet> GetReplayReferencesAsync(
         IndexVolumeInfo volume,
+        CancellationToken cancellationToken);
+
+    Task<IndexRootIdentity?> GetRootIdentityAsync(
+        string root,
         CancellationToken cancellationToken);
 
     Task DeleteFileByIdentityAsync(

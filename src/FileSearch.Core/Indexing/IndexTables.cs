@@ -17,9 +17,22 @@ internal static class FileStatus
     public const string Error = "error";
 }
 
-internal sealed record ExistingFileRow(long Id, string Path, long SizeBytes, long ModifiedUtcTicks, string Status);
+internal sealed record ExistingFileRow(
+    long Id,
+    string Path,
+    long SizeBytes,
+    long ModifiedUtcTicks,
+    string Status,
+    string ContentVersion);
 
-internal sealed record RootRow(long Id, long IndexedUtcTicks, string OptionsHash);
+internal sealed record RootRow(
+    long Id,
+    long IndexedUtcTicks,
+    string OptionsHash,
+    long? VolumeId,
+    string? RootFileReferenceNumber,
+    string? RootParentFileReferenceNumber,
+    string ContentVersion);
 
 internal sealed record VolumeRow(
     long Id,
@@ -63,8 +76,8 @@ internal static class IndexTables
         var id = await GetNextIdAsync(db, "index_roots", cancellationToken).ConfigureAwait(false);
         await db.ExecuteAsync(
                 Sql.Format(
-                    $"INSERT INTO index_roots (id, root_path, indexed_utc_ticks, options_hash, volume_id, last_full_scan_utc_ticks) " +
-                $"VALUES ({id}, {root}, 0, {profile}, {(long?)null}, {(long?)null})"),
+                    $"INSERT INTO index_roots (id, root_path, indexed_utc_ticks, options_hash, volume_id, last_full_scan_utc_ticks, root_file_reference_number, root_parent_file_reference_number, content_version) " +
+                $"VALUES ({id}, {root}, 0, {profile}, {(long?)null}, {(long?)null}, {(string?)null}, {(string?)null}, {IndexContentVersion.Current})"),
             cancellationToken).ConfigureAwait(false);
         return id;
     }
@@ -72,7 +85,7 @@ internal static class IndexTables
     public static async Task<RootRow?> GetRootAsync(Database db, string root, CancellationToken cancellationToken)
     {
         await using var result = await db.ExecuteAsync(
-            Sql.Format($"SELECT id, indexed_utc_ticks, options_hash FROM index_roots WHERE root_path = {root}"),
+            Sql.Format($"SELECT id, indexed_utc_ticks, options_hash, volume_id, root_file_reference_number, root_parent_file_reference_number, content_version FROM index_roots WHERE root_path = {root}"),
             cancellationToken).ConfigureAwait(false);
 
         if (!await result.MoveNextAsync(cancellationToken).ConfigureAwait(false))
@@ -81,7 +94,35 @@ internal static class IndexTables
         return new RootRow(
             result.Current[0].AsInteger,
             result.Current[1].AsInteger,
-            result.Current[2].AsText);
+            result.Current[2].AsText,
+            result.Current[3].IsNull ? null : result.Current[3].AsInteger,
+            result.Current[4].IsNull ? null : result.Current[4].AsText,
+            result.Current[5].IsNull ? null : result.Current[5].AsText,
+            result.Current[6].IsNull ? string.Empty : result.Current[6].AsText);
+    }
+
+    public static async Task<IndexRootIdentity?> GetRootIdentityAsync(
+        Database db,
+        string root,
+        CancellationToken cancellationToken)
+    {
+        await using var result = await db.ExecuteAsync(
+            Sql.Format(
+                $"SELECT v.volume_key, r.root_file_reference_number, r.root_parent_file_reference_number " +
+                $"FROM index_roots r INNER JOIN index_volumes v ON v.id = r.volume_id " +
+                $"WHERE r.root_path = {root}"),
+            cancellationToken).ConfigureAwait(false);
+
+        if (!await result.MoveNextAsync(cancellationToken).ConfigureAwait(false))
+            return null;
+
+        if (result.Current[1].IsNull)
+            return null;
+
+        return new IndexRootIdentity(
+            result.Current[0].AsText,
+            result.Current[1].AsText,
+            result.Current[2].IsNull ? null : result.Current[2].AsText);
     }
 
     public static async Task<long?> GetRootIdAsync(Database db, string root, CancellationToken cancellationToken)
@@ -106,7 +147,7 @@ internal static class IndexTables
     public static Task MarkRootRefreshStartedAsync(Database db, long rootId, string profile, CancellationToken cancellationToken) =>
         ExecuteAsync(
             db,
-            Sql.Format($"UPDATE index_roots SET indexed_utc_ticks = 0, options_hash = {profile} WHERE id = {rootId}"),
+            Sql.Format($"UPDATE index_roots SET indexed_utc_ticks = 0, options_hash = {profile}, content_version = {IndexContentVersion.Current} WHERE id = {rootId}"),
             cancellationToken);
 
     public static Task MarkRootRefreshedAsync(Database db, long rootId, string profile, CancellationToken cancellationToken) =>
@@ -114,14 +155,27 @@ internal static class IndexTables
             db,
             Sql.Format(
                 $"UPDATE index_roots SET indexed_utc_ticks = {DateTime.UtcNow.Ticks}, " +
-                $"options_hash = {profile}, last_full_scan_utc_ticks = {DateTime.UtcNow.Ticks} WHERE id = {rootId}"),
+                $"options_hash = {profile}, content_version = {IndexContentVersion.Current}, " +
+                $"last_full_scan_utc_ticks = {DateTime.UtcNow.Ticks} WHERE id = {rootId}"),
             cancellationToken);
 
     public static Task DeleteRootAsync(Database db, long rootId, CancellationToken cancellationToken) =>
         ExecuteAsync(db, Sql.Format($"DELETE FROM index_roots WHERE id = {rootId}"), cancellationToken);
 
-    public static Task SetRootVolumeAsync(Database db, long rootId, long volumeId, CancellationToken cancellationToken) =>
-        ExecuteAsync(db, Sql.Format($"UPDATE index_roots SET volume_id = {volumeId} WHERE id = {rootId}"), cancellationToken);
+    public static Task SetRootVolumeAsync(
+        Database db,
+        long rootId,
+        long volumeId,
+        IndexedFileIdentity? rootIdentity,
+        CancellationToken cancellationToken) =>
+        ExecuteAsync(
+            db,
+            Sql.Format(
+                $"UPDATE index_roots SET volume_id = {volumeId}, " +
+                $"root_file_reference_number = {rootIdentity?.FileReferenceNumber}, " +
+                $"root_parent_file_reference_number = {rootIdentity?.ParentFileReferenceNumber} " +
+                $"WHERE id = {rootId}"),
+            cancellationToken);
 
     // ----- index_directories -----
 
@@ -293,7 +347,7 @@ internal static class IndexTables
         CancellationToken cancellationToken)
     {
         await using var result = await db.ExecuteAsync(
-            Sql.Format($"SELECT id, path, size_bytes, modified_utc_ticks, status FROM files WHERE root_id = {rootId} AND path = {path}"),
+            Sql.Format($"SELECT id, path, size_bytes, modified_utc_ticks, status, content_version FROM files WHERE root_id = {rootId} AND path = {path}"),
             cancellationToken).ConfigureAwait(false);
 
         if (!await result.MoveNextAsync(cancellationToken).ConfigureAwait(false))
@@ -304,7 +358,8 @@ internal static class IndexTables
             result.Current[1].AsText,
             result.Current[2].AsInteger,
             result.Current[3].AsInteger,
-            result.Current[4].AsText);
+            result.Current[4].AsText,
+            result.Current[5].IsNull ? string.Empty : result.Current[5].AsText);
     }
 
     public static async Task<Dictionary<string, ExistingFileRow>> LoadExistingFilesAsync(
@@ -314,7 +369,7 @@ internal static class IndexTables
     {
         var rows = new Dictionary<string, ExistingFileRow>(StringComparer.OrdinalIgnoreCase);
         await using var result = await db.ExecuteAsync(
-            Sql.Format($"SELECT id, path, size_bytes, modified_utc_ticks, status FROM files WHERE root_id = {rootId}"),
+            Sql.Format($"SELECT id, path, size_bytes, modified_utc_ticks, status, content_version FROM files WHERE root_id = {rootId}"),
             cancellationToken).ConfigureAwait(false);
 
         while (await result.MoveNextAsync(cancellationToken).ConfigureAwait(false))
@@ -324,7 +379,8 @@ internal static class IndexTables
                 result.Current[1].AsText,
                 result.Current[2].AsInteger,
                 result.Current[3].AsInteger,
-                result.Current[4].AsText);
+                result.Current[4].AsText,
+                result.Current[5].IsNull ? string.Empty : result.Current[5].AsText);
             rows[row.Path] = row;
         }
 
@@ -373,10 +429,10 @@ internal static class IndexTables
             var id = await GetNextIdAsync(db, "files", cancellationToken).ConfigureAwait(false);
             await db.ExecuteAsync(
                 Sql.Format(
-                    $"INSERT INTO files (id, root_id, path, file_name, extension, size_bytes, modified_utc_ticks, indexed_utc_ticks, status, error, volume_id, file_reference_number, parent_file_reference_number, last_observed_usn) " +
+                    $"INSERT INTO files (id, root_id, path, file_name, extension, size_bytes, modified_utc_ticks, indexed_utc_ticks, status, error, volume_id, file_reference_number, parent_file_reference_number, last_observed_usn, content_version) " +
                     $"VALUES ({id}, {rootId}, {path}, {fileName}, {extension}, {info.Length}, {info.LastWriteTimeUtc.Ticks}, " +
                     $"{now}, {status}, {error}, {identity?.VolumeId}, {identity?.FileReferenceNumber}, " +
-                    $"{identity?.ParentFileReferenceNumber}, {identity?.LastObservedUsn})"),
+                    $"{identity?.ParentFileReferenceNumber}, {identity?.LastObservedUsn}, {IndexContentVersion.Current})"),
                 cancellationToken).ConfigureAwait(false);
             return id;
         }
@@ -388,7 +444,8 @@ internal static class IndexTables
                 $"status = {status}, error = {error}, volume_id = {identity?.VolumeId}, " +
                 $"file_reference_number = {identity?.FileReferenceNumber}, " +
                 $"parent_file_reference_number = {identity?.ParentFileReferenceNumber}, " +
-                $"last_observed_usn = {identity?.LastObservedUsn} WHERE id = {fileId}"),
+                $"last_observed_usn = {identity?.LastObservedUsn}, " +
+                $"content_version = {IndexContentVersion.Current} WHERE id = {fileId}"),
             cancellationToken).ConfigureAwait(false);
         return fileId;
     }

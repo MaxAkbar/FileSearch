@@ -812,7 +812,7 @@ public sealed class FileIndexTests : IDisposable
         Assert.Equal(_dbPath, info.DatabasePath);
         Assert.True(info.Exists);
         Assert.True(info.IsCompatible);
-        Assert.Equal("4", info.SchemaVersion);
+        Assert.Equal("5", info.SchemaVersion);
         Assert.True(info.DatabaseBytes > 0);
         Assert.True(info.TotalBytes >= info.DatabaseBytes);
         Assert.Equal(1, info.LocationCount);
@@ -861,6 +861,62 @@ public sealed class FileIndexTests : IDisposable
         var references = await index.GetReplayReferencesCoreAsync(volume, TestContext.Current.CancellationToken);
         Assert.Contains("1", references.FileReferences);
         Assert.Contains("1", references.DirectoryReferences);
+
+        var rootIdentity = await index.GetRootIdentityCoreAsync(_root, TestContext.Current.CancellationToken);
+        Assert.NotNull(rootIdentity);
+        Assert.Equal(volume.VolumeKey, rootIdentity.VolumeKey);
+        Assert.Equal("1", rootIdentity.FileReferenceNumber);
+    }
+
+    [Fact]
+    public async Task CoverageRejectsIndexWhenRootIdentityChanged()
+    {
+        File.WriteAllText(Path.Combine(_root, "identity.txt"), "identity needle\n");
+        var volume = FakeVolume(_root);
+        var resolver = new FakeVolumeResolver(volume);
+        resolver.FileIdsByPath[IndexPath.NormalizeRoot(_root)] = "root-v1";
+        using var index = new CSharpDbFileIndex(
+            new FileIndexOptions { DatabasePath = _dbPath },
+            new FileWalker(),
+            _registry,
+            searchOptions: null,
+            logger: null,
+            resolver,
+            journalReader: null);
+
+        await index.BuildOrRefreshAsync(
+            new IndexRequest(_root, new WalkerOptions()),
+            TestContext.Current.CancellationToken);
+
+        resolver.FileIdsByPath[IndexPath.NormalizeRoot(_root)] = "root-v2";
+
+        var coverage = await index.GetCoverageAsync(
+            new SearchRequest(new TermQuery("identity"), new[] { _root }, new WalkerOptions(), UseIndex: true),
+            TestContext.Current.CancellationToken);
+
+        Assert.Equal(IndexCoverageStatus.Incompatible, coverage.Status);
+        Assert.Contains("identity", coverage.Message, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public async Task CoverageRejectsIndexWhenContentVersionIsOutOfDate()
+    {
+        File.WriteAllText(Path.Combine(_root, "version.txt"), "version needle\n");
+        await BuildAsync();
+
+        await using (var db = await Database.OpenAsync(_dbPath, TestContext.Current.CancellationToken))
+        {
+            await db.ExecuteAsync("UPDATE index_roots SET content_version = 'old-content'", TestContext.Current.CancellationToken);
+            await db.ExecuteAsync("UPDATE files SET content_version = 'old-content'", TestContext.Current.CancellationToken);
+            await db.CheckpointAsync(TestContext.Current.CancellationToken);
+        }
+
+        var coverage = await _index.GetCoverageAsync(
+            new SearchRequest(new TermQuery("version"), new[] { _root }, new WalkerOptions(), UseIndex: true),
+            TestContext.Current.CancellationToken);
+
+        Assert.Equal(IndexCoverageStatus.Incompatible, coverage.Status);
+        Assert.Contains("content version", coverage.Message, StringComparison.OrdinalIgnoreCase);
     }
 
     [Fact]
@@ -1195,7 +1251,7 @@ public sealed class FileIndexTests : IDisposable
             Task.FromResult<IReadOnlyList<IndexedLocationInfo>>(Array.Empty<IndexedLocationInfo>());
 
         public Task<IndexDatabaseInfo> GetDatabaseInfoAsync(CancellationToken cancellationToken) =>
-            Task.FromResult(new IndexDatabaseInfo(DatabasePath, false, false, "4", 0, 0, 0, 0, 0, 0, 0, null));
+            Task.FromResult(new IndexDatabaseInfo(DatabasePath, false, false, "5", 0, 0, 0, 0, 0, 0, 0, null));
 
         public Task CompactAsync(CancellationToken cancellationToken) => Task.CompletedTask;
 
@@ -1244,7 +1300,7 @@ public sealed class FileIndexTests : IDisposable
             Task.FromResult<IReadOnlyList<IndexedLocationInfo>>(Array.Empty<IndexedLocationInfo>());
 
         public Task<IndexDatabaseInfo> GetDatabaseInfoAsync(CancellationToken cancellationToken) =>
-            Task.FromResult(new IndexDatabaseInfo(DatabasePath, false, false, "4", 0, 0, 0, 0, 0, 0, 0, null));
+            Task.FromResult(new IndexDatabaseInfo(DatabasePath, false, false, "5", 0, 0, 0, 0, 0, 0, 0, null));
 
         public Task CompactAsync(CancellationToken cancellationToken) => Task.CompletedTask;
 

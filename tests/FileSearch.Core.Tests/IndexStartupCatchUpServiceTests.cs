@@ -345,6 +345,33 @@ public sealed class IndexStartupCatchUpServiceTests : IDisposable
     }
 
     [Fact]
+    public async Task CatchUpAsyncFallsBackWhenRootIdentityChanged()
+    {
+        var root = IndexPath.NormalizeRoot(_root);
+        var volume = CreateVolume(usnSupported: true);
+        var store = new FakeCatchUpStore(
+            new IndexVolumeCheckpoint(1, volume.VolumeKey, 7, 10, "healthy", null),
+            DirectoryReferences: new[] { "root-dir" },
+            RootIdentity: new IndexRootIdentity(volume.VolumeKey, "old-root", null));
+        var resolver = new FakeVolumeResolver(volume);
+        resolver.IdentitiesByPath[root] = new ResolvedFileIdentity("new-root", null);
+        var service = new IndexStartupCatchUpService(
+            new FakeIndexWriter(),
+            store,
+            resolver,
+            new FakeJournalReader(new UsnJournalSnapshot(7, 1, 20)));
+
+        var result = await service.CatchUpAsync(
+            new[] { new IndexedLocation(root, new WalkerOptions(), WatchEnabled: false) },
+            TestContext.Current.CancellationToken);
+
+        Assert.Empty(result.HandledRoots);
+        Assert.Contains(root, result.FallbackReasons.Keys);
+        Assert.Contains("identity", result.FallbackReasons[root], StringComparison.OrdinalIgnoreCase);
+        Assert.Equal(0, store.LastCommittedUsn);
+    }
+
+    [Fact]
     public async Task CatchUpAsyncAppliesDeleteByIdentity()
     {
         var root = IndexPath.NormalizeRoot(_root);
@@ -500,6 +527,9 @@ public sealed class IndexStartupCatchUpServiceTests : IDisposable
 
         public Dictionary<string, string> PathsByFileId { get; } = new(StringComparer.Ordinal);
 
+        public Dictionary<string, ResolvedFileIdentity> IdentitiesByPath { get; } =
+            new(StringComparer.OrdinalIgnoreCase);
+
         public int ResolvePathCallCount { get; private set; }
 
         public bool TryResolveVolume(string root, out IndexVolumeInfo volume, out string fallbackReason)
@@ -511,8 +541,7 @@ public sealed class IndexStartupCatchUpServiceTests : IDisposable
 
         public bool TryGetFileIdentity(string path, out ResolvedFileIdentity identity)
         {
-            identity = default;
-            return false;
+            return IdentitiesByPath.TryGetValue(IndexPath.NormalizeRoot(path), out identity);
         }
 
         public bool TryResolvePathFromFileId(
@@ -567,13 +596,16 @@ public sealed class IndexStartupCatchUpServiceTests : IDisposable
     {
         private readonly IndexVolumeCheckpoint? _checkpoint;
         private readonly IndexReplayReferenceSet _references;
+        private readonly IndexRootIdentity? _rootIdentity;
 
         public FakeCatchUpStore(
             IndexVolumeCheckpoint? checkpoint,
             IReadOnlyCollection<string>? FileReferences = null,
-            IReadOnlyCollection<string>? DirectoryReferences = null)
+            IReadOnlyCollection<string>? DirectoryReferences = null,
+            IndexRootIdentity? RootIdentity = null)
         {
             _checkpoint = checkpoint;
+            _rootIdentity = RootIdentity;
             _references = new IndexReplayReferenceSet(
                 new HashSet<string>(FileReferences ?? Array.Empty<string>(), StringComparer.Ordinal),
                 new HashSet<string>(DirectoryReferences ?? Array.Empty<string>(), StringComparer.Ordinal));
@@ -592,6 +624,11 @@ public sealed class IndexStartupCatchUpServiceTests : IDisposable
             IndexVolumeInfo volume,
             CancellationToken cancellationToken) =>
             Task.FromResult(_references);
+
+        public Task<IndexRootIdentity?> GetRootIdentityAsync(
+            string root,
+            CancellationToken cancellationToken) =>
+            Task.FromResult(_rootIdentity);
 
         public Task DeleteFileByIdentityAsync(
             string volumeKey,

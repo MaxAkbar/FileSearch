@@ -103,7 +103,7 @@ public sealed class IndexViewModelTests
                 @"C:\Index\filesearch.db",
                 Exists: true,
                 IsCompatible: true,
-                SchemaVersion: "4",
+                SchemaVersion: "5",
                 DatabaseBytes: 2048,
                 WalBytes: 512,
                 ShmBytes: 128,
@@ -130,7 +130,7 @@ public sealed class IndexViewModelTests
         var (_, index) = Build(fileIndex);
 
         Assert.Equal(@"C:\Index\filesearch.db", index.IndexDatabasePath);
-        Assert.Equal("Ready, schema 4", index.IndexDatabaseStatusText);
+        Assert.Equal("Ready, schema 5", index.IndexDatabaseStatusText);
         Assert.Contains("2.6 KB total", index.IndexDatabaseSizeText);
         Assert.Contains("db 2.0 KB", index.IndexDatabaseSizeText);
         Assert.Equal("2 locations, 3 files, 10 lines", index.IndexDatabaseContentText);
@@ -234,7 +234,7 @@ public sealed class IndexViewModelTests
                 @"C:\Index\filesearch.db",
                 Exists: true,
                 IsCompatible: true,
-                SchemaVersion: "4",
+                SchemaVersion: "5",
                 DatabaseBytes: 2048,
                 WalBytes: 512,
                 ShmBytes: 0,
@@ -291,7 +291,7 @@ public sealed class IndexViewModelTests
                 @"C:\Index\filesearch.db",
                 Exists: true,
                 IsCompatible: true,
-                SchemaVersion: "4",
+                SchemaVersion: "5",
                 DatabaseBytes: 2048,
                 WalBytes: 512,
                 ShmBytes: 0,

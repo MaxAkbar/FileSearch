@@ -164,7 +164,7 @@ internal sealed class FakeFileIndex : IFileIndex
         string.Empty,
         Exists: false,
         IsCompatible: false,
-        SchemaVersion: "4",
+        SchemaVersion: "5",
         DatabaseBytes: 0,
         WalBytes: 0,
         ShmBytes: 0,

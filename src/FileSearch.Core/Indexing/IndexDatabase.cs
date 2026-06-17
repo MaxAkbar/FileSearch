@@ -16,7 +16,7 @@ namespace FileSearch.Core.Indexing;
 /// </summary>
 internal sealed class IndexDatabase : IDisposable
 {
-    internal const string CurrentSchemaVersion = "4";
+    internal const string CurrentSchemaVersion = "5";
     internal const string FullTextIndexName = "fts_lines";
 
     private static readonly string[] s_fullTextColumns = { "content" };
@@ -236,9 +236,9 @@ internal sealed class IndexDatabase : IDisposable
     private async Task EnsureSchemaAsync(Database db, CancellationToken cancellationToken)
     {
         await db.ExecuteAsync("CREATE TABLE IF NOT EXISTS index_volumes (id INTEGER PRIMARY KEY, volume_key TEXT, volume_serial TEXT, filesystem_name TEXT, is_remote INTEGER, usn_supported INTEGER, journal_id TEXT, last_committed_usn INTEGER, health TEXT, last_checked_utc_ticks INTEGER, last_error TEXT)", cancellationToken).ConfigureAwait(false);
-        await db.ExecuteAsync("CREATE TABLE IF NOT EXISTS index_roots (id INTEGER PRIMARY KEY, root_path TEXT, indexed_utc_ticks INTEGER, options_hash TEXT, volume_id INTEGER, last_full_scan_utc_ticks INTEGER)", cancellationToken).ConfigureAwait(false);
+        await db.ExecuteAsync("CREATE TABLE IF NOT EXISTS index_roots (id INTEGER PRIMARY KEY, root_path TEXT, indexed_utc_ticks INTEGER, options_hash TEXT, volume_id INTEGER, last_full_scan_utc_ticks INTEGER, root_file_reference_number TEXT, root_parent_file_reference_number TEXT, content_version TEXT)", cancellationToken).ConfigureAwait(false);
         await db.ExecuteAsync("CREATE TABLE IF NOT EXISTS index_directories (id INTEGER PRIMARY KEY, root_id INTEGER, path TEXT, volume_id INTEGER, directory_reference_number TEXT, parent_file_reference_number TEXT, observed_utc_ticks INTEGER)", cancellationToken).ConfigureAwait(false);
-        await db.ExecuteAsync("CREATE TABLE IF NOT EXISTS files (id INTEGER PRIMARY KEY, root_id INTEGER, path TEXT, file_name TEXT, extension TEXT, size_bytes INTEGER, modified_utc_ticks INTEGER, indexed_utc_ticks INTEGER, status TEXT, error TEXT, volume_id INTEGER, file_reference_number TEXT, parent_file_reference_number TEXT, last_observed_usn INTEGER)", cancellationToken).ConfigureAwait(false);
+        await db.ExecuteAsync("CREATE TABLE IF NOT EXISTS files (id INTEGER PRIMARY KEY, root_id INTEGER, path TEXT, file_name TEXT, extension TEXT, size_bytes INTEGER, modified_utc_ticks INTEGER, indexed_utc_ticks INTEGER, status TEXT, error TEXT, volume_id INTEGER, file_reference_number TEXT, parent_file_reference_number TEXT, last_observed_usn INTEGER, content_version TEXT)", cancellationToken).ConfigureAwait(false);
         await db.ExecuteAsync("CREATE TABLE IF NOT EXISTS lines (id INTEGER PRIMARY KEY, file_id INTEGER, line_number INTEGER, content TEXT)", cancellationToken).ConfigureAwait(false);
         await db.ExecuteAsync("CREATE TABLE IF NOT EXISTS pending_changes (id INTEGER PRIMARY KEY, root_path TEXT, path TEXT, kind INTEGER, queued_utc_ticks INTEGER)", cancellationToken).ConfigureAwait(false);
 

@@ -67,6 +67,9 @@ internal sealed class IndexStartupCatchUpService : IIndexStartupCatchUpService
                     continue;
                 }
 
+                if (!await ValidateRootIdentitiesAsync(group, fallback, cancellationToken).ConfigureAwait(false))
+                    continue;
+
                 var journal = await _journalReader.QueryAsync(group.Volume, cancellationToken).ConfigureAwait(false);
                 if (journal.JournalId != checkpoint.JournalId.Value)
                 {
@@ -308,6 +311,40 @@ internal sealed class IndexStartupCatchUpService : IIndexStartupCatchUpService
 
         if (recordsInBatch > 0 || batchCheckpointUsn < journal.NextUsn)
             await CommitBatchAsync(journal.NextUsn).ConfigureAwait(false);
+
+        return true;
+    }
+
+    private async Task<bool> ValidateRootIdentitiesAsync(
+        VolumeLocationGroup group,
+        Dictionary<string, string> fallback,
+        CancellationToken cancellationToken)
+    {
+        foreach (var location in group.Locations)
+        {
+            var stored = await _store.GetRootIdentityAsync(location.Root, cancellationToken).ConfigureAwait(false);
+            if (stored is null)
+                continue;
+
+            if (!string.Equals(stored.VolumeKey, group.Volume.VolumeKey, StringComparison.OrdinalIgnoreCase))
+            {
+                AddFallback(group, fallback, "Indexed root volume changed since the last checkpoint.");
+                return false;
+            }
+
+            if (!_volumeResolver.TryGetFileIdentity(location.Root, out var current))
+            {
+                AddFallback(group, fallback, "Could not verify indexed root identity.");
+                return false;
+            }
+
+            if (!string.Equals(current.FileReferenceNumber, stored.FileReferenceNumber, StringComparison.Ordinal) ||
+                !string.Equals(current.ParentFileReferenceNumber, stored.ParentFileReferenceNumber, StringComparison.Ordinal))
+            {
+                AddFallback(group, fallback, "Indexed root identity changed since the last checkpoint.");
+                return false;
+            }
+        }
 
         return true;
     }

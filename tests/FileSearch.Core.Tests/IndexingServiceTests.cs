@@ -350,7 +350,7 @@ public sealed class IndexingServiceTests
             Task.FromResult<IReadOnlyList<IndexedLocationInfo>>(Array.Empty<IndexedLocationInfo>());
 
         public Task<IndexDatabaseInfo> GetDatabaseInfoAsync(CancellationToken cancellationToken) =>
-            Task.FromResult(new IndexDatabaseInfo(DatabasePath, false, false, "4", 0, 0, 0, 0, 0, 0, 0, null));
+            Task.FromResult(new IndexDatabaseInfo(DatabasePath, false, false, "5", 0, 0, 0, 0, 0, 0, 0, null));
 
         public Task CompactAsync(CancellationToken cancellationToken) =>
             Task.CompletedTask;
