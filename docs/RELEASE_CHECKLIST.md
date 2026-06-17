@@ -37,6 +37,8 @@ If these secrets are missing, the workflow still creates unsigned package artifa
   - `.appxsym` when symbols are available,
   - `.msixupload`.
 - Confirm the packaged app includes `Help\index.html`.
+- Confirm the packaged app includes `FileSearch.Indexer.exe`.
+- Confirm the packaged app includes `FileSearch.ExtractorHost.exe`.
 - Confirm the package identity and publisher match the Partner Center reservation.
 
 ## Submission

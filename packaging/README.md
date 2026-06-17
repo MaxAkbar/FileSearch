@@ -23,8 +23,10 @@ The script writes outputs to `artifacts\store`:
 - `.msixupload` for Microsoft Store submission.
 
 The app help bundle is published from `src\FileSearch.Gui\Help` and is included
-in the package root as `Help\index.html`. The packaging script verifies this
-file exists before creating the MSIX.
+in the package root as `Help\index.html`. The packaging script also publishes
+the companion `FileSearch.Indexer.exe` background worker and
+`FileSearch.ExtractorHost.exe` out-of-process extractor host beside
+`FileSearch.Gui.exe`; all three are verified before creating the MSIX.
 
 For local sideload testing, sign the `.msix` by passing `-CertificateThumbprint`
 with a certificate trusted on the test machine. For Microsoft Store submission,

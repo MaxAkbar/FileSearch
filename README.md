@@ -406,7 +406,7 @@ Directly loading `FileSearch.Core` from PowerShell is possible, but it is not th
 
 ## Packaging for Microsoft Store
 
-FileSearch is packaged as an MSIX for Store distribution. The repository includes a PowerShell packaging script that publishes the app self-contained, creates the MSIX layout, generates tile assets, and emits a Partner Center upload file.
+FileSearch is packaged as an MSIX for Store distribution. The repository includes a PowerShell packaging script that publishes the app, background indexer, and extractor host self-contained, creates the MSIX layout, generates tile assets, and emits a Partner Center upload file.
 
 CI builds, tests, CLI smoke tests, GUI publish smoke tests, dependency review, and manual Store packaging are configured with GitHub Actions. Release steps are documented in [docs/RELEASE_CHECKLIST.md](docs/RELEASE_CHECKLIST.md).
 

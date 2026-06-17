@@ -76,6 +76,23 @@ function Copy-DirectoryContents([string]$Source, [string]$Destination) {
     Copy-Item -Path (Join-Path $Source "*") -Destination $Destination -Recurse -Force
 }
 
+function Publish-Project(
+    [string]$ProjectPath,
+    [string]$ProjectDisplayName,
+    [string]$Destination
+) {
+    Write-Host "Publishing $ProjectDisplayName $RuntimeIdentifier $Configuration..."
+    dotnet publish $ProjectPath `
+        --configuration $Configuration `
+        --runtime $RuntimeIdentifier `
+        --self-contained true `
+        -p:PublishSingleFile=false `
+        -p:PublishReadyToRun=true `
+        -p:DebugType=portable `
+        -p:DebugSymbols=true `
+        -o $Destination
+}
+
 function ConvertTo-XmlEscaped([string]$Value) {
     return [System.Security.SecurityElement]::Escape($Value)
 }
@@ -213,6 +230,8 @@ function New-MsixUpload([string]$MsixPath, [string]$SymbolsPath, [string]$Upload
 
 $repoRoot = [System.IO.Path]::GetFullPath((Join-Path $PSScriptRoot ".."))
 $projectPath = Resolve-RepoPath "src\FileSearch.Gui\FileSearch.Gui.csproj"
+$indexerProjectPath = Resolve-RepoPath "src\FileSearch.Indexer\FileSearch.Indexer.csproj"
+$extractorHostProjectPath = Resolve-RepoPath "src\FileSearch.ExtractorHost\FileSearch.ExtractorHost.csproj"
 $manifestTemplate = Resolve-RepoPath "packaging\AppxManifest.template.xml"
 $outputRootPath = Resolve-RepoPath $OutputRoot
 $publishDirectory = Join-Path $outputRootPath "publish\$RuntimeIdentifier"
@@ -242,20 +261,23 @@ if (Test-Path $msixPath) { Remove-Item -LiteralPath $msixPath -Force }
 if (Test-Path $symbolsPath) { Remove-Item -LiteralPath $symbolsPath -Force }
 if (Test-Path $uploadPath) { Remove-Item -LiteralPath $uploadPath -Force }
 
-Write-Host "Publishing $RuntimeIdentifier $Configuration..."
-dotnet publish $projectPath `
-    --configuration $Configuration `
-    --runtime $RuntimeIdentifier `
-    --self-contained true `
-    -p:PublishSingleFile=false `
-    -p:PublishReadyToRun=true `
-    -p:DebugType=portable `
-    -p:DebugSymbols=true `
-    -o $publishDirectory
+Publish-Project $projectPath "FileSearch.Gui" $publishDirectory
+Publish-Project $indexerProjectPath "FileSearch.Indexer" $publishDirectory
+Publish-Project $extractorHostProjectPath "FileSearch.ExtractorHost" $publishDirectory
 
 $helpIndex = Join-Path $publishDirectory "Help\index.html"
 if (-not (Test-Path $helpIndex)) {
     throw "FileSearch help files were not published. Expected: $helpIndex"
+}
+
+$indexerExe = Join-Path $publishDirectory "FileSearch.Indexer.exe"
+if (-not (Test-Path $indexerExe)) {
+    throw "FileSearch background indexer was not published. Expected: $indexerExe"
+}
+
+$extractorHostExe = Join-Path $publishDirectory "FileSearch.ExtractorHost.exe"
+if (-not (Test-Path $extractorHostExe)) {
+    throw "FileSearch extractor host was not published. Expected: $extractorHostExe"
 }
 
 Write-Host "Staging MSIX package root..."
