@@ -1,3 +1,4 @@
+using System.Globalization;
 using System.Runtime.InteropServices;
 using System.Runtime.Versioning;
 using Microsoft.Win32;
@@ -12,6 +13,7 @@ public sealed class WindowsIFilterExtractor : IDiagnosticTextExtractor
     private const int EAccessDenied = unchecked((int)0x80070005);
     private const int FilterEEndOfChunks = unchecked((int)0x80041700);
     private const int FilterENoMoreText = unchecked((int)0x80041701);
+    private const int FilterENoMoreValues = unchecked((int)0x80041702);
     private const int FilterEAccess = unchecked((int)0x80041703);
     private const int FilterEEmbeddingUnavailable = unchecked((int)0x80041705);
     private const int FilterELinkUnavailable = unchecked((int)0x80041706);
@@ -22,9 +24,21 @@ public sealed class WindowsIFilterExtractor : IDiagnosticTextExtractor
 
     private static readonly Guid s_iFilterInterfaceId = new("89BCB740-6119-101A-BCB7-00DD010655AF");
 
+    private readonly WindowsIFilterExtractionOptions _options;
+
+    public WindowsIFilterExtractor()
+        : this(null)
+    {
+    }
+
+    public WindowsIFilterExtractor(WindowsIFilterExtractionOptions? options)
+    {
+        _options = options ?? new WindowsIFilterExtractionOptions();
+    }
+
     public string ExtractorId => "filesearch.ifilter";
 
-    public string ExtractorVersion => "1";
+    public string ExtractorVersion => "2";
 
     public IReadOnlyCollection<string> SupportedExtensions { get; } = Array.Empty<string>();
 
@@ -50,7 +64,7 @@ public sealed class WindowsIFilterExtractor : IDiagnosticTextExtractor
         }
     }
 
-    private static List<TextLine> ExtractSync(
+    private List<TextLine> ExtractSync(
         string path,
         IExtractionIssueSink issues,
         CancellationToken cancellationToken)
@@ -59,6 +73,18 @@ public sealed class WindowsIFilterExtractor : IDiagnosticTextExtractor
         if (!OperatingSystem.IsWindows())
         {
             ReportIssue(issues, "ifilter_unsupported_platform", "Windows IFilter extraction is only available on Windows.");
+            return lines;
+        }
+
+        if (!_options.Enabled)
+        {
+            ReportIssue(issues, "ifilter_disabled", "Windows IFilter fallback is disabled.");
+            return lines;
+        }
+
+        if (!_options.AllowsPath(path))
+        {
+            ReportIssue(issues, "ifilter_blocked", "Windows IFilter fallback is disabled for this file type.");
             return lines;
         }
 
@@ -116,6 +142,8 @@ public sealed class WindowsIFilterExtractor : IDiagnosticTextExtractor
                 IFilterInit.HardLineBreaks |
                 IFilterInit.CanonHyphens |
                 IFilterInit.CanonSpaces |
+                IFilterInit.ApplyIndexAttributes |
+                IFilterInit.ApplyOtherAttributes |
                 IFilterInit.IndexingOnly,
                 0,
                 IntPtr.Zero,
@@ -143,10 +171,11 @@ public sealed class WindowsIFilterExtractor : IDiagnosticTextExtractor
                     break;
                 }
 
-                if ((chunk.Flags & ChunkState.Text) == 0)
-                    continue;
+                if ((chunk.Flags & ChunkState.Text) != 0)
+                    ReadChunkText(filter, issues, content, cancellationToken);
 
-                ReadChunkText(filter, issues, content, cancellationToken);
+                if ((chunk.Flags & ChunkState.Value) != 0)
+                    ReadChunkValue(filter, chunk.Attribute, issues, content, cancellationToken);
             }
 
             AddTextLines(content, lines);
@@ -161,6 +190,48 @@ public sealed class WindowsIFilterExtractor : IDiagnosticTextExtractor
 
             if (comInitialized)
                 CoUninitialize();
+        }
+    }
+
+    private static void ReadChunkValue(
+        IFilter filter,
+        FullPropSpec attribute,
+        IExtractionIssueSink issues,
+        List<string> content,
+        CancellationToken cancellationToken)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        var hr = filter.GetValue(out var propValue);
+        if (hr == FilterENoMoreValues)
+            return;
+
+        if (hr < 0)
+        {
+            ReportIssue(issues, "ifilter_value_failed", $"Windows IFilter property extraction failed: {FormatHResult(hr)}.");
+            return;
+        }
+
+        if (propValue == IntPtr.Zero)
+            return;
+
+        try
+        {
+            var value = TryReadPropVariant(propValue);
+            if (string.IsNullOrWhiteSpace(value))
+                return;
+
+            content.Add(Environment.NewLine);
+            content.Add($"{DescribeProperty(attribute)}: {value}");
+            content.Add(Environment.NewLine);
+        }
+        catch (Exception ex) when (ex is ArgumentException or ArgumentOutOfRangeException or OverflowException)
+        {
+            ReportIssue(issues, "ifilter_value_unsupported", $"Windows IFilter returned an unsupported property value: {ex.Message}");
+        }
+        finally
+        {
+            _ = PropVariantClear(propValue);
+            Marshal.FreeCoTaskMem(propValue);
         }
     }
 
@@ -196,6 +267,59 @@ public sealed class WindowsIFilterExtractor : IDiagnosticTextExtractor
                 break;
             }
         }
+    }
+
+    private static string? TryReadPropVariant(IntPtr propVariant)
+    {
+        var type = (VariantType)Marshal.ReadInt16(propVariant);
+        const int dataOffset = 8;
+        return type switch
+        {
+            VariantType.Empty or VariantType.Null => null,
+            VariantType.I1 => unchecked((sbyte)Marshal.ReadByte(propVariant, dataOffset)).ToString(CultureInfo.InvariantCulture),
+            VariantType.UI1 => Marshal.ReadByte(propVariant, dataOffset).ToString(CultureInfo.InvariantCulture),
+            VariantType.I2 => Marshal.ReadInt16(propVariant, dataOffset).ToString(CultureInfo.InvariantCulture),
+            VariantType.UI2 => unchecked((ushort)Marshal.ReadInt16(propVariant, dataOffset)).ToString(CultureInfo.InvariantCulture),
+            VariantType.I4 or VariantType.Int => Marshal.ReadInt32(propVariant, dataOffset).ToString(CultureInfo.InvariantCulture),
+            VariantType.UI4 or VariantType.UInt => unchecked((uint)Marshal.ReadInt32(propVariant, dataOffset)).ToString(CultureInfo.InvariantCulture),
+            VariantType.I8 => Marshal.ReadInt64(propVariant, dataOffset).ToString(CultureInfo.InvariantCulture),
+            VariantType.UI8 => unchecked((ulong)Marshal.ReadInt64(propVariant, dataOffset)).ToString(CultureInfo.InvariantCulture),
+            VariantType.R4 => BitConverter.Int32BitsToSingle(Marshal.ReadInt32(propVariant, dataOffset)).ToString(CultureInfo.InvariantCulture),
+            VariantType.R8 => BitConverter.Int64BitsToDouble(Marshal.ReadInt64(propVariant, dataOffset)).ToString(CultureInfo.InvariantCulture),
+            VariantType.Bool => Marshal.ReadInt16(propVariant, dataOffset) != 0 ? "true" : "false",
+            VariantType.LPStr => Marshal.PtrToStringAnsi(Marshal.ReadIntPtr(propVariant, dataOffset)),
+            VariantType.LPWStr => Marshal.PtrToStringUni(Marshal.ReadIntPtr(propVariant, dataOffset)),
+            VariantType.BStr => Marshal.PtrToStringBSTR(Marshal.ReadIntPtr(propVariant, dataOffset)),
+            VariantType.FileTime => ReadFileTime(propVariant, dataOffset),
+            _ => null,
+        };
+    }
+
+    private static string? ReadFileTime(IntPtr propVariant, int dataOffset)
+    {
+        var low = unchecked((uint)Marshal.ReadInt32(propVariant, dataOffset));
+        var high = unchecked((uint)Marshal.ReadInt32(propVariant, dataOffset + 4));
+        var fileTime = unchecked((long)(((ulong)high << 32) | low));
+        return fileTime <= 0
+            ? null
+            : DateTime.FromFileTimeUtc(fileTime).ToString("O", CultureInfo.InvariantCulture);
+    }
+
+    private static string DescribeProperty(FullPropSpec attribute)
+    {
+        const int prSpecLpwstr = 0;
+        const int prSpecPropId = 1;
+        if (attribute.PropSpec.Kind == prSpecLpwstr && attribute.PropSpec.Value != IntPtr.Zero)
+        {
+            var name = Marshal.PtrToStringUni(attribute.PropSpec.Value);
+            if (!string.IsNullOrWhiteSpace(name))
+                return $"ifilter property {name}";
+        }
+
+        if (attribute.PropSpec.Kind == prSpecPropId)
+            return FormattableString.Invariant($"ifilter property {attribute.GuidPropSet:B}:{attribute.PropSpec.Value.ToInt64()}");
+
+        return FormattableString.Invariant($"ifilter property {attribute.GuidPropSet:B}");
     }
 
     private static void AddTextLines(IReadOnlyCollection<string> chunks, List<TextLine> lines)
@@ -310,6 +434,9 @@ public sealed class WindowsIFilterExtractor : IDiagnosticTextExtractor
     [DllImport("ole32.dll", ExactSpelling = true)]
     private static extern void CoUninitialize();
 
+    [DllImport("ole32.dll", ExactSpelling = true)]
+    private static extern int PropVariantClear(IntPtr pvar);
+
     [DllImport("query.dll", CharSet = CharSet.Unicode, ExactSpelling = true)]
     private static extern int LoadIFilter(
         [MarshalAs(UnmanagedType.LPWStr)] string pwcsPath,
@@ -353,6 +480,8 @@ public sealed class WindowsIFilterExtractor : IDiagnosticTextExtractor
         HardLineBreaks = 2,
         CanonHyphens = 4,
         CanonSpaces = 8,
+        ApplyIndexAttributes = 16,
+        ApplyOtherAttributes = 32,
         IndexingOnly = 64,
     }
 
@@ -371,6 +500,29 @@ public sealed class WindowsIFilterExtractor : IDiagnosticTextExtractor
         EndOfSentence = 2,
         EndOfParagraph = 3,
         EndOfChapter = 4,
+    }
+
+    private enum VariantType : ushort
+    {
+        Empty = 0,
+        Null = 1,
+        I2 = 2,
+        I4 = 3,
+        R4 = 4,
+        R8 = 5,
+        Bool = 11,
+        I1 = 16,
+        UI1 = 17,
+        UI2 = 18,
+        UI4 = 19,
+        I8 = 20,
+        UI8 = 21,
+        Int = 22,
+        UInt = 23,
+        BStr = 8,
+        LPStr = 30,
+        LPWStr = 31,
+        FileTime = 64,
     }
 
     [StructLayout(LayoutKind.Sequential)]

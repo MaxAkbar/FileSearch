@@ -3,11 +3,15 @@ namespace FileSearch.Core.Extractors;
 public sealed class WindowsIFilterExtractionService : IWindowsIFilterExtractionService
 {
     private readonly IOutOfProcessExtractionService _outOfProcessExtraction;
+    private readonly WindowsIFilterExtractionOptions _options;
     private readonly ITextExtractor _hostExtractor = new WindowsIFilterHostExtractor();
 
-    public WindowsIFilterExtractionService(IOutOfProcessExtractionService outOfProcessExtraction)
+    public WindowsIFilterExtractionService(
+        IOutOfProcessExtractionService outOfProcessExtraction,
+        WindowsIFilterExtractionOptions? options = null)
     {
         _outOfProcessExtraction = outOfProcessExtraction;
+        _options = options ?? new WindowsIFilterExtractionOptions();
     }
 
     public bool CanTryFallback(
@@ -16,8 +20,10 @@ public sealed class WindowsIFilterExtractionService : IWindowsIFilterExtractionS
         Exception? primaryFailure,
         long primaryLineCount)
     {
-        return OperatingSystem.IsWindows() &&
+        return _options.Enabled &&
+            OperatingSystem.IsWindows() &&
             File.Exists(path) &&
+            _options.AllowsPath(path) &&
             (primaryExtractor is null || primaryFailure is not null || primaryLineCount == 0) &&
             _outOfProcessExtraction.ShouldUse(_hostExtractor);
     }
@@ -26,8 +32,13 @@ public sealed class WindowsIFilterExtractionService : IWindowsIFilterExtractionS
         string path,
         CancellationToken cancellationToken)
     {
-        if (!OperatingSystem.IsWindows() || !_outOfProcessExtraction.ShouldUse(_hostExtractor))
+        if (!_options.Enabled ||
+            !OperatingSystem.IsWindows() ||
+            !_options.AllowsPath(path) ||
+            !_outOfProcessExtraction.ShouldUse(_hostExtractor))
+        {
             return null;
+        }
 
         var result = await _outOfProcessExtraction.ExtractAsync(path, _hostExtractor, cancellationToken)
             .ConfigureAwait(false);
@@ -38,7 +49,7 @@ public sealed class WindowsIFilterExtractionService : IWindowsIFilterExtractionS
     {
         public string ExtractorId => "filesearch.ifilter";
 
-        public string ExtractorVersion => "1";
+        public string ExtractorVersion => "2";
 
         public IReadOnlyCollection<string> SupportedExtensions { get; } = Array.Empty<string>();
 

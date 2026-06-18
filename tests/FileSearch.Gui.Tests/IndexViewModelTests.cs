@@ -192,6 +192,31 @@ public sealed class IndexViewModelTests
                         LastCheckedUtc: new DateTime(2026, 6, 14, 12, 5, 0, DateTimeKind.Utc)),
                 },
                 FailedFileCount: 2),
+            Failures = new[]
+            {
+                new IndexFailureInfo(
+                    @"C:\Root",
+                    @"C:\Root\doc.pdf",
+                    "filesearch.ifilter",
+                    "2",
+                    "Windows IFilter fallback was used.",
+                    1,
+                    DateTime.UtcNow,
+                    FailureKind: "extraction_issue",
+                    IssueCode: "ifilter_fallback_used",
+                    Severity: "info"),
+                new IndexFailureInfo(
+                    @"C:\Root",
+                    @"C:\Root\doc.pdf",
+                    "filesearch.ifilter",
+                    "2",
+                    "Windows IFilter completed but returned no text.",
+                    1,
+                    DateTime.UtcNow,
+                    FailureKind: "extraction_issue",
+                    IssueCode: "ifilter_empty",
+                    Severity: "warning"),
+            },
         };
 
         var (_, index) = Build(fileIndex);
@@ -203,6 +228,7 @@ public sealed class IndexViewModelTests
         Assert.Equal("2 locations, 3 files, 10 lines, 2 failed", index.IndexDatabaseContentText);
         Assert.Equal("1 pending index change", index.IndexDatabaseQueueText);
         Assert.Equal("healthy: NTFS USN, USN 345", index.IndexDatabaseVolumeHealthText);
+        Assert.Equal("IFilter fallback used; codes: ifilter_empty", index.IndexDatabaseDiagnosticsText);
         Assert.StartsWith("Last indexed ", index.IndexDatabaseLastIndexedText);
     }
 

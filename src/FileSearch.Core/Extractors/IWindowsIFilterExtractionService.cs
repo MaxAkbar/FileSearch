@@ -4,7 +4,7 @@ public interface IWindowsIFilterExtractionService
 {
     string ExtractorId => "filesearch.ifilter";
 
-    string ExtractorVersion => "1";
+    string ExtractorVersion => "2";
 
     bool CanTryFallback(
         string path,

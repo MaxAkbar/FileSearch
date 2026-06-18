@@ -811,7 +811,7 @@ internal static partial class IndexTables
             cancellationToken).ConfigureAwait(false);
         var extractionIssues = await GetCountAsync(
             db,
-            "SELECT COUNT(*) FROM extraction_issues",
+            "SELECT COUNT(*) FROM extraction_issues WHERE severity != 'info'",
             cancellationToken).ConfigureAwait(false);
         return fileErrors + extractionIssues;
     }

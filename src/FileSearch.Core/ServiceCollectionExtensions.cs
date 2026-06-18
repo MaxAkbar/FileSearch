@@ -49,6 +49,7 @@ public static class ServiceCollectionExtensions
 
         services.TryAddSingleton<FileIndexOptions>();
         services.TryAddSingleton<OutOfProcessExtractionOptions>();
+        services.TryAddSingleton<WindowsIFilterExtractionOptions>();
         services.TryAddSingleton<IOutOfProcessExtractionService, OutOfProcessExtractionService>();
         services.TryAddSingleton<IWindowsIFilterExtractionService, WindowsIFilterExtractionService>();
         services.TryAddSingleton<IIndexerRuntimeCondition, WindowsIndexerRuntimeCondition>();

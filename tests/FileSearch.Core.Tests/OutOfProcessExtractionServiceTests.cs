@@ -73,6 +73,25 @@ public sealed class OutOfProcessExtractionServiceTests : IDisposable
     }
 
     [Fact]
+    public async Task ExtractAsyncUsesExtractorSpecificTimeout()
+    {
+        File.WriteAllText(_hostPath, string.Empty);
+        var runner = new FakeHostRunner();
+        var options = new OutOfProcessExtractionOptions
+        {
+            HostPath = _hostPath,
+            Timeout = TimeSpan.FromSeconds(30),
+            UseReusableHostPool = false,
+        };
+        options.ExtractorTimeouts["filesearch.ifilter"] = TimeSpan.FromSeconds(7);
+        var service = new OutOfProcessExtractionService(options, runner);
+
+        await service.ExtractAsync(@"C:\docs\file.pdf", new TestExtractor("filesearch.ifilter"), TestContext.Current.CancellationToken);
+
+        Assert.Equal(TimeSpan.FromSeconds(7), runner.Timeout.GetValueOrDefault());
+    }
+
+    [Fact]
     public async Task ExtractAsyncReportsCrashWhenNoValidResponseIsReturned()
     {
         File.WriteAllText(_hostPath, string.Empty);
@@ -197,6 +216,8 @@ public sealed class OutOfProcessExtractionServiceTests : IDisposable
 
         public string? RequestJson { get; private set; }
 
+        public TimeSpan? Timeout { get; private set; }
+
         public ExtractorHostRunResult Result { get; init; } = new(
             ExitCode: 0,
             StandardOutput: JsonSerializer.Serialize(
@@ -213,7 +234,24 @@ public sealed class OutOfProcessExtractionServiceTests : IDisposable
         {
             Command = command;
             RequestJson = requestJson;
+            Timeout = timeout;
             return Task.FromResult(Result);
+        }
+    }
+
+    private sealed class TestExtractor(string extractorId) : ITextExtractor
+    {
+        public string ExtractorId { get; } = extractorId;
+
+        public IReadOnlyCollection<string> SupportedExtensions { get; } = Array.Empty<string>();
+
+        public async IAsyncEnumerable<TextLine> ExtractAsync(
+            string path,
+            [System.Runtime.CompilerServices.EnumeratorCancellation] CancellationToken cancellationToken)
+        {
+            await Task.Yield();
+            cancellationToken.ThrowIfCancellationRequested();
+            yield break;
         }
     }
 }

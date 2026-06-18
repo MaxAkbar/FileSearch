@@ -87,12 +87,13 @@ public sealed class OutOfProcessExtractionService : IOutOfProcessExtractionServi
         CancellationToken cancellationToken)
     {
         var requestJson = JsonSerializer.Serialize(request, ExtractorHostProtocol.JsonOptions);
-        var run = await _runner.RunAsync(command, requestJson, _options.Timeout, cancellationToken).ConfigureAwait(false);
+        var timeout = _options.GetTimeoutForExtractor(request.ExtractorId);
+        var run = await _runner.RunAsync(command, requestJson, timeout, cancellationToken).ConfigureAwait(false);
         if (run.TimedOut)
         {
             throw new ExtractorHostException(
                 "extractor_host_timeout",
-                $"Extractor host timed out after {_options.Timeout.TotalSeconds:n0} seconds.");
+                $"Extractor host timed out after {timeout.TotalSeconds:n0} seconds.");
         }
 
         var response = TryReadResponse(run);
@@ -221,7 +222,7 @@ public sealed class OutOfProcessExtractionService : IOutOfProcessExtractionServi
 internal sealed class ReusableExtractorHostPool : IDisposable
 {
     private readonly ReusableExtractorHostSession[] _sessions;
-    private readonly TimeSpan _timeout;
+    private readonly OutOfProcessExtractionOptions _options;
     private int _nextSession;
 
     public ReusableExtractorHostPool(
@@ -230,7 +231,7 @@ internal sealed class ReusableExtractorHostPool : IDisposable
         ILogger logger)
     {
         var poolSize = Math.Clamp(options.HostPoolSize, 1, 16);
-        _timeout = options.Timeout;
+        _options = options;
         _sessions = Enumerable
             .Range(0, poolSize)
             .Select(_ => new ReusableExtractorHostSession(command, logger))
@@ -242,7 +243,7 @@ internal sealed class ReusableExtractorHostPool : IDisposable
         CancellationToken cancellationToken)
     {
         var session = _sessions[(int)((uint)Interlocked.Increment(ref _nextSession) % (uint)_sessions.Length)];
-        return session.ExtractAsync(request, _timeout, cancellationToken);
+        return session.ExtractAsync(request, _options.GetTimeoutForExtractor(request.ExtractorId), cancellationToken);
     }
 
     public void Dispose()

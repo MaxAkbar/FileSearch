@@ -111,6 +111,7 @@ public sealed partial class IndexViewModel : ObservableObject, IDisposable
     [ObservableProperty] private string _indexDatabaseContentText = "No indexed content";
     [ObservableProperty] private string _indexDatabaseQueueText = "No pending index changes";
     [ObservableProperty] private string _indexDatabaseVolumeHealthText = "No volume checkpoints";
+    [ObservableProperty] private string _indexDatabaseDiagnosticsText = "No extraction diagnostics";
     [ObservableProperty] private string _indexDatabaseLastIndexedText = "Never indexed";
     [ObservableProperty] private long _indexDatabaseFailedFileCount;
     [ObservableProperty] private bool _newIndexRecursive = true;
@@ -925,6 +926,7 @@ public sealed partial class IndexViewModel : ObservableObject, IDisposable
         catch
         {
             IndexDatabaseStatusText = "Database info unavailable";
+            IndexDatabaseDiagnosticsText = "Diagnostics unavailable";
             CompactIndexDatabaseCommand.NotifyCanExecuteChanged();
             return;
         }
@@ -938,6 +940,7 @@ public sealed partial class IndexViewModel : ObservableObject, IDisposable
         IndexDatabaseQueueText = FormatPendingChanges(info.PendingChangeCount);
         IndexDatabaseVolumeHealthText = FormatVolumeHealth(info);
         IndexDatabaseFailedFileCount = info.FailedFileCount;
+        IndexDatabaseDiagnosticsText = await FormatExtractionDiagnosticsAsync().ConfigureAwait(true);
         IndexDatabaseLastIndexedText = info.LastIndexedUtc is { } indexedUtc
             ? $"Last indexed {indexedUtc.ToLocalTime():g}"
             : "Never indexed";
@@ -1242,6 +1245,56 @@ public sealed partial class IndexViewModel : ObservableObject, IDisposable
                 var error = string.IsNullOrWhiteSpace(volume.LastError) ? string.Empty : $"; {volume.LastError}";
                 return $"{health}: {capability}, {checkpoint}{error}";
             }));
+    }
+
+    private async Task<string> FormatExtractionDiagnosticsAsync()
+    {
+        IReadOnlyList<IndexFailureInfo> diagnostics;
+        try
+        {
+            diagnostics = await _fileIndex.GetFailedFilesAsync(CancellationToken.None).ConfigureAwait(true);
+        }
+        catch
+        {
+            return "Diagnostics unavailable";
+        }
+
+        return FormatExtractionDiagnostics(diagnostics);
+    }
+
+    private static string FormatExtractionDiagnostics(IReadOnlyList<IndexFailureInfo> diagnostics)
+    {
+        var issueCodes = diagnostics
+            .Where(static failure => string.Equals(failure.FailureKind, "extraction_issue", StringComparison.Ordinal) &&
+                !string.IsNullOrWhiteSpace(failure.IssueCode))
+            .Select(static failure => failure.IssueCode!)
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .OrderBy(static code => code, StringComparer.OrdinalIgnoreCase)
+            .ToArray();
+        if (issueCodes.Length == 0)
+            return "No extraction diagnostics";
+
+        var ifilterCodes = issueCodes
+            .Where(static code => code.StartsWith("ifilter_", StringComparison.OrdinalIgnoreCase))
+            .ToArray();
+        if (ifilterCodes.Length > 0)
+        {
+            var nonFallbackCodes = ifilterCodes
+                .Where(static code => !string.Equals(code, "ifilter_fallback_used", StringComparison.OrdinalIgnoreCase))
+                .Take(4)
+                .ToArray();
+            var extra = ifilterCodes.Length > nonFallbackCodes.Length + 1 ? ", ..." : string.Empty;
+            var codes = nonFallbackCodes.Length == 0
+                ? string.Empty
+                : $"; codes: {string.Join(", ", nonFallbackCodes)}{extra}";
+            return ifilterCodes.Contains("ifilter_fallback_used", StringComparer.OrdinalIgnoreCase)
+                ? $"IFilter fallback used{codes}"
+                : $"IFilter diagnostics: {string.Join(", ", ifilterCodes.Take(4))}{(ifilterCodes.Length > 4 ? ", ..." : string.Empty)}";
+        }
+
+        return issueCodes.Length == 1
+            ? $"Extraction diagnostic: {issueCodes[0]}"
+            : $"Extraction diagnostics: {string.Join(", ", issueCodes.Take(4))}{(issueCodes.Length > 4 ? ", ..." : string.Empty)}";
     }
 
     private static string NormalizeExtensionList(string raw) =>

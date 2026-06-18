@@ -279,6 +279,11 @@ public sealed class FileIndexTests : IDisposable
         Assert.Equal(
             new[] { "empty.empty:1:ifilter fallback needle" },
             Normalize(await RawIndexedSearchAsync(index, new TermQuery("needle"))));
+        var info = await index.GetDatabaseInfoAsync(TestContext.Current.CancellationToken);
+        Assert.Equal(0, info.FailedFileCount);
+        var diagnostic = Assert.Single(await index.GetFailedFilesAsync(TestContext.Current.CancellationToken));
+        Assert.Equal("ifilter_fallback_used", diagnostic.IssueCode);
+        Assert.Equal("info", diagnostic.Severity);
     }
 
     [Fact]
@@ -300,7 +305,9 @@ public sealed class FileIndexTests : IDisposable
 
         Assert.Equal(1, fallback.CallCount);
         Assert.NotNull(fallback.LastPrimaryFailure);
-        Assert.Empty(await index.GetFailedFilesAsync(TestContext.Current.CancellationToken));
+        var diagnostic = Assert.Single(await index.GetFailedFilesAsync(TestContext.Current.CancellationToken));
+        Assert.Equal("ifilter_fallback_used", diagnostic.IssueCode);
+        Assert.Equal("info", diagnostic.Severity);
         Assert.Equal(
             new[] { "broken.bad:2:ifilter recovered needle" },
             Normalize(await RawIndexedSearchAsync(index, new TermQuery("needle"))));
@@ -325,6 +332,9 @@ public sealed class FileIndexTests : IDisposable
 
         Assert.Equal(1, fallback.CallCount);
         Assert.Null(fallback.LastPrimaryExtractor);
+        Assert.Contains(
+            await index.GetFailedFilesAsync(TestContext.Current.CancellationToken),
+            diagnostic => diagnostic.IssueCode == "ifilter_fallback_used" && diagnostic.Severity == "info");
         Assert.Equal(
             new[] { "unknown.custom:5:ifilter custom needle" },
             Normalize(await RawIndexedSearchAsync(index, new TermQuery("needle"))));

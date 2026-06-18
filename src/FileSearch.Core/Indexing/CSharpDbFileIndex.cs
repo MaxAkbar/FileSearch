@@ -1418,7 +1418,16 @@ public sealed class CSharpDbFileIndex : IFileIndex, IIndexReplayWriter, IIndexUs
                 fallback.ExtractorVersion,
                 cancellationToken)
             .ConfigureAwait(false);
-        await IndexTables.ReplaceExtractionIssuesAsync(db, fileId, result.Issues, cancellationToken).ConfigureAwait(false);
+        var issues = new List<ExtractionIssue>(result.Issues.Count + 1)
+        {
+            new(
+                MemberPath: null,
+                Code: "ifilter_fallback_used",
+                Message: FormatIFilterFallbackMessage(primaryExtractor, primaryFailure, primaryLineCount),
+                Severity: "info"),
+        };
+        issues.AddRange(result.Issues);
+        await IndexTables.ReplaceExtractionIssuesAsync(db, fileId, issues, cancellationToken).ConfigureAwait(false);
         if (result.Lines.Count == 0)
         {
             await IndexTables.SetFileStatusAsync(db, fileId, FileStatus.Ok, null, cancellationToken).ConfigureAwait(false);
@@ -1428,6 +1437,20 @@ public sealed class CSharpDbFileIndex : IFileIndex, IIndexReplayWriter, IIndexUs
         var linesIndexed = await InsertLinesAsync(db, fileId, result.Lines, cancellationToken).ConfigureAwait(false);
         await IndexTables.SetFileStatusAsync(db, fileId, FileStatus.Ok, null, cancellationToken).ConfigureAwait(false);
         return linesIndexed;
+    }
+
+    private static string FormatIFilterFallbackMessage(
+        ITextExtractor? primaryExtractor,
+        Exception? primaryFailure,
+        long primaryLineCount)
+    {
+        if (primaryExtractor is null)
+            return "Windows IFilter fallback was used because no primary extractor was registered.";
+
+        if (primaryFailure is not null)
+            return $"Windows IFilter fallback was used after {primaryExtractor.ExtractorId} failed: {primaryFailure.Message}";
+
+        return $"Windows IFilter fallback was used because {primaryExtractor.ExtractorId} returned {primaryLineCount:n0} lines.";
     }
 
     private static async Task<long> InsertLinesAsync(

@@ -329,6 +329,7 @@
                                 <RowDefinition Height="Auto"/>
                                 <RowDefinition Height="Auto"/>
                                 <RowDefinition Height="Auto"/>
+                                <RowDefinition Height="Auto"/>
                             </Grid.RowDefinitions>
 
                             <TextBlock Grid.Row="0" Text="Path" Style="{StaticResource MetaKeyStyle}" Margin="0,0,0,8"/>
@@ -380,6 +381,14 @@
                             <TextBlock Grid.Row="6" Text="Volumes" Style="{StaticResource MetaKeyStyle}"/>
                             <TextBlock Grid.Row="6" Grid.Column="1"
                                        Text="{Binding Index.IndexDatabaseVolumeHealthText}"
+                                       Style="{StaticResource MetaValueStyle}"
+                                       TextAlignment="Left"
+                                       TextWrapping="Wrap"
+                                       Margin="0,0,0,8"/>
+
+                            <TextBlock Grid.Row="7" Text="Diagnostics" Style="{StaticResource MetaKeyStyle}"/>
+                            <TextBlock Grid.Row="7" Grid.Column="1"
+                                       Text="{Binding Index.IndexDatabaseDiagnosticsText}"
                                        Style="{StaticResource MetaValueStyle}"
                                        TextAlignment="Left"
                                        TextWrapping="Wrap"/>
