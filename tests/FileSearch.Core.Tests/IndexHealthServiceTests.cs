@@ -110,6 +110,31 @@ public sealed class IndexHealthServiceTests
     }
 
     [Fact]
+    public async Task GetHealthAsyncKeepsConfiguredRowsWhenIndexDiagnosticsFail()
+    {
+        var root = CreateTempRoot();
+        var normalizedRoot = IndexPath.NormalizeRoot(root);
+        var service = new IndexHealthService(new FakeHealthFileIndex { ThrowReads = true });
+
+        try
+        {
+            var health = await service.GetHealthAsync(
+                [new IndexedLocation(normalizedRoot, new WalkerOptions())],
+                new IndexingStatus(false, false, false, 0, "Idle"),
+                TestContext.Current.CancellationToken);
+
+            var row = Assert.Single(health.Roots);
+            Assert.Equal(normalizedRoot, row.Root);
+            Assert.Equal(IndexHealthStatus.Healthy, row.Status);
+            Assert.Equal("Strategy pending", row.Strategy);
+        }
+        finally
+        {
+            Directory.Delete(root, recursive: true);
+        }
+    }
+
+    [Fact]
     public async Task GetHealthAsyncMapsRetainedJournalGapToJournalExpired()
     {
         var root = CreateTempRoot();
@@ -297,6 +322,8 @@ public sealed class IndexHealthServiceTests
 
         public IReadOnlyList<PendingIndexChange> PendingChanges { get; init; } = Array.Empty<PendingIndexChange>();
 
+        public bool ThrowReads { get; init; }
+
         public Task BuildOrRefreshAsync(IndexRequest request, CancellationToken cancellationToken) => Task.CompletedTask;
 
         public Task RefreshRootAsync(IndexRequest request, IndexRefreshMode mode, CancellationToken cancellationToken) => Task.CompletedTask;
@@ -320,13 +347,19 @@ public sealed class IndexHealthServiceTests
             Task.FromResult(new IndexStats(root, 0, 0, null, Exists: false));
 
         public Task<IReadOnlyList<IndexedLocationInfo>> GetLocationsAsync(CancellationToken cancellationToken) =>
-            Task.FromResult(Locations);
+            ThrowReads
+                ? Task.FromException<IReadOnlyList<IndexedLocationInfo>>(new InvalidOperationException("read failed"))
+                : Task.FromResult(Locations);
 
         public Task<IndexDatabaseInfo> GetDatabaseInfoAsync(CancellationToken cancellationToken) =>
-            Task.FromResult(DatabaseInfo);
+            ThrowReads
+                ? Task.FromException<IndexDatabaseInfo>(new InvalidOperationException("read failed"))
+                : Task.FromResult(DatabaseInfo);
 
         public Task<IReadOnlyList<IndexFailureInfo>> GetFailedFilesAsync(CancellationToken cancellationToken) =>
-            Task.FromResult(Failures);
+            ThrowReads
+                ? Task.FromException<IReadOnlyList<IndexFailureInfo>>(new InvalidOperationException("read failed"))
+                : Task.FromResult(Failures);
 
         public Task ExportFailedFilesAsync(
             string path,
@@ -346,7 +379,9 @@ public sealed class IndexHealthServiceTests
             Task.CompletedTask;
 
         public Task<IReadOnlyList<PendingIndexChange>> GetPendingChangesAsync(CancellationToken cancellationToken) =>
-            Task.FromResult(PendingChanges);
+            ThrowReads
+                ? Task.FromException<IReadOnlyList<PendingIndexChange>>(new InvalidOperationException("read failed"))
+                : Task.FromResult(PendingChanges);
 
         public Task RemovePendingChangeAsync(
             string root,

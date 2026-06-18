@@ -20,6 +20,14 @@ internal sealed class IndexDatabase : IDisposable
     internal const string FullTextIndexName = "fts_lines";
 
     private static readonly string[] s_fullTextColumns = { "content" };
+    private static readonly string[] s_schemaProbeQueries =
+    {
+        "SELECT drive_kind, last_checked_utc_ticks FROM index_volumes WHERE id = -1",
+        "SELECT location_kind, last_full_validation_utc_ticks FROM index_roots WHERE id = -1",
+        "SELECT directory_path, file_name_lower, extractor_id, extraction_attempt_count FROM files WHERE id = -1",
+        "SELECT member_path, severity FROM extraction_issues WHERE id = -1",
+        "SELECT kind, observed_utc_ticks FROM validation_drifts WHERE id = -1",
+    };
 
     private readonly SemaphoreSlim _writeGate = new(1, 1);
     private readonly ILogger _logger;
@@ -91,8 +99,11 @@ internal sealed class IndexDatabase : IDisposable
         try
         {
             var version = await GetMetaAsync(db, "schema_version", cancellationToken).ConfigureAwait(false);
-            if (version == CurrentSchemaVersion)
+            if (version == CurrentSchemaVersion &&
+                await HasCurrentSchemaShapeAsync(db, cancellationToken).ConfigureAwait(false))
+            {
                 return db;
+            }
         }
         catch (Exception ex)
         {
@@ -118,6 +129,7 @@ internal sealed class IndexDatabase : IDisposable
 
     private async ValueTask<Database> OpenInitializedAsync(CancellationToken cancellationToken)
     {
+        var databaseExisted = File.Exists(DatabasePath);
         var db = await Database.OpenAsync(DatabasePath, cancellationToken).ConfigureAwait(false);
         await EnsureMetaTableAsync(db, cancellationToken).ConfigureAwait(false);
 
@@ -125,10 +137,19 @@ internal sealed class IndexDatabase : IDisposable
         // process is noticed, but the schema DDL (and its meta rewrite) only
         // runs until it has succeeded once against the current file.
         var version = await GetMetaAsync(db, "schema_version", cancellationToken).ConfigureAwait(false);
-        if (version == CurrentSchemaVersion && _schemaEnsured)
-            return db;
+        if (version == CurrentSchemaVersion)
+        {
+            if (_schemaEnsured ||
+                await HasCurrentSchemaShapeAsync(db, cancellationToken).ConfigureAwait(false))
+            {
+                _schemaEnsured = true;
+                return db;
+            }
 
-        if (version is not null && version != CurrentSchemaVersion)
+            _logger.LogWarning("Index schema version is current but required columns are missing; rebuilding index database.");
+        }
+
+        if (version is not null || databaseExisted)
         {
             await CloseQuietlyAsync(db).ConfigureAwait(false);
             DeleteDatabaseFiles();
@@ -139,6 +160,28 @@ internal sealed class IndexDatabase : IDisposable
         await EnsureSchemaAsync(db, cancellationToken).ConfigureAwait(false);
         _schemaEnsured = true;
         return db;
+    }
+
+    private async Task<bool> HasCurrentSchemaShapeAsync(Database db, CancellationToken cancellationToken)
+    {
+        foreach (var query in s_schemaProbeQueries)
+        {
+            try
+            {
+                await using var result = await db.ExecuteAsync(query, cancellationToken).ConfigureAwait(false);
+            }
+            catch (OperationCanceledException)
+            {
+                throw;
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning(ex, "Index schema shape probe failed; treating index as stale.");
+                return false;
+            }
+        }
+
+        return true;
     }
 
     public async Task CompactAsync(CancellationToken cancellationToken)

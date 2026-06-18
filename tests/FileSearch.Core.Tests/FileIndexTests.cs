@@ -1048,6 +1048,33 @@ public sealed class FileIndexTests : IDisposable
     }
 
     [Fact]
+    public async Task CurrentSchemaWithMissingColumnsIsTreatedAsMissingUntilRebuilt()
+    {
+        Directory.CreateDirectory(Path.GetDirectoryName(_dbPath)!);
+        await using (var db = await Database.OpenAsync(_dbPath, TestContext.Current.CancellationToken))
+        {
+            await db.ExecuteAsync("CREATE TABLE IF NOT EXISTS meta (name TEXT PRIMARY KEY, value TEXT)", TestContext.Current.CancellationToken);
+            await db.ExecuteAsync($"INSERT INTO meta VALUES ('schema_version', '{IndexDatabase.CurrentSchemaVersion}')", TestContext.Current.CancellationToken);
+            await db.ExecuteAsync("CREATE TABLE IF NOT EXISTS index_volumes (id INTEGER PRIMARY KEY, volume_key TEXT)", TestContext.Current.CancellationToken);
+            await db.ExecuteAsync("CREATE TABLE IF NOT EXISTS index_roots (id INTEGER PRIMARY KEY, root_path TEXT, indexed_utc_ticks INTEGER, options_hash TEXT)", TestContext.Current.CancellationToken);
+            await db.ExecuteAsync("CREATE TABLE IF NOT EXISTS files (id INTEGER PRIMARY KEY, root_id INTEGER, path TEXT)", TestContext.Current.CancellationToken);
+            await db.CheckpointAsync(TestContext.Current.CancellationToken);
+        }
+
+        var info = await _index.GetDatabaseInfoAsync(TestContext.Current.CancellationToken);
+        Assert.False(info.IsCompatible);
+
+        File.WriteAllText(Path.Combine(_root, "shape-rebuilt.txt"), "shape rebuilt needle\n");
+        await BuildAsync();
+
+        info = await _index.GetDatabaseInfoAsync(TestContext.Current.CancellationToken);
+        Assert.True(info.IsCompatible);
+        Assert.Equal(IndexDatabase.CurrentSchemaVersion, info.SchemaVersion);
+        var hit = Assert.Single(await IndexedSearchAsync(new TermQuery("shape")));
+        Assert.EndsWith("shape-rebuilt.txt", hit.Path);
+    }
+
+    [Fact]
     public async Task IndexedSearchToleratesWalCleanupContention()
     {
         File.WriteAllText(Path.Combine(_root, "wal.txt"), "wal needle\n");

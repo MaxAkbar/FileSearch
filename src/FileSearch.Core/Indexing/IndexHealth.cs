@@ -84,7 +84,10 @@ public sealed class IndexHealthService : IIndexHealthService
             .Distinct(StringComparer.OrdinalIgnoreCase)
             .ToList();
 
-        var dbLocations = await _index.GetLocationsAsync(cancellationToken).ConfigureAwait(false);
+        var dbLocations = await TryReadAsync(
+                () => _index.GetLocationsAsync(cancellationToken),
+                Array.Empty<IndexedLocationInfo>())
+            .ConfigureAwait(false);
         var dbByRoot = dbLocations.ToDictionary(
             location => IndexPath.NormalizeRoot(location.Root),
             StringComparer.OrdinalIgnoreCase);
@@ -95,9 +98,18 @@ public sealed class IndexHealthService : IIndexHealthService
             .OrderBy(static root => root, StringComparer.OrdinalIgnoreCase)
             .ToList();
 
-        var databaseInfo = await _index.GetDatabaseInfoAsync(cancellationToken).ConfigureAwait(false);
-        var failures = await _index.GetFailedFilesAsync(cancellationToken).ConfigureAwait(false);
-        var pendingChanges = await _index.GetPendingChangesAsync(cancellationToken).ConfigureAwait(false);
+        var databaseInfo = await TryReadAsync<IndexDatabaseInfo?>(
+                async () => await _index.GetDatabaseInfoAsync(cancellationToken).ConfigureAwait(false),
+                null)
+            .ConfigureAwait(false);
+        var failures = await TryReadAsync(
+                () => _index.GetFailedFilesAsync(cancellationToken),
+                Array.Empty<IndexFailureInfo>())
+            .ConfigureAwait(false);
+        var pendingChanges = await TryReadAsync(
+                () => _index.GetPendingChangesAsync(cancellationToken),
+                Array.Empty<PendingIndexChange>())
+            .ConfigureAwait(false);
 
         var pendingByRoot = pendingChanges
             .GroupBy(change => IndexPath.NormalizeRoot(change.Root), StringComparer.OrdinalIgnoreCase)
@@ -113,10 +125,10 @@ public sealed class IndexHealthService : IIndexHealthService
             .GroupBy(failure => IndexPath.NormalizeRoot(failure.Root), StringComparer.OrdinalIgnoreCase)
             .ToDictionary(group => group.Key, group => group.ToArray(), StringComparer.OrdinalIgnoreCase);
 
-        var strategiesByRoot = (databaseInfo.RootStrategies ?? Array.Empty<IndexRootStrategyInfo>())
+        var strategiesByRoot = (databaseInfo?.RootStrategies ?? Array.Empty<IndexRootStrategyInfo>())
             .ToDictionary(strategy => IndexPath.NormalizeRoot(strategy.RootPath), StringComparer.OrdinalIgnoreCase);
 
-        var volumesByKey = (databaseInfo.VolumeHealth ?? Array.Empty<IndexVolumeHealthInfo>())
+        var volumesByKey = (databaseInfo?.VolumeHealth ?? Array.Empty<IndexVolumeHealthInfo>())
             .Where(static volume => !string.IsNullOrWhiteSpace(volume.VolumeKey))
             .ToDictionary(volume => volume.VolumeKey, StringComparer.OrdinalIgnoreCase);
 
@@ -168,6 +180,22 @@ public sealed class IndexHealthService : IIndexHealthService
         }
 
         return new IndexHealthSnapshot(DateTime.UtcNow, runtimeStatus.QueueLength, rows);
+    }
+
+    private static async Task<T> TryReadAsync<T>(Func<Task<T>> read, T fallback)
+    {
+        try
+        {
+            return await read().ConfigureAwait(false);
+        }
+        catch (OperationCanceledException)
+        {
+            throw;
+        }
+        catch
+        {
+            return fallback;
+        }
     }
 
     private static IndexHealthStatus DeriveStatus(
