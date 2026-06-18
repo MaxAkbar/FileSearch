@@ -292,58 +292,77 @@
         </Style.Triggers>
     </Style>
 
-    <!-- Collapsible sidebar section header (SCOPES / RECENT FOLDERS / SAVED FINDS).
-         Minimal Atlas styling: an uppercase label that toggles a chevron and
-         shows/hides its content; no Expander chrome. -->
+    <!-- Collapsible sidebar section header (SCOPES / RECENT FOLDERS / SAVED FINDS). -->
     <Style x:Key="NavSectionExpanderStyle" TargetType="Expander">
         <Setter Property="IsExpanded" Value="True"/>
-        <Setter Property="Margin" Value="0,6,0,0"/>
+        <Setter Property="Margin" Value="0,0,0,8"/>
         <Setter Property="Template">
             <Setter.Value>
                 <ControlTemplate TargetType="Expander">
-                    <DockPanel>
-                        <ToggleButton x:Name="HeaderToggle"
-                                      DockPanel.Dock="Top"
-                                      Content="{TemplateBinding Header}"
-                                      IsChecked="{Binding IsExpanded, Mode=TwoWay, RelativeSource={RelativeSource TemplatedParent}}"
-                                      Focusable="False"
-                                      Cursor="Hand"
-                                      HorizontalAlignment="Stretch"
-                                      HorizontalContentAlignment="Stretch"
-                                      FocusVisualStyle="{x:Null}">
-                            <ToggleButton.Template>
-                                <ControlTemplate TargetType="ToggleButton">
-                                    <Border x:Name="HeaderBg" Background="Transparent" CornerRadius="8"
-                                            Padding="9,6" SnapsToDevicePixels="True"
-                                            TextElement.FontSize="10.5" TextElement.FontWeight="Bold"
-                                            TextElement.Foreground="{DynamicResource Atlas.Ink3Brush}">
-                                        <Grid>
-                                            <Grid.ColumnDefinitions>
-                                                <ColumnDefinition Width="*"/>
-                                                <ColumnDefinition Width="Auto"/>
-                                            </Grid.ColumnDefinitions>
-                                            <ContentPresenter VerticalAlignment="Center"/>
-                                            <ui:FontIcon x:Name="Chevron" Grid.Column="1" Glyph="&#xE70D;"
-                                                         FontSize="9" VerticalAlignment="Center"
-                                                         Foreground="{DynamicResource Atlas.Ink3Brush}"/>
-                                        </Grid>
-                                    </Border>
-                                    <ControlTemplate.Triggers>
-                                        <Trigger Property="IsMouseOver" Value="True">
-                                            <Setter TargetName="HeaderBg" Property="Background" Value="{DynamicResource Atlas.HoverBrush}"/>
-                                        </Trigger>
-                                        <Trigger Property="IsChecked" Value="False">
-                                            <Setter TargetName="Chevron" Property="Glyph" Value="&#xE76C;"/>
-                                        </Trigger>
-                                    </ControlTemplate.Triggers>
-                                </ControlTemplate>
-                            </ToggleButton.Template>
-                        </ToggleButton>
-                        <ContentPresenter x:Name="SectionContent" Visibility="Collapsed" Margin="0,2,0,2"/>
-                    </DockPanel>
+                    <Border x:Name="SectionChrome"
+                            Background="{DynamicResource Atlas.SurfaceBrush}"
+                            BorderBrush="{DynamicResource Atlas.LineBrush}"
+                            BorderThickness="1"
+                            CornerRadius="8"
+                            SnapsToDevicePixels="True">
+                        <DockPanel>
+                            <ToggleButton x:Name="HeaderToggle"
+                                          DockPanel.Dock="Top"
+                                          Content="{TemplateBinding Header}"
+                                          IsChecked="{Binding IsExpanded, Mode=TwoWay, RelativeSource={RelativeSource TemplatedParent}}"
+                                          Focusable="False"
+                                          Cursor="Hand"
+                                          HorizontalAlignment="Stretch"
+                                          HorizontalContentAlignment="Stretch"
+                                          FocusVisualStyle="{x:Null}">
+                                <ToggleButton.Template>
+                                    <ControlTemplate TargetType="ToggleButton">
+                                        <Border x:Name="HeaderBg"
+                                                Background="{DynamicResource Atlas.Surface2Brush}"
+                                                BorderBrush="{DynamicResource Atlas.LineBrush}"
+                                                BorderThickness="0,0,0,1"
+                                                CornerRadius="8,8,0,0"
+                                                Padding="10,7"
+                                                SnapsToDevicePixels="True"
+                                                TextElement.FontSize="10.5" TextElement.FontWeight="Bold"
+                                                TextElement.Foreground="{DynamicResource Atlas.Ink3Brush}">
+                                            <Grid>
+                                                <Grid.ColumnDefinitions>
+                                                    <ColumnDefinition Width="*"/>
+                                                    <ColumnDefinition Width="Auto"/>
+                                                </Grid.ColumnDefinitions>
+                                                <ContentPresenter VerticalAlignment="Center"/>
+                                                <ui:FontIcon x:Name="Chevron" Grid.Column="1" Glyph="&#xE70D;"
+                                                             FontSize="9" VerticalAlignment="Center"
+                                                             Foreground="{DynamicResource Atlas.Ink3Brush}"/>
+                                            </Grid>
+                                        </Border>
+                                        <ControlTemplate.Triggers>
+                                            <Trigger Property="IsMouseOver" Value="True">
+                                                <Setter TargetName="HeaderBg" Property="Background" Value="{DynamicResource Atlas.HoverBrush}"/>
+                                            </Trigger>
+                                            <Trigger Property="IsChecked" Value="False">
+                                                <Setter TargetName="Chevron" Property="Glyph" Value="&#xE76C;"/>
+                                                <Setter TargetName="HeaderBg" Property="BorderThickness" Value="0"/>
+                                                <Setter TargetName="HeaderBg" Property="CornerRadius" Value="8"/>
+                                            </Trigger>
+                                        </ControlTemplate.Triggers>
+                                    </ControlTemplate>
+                                </ToggleButton.Template>
+                            </ToggleButton>
+                            <Border x:Name="SectionContent"
+                                    Padding="8,7,8,8"
+                                    Visibility="Collapsed">
+                                <ContentPresenter ContentSource="Content"/>
+                            </Border>
+                        </DockPanel>
+                    </Border>
                     <ControlTemplate.Triggers>
                         <Trigger Property="IsExpanded" Value="True">
                             <Setter TargetName="SectionContent" Property="Visibility" Value="Visible"/>
+                        </Trigger>
+                        <Trigger Property="IsMouseOver" Value="True">
+                            <Setter TargetName="SectionChrome" Property="BorderBrush" Value="{DynamicResource Atlas.Line2Brush}"/>
                         </Trigger>
                     </ControlTemplate.Triggers>
                 </ControlTemplate>
