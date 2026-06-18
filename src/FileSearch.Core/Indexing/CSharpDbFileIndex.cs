@@ -299,9 +299,6 @@ public sealed class CSharpDbFileIndex : IFileIndex, IIndexReplayWriter, IIndexUs
                     spec.RequireAllTerms,
                     cancellationToken)
                 .ConfigureAwait(false);
-        if (candidateTokens.Count > 0 && candidateIds.Count == 0)
-            return hits;
-
         var files = candidateIds.Count > 0
             ? IndexTables.ReadFileMetadataAsync(db, rootId, candidateIds, cancellationToken)
             : IndexTables.ReadFileMetadataAsync(db, rootId, cancellationToken);

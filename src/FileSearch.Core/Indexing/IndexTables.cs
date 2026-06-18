@@ -525,12 +525,22 @@ internal static partial class IndexTables
         HashSet<long>? candidates = null;
         foreach (var token in tokens)
         {
-            var matches = await ReadIdsAsync(
-                    db,
-                    Sql.Format(
-                        $"SELECT file_id FROM file_metadata_tokens WHERE root_id = {rootId} AND token = {token}"),
-                    cancellationToken)
-                .ConfigureAwait(false);
+            List<long> matches;
+            try
+            {
+                matches = await ReadIdsAsync(
+                        db,
+                        Sql.Format(
+                            $"SELECT file_id FROM file_metadata_tokens WHERE root_id = {rootId} AND token = {token}"),
+                        cancellationToken)
+                    .ConfigureAwait(false);
+            }
+            catch (CSharpDbException)
+            {
+                // The token table is an accelerator; callers can scan files.
+                return new List<long>();
+            }
+
             var set = matches.ToHashSet();
 
             if (candidates is null)
@@ -853,19 +863,30 @@ internal static partial class IndexTables
         string fileTypeCategory,
         CancellationToken cancellationToken)
     {
-        await DeleteMetadataTokensAsync(db, fileId, cancellationToken).ConfigureAwait(false);
-
-        var tokens = BuildMetadataTokens(path, directoryPath, fileName, extension, fileTypeCategory);
-        if (tokens.Count == 0)
-            return;
-
-        foreach (var token in tokens)
+        try
         {
-            var id = CreateMetadataTokenId(rootId, fileId, token);
-            await db.ExecuteAsync(
-                    Sql.Format($"INSERT INTO file_metadata_tokens VALUES ({id}, {rootId}, {fileId}, {token})"),
-                    cancellationToken)
-                .ConfigureAwait(false);
+            await DeleteMetadataTokensAsync(db, fileId, cancellationToken).ConfigureAwait(false);
+
+            var tokens = BuildMetadataTokens(path, directoryPath, fileName, extension, fileTypeCategory);
+            if (tokens.Count == 0)
+                return;
+
+            foreach (var token in tokens)
+            {
+                var id = CreateMetadataTokenId(rootId, fileId, token);
+                await db.ExecuteAsync(
+                        Sql.Format($"INSERT INTO file_metadata_tokens VALUES ({id}, {rootId}, {fileId}, {token})"),
+                        cancellationToken)
+                    .ConfigureAwait(false);
+            }
+        }
+        catch (OperationCanceledException)
+        {
+            throw;
+        }
+        catch (CSharpDbException)
+        {
+            // Metadata search remains correct by scanning files when tokens are unavailable.
         }
     }
 
