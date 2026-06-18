@@ -437,6 +437,16 @@
                                     <TextBlock Text="Open database"/>
                                 </StackPanel>
                             </Button>
+                            <Button Command="{Binding Index.ValidateSelectedIndexCommand}"
+                                    Style="{StaticResource SecondaryButtonStyle}"
+                                    Height="34"
+                                    MinWidth="132"
+                                    Margin="0,0,8,8">
+                                <StackPanel Orientation="Horizontal">
+                                    <ui:FontIcon Glyph="&#xE73E;" FontSize="13" Margin="0,0,7,0"/>
+                                    <TextBlock Text="Validate selected"/>
+                                </StackPanel>
+                            </Button>
                             <Button Command="{Binding Index.ExportIndexFailuresCommand}"
                                     Style="{StaticResource SecondaryButtonStyle}"
                                     Height="34"
@@ -596,6 +606,7 @@
                                                     <RowDefinition Height="Auto"/>
                                                     <RowDefinition Height="Auto"/>
                                                     <RowDefinition Height="Auto"/>
+                                                    <RowDefinition Height="Auto"/>
                                                 </Grid.RowDefinitions>
 
                                                 <TextBlock Grid.Row="0" Text="Root" Style="{StaticResource MetaKeyStyle}" Margin="0,0,0,8"/>
@@ -608,16 +619,18 @@
                                                 <TextBlock Grid.Row="3" Grid.Column="1" Text="{Binding Index.SelectedIndexHealthRoot.LastCommittedUsn, StringFormat={}{0:n0}}" Style="{StaticResource MetaValueStyle}" Margin="0,0,0,8"/>
                                                 <TextBlock Grid.Row="4" Text="Watcher event" Style="{StaticResource MetaKeyStyle}" Margin="0,0,0,8"/>
                                                 <TextBlock Grid.Row="4" Grid.Column="1" Text="{Binding Index.SelectedIndexHealthRoot.LastWatcherEventUtc, StringFormat={}{0:g}}" Style="{StaticResource MetaValueStyle}" Margin="0,0,0,8"/>
-                                                <TextBlock Grid.Row="5" Text="Validation" Style="{StaticResource MetaKeyStyle}" Margin="0,0,0,8"/>
+                                                <TextBlock Grid.Row="5" Text="Validated" Style="{StaticResource MetaKeyStyle}" Margin="0,0,0,8"/>
                                                 <TextBlock Grid.Row="5" Grid.Column="1" Text="{Binding Index.SelectedIndexHealthRoot.LastFullValidationUtc, StringFormat={}{0:g}}" Style="{StaticResource MetaValueStyle}" Margin="0,0,0,8"/>
-                                                <TextBlock Grid.Row="6" Text="Failures" Style="{StaticResource MetaKeyStyle}" Margin="0,0,0,8"/>
-                                                <TextBlock Grid.Row="6" Grid.Column="1" Text="{Binding Index.SelectedIndexHealthRoot.ExtractorFailures}" Style="{StaticResource MetaValueStyle}" TextWrapping="Wrap" Margin="0,0,0,8"/>
-                                                <TextBlock Grid.Row="7" Text="Queue" Style="{StaticResource MetaKeyStyle}" Margin="0,0,0,8"/>
-                                                <TextBlock Grid.Row="7" Grid.Column="1" Text="{Binding Index.SelectedIndexHealthRoot.QueueDepth, StringFormat={}{0:n0} pending}" Style="{StaticResource MetaValueStyle}" Margin="0,0,0,8"/>
-                                                <TextBlock Grid.Row="8" Text="Catch-up" Style="{StaticResource MetaKeyStyle}" Margin="0,0,0,8"/>
-                                                <TextBlock Grid.Row="8" Grid.Column="1" Text="{Binding Index.SelectedIndexHealthRoot.EstimatedCatchUpTime}" Style="{StaticResource MetaValueStyle}" Margin="0,0,0,8"/>
-                                                <TextBlock Grid.Row="9" Text="Detail" Style="{StaticResource MetaKeyStyle}"/>
-                                                <TextBlock Grid.Row="9" Grid.Column="1" Text="{Binding Index.SelectedIndexHealthRoot.Detail}" Style="{StaticResource MetaValueStyle}" TextWrapping="Wrap"/>
+                                                <TextBlock Grid.Row="6" Text="Validation" Style="{StaticResource MetaKeyStyle}" Margin="0,0,0,8"/>
+                                                <TextBlock Grid.Row="6" Grid.Column="1" Text="{Binding Index.SelectedIndexHealthRoot.ValidationSummary}" Style="{StaticResource MetaValueStyle}" TextWrapping="Wrap" Margin="0,0,0,8"/>
+                                                <TextBlock Grid.Row="7" Text="Failures" Style="{StaticResource MetaKeyStyle}" Margin="0,0,0,8"/>
+                                                <TextBlock Grid.Row="7" Grid.Column="1" Text="{Binding Index.SelectedIndexHealthRoot.ExtractorFailures}" Style="{StaticResource MetaValueStyle}" TextWrapping="Wrap" Margin="0,0,0,8"/>
+                                                <TextBlock Grid.Row="8" Text="Queue" Style="{StaticResource MetaKeyStyle}" Margin="0,0,0,8"/>
+                                                <TextBlock Grid.Row="8" Grid.Column="1" Text="{Binding Index.SelectedIndexHealthRoot.QueueDepth, StringFormat={}{0:n0} pending}" Style="{StaticResource MetaValueStyle}" Margin="0,0,0,8"/>
+                                                <TextBlock Grid.Row="9" Text="Catch-up" Style="{StaticResource MetaKeyStyle}" Margin="0,0,0,8"/>
+                                                <TextBlock Grid.Row="9" Grid.Column="1" Text="{Binding Index.SelectedIndexHealthRoot.EstimatedCatchUpTime}" Style="{StaticResource MetaValueStyle}" Margin="0,0,0,8"/>
+                                                <TextBlock Grid.Row="10" Text="Detail" Style="{StaticResource MetaKeyStyle}"/>
+                                                <TextBlock Grid.Row="10" Grid.Column="1" Text="{Binding Index.SelectedIndexHealthRoot.Detail}" Style="{StaticResource MetaValueStyle}" TextWrapping="Wrap"/>
                                             </Grid>
                                         </ScrollViewer>
                                     </Border>

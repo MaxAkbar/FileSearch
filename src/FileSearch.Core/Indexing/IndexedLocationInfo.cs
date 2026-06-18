@@ -10,4 +10,12 @@ public sealed record IndexedLocationInfo(
     string Profile,
     bool Exists,
     DateTime? LastFullScanUtc = null,
-    string? VolumeKey = null);
+    string? VolumeKey = null,
+    DateTime? LastFullValidationUtc = null,
+    string LastValidationStatus = "",
+    string LastValidationMessage = "",
+    long LastValidationFilesChecked = 0,
+    long LastValidationMissingFromIndexCount = 0,
+    long LastValidationChangedCount = 0,
+    long LastValidationMissingFromDiskCount = 0,
+    long LastValidationFailedCount = 0);

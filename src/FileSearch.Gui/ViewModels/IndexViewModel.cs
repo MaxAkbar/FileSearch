@@ -111,6 +111,7 @@ public sealed partial class IndexViewModel : ObservableObject, IDisposable
     [ObservableProperty] private string _activeIndexingRoot = string.Empty;
     [ObservableProperty] private IndexedLocationSettings? _selectedIndexedLocation;
     [ObservableProperty] private IndexRootHealthInfo? _selectedIndexHealthRoot;
+    [ObservableProperty] private bool _isValidatingSelectedIndex;
     [ObservableProperty] private bool _indexDatabaseExists;
     [ObservableProperty] private bool _indexDatabaseIsCompatible;
     [ObservableProperty] private bool _isCompactingIndexDatabase;
@@ -330,6 +331,43 @@ public sealed partial class IndexViewModel : ObservableObject, IDisposable
     }
 
     private bool CanRebuildSelectedIndex() => SelectedIndexedLocation is not null;
+
+    [RelayCommand(CanExecute = nameof(CanValidateSelectedIndex))]
+    private async Task ValidateSelectedIndexAsync()
+    {
+        var location = SelectedIndexedLocation;
+        if (location is null)
+            return;
+
+        IsValidatingSelectedIndex = true;
+        _status.Text = $"Validating index for {location.DisplayName}...";
+
+        try
+        {
+            var validation = await _fileIndex.ValidateRootAsync(
+                    new IndexRequest(
+                        location.Root,
+                        ToIndexedLocation(location).WalkerOptions),
+                    CancellationToken.None)
+                .ConfigureAwait(true);
+
+            _status.Text = validation.Message;
+            await RefreshIndexDatabaseInfoAsync().ConfigureAwait(true);
+        }
+        catch (Exception ex)
+        {
+            _status.Text = $"Couldn't validate index: {ex.Message}";
+        }
+        finally
+        {
+            IsValidatingSelectedIndex = false;
+        }
+    }
+
+    private bool CanValidateSelectedIndex() =>
+        SelectedIndexedLocation is not null &&
+        !IsValidatingSelectedIndex &&
+        !IsIndexing;
 
     [RelayCommand(CanExecute = nameof(CanClearIndexForCurrentFolder))]
     private async Task ClearIndexForCurrentFolderAsync()
@@ -1119,6 +1157,7 @@ public sealed partial class IndexViewModel : ObservableObject, IDisposable
     {
         BuildOrRefreshIndexCommand.NotifyCanExecuteChanged();
         ClearIndexForCurrentFolderCommand.NotifyCanExecuteChanged();
+        ValidateSelectedIndexCommand.NotifyCanExecuteChanged();
         CompactIndexDatabaseCommand.NotifyCanExecuteChanged();
         OnPropertyChanged(nameof(CompactIndexDatabaseActionText));
     }
@@ -1143,6 +1182,7 @@ public sealed partial class IndexViewModel : ObservableObject, IDisposable
     {
         RebuildSelectedIndexCommand.NotifyCanExecuteChanged();
         RemoveSelectedIndexCommand.NotifyCanExecuteChanged();
+        ValidateSelectedIndexCommand.NotifyCanExecuteChanged();
         SelectHealthRoot(value?.Root);
     }
 
@@ -1196,6 +1236,9 @@ public sealed partial class IndexViewModel : ObservableObject, IDisposable
 
     partial void OnIsCompactingIndexDatabaseChanged(bool value) =>
         CompactIndexDatabaseCommand.NotifyCanExecuteChanged();
+
+    partial void OnIsValidatingSelectedIndexChanged(bool value) =>
+        ValidateSelectedIndexCommand.NotifyCanExecuteChanged();
 
     partial void OnIsIndexDatabaseCompactionQueuedChanged(bool value)
     {

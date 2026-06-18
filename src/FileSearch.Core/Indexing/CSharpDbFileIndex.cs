@@ -517,6 +517,25 @@ public sealed class CSharpDbFileIndex : IFileIndex, IIndexReplayWriter, IIndexUs
         }
     }
 
+    public async Task<IndexValidationResult> ValidateRootAsync(
+        IndexRequest request,
+        CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(request);
+        if (string.IsNullOrWhiteSpace(request.Root)) throw new ArgumentException("Root is required.", nameof(request));
+
+        IndexValidationResult? validation = null;
+        await _database.RunExclusiveWriteAsync(async db =>
+        {
+            validation = await ValidateRootCoreAsync(db, request, cancellationToken).ConfigureAwait(false);
+        }, cancellationToken).ConfigureAwait(false);
+
+        return validation ?? IndexValidationResult.Failed(
+            IndexPath.NormalizeRoot(request.Root),
+            DateTime.UtcNow,
+            "Validation did not complete.");
+    }
+
     public async Task ExportFailedFilesAsync(
         string path,
         IndexFailureExportFormat format,
@@ -960,6 +979,103 @@ public sealed class CSharpDbFileIndex : IFileIndex, IIndexReplayWriter, IIndexUs
         await IndexTables.MarkRootRefreshedAsync(db, rootId, profile, cancellationToken).ConfigureAwait(false);
         await TryCommitRefreshCheckpointAsync(db, volumeContext, beforeJournal, cancellationToken).ConfigureAwait(false);
         Publish();
+    }
+
+    private async Task<IndexValidationResult> ValidateRootCoreAsync(
+        Database db,
+        IndexRequest request,
+        CancellationToken cancellationToken)
+    {
+        var root = IndexPath.NormalizeRoot(request.Root);
+        var checkedUtc = DateTime.UtcNow;
+        var rootRow = await IndexTables.GetRootAsync(db, root, cancellationToken).ConfigureAwait(false);
+        if (rootRow is null)
+            return IndexValidationResult.MissingIndex(root, checkedUtc);
+
+        IndexValidationResult result;
+        if (!Directory.Exists(root))
+        {
+            result = IndexValidationResult.Unavailable(root, checkedUtc, "Folder is not reachable.");
+            await IndexTables.MarkRootValidatedAsync(db, rootRow.Id, result, cancellationToken).ConfigureAwait(false);
+            return result;
+        }
+
+        try
+        {
+            var walkerOptions = IndexWalkerOptions.ForIndexing(request.WalkerOptions);
+            var existing = await IndexTables.LoadExistingFilesAsync(db, rootRow.Id, cancellationToken).ConfigureAwait(false);
+            var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            long filesChecked = 0;
+            long filesMatched = 0;
+            long missingFromIndex = 0;
+            long changedSinceIndex = 0;
+            long failedChecks = 0;
+
+            foreach (var path in _walker.Enumerate(new[] { root }, walkerOptions, cancellationToken))
+            {
+                cancellationToken.ThrowIfCancellationRequested();
+                filesChecked++;
+                var normalizedPath = IndexPath.NormalizeFile(path);
+                seen.Add(normalizedPath);
+
+                try
+                {
+                    if (!File.Exists(normalizedPath))
+                    {
+                        failedChecks++;
+                        continue;
+                    }
+
+                    if (!existing.TryGetValue(normalizedPath, out var row))
+                    {
+                        missingFromIndex++;
+                        continue;
+                    }
+
+                    var info = new FileInfo(normalizedPath);
+                    var extractor = _extractors.GetFor(normalizedPath);
+                    if (IsValidationCurrent(row, info, extractor))
+                        filesMatched++;
+                    else
+                        changedSinceIndex++;
+                }
+                catch (OperationCanceledException)
+                {
+                    throw;
+                }
+                catch (Exception ex)
+                {
+                    _logger.LogDebug(ex, "Validation failed for file {Path}.", path);
+                    failedChecks++;
+                }
+
+                if (request.Throttle is { } throttle)
+                    await throttle.PauseAfterFileAsync(filesChecked, cancellationToken).ConfigureAwait(false);
+            }
+
+            var missingFromDisk = existing.Values.LongCount(file => !seen.Contains(file.Path));
+            result = IndexValidationResult.Create(
+                root,
+                checkedUtc,
+                filesChecked,
+                filesMatched,
+                missingFromIndex,
+                changedSinceIndex,
+                missingFromDisk,
+                failedChecks);
+        }
+        catch (OperationCanceledException)
+        {
+            throw;
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Index validation failed for {Root}.", root);
+            result = IndexValidationResult.Failed(root, checkedUtc, ex.Message);
+        }
+
+        await IndexTables.MarkRootValidatedAsync(db, rootRow.Id, result, cancellationToken).ConfigureAwait(false);
+        return result;
     }
 
     private async Task<IndexVolumeContext?> TryPrepareVolumeAsync(
@@ -1542,6 +1658,9 @@ public sealed class CSharpDbFileIndex : IFileIndex, IIndexReplayWriter, IIndexUs
         var lastFullScanUtc = rootRow.LastFullScanUtcTicks > 0
             ? new DateTime(rootRow.LastFullScanUtcTicks, DateTimeKind.Utc)
             : (DateTime?)null;
+        var lastFullValidationUtc = rootRow.LastFullValidationUtcTicks > 0
+            ? new DateTime(rootRow.LastFullValidationUtcTicks, DateTimeKind.Utc)
+            : (DateTime?)null;
         var volumeKey = rootRow.VolumeId is { } volumeId
             ? await IndexTables.GetVolumeKeyAsync(db, volumeId, cancellationToken).ConfigureAwait(false)
             : null;
@@ -1554,7 +1673,15 @@ public sealed class CSharpDbFileIndex : IFileIndex, IIndexReplayWriter, IIndexUs
             rootRow.OptionsHash,
             Exists: true,
             lastFullScanUtc,
-            volumeKey);
+            volumeKey,
+            lastFullValidationUtc,
+            rootRow.LastValidationStatus,
+            rootRow.LastValidationMessage ?? string.Empty,
+            rootRow.LastValidationFilesChecked,
+            rootRow.LastValidationMissingFromIndexCount,
+            rootRow.LastValidationChangedCount,
+            rootRow.LastValidationMissingFromDiskCount,
+            rootRow.LastValidationFailedCount);
     }
 
     private IndexDatabaseInfo CreateDatabaseInfo(
@@ -1655,6 +1782,15 @@ public sealed class CSharpDbFileIndex : IFileIndex, IIndexReplayWriter, IIndexUs
         row.ModifiedUtcTicks == info.LastWriteTimeUtc.Ticks &&
         row.Attributes == (long)info.Attributes &&
         string.Equals(row.Status, FileStatus.Ok, StringComparison.OrdinalIgnoreCase) &&
+        string.Equals(row.ContentVersion, IndexContentVersion.Current, StringComparison.Ordinal) &&
+        IsExtractorMetadataCurrent(row, extractor);
+
+    private bool IsValidationCurrent(ExistingFileRow row, FileInfo info, ITextExtractor? extractor) =>
+        row.SizeBytes == info.Length &&
+        row.CreatedUtcTicks == info.CreationTimeUtc.Ticks &&
+        row.ModifiedUtcTicks == info.LastWriteTimeUtc.Ticks &&
+        row.Attributes == (long)info.Attributes &&
+        !string.Equals(row.Status, FileStatus.Indexing, StringComparison.OrdinalIgnoreCase) &&
         string.Equals(row.ContentVersion, IndexContentVersion.Current, StringComparison.Ordinal) &&
         IsExtractorMetadataCurrent(row, extractor);
 

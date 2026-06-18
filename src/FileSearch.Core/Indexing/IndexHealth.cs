@@ -41,6 +41,7 @@ public sealed record IndexRootHealthInfo(
     long? LastCommittedUsn,
     DateTime? LastWatcherEventUtc,
     DateTime? LastFullValidationUtc,
+    string ValidationSummary,
     string JournalStatus,
     string ExtractorFailures,
     int QueueDepth,
@@ -141,7 +142,7 @@ public sealed class IndexHealthService : IIndexHealthService
                 volumesByKey.TryGetValue(volumeKey, out var matchedVolume)
                     ? matchedVolume
                     : null;
-            var status = DeriveStatus(root, runtimeStatus, queueDepth, failed, volume, runtimeDetail, strategy, watcher);
+            var status = DeriveStatus(root, runtimeStatus, queueDepth, failed, volume, runtimeDetail, strategy, watcher, dbLocation);
             var detail = BuildDetail(status, runtimeDetail, strategy, volume, watcher);
             var checkpointUtc = volume is { LastCommittedUsn: > 0 } ? volume.LastCheckedUtc : null;
             rows.Add(new IndexRootHealthInfo(
@@ -156,7 +157,8 @@ public sealed class IndexHealthService : IIndexHealthService
                 checkpointUtc,
                 volume is { LastCommittedUsn: > 0 } ? volume.LastCommittedUsn : null,
                 watcher?.LastEventUtc,
-                dbLocation?.LastFullScanUtc,
+                dbLocation?.LastFullValidationUtc,
+                FormatValidationSummary(dbLocation),
                 FormatJournalStatus(volume, runtimeDetail, strategy),
                 FormatExtractorFailures(failed, extractionIssuesByRoot.TryGetValue(root, out var issues) ? issues : Array.Empty<IndexFailureInfo>()),
                 queueDepth,
@@ -176,7 +178,8 @@ public sealed class IndexHealthService : IIndexHealthService
         IndexVolumeHealthInfo? volume,
         string? runtimeDetail,
         IndexRootStrategyInfo? strategy,
-        IndexWatcherDiagnosticInfo? watcher)
+        IndexWatcherDiagnosticInfo? watcher,
+        IndexedLocationInfo? location)
     {
         if (IsAccessDenied(runtimeDetail) || IsAccessDenied(volume?.LastError) || IsAccessDenied(watcher?.LastError))
             return IndexHealthStatus.AccessDenied;
@@ -198,6 +201,9 @@ public sealed class IndexHealthService : IIndexHealthService
 
         if (IsJournalUnavailable(runtimeDetail) || IsJournalUnavailable(volume?.LastError) || IsJournalUnavailable(volume?.Health))
             return IndexHealthStatus.JournalUnavailable;
+
+        if (string.Equals(location?.LastValidationStatus, IndexValidationStatus.DriftDetected.ToString(), StringComparison.Ordinal))
+            return IndexHealthStatus.NeedsFullScan;
 
         if (failed >= TooManyExtractorFailuresThreshold)
             return IndexHealthStatus.TooManyExtractorFailures;
@@ -300,6 +306,26 @@ public sealed class IndexHealthService : IIndexHealthService
         return failures == 1
             ? $"1 failed file{codes}"
             : $"{failures:n0} failed files{codes}";
+    }
+
+    private static string FormatValidationSummary(IndexedLocationInfo? location)
+    {
+        if (location is null || location.LastFullValidationUtc is null)
+            return "Never validated";
+
+        if (string.Equals(location.LastValidationStatus, IndexValidationStatus.Passed.ToString(), StringComparison.Ordinal))
+            return string.IsNullOrWhiteSpace(location.LastValidationMessage)
+                ? $"Validated {location.LastValidationFilesChecked:n0} files with no drift."
+                : location.LastValidationMessage;
+
+        if (!string.IsNullOrWhiteSpace(location.LastValidationMessage))
+            return location.LastValidationMessage;
+
+        return $"Validation {location.LastValidationStatus}: " +
+            $"{location.LastValidationMissingFromIndexCount:n0} missing, " +
+            $"{location.LastValidationChangedCount:n0} changed, " +
+            $"{location.LastValidationMissingFromDiskCount:n0} removed, " +
+            $"{location.LastValidationFailedCount:n0} failed checks.";
     }
 
     private static string EstimateCatchUpTime(IndexingStatus runtimeStatus, string root, int queueDepth)

@@ -217,6 +217,48 @@ public sealed class IndexHealthServiceTests
         }
     }
 
+    [Fact]
+    public async Task GetHealthAsyncReportsValidationDriftAsNeedsFullScan()
+    {
+        var root = CreateTempRoot();
+        var normalizedRoot = IndexPath.NormalizeRoot(root);
+        var index = new FakeHealthFileIndex
+        {
+            Locations =
+            [
+                new IndexedLocationInfo(
+                    normalizedRoot,
+                    FileCount: 10,
+                    LineCount: 20,
+                    IndexedUtc: DateTime.UtcNow,
+                    Profile: "profile",
+                    Exists: true,
+                    LastFullValidationUtc: DateTime.UtcNow,
+                    LastValidationStatus: IndexValidationStatus.DriftDetected.ToString(),
+                    LastValidationMessage: "Drift detected: 1 missing, 0 changed, 0 removed, 0 failed checks.",
+                    LastValidationFilesChecked: 11,
+                    LastValidationMissingFromIndexCount: 1),
+            ],
+        };
+
+        try
+        {
+            var service = new IndexHealthService(index);
+            var health = await service.GetHealthAsync(
+                [new IndexedLocation(normalizedRoot, new WalkerOptions())],
+                new IndexingStatus(true, false, false, 0, "Idle"),
+                TestContext.Current.CancellationToken);
+
+            var row = Assert.Single(health.Roots);
+            Assert.Equal(IndexHealthStatus.NeedsFullScan, row.Status);
+            Assert.Contains("1 missing", row.ValidationSummary);
+        }
+        finally
+        {
+            Directory.Delete(root, recursive: true);
+        }
+    }
+
     private static string CreateTempRoot()
     {
         var root = Path.Combine(Path.GetTempPath(), "filesearch-health-" + Guid.NewGuid().ToString("N"));
@@ -231,7 +273,7 @@ public sealed class IndexHealthServiceTests
             string.Empty,
             Exists: true,
             IsCompatible: true,
-            SchemaVersion: "12",
+            SchemaVersion: "13",
             DatabaseBytes: 0,
             WalBytes: 0,
             ShmBytes: 0,

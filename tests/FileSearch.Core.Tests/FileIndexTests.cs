@@ -157,6 +157,60 @@ public sealed class FileIndexTests : IDisposable
     }
 
     [Fact]
+    public async Task ValidateRootRecordsCleanValidationSeparatelyFromFullScan()
+    {
+        File.WriteAllText(Path.Combine(_root, "a.txt"), "alpha\n");
+        await BuildAsync();
+
+        var validation = await _index.ValidateRootAsync(
+            new IndexRequest(_root, new WalkerOptions()),
+            TestContext.Current.CancellationToken);
+        var location = Assert.Single(await _index.GetLocationsAsync(TestContext.Current.CancellationToken));
+
+        Assert.Equal(IndexValidationStatus.Passed, validation.Status);
+        Assert.Equal(1, validation.FilesChecked);
+        Assert.Equal(1, validation.FilesMatched);
+        Assert.False(validation.HasDrift);
+        Assert.NotNull(location.LastFullScanUtc);
+        Assert.NotNull(location.LastFullValidationUtc);
+        Assert.Equal(IndexValidationStatus.Passed.ToString(), location.LastValidationStatus);
+        Assert.Equal(1, location.LastValidationFilesChecked);
+        Assert.Equal(0, location.LastValidationMissingFromIndexCount);
+    }
+
+    [Fact]
+    public async Task ValidateRootDetectsFilesystemDriftWithoutRefreshingIndex()
+    {
+        var changed = Path.Combine(_root, "changed.txt");
+        var deleted = Path.Combine(_root, "deleted.txt");
+        var added = Path.Combine(_root, "added.txt");
+        File.WriteAllText(changed, "old\n");
+        File.WriteAllText(deleted, "delete\n");
+        await BuildAsync();
+
+        File.WriteAllText(changed, "new\n");
+        File.SetLastWriteTimeUtc(changed, DateTime.UtcNow.AddSeconds(2));
+        File.Delete(deleted);
+        File.WriteAllText(added, "added\n");
+
+        var validation = await _index.ValidateRootAsync(
+            new IndexRequest(_root, new WalkerOptions()),
+            TestContext.Current.CancellationToken);
+        var location = Assert.Single(await _index.GetLocationsAsync(TestContext.Current.CancellationToken));
+
+        Assert.Equal(IndexValidationStatus.DriftDetected, validation.Status);
+        Assert.Equal(1, validation.MissingFromIndex);
+        Assert.Equal(1, validation.ChangedSinceIndex);
+        Assert.Equal(1, validation.MissingFromDisk);
+        Assert.True(validation.HasDrift);
+        Assert.Equal(IndexValidationStatus.DriftDetected.ToString(), location.LastValidationStatus);
+        Assert.Equal(1, location.LastValidationMissingFromIndexCount);
+        Assert.Equal(1, location.LastValidationChangedCount);
+        Assert.Equal(1, location.LastValidationMissingFromDiskCount);
+        Assert.Contains("Drift detected", location.LastValidationMessage);
+    }
+
+    [Fact]
     public async Task FailedExtractionRowsTrackAttemptsAndExportAsCsvAndJson()
     {
         var file = Path.Combine(_root, "broken.bad");

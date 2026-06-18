@@ -40,7 +40,15 @@ internal sealed record RootRow(
     string? RootFileReferenceNumber,
     string? RootParentFileReferenceNumber,
     string ContentVersion,
-    long LastFullScanUtcTicks);
+    long LastFullScanUtcTicks,
+    long LastFullValidationUtcTicks,
+    string LastValidationStatus,
+    string? LastValidationMessage,
+    long LastValidationFilesChecked,
+    long LastValidationMissingFromIndexCount,
+    long LastValidationChangedCount,
+    long LastValidationMissingFromDiskCount,
+    long LastValidationFailedCount);
 
 internal sealed record VolumeRow(
     long Id,
@@ -101,8 +109,8 @@ internal static partial class IndexTables
         var id = await GetNextIdAsync(db, "index_roots", cancellationToken).ConfigureAwait(false);
         await db.ExecuteAsync(
                 Sql.Format(
-                    $"INSERT INTO index_roots (id, root_path, indexed_utc_ticks, options_hash, volume_id, last_full_scan_utc_ticks, root_file_reference_number, root_parent_file_reference_number, content_version, location_kind, update_strategy, strategy_warning, usn_catch_up_enabled, watcher_recommended) " +
-                $"VALUES ({id}, {root}, 0, {profile}, {(long?)null}, {(long?)null}, {(string?)null}, {(string?)null}, {IndexContentVersion.Current}, {IndexLocationKind.Unknown.ToString()}, {IndexUpdateStrategy.Unknown.ToString()}, {(string?)null}, 0, 1)"),
+                    $"INSERT INTO index_roots (id, root_path, indexed_utc_ticks, options_hash, volume_id, last_full_scan_utc_ticks, root_file_reference_number, root_parent_file_reference_number, content_version, location_kind, update_strategy, strategy_warning, usn_catch_up_enabled, watcher_recommended, last_full_validation_utc_ticks, last_validation_status, last_validation_message, last_validation_files_checked, last_validation_missing_from_index_count, last_validation_changed_count, last_validation_missing_from_disk_count, last_validation_failed_count) " +
+                $"VALUES ({id}, {root}, 0, {profile}, {(long?)null}, {(long?)null}, {(string?)null}, {(string?)null}, {IndexContentVersion.Current}, {IndexLocationKind.Unknown.ToString()}, {IndexUpdateStrategy.Unknown.ToString()}, {(string?)null}, 0, 1, 0, {"never"}, {(string?)null}, 0, 0, 0, 0, 0)"),
             cancellationToken).ConfigureAwait(false);
         return id;
     }
@@ -110,7 +118,13 @@ internal static partial class IndexTables
     public static async Task<RootRow?> GetRootAsync(Database db, string root, CancellationToken cancellationToken)
     {
         await using var result = await db.ExecuteAsync(
-            Sql.Format($"SELECT id, indexed_utc_ticks, options_hash, volume_id, root_file_reference_number, root_parent_file_reference_number, content_version, last_full_scan_utc_ticks FROM index_roots WHERE root_path = {root}"),
+            Sql.Format(
+                $"SELECT id, indexed_utc_ticks, options_hash, volume_id, root_file_reference_number, " +
+                $"root_parent_file_reference_number, content_version, last_full_scan_utc_ticks, " +
+                $"last_full_validation_utc_ticks, last_validation_status, last_validation_message, " +
+                $"last_validation_files_checked, last_validation_missing_from_index_count, " +
+                $"last_validation_changed_count, last_validation_missing_from_disk_count, " +
+                $"last_validation_failed_count FROM index_roots WHERE root_path = {root}"),
             cancellationToken).ConfigureAwait(false);
 
         if (!await result.MoveNextAsync(cancellationToken).ConfigureAwait(false))
@@ -124,7 +138,15 @@ internal static partial class IndexTables
             result.Current[4].IsNull ? null : result.Current[4].AsText,
             result.Current[5].IsNull ? null : result.Current[5].AsText,
             result.Current[6].IsNull ? string.Empty : result.Current[6].AsText,
-            result.Current[7].IsNull ? 0 : result.Current[7].AsInteger);
+            result.Current[7].IsNull ? 0 : result.Current[7].AsInteger,
+            result.Current[8].IsNull ? 0 : result.Current[8].AsInteger,
+            result.Current[9].IsNull ? string.Empty : result.Current[9].AsText,
+            result.Current[10].IsNull ? null : result.Current[10].AsText,
+            result.Current[11].IsNull ? 0 : result.Current[11].AsInteger,
+            result.Current[12].IsNull ? 0 : result.Current[12].AsInteger,
+            result.Current[13].IsNull ? 0 : result.Current[13].AsInteger,
+            result.Current[14].IsNull ? 0 : result.Current[14].AsInteger,
+            result.Current[15].IsNull ? 0 : result.Current[15].AsInteger);
     }
 
     public static async Task<IndexRootIdentity?> GetRootIdentityAsync(
@@ -183,6 +205,24 @@ internal static partial class IndexTables
                 $"UPDATE index_roots SET indexed_utc_ticks = {DateTime.UtcNow.Ticks}, " +
                 $"options_hash = {profile}, content_version = {IndexContentVersion.Current}, " +
                 $"last_full_scan_utc_ticks = {DateTime.UtcNow.Ticks} WHERE id = {rootId}"),
+            cancellationToken);
+
+    public static Task MarkRootValidatedAsync(
+        Database db,
+        long rootId,
+        IndexValidationResult result,
+        CancellationToken cancellationToken) =>
+        ExecuteAsync(
+            db,
+            Sql.Format(
+                $"UPDATE index_roots SET last_full_validation_utc_ticks = {result.CheckedUtc.Ticks}, " +
+                $"last_validation_status = {result.Status.ToString()}, " +
+                $"last_validation_message = {result.Message}, " +
+                $"last_validation_files_checked = {result.FilesChecked}, " +
+                $"last_validation_missing_from_index_count = {result.MissingFromIndex}, " +
+                $"last_validation_changed_count = {result.ChangedSinceIndex}, " +
+                $"last_validation_missing_from_disk_count = {result.MissingFromDisk}, " +
+                $"last_validation_failed_count = {result.FailedChecks} WHERE id = {rootId}"),
             cancellationToken);
 
     public static Task DeleteRootAsync(Database db, long rootId, CancellationToken cancellationToken) =>

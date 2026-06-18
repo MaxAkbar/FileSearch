@@ -46,6 +46,12 @@ public interface IIndexMaintenance
 
     Task<IndexDatabaseInfo> GetDatabaseInfoAsync(CancellationToken cancellationToken);
 
+    Task<IndexValidationResult> ValidateRootAsync(IndexRequest request, CancellationToken cancellationToken) =>
+        Task.FromResult(IndexValidationResult.Failed(
+            request.Root,
+            System.DateTime.UtcNow,
+            "Index validation is not supported by this index implementation."));
+
     Task<IReadOnlyList<IndexFailureInfo>> GetFailedFilesAsync(CancellationToken cancellationToken) =>
         Task.FromResult<IReadOnlyList<IndexFailureInfo>>(System.Array.Empty<IndexFailureInfo>());
 
