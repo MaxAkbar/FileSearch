@@ -21,6 +21,7 @@ public sealed class AppSettingsSerializationTests
         var settings = new AppSettings
         {
             UseIndex = true,
+            CustomThemeFileName = "nord-dark.json",
             SidebarPageSize = 15,
             IndexerResourceProfile = IndexerResourceProfile.Low,
             KeepIndexUpdatedAfterClose = true,
@@ -116,6 +117,7 @@ public sealed class AppSettingsSerializationTests
         Assert.DoesNotContain(nameof(SavedSearchSettings.DisplayName), json);
         Assert.DoesNotContain(nameof(SavedSearchSettings.Summary), json);
         Assert.NotNull(loaded);
+        Assert.Equal("nord-dark.json", loaded.CustomThemeFileName);
         Assert.Equal(15, loaded.SidebarPageSize);
         Assert.Equal(IndexerResourceProfile.Low, loaded.IndexerResourceProfile);
         Assert.True(loaded.KeepIndexUpdatedAfterClose);

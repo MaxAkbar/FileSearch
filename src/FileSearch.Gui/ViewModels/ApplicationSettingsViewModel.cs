@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Collections.ObjectModel;
 using System.Linq;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
@@ -21,6 +22,7 @@ public sealed partial class ApplicationSettingsViewModel : ObservableObject
 
     private readonly ISettingsService _settingsService;
     private readonly IStartupRegistrationService? _startupRegistration;
+    private readonly IThemeService? _themeService;
     private readonly StatusBarViewModel _status;
     private readonly bool _isInitialized;
     private int _sidebarPageSize;
@@ -31,14 +33,17 @@ public sealed partial class ApplicationSettingsViewModel : ObservableObject
     private bool _indexOnlyWhenIdle;
     private int _indexerCpuLimitPercent;
     private int _indexerDiskPauseMilliseconds;
+    private CustomThemeInfo? _selectedCustomTheme;
 
     public ApplicationSettingsViewModel(
         ISettingsService settingsService,
         StatusBarViewModel status,
-        IStartupRegistrationService? startupRegistration = null)
+        IStartupRegistrationService? startupRegistration = null,
+        IThemeService? themeService = null)
     {
         _settingsService = settingsService;
         _startupRegistration = startupRegistration;
+        _themeService = themeService;
         _status = status;
         _sidebarPageSize = NormalizeSidebarPageSize(_settingsService.Current.SidebarPageSize);
         _indexerResourceProfile = NormalizeIndexerResourceProfile(_settingsService.Current.IndexerResourceProfile);
@@ -48,6 +53,7 @@ public sealed partial class ApplicationSettingsViewModel : ObservableObject
         _indexOnlyWhenIdle = _settingsService.Current.IndexOnlyWhenIdle;
         _indexerCpuLimitPercent = NormalizeCpuLimit(_settingsService.Current.IndexerCpuLimitPercent);
         _indexerDiskPauseMilliseconds = NormalizeDiskPause(_settingsService.Current.IndexerDiskPauseMilliseconds);
+        RefreshCustomThemesCore();
         _isInitialized = true;
     }
 
@@ -60,6 +66,49 @@ public sealed partial class ApplicationSettingsViewModel : ObservableObject
     public IReadOnlyList<int> IndexerCpuLimitOptions { get; } = [0, 25, 50, 75];
 
     public IReadOnlyList<int> IndexerDiskPauseOptions { get; } = [0, 5, 25, 100, 250];
+
+    public ObservableCollection<CustomThemeInfo> CustomThemes { get; } = new();
+
+    public string CustomThemeFolderPath => _themeService?.CustomThemeFolderPath ?? string.Empty;
+
+    public bool HasCustomThemes => CustomThemes.Count > 0;
+
+    public CustomThemeInfo? SelectedCustomTheme
+    {
+        get => _selectedCustomTheme;
+        set
+        {
+            if (!SetProperty(ref _selectedCustomTheme, value))
+                return;
+
+            OnPropertyChanged(nameof(CustomThemeSummary));
+
+            if (!_isInitialized || _themeService is null)
+                return;
+
+            if (value is null)
+                return;
+
+            if (_themeService.TrySetCustomTheme(value.FileName, out var error))
+                _status.Text = $"Applied custom theme: {value.Name}.";
+            else
+                _status.Text = $"Could not apply custom theme: {error}";
+        }
+    }
+
+    public string CustomThemeSummary
+    {
+        get
+        {
+            if (SelectedCustomTheme is not null)
+                return $"Using {SelectedCustomTheme.Name}.";
+
+            if (!string.IsNullOrWhiteSpace(_settingsService.Current.CustomThemeFileName))
+                return "Saved custom theme not found. Add it to the theme folder and refresh.";
+
+            return "Using the built-in theme menu selection.";
+        }
+    }
 
     public int SidebarPageSize
     {
@@ -232,6 +281,24 @@ public sealed partial class ApplicationSettingsViewModel : ObservableObject
         IndexerResourceProfile = IndexerResourceProfile.Balanced;
     }
 
+    [RelayCommand]
+    private void RefreshCustomThemes()
+    {
+        RefreshCustomThemesCore();
+        _status.Text = HasCustomThemes
+            ? $"Loaded {CustomThemes.Count:n0} custom theme files."
+            : "No custom theme files found.";
+    }
+
+    [RelayCommand]
+    private void UseBuiltInTheme()
+    {
+        SelectedCustomTheme = null;
+        _themeService?.SetTheme(_settingsService.Current.Theme);
+        OnPropertyChanged(nameof(CustomThemeSummary));
+        _status.Text = "Using built-in theme selection.";
+    }
+
     public void SaveSettings() => SaveSettings(updateStartupRegistration: true);
 
     private void SaveSettings(bool updateStartupRegistration)
@@ -284,4 +351,23 @@ public sealed partial class ApplicationSettingsViewModel : ObservableObject
 
     private static int NormalizeDiskPause(int value) =>
         Math.Clamp(value, 0, 1_000);
+
+    private void RefreshCustomThemesCore()
+    {
+        var selectedFileName = SelectedCustomTheme?.FileName;
+        if (string.IsNullOrWhiteSpace(selectedFileName))
+            selectedFileName = _settingsService.Current.CustomThemeFileName;
+
+        CustomThemes.Clear();
+        foreach (var theme in _themeService?.GetCustomThemes() ?? Array.Empty<CustomThemeInfo>())
+            CustomThemes.Add(theme);
+
+        _selectedCustomTheme = CustomThemes.FirstOrDefault(theme =>
+            string.Equals(theme.FileName, selectedFileName, StringComparison.OrdinalIgnoreCase));
+
+        OnPropertyChanged(nameof(SelectedCustomTheme));
+        OnPropertyChanged(nameof(CustomThemeSummary));
+        OnPropertyChanged(nameof(HasCustomThemes));
+        OnPropertyChanged(nameof(CustomThemeFolderPath));
+    }
 }

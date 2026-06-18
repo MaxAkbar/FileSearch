@@ -81,8 +81,13 @@ public partial class App : System.Windows.Application
         // Apply persisted theme before showing the window so there's no flash.
         // MainViewModel loads its own recent-queries/paths from the same
         // shared settings instance, so we don't need to push them in here.
-        var savedTheme = _host.Services.GetRequiredService<ISettingsService>().Current.Theme;
-        _host.Services.GetRequiredService<IThemeService>().SetTheme(savedTheme);
+        var savedSettings = _host.Services.GetRequiredService<ISettingsService>().Current;
+        var themeService = _host.Services.GetRequiredService<IThemeService>();
+        if (string.IsNullOrWhiteSpace(savedSettings.CustomThemeFileName) ||
+            !themeService.TrySetCustomTheme(savedSettings.CustomThemeFileName, out _))
+        {
+            themeService.SetTheme(savedSettings.Theme);
+        }
 
         var window = _host.Services.GetRequiredService<MainWindow>();
         var viewModel = _host.Services.GetRequiredService<MainViewModel>();

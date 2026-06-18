@@ -103,6 +103,46 @@ internal sealed class FakeStartupRegistrationService : IStartupRegistrationServi
     }
 }
 
+internal sealed class FakeThemeService : IThemeService
+{
+    public AppTheme CurrentTheme { get; private set; } = AppTheme.System;
+
+    public string? CurrentCustomThemeFileName { get; private set; }
+
+    public string CustomThemeFolderPath { get; set; } = @"C:\Users\Tester\AppData\Roaming\FileSearch\Themes";
+
+    public IReadOnlyList<CustomThemeInfo> Themes { get; set; } = Array.Empty<CustomThemeInfo>();
+
+    public bool CustomThemeResult { get; set; } = true;
+
+    public int SetThemeCallCount { get; private set; }
+
+    public int SetCustomThemeCallCount { get; private set; }
+
+    public IReadOnlyList<CustomThemeInfo> GetCustomThemes() => Themes;
+
+    public void SetTheme(AppTheme theme)
+    {
+        SetThemeCallCount++;
+        CurrentTheme = theme;
+        CurrentCustomThemeFileName = null;
+    }
+
+    public bool TrySetCustomTheme(string fileName, out string error)
+    {
+        SetCustomThemeCallCount++;
+        if (!CustomThemeResult)
+        {
+            error = "theme failed";
+            return false;
+        }
+
+        error = string.Empty;
+        CurrentCustomThemeFileName = fileName;
+        return true;
+    }
+}
+
 internal sealed class FakeBackgroundIndexerProcessService : IBackgroundIndexerProcessService
 {
     public bool EnsureRunningResult { get; set; } = true;
