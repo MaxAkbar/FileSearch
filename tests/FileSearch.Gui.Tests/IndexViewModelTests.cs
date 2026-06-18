@@ -519,6 +519,30 @@ public sealed class IndexViewModelTests
     }
 
     [Fact]
+    public async Task ValidateSelectedIndexUsesWorkerWhenBackgroundIndexerModeIsEnabled()
+    {
+        var root = Path.Combine(Path.GetTempPath(), "filesearch-validate-worker-" + Guid.NewGuid().ToString("N"));
+        var fileIndex = new FakeFileIndex();
+        var backgroundIndexer = new FakeBackgroundIndexerProcessService();
+        var (_, index) = Build(
+            fileIndex,
+            backgroundIndexer: backgroundIndexer,
+            configureSettings: settings =>
+            {
+                settings.KeepIndexUpdatedAfterClose = true;
+                settings.IndexedLocations.Add(new() { Root = root });
+            });
+        index.SelectedIndexedLocation = Assert.Single(index.IndexedLocations);
+
+        await index.ValidateSelectedIndexCommand.ExecuteAsync(null);
+
+        Assert.Equal(1, backgroundIndexer.EnsureRunningCallCount);
+        Assert.Equal(1, backgroundIndexer.ValidateRootCallCount);
+        Assert.Equal(0, fileIndex.ValidateRootCallCount);
+        Assert.Contains("Validated", index.SelectedIndexValidationProgressText);
+    }
+
+    [Fact]
     public async Task ExportIndexFailuresUsesSavePickerAndIndexExport()
     {
         var exportPath = Path.Combine(Path.GetTempPath(), "filesearch-failures.json");

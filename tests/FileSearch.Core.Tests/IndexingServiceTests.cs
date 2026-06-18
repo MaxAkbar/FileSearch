@@ -219,6 +219,83 @@ public sealed class IndexingServiceTests
     }
 
     [Fact]
+    public async Task SchedulerRunsFullValidationWhenIdleAndQueuesRefreshOnDrift()
+    {
+        var root = Path.Combine(Path.GetTempPath(), "filesearch-validation-schedule-" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(root);
+        var normalizedRoot = IndexPath.NormalizeRoot(root);
+        var strategy = new IndexRootStrategyInfo(
+            normalizedRoot,
+            IndexLocationKind.LocalUsn,
+            IndexUpdateStrategy.UsnJournalAndWatcher,
+            "Local NTFS/ReFS: USN journal + watcher",
+            string.Empty,
+            UsnCatchUpEnabled: true,
+            WatcherRecommended: true);
+        var index = new BlockingFileIndex
+        {
+            DatabaseInfo = DatabaseInfoWithStrategy(strategy),
+            Locations =
+            [
+                new IndexedLocationInfo(
+                    normalizedRoot,
+                    FileCount: 1,
+                    LineCount: 1,
+                    IndexedUtc: DateTime.UtcNow.AddDays(-2),
+                    Profile: "profile",
+                    Exists: true,
+                    LastFullValidationUtc: DateTime.UtcNow.AddDays(-2)),
+            ],
+            ValidationResult = IndexValidationResult.Create(
+                normalizedRoot,
+                DateTime.UtcNow,
+                filesChecked: 2,
+                filesMatched: 1,
+                missingFromIndex: 1,
+                changedSinceIndex: 0,
+                missingFromDisk: 0,
+                failedChecks: 0),
+        };
+        var queue = new RecordingQueue();
+        var options = FastSchedulerOptions();
+        options.FullValidationInterval = TimeSpan.FromMilliseconds(25);
+        options.FullValidationIdleThreshold = TimeSpan.FromMilliseconds(1);
+        var catchUp = new StaticStartupCatchUp(new IndexStartupCatchUpResult(
+            new HashSet<string>(StringComparer.OrdinalIgnoreCase) { normalizedRoot },
+            new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)));
+        var service = new IndexingService(
+            index,
+            queue,
+            new IndexWatcherService(queue),
+            startupCatchUp: catchUp,
+            runtimeCondition: new StaticRuntimeCondition(isIdle: true),
+            options: options);
+
+        await service.StartAsync(
+            new[] { new IndexedLocation(root, new WalkerOptions(), WatchEnabled: false) },
+            TestContext.Current.CancellationToken);
+
+        try
+        {
+            await WaitUntilAsync(
+                () => index.ValidateCallCount > 0 &&
+                    queue.SnapshotEnqueued().Any(item => item.Kind == IndexChangeKind.RefreshRoot),
+                TestContext.Current.CancellationToken);
+
+            Assert.True(index.ValidateCallCount > 0);
+            Assert.Contains(
+                queue.SnapshotEnqueued(),
+                item => string.Equals(item.Root, normalizedRoot, StringComparison.OrdinalIgnoreCase) &&
+                    item.Priority == IndexQueuePriority.Low);
+        }
+        finally
+        {
+            await service.StopAsync(TestContext.Current.CancellationToken);
+            Directory.Delete(root, recursive: true);
+        }
+    }
+
+    [Fact]
     public async Task ForegroundSearchDefersRunningRootRefresh()
     {
         var index = new BlockingFileIndex();
@@ -496,6 +573,13 @@ public sealed class IndexingServiceTests
             Task.FromResult(_result);
     }
 
+    private sealed class StaticRuntimeCondition(bool isIdle) : IIndexerRuntimeCondition
+    {
+        public bool IsOnBattery => false;
+
+        public bool IsUserIdle(TimeSpan idleThreshold) => isIdle;
+    }
+
     private sealed class BlockingFileIndex : IFileIndex
     {
         public TaskCompletionSource RefreshStarted { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
@@ -505,6 +589,21 @@ public sealed class IndexingServiceTests
         public List<string> ClearedRoots { get; } = new();
 
         public bool RefreshCanceled { get; private set; }
+
+        public int ValidateCallCount { get; private set; }
+
+        public IReadOnlyList<IndexedLocationInfo> Locations { get; init; } = Array.Empty<IndexedLocationInfo>();
+
+        public IndexValidationResult ValidationResult { get; init; } =
+            IndexValidationResult.Create(
+                string.Empty,
+                DateTime.UtcNow,
+                filesChecked: 0,
+                filesMatched: 0,
+                missingFromIndex: 0,
+                changedSinceIndex: 0,
+                missingFromDisk: 0,
+                failedChecks: 0);
 
         public string DatabasePath => string.Empty;
 
@@ -559,10 +658,23 @@ public sealed class IndexingServiceTests
             Task.FromResult(new IndexStats(root, 0, 0, null, Exists: false));
 
         public Task<IReadOnlyList<IndexedLocationInfo>> GetLocationsAsync(CancellationToken cancellationToken) =>
-            Task.FromResult<IReadOnlyList<IndexedLocationInfo>>(Array.Empty<IndexedLocationInfo>());
+            Task.FromResult(Locations);
 
         public Task<IndexDatabaseInfo> GetDatabaseInfoAsync(CancellationToken cancellationToken) =>
             Task.FromResult(DatabaseInfo);
+
+        public Task<IndexValidationResult> ValidateRootAsync(IndexRequest request, CancellationToken cancellationToken)
+        {
+            ValidateCallCount++;
+            request.ValidationProgress?.Invoke(new IndexValidationProgress(
+                ValidationResult.FilesChecked,
+                ValidationResult.FilesMatched,
+                ValidationResult.MissingFromIndex,
+                ValidationResult.ChangedSinceIndex,
+                ValidationResult.MissingFromDisk,
+                ValidationResult.FailedChecks));
+            return Task.FromResult(ValidationResult with { Root = IndexPath.NormalizeRoot(request.Root) });
+        }
 
         public Task CompactAsync(CancellationToken cancellationToken) =>
             Task.CompletedTask;

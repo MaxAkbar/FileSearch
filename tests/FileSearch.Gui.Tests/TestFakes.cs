@@ -135,6 +135,8 @@ internal sealed class FakeBackgroundIndexerProcessService : IBackgroundIndexerPr
 
     public int CompactDatabaseCallCount { get; private set; }
 
+    public int ValidateRootCallCount { get; private set; }
+
     public List<IndexedLocation> AddedLocations { get; } = new();
 
     public List<string> RemovedRoots { get; } = new();
@@ -217,6 +219,22 @@ internal sealed class FakeBackgroundIndexerProcessService : IBackgroundIndexerPr
         QueueRootRefreshCallCount++;
         QueuedRefreshLocations.Add(location);
         return Task.FromResult(CommandResult);
+    }
+
+    public Task<IndexValidationResult?> ValidateRootAsync(
+        IndexedLocation location,
+        CancellationToken cancellationToken)
+    {
+        ValidateRootCallCount++;
+        return Task.FromResult<IndexValidationResult?>(IndexValidationResult.Create(
+            location.Root,
+            DateTime.UtcNow,
+            filesChecked: 1,
+            filesMatched: 1,
+            missingFromIndex: 0,
+            changedSinceIndex: 0,
+            missingFromDisk: 0,
+            failedChecks: 0));
     }
 
     public Task<bool> CompactDatabaseAsync(CancellationToken cancellationToken)
@@ -331,6 +349,8 @@ internal sealed class FakeFileIndex : IFileIndex
 
     public int CompactCallCount { get; private set; }
 
+    public int ValidateRootCallCount { get; private set; }
+
     public int ExportFailuresCallCount { get; private set; }
 
     public string? ExportFailuresPath { get; private set; }
@@ -366,6 +386,27 @@ internal sealed class FakeFileIndex : IFileIndex
 
     public Task<IndexDatabaseInfo> GetDatabaseInfoAsync(CancellationToken cancellationToken) =>
         Task.FromResult(DatabaseInfo);
+
+    public Task<IndexValidationResult> ValidateRootAsync(IndexRequest request, CancellationToken cancellationToken)
+    {
+        ValidateRootCallCount++;
+        request.ValidationProgress?.Invoke(new IndexValidationProgress(
+            FilesChecked: 1,
+            FilesMatched: 1,
+            MissingFromIndex: 0,
+            ChangedSinceIndex: 0,
+            MissingFromDisk: 0,
+            FailedChecks: 0));
+        return Task.FromResult(IndexValidationResult.Create(
+            request.Root,
+            DateTime.UtcNow,
+            filesChecked: 1,
+            filesMatched: 1,
+            missingFromIndex: 0,
+            changedSinceIndex: 0,
+            missingFromDisk: 0,
+            failedChecks: 0));
+    }
 
     public Task<IReadOnlyList<IndexFailureInfo>> GetFailedFilesAsync(CancellationToken cancellationToken) =>
         Task.FromResult(Failures);

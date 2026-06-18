@@ -112,6 +112,7 @@ public sealed partial class IndexViewModel : ObservableObject, IDisposable
     [ObservableProperty] private IndexedLocationSettings? _selectedIndexedLocation;
     [ObservableProperty] private IndexRootHealthInfo? _selectedIndexHealthRoot;
     [ObservableProperty] private bool _isValidatingSelectedIndex;
+    [ObservableProperty] private string _selectedIndexValidationProgressText = string.Empty;
     [ObservableProperty] private bool _indexDatabaseExists;
     [ObservableProperty] private bool _indexDatabaseIsCompatible;
     [ObservableProperty] private bool _isCompactingIndexDatabase;
@@ -310,6 +311,11 @@ public sealed partial class IndexViewModel : ObservableObject, IDisposable
         if (location is null)
             return;
 
+        await QueueSelectedRebuildAsync(location).ConfigureAwait(true);
+    }
+
+    private async Task QueueSelectedRebuildAsync(IndexedLocationSettings location)
+    {
         if (UseBackgroundIndexerMode && _backgroundIndexer is not null)
         {
             if (!await _backgroundIndexer.RefreshRootAsync(ToIndexedLocation(location), CancellationToken.None).ConfigureAwait(true))
@@ -332,6 +338,26 @@ public sealed partial class IndexViewModel : ObservableObject, IDisposable
 
     private bool CanRebuildSelectedIndex() => SelectedIndexedLocation is not null;
 
+    [RelayCommand(CanExecute = nameof(CanRebuildSelectedHealthRoot))]
+    private async Task RebuildSelectedHealthRootAsync()
+    {
+        var root = SelectedIndexHealthRoot?.Root;
+        if (string.IsNullOrWhiteSpace(root))
+            return;
+
+        var location = GetIndexedLocation(root);
+        if (location is null)
+        {
+            _status.Text = "Select an indexed location before rebuilding.";
+            return;
+        }
+
+        SelectedIndexedLocation = location;
+        await QueueSelectedRebuildAsync(location).ConfigureAwait(true);
+    }
+
+    private bool CanRebuildSelectedHealthRoot() => SelectedIndexHealthRoot is not null;
+
     [RelayCommand(CanExecute = nameof(CanValidateSelectedIndex))]
     private async Task ValidateSelectedIndexAsync()
     {
@@ -340,18 +366,48 @@ public sealed partial class IndexViewModel : ObservableObject, IDisposable
             return;
 
         IsValidatingSelectedIndex = true;
+        SelectedIndexValidationProgressText = "Starting validation...";
         _status.Text = $"Validating index for {location.DisplayName}...";
 
         try
         {
-            var validation = await _fileIndex.ValidateRootAsync(
-                    new IndexRequest(
-                        location.Root,
-                        ToIndexedLocation(location).WalkerOptions),
-                    CancellationToken.None)
-                .ConfigureAwait(true);
+            IndexValidationResult? validation;
+            var indexedLocation = ToIndexedLocation(location);
+            if (UseBackgroundIndexerMode && _backgroundIndexer is not null)
+            {
+                if (!await _backgroundIndexer.EnsureRunningAsync(CancellationToken.None).ConfigureAwait(true))
+                {
+                    _status.Text = "Couldn't start the background indexer for validation.";
+                    return;
+                }
 
-            _status.Text = validation.Message;
+                validation = await _backgroundIndexer.ValidateRootAsync(indexedLocation, CancellationToken.None)
+                    .ConfigureAwait(true);
+                if (validation is null)
+                {
+                    _status.Text = "Couldn't validate index with the background indexer.";
+                    return;
+                }
+            }
+            else
+            {
+                validation = await _fileIndex.ValidateRootAsync(
+                        new IndexRequest(
+                            location.Root,
+                            indexedLocation.WalkerOptions,
+                            ValidationProgress: progress => _dispatcher.Post(() =>
+                            {
+                                SelectedIndexValidationProgressText = progress.Summary;
+                                _status.Text = progress.Summary;
+                            })),
+                        CancellationToken.None)
+                    .ConfigureAwait(true);
+            }
+
+            _status.Text = validation.HasDrift
+                ? $"{validation.Message} Rebuild now to refresh the index."
+                : validation.Message;
+            SelectedIndexValidationProgressText = validation.Message;
             await RefreshIndexDatabaseInfoAsync().ConfigureAwait(true);
         }
         catch (Exception ex)
@@ -1186,6 +1242,9 @@ public sealed partial class IndexViewModel : ObservableObject, IDisposable
         SelectHealthRoot(value?.Root);
     }
 
+    partial void OnSelectedIndexHealthRootChanged(IndexRootHealthInfo? value) =>
+        RebuildSelectedHealthRootCommand.NotifyCanExecuteChanged();
+
     partial void OnSelectedIndexInclusionListChanged(IndexFilterListSettings? value)
     {
         if (value is not null)
@@ -1257,6 +1316,7 @@ public sealed partial class IndexViewModel : ObservableObject, IDisposable
         AddCurrentFolderToIndexCommand.NotifyCanExecuteChanged();
         BuildOrRefreshIndexCommand.NotifyCanExecuteChanged();
         ClearIndexForCurrentFolderCommand.NotifyCanExecuteChanged();
+        RebuildSelectedHealthRootCommand.NotifyCanExecuteChanged();
     }
 
     private void ApplyIndexingRuntimeStatus(IndexingStatus status)

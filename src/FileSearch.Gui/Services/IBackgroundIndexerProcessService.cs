@@ -35,5 +35,9 @@ public interface IBackgroundIndexerProcessService
         IndexQueuePriority priority,
         CancellationToken cancellationToken);
 
+    Task<IndexValidationResult?> ValidateRootAsync(
+        IndexedLocation location,
+        CancellationToken cancellationToken);
+
     Task<bool> CompactDatabaseAsync(CancellationToken cancellationToken);
 }

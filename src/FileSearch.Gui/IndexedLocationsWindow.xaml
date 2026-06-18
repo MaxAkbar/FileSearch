@@ -503,6 +503,10 @@
                                     <TextBlock Text="{Binding Index.IndexHealthSummaryText}"
                                                Style="{StaticResource MutedValueStyle}"
                                                Margin="0,3,0,0"/>
+                                    <TextBlock Text="{Binding Index.SelectedIndexValidationProgressText}"
+                                               Style="{StaticResource MutedValueStyle}"
+                                               TextWrapping="Wrap"
+                                               Margin="0,3,0,0"/>
                                 </StackPanel>
 
                                 <Grid Grid.Row="1">
@@ -636,11 +640,28 @@
                                     </Border>
                                 </Grid>
 
-                                <TextBlock Grid.Row="2"
-                                           Text="{Binding Index.SelectedIndexHealthRoot.Strategy}"
-                                           Style="{StaticResource MutedValueStyle}"
-                                           TextWrapping="Wrap"
-                                           Margin="0,12,0,0"/>
+                                <Grid Grid.Row="2" Margin="0,12,0,0">
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="*"/>
+                                        <ColumnDefinition Width="Auto"/>
+                                    </Grid.ColumnDefinitions>
+                                    <TextBlock Text="{Binding Index.SelectedIndexHealthRoot.Strategy}"
+                                               Style="{StaticResource MutedValueStyle}"
+                                               TextWrapping="Wrap"
+                                               VerticalAlignment="Center"
+                                               Margin="0,0,12,0"/>
+                                    <Button Grid.Column="1"
+                                            Command="{Binding Index.RebuildSelectedHealthRootCommand}"
+                                            Style="{StaticResource PrimaryButtonStyle}"
+                                            Height="34"
+                                            MinWidth="112"
+                                            VerticalAlignment="Center">
+                                        <StackPanel Orientation="Horizontal">
+                                            <ui:FontIcon Glyph="&#xE72C;" FontSize="13" Margin="0,0,7,0"/>
+                                            <TextBlock Text="Rebuild now"/>
+                                        </StackPanel>
+                                    </Button>
+                                </Grid>
                             </Grid>
                         </TabItem>
                     </TabControl>

@@ -238,6 +238,12 @@ internal sealed class IndexerApplicationContext : Forms.ApplicationContext
                     return new BackgroundIndexerResponse(true, "Indexed location removed.", _indexingService.CurrentStatus);
                 case BackgroundIndexerCommand.CompactDatabase:
                     return await CompactDatabaseAsync(cancellationToken).ConfigureAwait(false);
+                case BackgroundIndexerCommand.ValidateRoot:
+                    if (request.Location is null)
+                        return new BackgroundIndexerResponse(false, "Indexed location is required.");
+
+                    return await ValidateRootAsync(request.Location.ToIndexedLocation(), cancellationToken)
+                        .ConfigureAwait(false);
                 default:
                     return new BackgroundIndexerResponse(false, $"Unsupported command: {request.Command}.");
             }
@@ -271,14 +277,38 @@ internal sealed class IndexerApplicationContext : Forms.ApplicationContext
         }
     }
 
+    private async Task<BackgroundIndexerResponse> ValidateRootAsync(
+        IndexedLocation location,
+        CancellationToken cancellationToken)
+    {
+        await _startupTask.ConfigureAwait(false);
+
+        if (!await WaitForIdleAsync(TimeSpan.FromSeconds(30), cancellationToken).ConfigureAwait(false))
+            return new BackgroundIndexerResponse(false, "Indexer is still busy; validate later.", _indexingService.CurrentStatus);
+
+        var validation = await _fileIndex.ValidateRootAsync(
+                new IndexRequest(location.Root, location.WalkerOptions),
+                cancellationToken)
+            .ConfigureAwait(false);
+        return new BackgroundIndexerResponse(
+            true,
+            validation.Message,
+            _indexingService.CurrentStatus,
+            validation);
+    }
+
     private async Task<bool> WaitForIdleAsync(TimeSpan timeout, CancellationToken cancellationToken)
     {
         var deadline = DateTime.UtcNow.Add(timeout);
-        while (_indexingService.CurrentStatus.IsProcessing && DateTime.UtcNow < deadline)
+        while (IsIndexerBusy() && DateTime.UtcNow < deadline)
             await Task.Delay(200, cancellationToken).ConfigureAwait(false);
 
-        return !_indexingService.CurrentStatus.IsProcessing;
+        return !IsIndexerBusy();
     }
+
+    private bool IsIndexerBusy() =>
+        _indexingService.CurrentStatus is { IsProcessing: true } ||
+        _indexingService.CurrentStatus.QueueLength > 0;
 
     private void OnIndexingStatusChanged(object? sender, IndexingStatus status)
     {

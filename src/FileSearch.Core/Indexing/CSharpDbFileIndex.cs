@@ -1010,6 +1010,13 @@ public sealed class CSharpDbFileIndex : IFileIndex, IIndexReplayWriter, IIndexUs
             long missingFromIndex = 0;
             long changedSinceIndex = 0;
             long failedChecks = 0;
+            void PublishValidation() => request.ValidationProgress?.Invoke(new IndexValidationProgress(
+                filesChecked,
+                filesMatched,
+                missingFromIndex,
+                changedSinceIndex,
+                MissingFromDisk: 0,
+                failedChecks));
 
             foreach (var path in _walker.Enumerate(new[] { root }, walkerOptions, cancellationToken))
             {
@@ -1051,9 +1058,18 @@ public sealed class CSharpDbFileIndex : IFileIndex, IIndexReplayWriter, IIndexUs
 
                 if (request.Throttle is { } throttle)
                     await throttle.PauseAfterFileAsync(filesChecked, cancellationToken).ConfigureAwait(false);
+
+                PublishValidation();
             }
 
             var missingFromDisk = existing.Values.LongCount(file => !seen.Contains(file.Path));
+            request.ValidationProgress?.Invoke(new IndexValidationProgress(
+                filesChecked,
+                filesMatched,
+                missingFromIndex,
+                changedSinceIndex,
+                missingFromDisk,
+                failedChecks));
             result = IndexValidationResult.Create(
                 root,
                 checkedUtc,

@@ -100,3 +100,23 @@ public sealed record IndexValidationResult(
             1,
             message);
 }
+
+public sealed record IndexValidationProgress(
+    long FilesChecked,
+    long FilesMatched,
+    long MissingFromIndex,
+    long ChangedSinceIndex,
+    long MissingFromDisk,
+    long FailedChecks)
+{
+    public string Summary
+    {
+        get
+        {
+            var drift = MissingFromIndex + ChangedSinceIndex + MissingFromDisk + FailedChecks;
+            return drift == 0
+                ? $"Validated {FilesChecked:n0} files; no drift found"
+                : $"Validated {FilesChecked:n0} files; {drift:n0} drift items found";
+        }
+    }
+}

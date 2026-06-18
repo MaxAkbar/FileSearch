@@ -7,4 +7,5 @@ public sealed record IndexRequest(
     string Root,
     WalkerOptions WalkerOptions,
     Action<IndexProgress>? Progress = null,
-    IndexingThrottle? Throttle = null);
+    IndexingThrottle? Throttle = null,
+    Action<IndexValidationProgress>? ValidationProgress = null);

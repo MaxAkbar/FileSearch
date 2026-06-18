@@ -26,6 +26,7 @@ public sealed class IndexingService : IIndexingService
     private readonly Dictionary<string, string> _rootStatusDetails = new(StringComparer.OrdinalIgnoreCase);
     private readonly Dictionary<string, DateTime> _lastScheduledSnapshotUtc = new(StringComparer.OrdinalIgnoreCase);
     private readonly Dictionary<string, DateTime> _lastRemovableCheckUtc = new(StringComparer.OrdinalIgnoreCase);
+    private readonly Dictionary<string, DateTime> _lastScheduledValidationUtc = new(StringComparer.OrdinalIgnoreCase);
     private readonly HashSet<string> _unavailableRoots = new(StringComparer.OrdinalIgnoreCase);
 
     private CancellationTokenSource? _workerCts;
@@ -366,6 +367,19 @@ public sealed class IndexingService : IIndexingService
 
         var strategies = (info.RootStrategies ?? Array.Empty<IndexRootStrategyInfo>())
             .ToDictionary(strategy => IndexPath.NormalizeRoot(strategy.RootPath), StringComparer.OrdinalIgnoreCase);
+        IReadOnlyList<IndexedLocationInfo> indexedLocations;
+        try
+        {
+            indexedLocations = await _index.GetLocationsAsync(cancellationToken).ConfigureAwait(false);
+        }
+        catch (Exception ex) when (ex is IOException or InvalidOperationException or UnauthorizedAccessException)
+        {
+            _logger.LogDebug(ex, "Could not read indexed locations for scheduled validation.");
+            indexedLocations = Array.Empty<IndexedLocationInfo>();
+        }
+
+        var indexedLocationByRoot = indexedLocations
+            .ToDictionary(location => IndexPath.NormalizeRoot(location.Root), StringComparer.OrdinalIgnoreCase);
         var now = DateTime.UtcNow;
 
         foreach (var location in locations)
@@ -378,6 +392,13 @@ public sealed class IndexingService : IIndexingService
             if (strategy.LocationKind == IndexLocationKind.Removable)
             {
                 await CheckRemovableRootAsync(location with { Root = root }, strategy, now, cancellationToken).ConfigureAwait(false);
+                if (indexedLocationByRoot.TryGetValue(root, out var removableLocation) &&
+                    await RunScheduledValidationIfDueAsync(location with { Root = root }, removableLocation, now, cancellationToken)
+                        .ConfigureAwait(false))
+                {
+                    break;
+                }
+
                 continue;
             }
 
@@ -392,19 +413,99 @@ public sealed class IndexingService : IIndexingService
 
             MarkRootAvailable(root);
 
-            if (!ShouldPeriodicallyRefresh(strategy))
-                continue;
+            if (ShouldPeriodicallyRefresh(strategy))
+            {
+                var interval = GetSnapshotInterval(strategy);
+                if (IsSnapshotDue(root, now, interval))
+                {
+                    await EnqueueScheduledSnapshotAsync(
+                            location with { Root = root },
+                            $"Snapshot scan queued: scheduled refresh ({strategy.StrategyLabel})",
+                            cancellationToken)
+                        .ConfigureAwait(false);
+                    continue;
+                }
+            }
 
-            var interval = GetSnapshotInterval(strategy);
-            if (!IsSnapshotDue(root, now, interval))
-                continue;
+            if (indexedLocationByRoot.TryGetValue(root, out var indexedLocation) &&
+                await RunScheduledValidationIfDueAsync(location with { Root = root }, indexedLocation, now, cancellationToken)
+                    .ConfigureAwait(false))
+            {
+                break;
+            }
+        }
+    }
 
+    private async Task<bool> RunScheduledValidationIfDueAsync(
+        IndexedLocation location,
+        IndexedLocationInfo indexedLocation,
+        DateTime now,
+        CancellationToken cancellationToken)
+    {
+        var root = IndexPath.NormalizeRoot(location.Root);
+        if (!IsScheduledValidationDue(root, indexedLocation, now))
+            return false;
+
+        if (!CanRunScheduledValidation())
+            return false;
+
+        RememberScheduledValidation(root, now);
+        SetRootStatusDetail(root, "Validation running");
+        Publish(false, $"Validating index health: {root}", force: true);
+
+        var validation = await _index.ValidateRootAsync(
+                new IndexRequest(
+                    root,
+                    location.WalkerOptions,
+                    ValidationProgress: progress => Publish(false, progress.Summary, force: true)),
+                cancellationToken)
+            .ConfigureAwait(false);
+
+        if (validation.HasDrift)
+        {
             await EnqueueScheduledSnapshotAsync(
-                    location with { Root = root },
-                    $"Snapshot scan queued: scheduled refresh ({strategy.StrategyLabel})",
+                    location,
+                    $"Snapshot scan queued: validation found drift ({validation.Message})",
                     cancellationToken)
                 .ConfigureAwait(false);
         }
+        else
+        {
+            SetRootStatusDetail(root, $"Validation complete: {validation.Message}");
+            Publish(false, validation.Message, force: true);
+        }
+
+        return true;
+    }
+
+    private bool CanRunScheduledValidation()
+    {
+        if (_paused || _queue.Count > 0 || CurrentStatus.IsProcessing)
+            return false;
+
+        return _runtimeCondition.IsUserIdle(_options.FullValidationIdleThreshold);
+    }
+
+    private bool IsScheduledValidationDue(string root, IndexedLocationInfo location, DateTime now)
+    {
+        if (location.IndexedUtc is null)
+            return false;
+
+        var lastValidation = location.LastFullValidationUtc ?? DateTime.MinValue;
+        if (now - lastValidation < _options.FullValidationInterval)
+            return false;
+
+        lock (_sync)
+        {
+            return !_lastScheduledValidationUtc.TryGetValue(root, out var lastAttempt) ||
+                now - lastAttempt >= _options.FullValidationInterval;
+        }
+    }
+
+    private void RememberScheduledValidation(string root, DateTime now)
+    {
+        lock (_sync)
+            _lastScheduledValidationUtc[root] = now;
     }
 
     private async Task CheckRemovableRootAsync(

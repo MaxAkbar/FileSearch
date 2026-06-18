@@ -154,6 +154,18 @@ public sealed class BackgroundIndexerProcessService : IBackgroundIndexerProcessS
         return response?.Success == true;
     }
 
+    public async Task<IndexValidationResult?> ValidateRootAsync(
+        IndexedLocation location,
+        CancellationToken cancellationToken)
+    {
+        var response = await SendLocationAsync(
+                BackgroundIndexerCommand.ValidateRoot,
+                location,
+                cancellationToken)
+            .ConfigureAwait(false);
+        return response?.Success == true ? response.ValidationResult : null;
+    }
+
     public async Task<bool> CompactDatabaseAsync(CancellationToken cancellationToken)
     {
         var response = await SendAsync(BackgroundIndexerCommand.CompactDatabase, cancellationToken)

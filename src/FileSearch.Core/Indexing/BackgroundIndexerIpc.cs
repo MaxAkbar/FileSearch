@@ -26,6 +26,7 @@ public enum BackgroundIndexerCommand
     SetForegroundSearchActive = 11,
     CompactDatabase = 12,
     QueueRootRefresh = 13,
+    ValidateRoot = 14,
 }
 
 public sealed record BackgroundIndexedLocation(
@@ -82,7 +83,8 @@ public sealed record BackgroundIndexerRequest(
 public sealed record BackgroundIndexerResponse(
     bool Success,
     string Message,
-    IndexingStatus? Status = null);
+    IndexingStatus? Status = null,
+    IndexValidationResult? ValidationResult = null);
 
 public static class BackgroundIndexerEndpoint
 {
