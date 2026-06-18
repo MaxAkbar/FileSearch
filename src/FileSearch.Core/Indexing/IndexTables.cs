@@ -860,24 +860,13 @@ internal static partial class IndexTables
             return;
 
         var id = await AllocateIdsAsync(db, "file_metadata_tokens", tokens.Count, cancellationToken).ConfigureAwait(false);
-        var batch = db.PrepareInsertBatch("file_metadata_tokens", 250);
         foreach (var token in tokens)
         {
-            batch.AddRow(
-                DbValue.FromInteger(id++),
-                DbValue.FromInteger(rootId),
-                DbValue.FromInteger(fileId),
-                DbValue.FromText(token));
-
-            if (batch.Count >= 250)
-            {
-                await batch.ExecuteAsync(cancellationToken).ConfigureAwait(false);
-                batch.Clear();
-            }
+            await db.ExecuteAsync(
+                    Sql.Format($"INSERT INTO file_metadata_tokens VALUES ({id++}, {rootId}, {fileId}, {token})"),
+                    cancellationToken)
+                .ConfigureAwait(false);
         }
-
-        if (batch.Count > 0)
-            await batch.ExecuteAsync(cancellationToken).ConfigureAwait(false);
     }
 
     public static IReadOnlyList<string> BuildQueryMetadataTokens(IEnumerable<string> terms)
