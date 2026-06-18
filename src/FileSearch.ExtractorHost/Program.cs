@@ -120,5 +120,6 @@ internal static class ExtractorHostProgram
             new XmlTextExtractor(),
             new CalendarContactExtractor(),
             new ZipExtractor(),
+            new WindowsIFilterExtractor(),
         };
 }

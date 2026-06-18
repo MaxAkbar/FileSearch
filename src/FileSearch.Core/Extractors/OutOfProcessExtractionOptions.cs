@@ -21,5 +21,6 @@ public sealed class OutOfProcessExtractionOptions
         "filesearch.opendocument",
         "filesearch.epub",
         "filesearch.zip",
+        "filesearch.ifilter",
     };
 }

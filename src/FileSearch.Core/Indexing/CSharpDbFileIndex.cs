@@ -40,6 +40,7 @@ public sealed class CSharpDbFileIndex : IFileIndex, IIndexReplayWriter, IIndexUs
     private readonly IIndexVolumeResolver? _volumeResolver;
     private readonly IUsnJournalReader? _journalReader;
     private readonly IOutOfProcessExtractionService? _outOfProcessExtraction;
+    private readonly IWindowsIFilterExtractionService? _windowsIFilterExtraction;
     private readonly ILogger _logger;
 
     public CSharpDbFileIndex(
@@ -48,8 +49,9 @@ public sealed class CSharpDbFileIndex : IFileIndex, IIndexReplayWriter, IIndexUs
         IExtractorRegistry extractors,
         SearchOptions? searchOptions = null,
         ILogger<CSharpDbFileIndex>? logger = null,
-        IOutOfProcessExtractionService? outOfProcessExtraction = null)
-        : this(options, walker, extractors, searchOptions, logger, null, null, outOfProcessExtraction)
+        IOutOfProcessExtractionService? outOfProcessExtraction = null,
+        IWindowsIFilterExtractionService? windowsIFilterExtraction = null)
+        : this(options, walker, extractors, searchOptions, logger, null, null, outOfProcessExtraction, windowsIFilterExtraction)
     {
     }
 
@@ -61,7 +63,8 @@ public sealed class CSharpDbFileIndex : IFileIndex, IIndexReplayWriter, IIndexUs
         ILogger<CSharpDbFileIndex>? logger,
         IIndexVolumeResolver? volumeResolver,
         IUsnJournalReader? journalReader,
-        IOutOfProcessExtractionService? outOfProcessExtraction = null)
+        IOutOfProcessExtractionService? outOfProcessExtraction = null,
+        IWindowsIFilterExtractionService? windowsIFilterExtraction = null)
     {
         _walker = walker ?? throw new ArgumentNullException(nameof(walker));
         _extractors = extractors ?? throw new ArgumentNullException(nameof(extractors));
@@ -69,6 +72,7 @@ public sealed class CSharpDbFileIndex : IFileIndex, IIndexReplayWriter, IIndexUs
         _volumeResolver = volumeResolver;
         _journalReader = journalReader;
         _outOfProcessExtraction = outOfProcessExtraction;
+        _windowsIFilterExtraction = windowsIFilterExtraction;
         _logger = logger ?? NullLogger<CSharpDbFileIndex>.Instance;
         _database = new IndexDatabase((options ?? new FileIndexOptions()).DatabasePath, _logger);
     }
@@ -1272,6 +1276,18 @@ public sealed class CSharpDbFileIndex : IFileIndex, IIndexReplayWriter, IIndexUs
 
         if (extractor is null)
         {
+            var fallbackLines = await TryIndexWithWindowsIFilterAsync(
+                    db,
+                    fileId,
+                    path,
+                    primaryExtractor: null,
+                    primaryFailure: null,
+                    primaryLineCount: 0,
+                    cancellationToken)
+                .ConfigureAwait(false);
+            if (fallbackLines is not null)
+                return fallbackLines.Value;
+
             await IndexTables.SetFileStatusAsync(db, fileId, FileStatus.Skipped, "No extractor registered.", cancellationToken).ConfigureAwait(false);
             return 0;
         }
@@ -1314,6 +1330,21 @@ public sealed class CSharpDbFileIndex : IFileIndex, IIndexReplayWriter, IIndexUs
             }
 
             await FlushBatchAsync(batch, cancellationToken).ConfigureAwait(false);
+            if (linesIndexed == 0)
+            {
+                var fallbackLines = await TryIndexWithWindowsIFilterAsync(
+                        db,
+                        fileId,
+                        path,
+                        extractor,
+                        primaryFailure: null,
+                        primaryLineCount: linesIndexed,
+                        cancellationToken)
+                    .ConfigureAwait(false);
+                if (fallbackLines is not null)
+                    return fallbackLines.Value;
+            }
+
             await IndexTables.ReplaceExtractionIssuesAsync(db, fileId, issueSink.Issues, cancellationToken).ConfigureAwait(false);
             await IndexTables.SetFileStatusAsync(db, fileId, FileStatus.Ok, null, cancellationToken).ConfigureAwait(false);
             return linesIndexed;
@@ -1324,6 +1355,18 @@ public sealed class CSharpDbFileIndex : IFileIndex, IIndexReplayWriter, IIndexUs
         }
         catch (Exception ex)
         {
+            var fallbackLines = await TryIndexWithWindowsIFilterAsync(
+                    db,
+                    fileId,
+                    path,
+                    extractor,
+                    primaryFailure: ex,
+                    primaryLineCount: linesIndexed,
+                    cancellationToken)
+                .ConfigureAwait(false);
+            if (fallbackLines is not null)
+                return fallbackLines.Value;
+
             // The failure is recorded on the file row; log at Debug since
             // unreadable files are routine during background indexing.
             _logger.LogDebug(ex, "Indexing failed for file {Path}.", path);
@@ -1334,6 +1377,81 @@ public sealed class CSharpDbFileIndex : IFileIndex, IIndexReplayWriter, IIndexUs
             await IndexTables.SetFileStatusAsync(db, fileId, FileStatus.Error, error, cancellationToken).ConfigureAwait(false);
             return 0;
         }
+    }
+
+    private async Task<long?> TryIndexWithWindowsIFilterAsync(
+        Database db,
+        long fileId,
+        string path,
+        ITextExtractor? primaryExtractor,
+        Exception? primaryFailure,
+        long primaryLineCount,
+        CancellationToken cancellationToken)
+    {
+        var fallback = _windowsIFilterExtraction;
+        if (fallback is null ||
+            !fallback.CanTryFallback(path, primaryExtractor, primaryFailure, primaryLineCount))
+        {
+            return null;
+        }
+
+        WindowsIFilterExtractionResult? result;
+        try
+        {
+            result = await fallback.TryExtractAsync(path, cancellationToken).ConfigureAwait(false);
+        }
+        catch (OperationCanceledException)
+        {
+            throw;
+        }
+        catch (Exception ex)
+        {
+            _logger.LogDebug(ex, "IFilter fallback extraction failed for file {Path}.", path);
+            return null;
+        }
+
+        if (result is null)
+            return null;
+
+        await IndexTables.DeleteLinesAsync(db, fileId, cancellationToken).ConfigureAwait(false);
+        await IndexTables.RecordExtractionAttemptAsync(
+                db,
+                fileId,
+                fallback.ExtractorId,
+                fallback.ExtractorVersion,
+                cancellationToken)
+            .ConfigureAwait(false);
+        await IndexTables.ReplaceExtractionIssuesAsync(db, fileId, result.Issues, cancellationToken).ConfigureAwait(false);
+        if (result.Lines.Count == 0)
+        {
+            await IndexTables.SetFileStatusAsync(db, fileId, FileStatus.Ok, null, cancellationToken).ConfigureAwait(false);
+            return 0;
+        }
+
+        var linesIndexed = await InsertLinesAsync(db, fileId, result.Lines, cancellationToken).ConfigureAwait(false);
+        await IndexTables.SetFileStatusAsync(db, fileId, FileStatus.Ok, null, cancellationToken).ConfigureAwait(false);
+        return linesIndexed;
+    }
+
+    private static async Task<long> InsertLinesAsync(
+        Database db,
+        long fileId,
+        IReadOnlyList<TextLine> lines,
+        CancellationToken cancellationToken)
+    {
+        var nextLineId = await IndexTables.GetNextIdAsync(db, "lines", cancellationToken).ConfigureAwait(false);
+        var batch = db.PrepareInsertBatch("lines", LineInsertBatchSize);
+        long linesIndexed = 0;
+        foreach (var line in lines)
+        {
+            AddLineToBatch(batch, nextLineId++, fileId, line);
+            linesIndexed++;
+            if (batch.Count >= LineInsertBatchSize)
+                await FlushBatchAsync(batch, cancellationToken).ConfigureAwait(false);
+        }
+
+        await FlushBatchAsync(batch, cancellationToken).ConfigureAwait(false);
+        return linesIndexed;
     }
 
     private static void AddLineToBatch(InsertBatch batch, long lineId, long fileId, TextLine line)
@@ -1439,18 +1557,41 @@ public sealed class CSharpDbFileIndex : IFileIndex, IIndexReplayWriter, IIndexUs
                 .Append('\n');
         }
 
+        if (_windowsIFilterExtraction is not null)
+        {
+            builder
+                .Append("<ifilter-fallback>")
+                .Append('\t')
+                .Append(_windowsIFilterExtraction.ExtractorId)
+                .Append('\t')
+                .Append(_windowsIFilterExtraction.ExtractorVersion)
+                .Append('\n');
+        }
+
         return Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(builder.ToString())));
     }
 
-    private static bool IsUnchanged(ExistingFileRow row, FileInfo info, ITextExtractor? extractor) =>
+    private bool IsUnchanged(ExistingFileRow row, FileInfo info, ITextExtractor? extractor) =>
         row.SizeBytes == info.Length &&
         row.CreatedUtcTicks == info.CreationTimeUtc.Ticks &&
         row.ModifiedUtcTicks == info.LastWriteTimeUtc.Ticks &&
         row.Attributes == (long)info.Attributes &&
         string.Equals(row.Status, FileStatus.Ok, StringComparison.OrdinalIgnoreCase) &&
         string.Equals(row.ContentVersion, IndexContentVersion.Current, StringComparison.Ordinal) &&
-        string.Equals(row.ExtractorId, GetExtractorId(extractor), StringComparison.Ordinal) &&
-        string.Equals(row.ExtractorVersion, GetExtractorVersion(extractor), StringComparison.Ordinal);
+        IsExtractorMetadataCurrent(row, extractor);
+
+    private bool IsExtractorMetadataCurrent(ExistingFileRow row, ITextExtractor? extractor)
+    {
+        if (string.Equals(row.ExtractorId, GetExtractorId(extractor), StringComparison.Ordinal) &&
+            string.Equals(row.ExtractorVersion, GetExtractorVersion(extractor), StringComparison.Ordinal))
+        {
+            return true;
+        }
+
+        return _windowsIFilterExtraction is not null &&
+            string.Equals(row.ExtractorId, _windowsIFilterExtraction.ExtractorId, StringComparison.Ordinal) &&
+            string.Equals(row.ExtractorVersion, _windowsIFilterExtraction.ExtractorVersion, StringComparison.Ordinal);
+    }
 
     private static string GetExtractorId(ITextExtractor? extractor) => extractor?.ExtractorId ?? string.Empty;
 

@@ -50,6 +50,7 @@ public static class ServiceCollectionExtensions
         services.TryAddSingleton<FileIndexOptions>();
         services.TryAddSingleton<OutOfProcessExtractionOptions>();
         services.TryAddSingleton<IOutOfProcessExtractionService, OutOfProcessExtractionService>();
+        services.TryAddSingleton<IWindowsIFilterExtractionService, WindowsIFilterExtractionService>();
         services.TryAddSingleton<IIndexerRuntimeCondition, WindowsIndexerRuntimeCondition>();
         services.TryAddSingleton<IIndexVolumeResolver, WindowsIndexVolumeResolver>();
         services.TryAddSingleton<IUsnJournalReader, WindowsUsnJournalReader>();
@@ -61,7 +62,8 @@ public static class ServiceCollectionExtensions
             sp.GetService<ILogger<CSharpDbFileIndex>>(),
             sp.GetService<IIndexVolumeResolver>(),
             sp.GetService<IUsnJournalReader>(),
-            sp.GetService<IOutOfProcessExtractionService>()));
+            sp.GetService<IOutOfProcessExtractionService>(),
+            sp.GetService<IWindowsIFilterExtractionService>()));
 
         // Role-interface slices of the index, so consumers can depend on the
         // narrowest contract they need (ISP).

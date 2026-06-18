@@ -256,6 +256,81 @@ public sealed class FileIndexTests : IDisposable
     }
 
     [Fact]
+    public async Task IndexingUsesIFilterFallbackWhenPrimaryReturnsNoLines()
+    {
+        var file = Path.Combine(_root, "empty.empty");
+        File.WriteAllText(file, "primary sees no content\n");
+        var fallback = new FakeWindowsIFilterExtractionService
+        {
+            Lines = new[] { new TextLine(1, "ifilter fallback needle") },
+        };
+        using var index = new CSharpDbFileIndex(
+            new FileIndexOptions { DatabasePath = Path.Combine(Path.GetDirectoryName(_dbPath)!, "ifilter-empty.db") },
+            new FileWalker(),
+            new ExtractorRegistry(new ITextExtractor[] { new EmptyTestExtractor(".empty") }),
+            windowsIFilterExtraction: fallback);
+
+        await index.BuildOrRefreshAsync(new IndexRequest(_root, new WalkerOptions()), TestContext.Current.CancellationToken);
+        await index.RefreshRootAsync(new IndexRequest(_root, new WalkerOptions()), IndexRefreshMode.Incremental, TestContext.Current.CancellationToken);
+
+        Assert.Equal(1, fallback.CallCount);
+        Assert.Null(fallback.LastPrimaryFailure);
+        Assert.Equal(0, fallback.LastPrimaryLineCount);
+        Assert.Equal(
+            new[] { "empty.empty:1:ifilter fallback needle" },
+            Normalize(await RawIndexedSearchAsync(index, new TermQuery("needle"))));
+    }
+
+    [Fact]
+    public async Task IndexingUsesIFilterFallbackWhenPrimaryThrows()
+    {
+        var file = Path.Combine(_root, "broken.bad");
+        File.WriteAllText(file, "primary throws\n");
+        var fallback = new FakeWindowsIFilterExtractionService
+        {
+            Lines = new[] { new TextLine(2, "ifilter recovered needle") },
+        };
+        using var index = new CSharpDbFileIndex(
+            new FileIndexOptions { DatabasePath = Path.Combine(Path.GetDirectoryName(_dbPath)!, "ifilter-throw.db") },
+            new FileWalker(),
+            new ExtractorRegistry(new ITextExtractor[] { new ThrowingTestExtractor(".bad") }),
+            windowsIFilterExtraction: fallback);
+
+        await index.BuildOrRefreshAsync(new IndexRequest(_root, new WalkerOptions()), TestContext.Current.CancellationToken);
+
+        Assert.Equal(1, fallback.CallCount);
+        Assert.NotNull(fallback.LastPrimaryFailure);
+        Assert.Empty(await index.GetFailedFilesAsync(TestContext.Current.CancellationToken));
+        Assert.Equal(
+            new[] { "broken.bad:2:ifilter recovered needle" },
+            Normalize(await RawIndexedSearchAsync(index, new TermQuery("needle"))));
+    }
+
+    [Fact]
+    public async Task IndexingUsesIFilterFallbackWhenNoExtractorIsRegistered()
+    {
+        var file = Path.Combine(_root, "unknown.custom");
+        File.WriteAllText(file, "custom content\n");
+        var fallback = new FakeWindowsIFilterExtractionService
+        {
+            Lines = new[] { new TextLine(5, "ifilter custom needle") },
+        };
+        using var index = new CSharpDbFileIndex(
+            new FileIndexOptions { DatabasePath = Path.Combine(Path.GetDirectoryName(_dbPath)!, "ifilter-missing.db") },
+            new FileWalker(),
+            new ExtractorRegistry(Array.Empty<ITextExtractor>()),
+            windowsIFilterExtraction: fallback);
+
+        await index.BuildOrRefreshAsync(new IndexRequest(_root, new WalkerOptions()), TestContext.Current.CancellationToken);
+
+        Assert.Equal(1, fallback.CallCount);
+        Assert.Null(fallback.LastPrimaryExtractor);
+        Assert.Equal(
+            new[] { "unknown.custom:5:ifilter custom needle" },
+            Normalize(await RawIndexedSearchAsync(index, new TermQuery("needle"))));
+    }
+
+    [Fact]
     public async Task IncrementalDeleteRemovesStaleHits()
     {
         var file = Path.Combine(_root, "gone.txt");
@@ -1455,6 +1530,26 @@ public sealed class FileIndexTests : IDisposable
         }
     }
 
+    private sealed class EmptyTestExtractor : ITextExtractor
+    {
+        public EmptyTestExtractor(string extension) => SupportedExtensions = new[] { extension };
+
+        public string ExtractorId => "test.empty";
+
+        public string ExtractorVersion => "1";
+
+        public IReadOnlyCollection<string> SupportedExtensions { get; }
+
+        public async IAsyncEnumerable<TextLine> ExtractAsync(
+            string path,
+            [System.Runtime.CompilerServices.EnumeratorCancellation] CancellationToken cancellationToken)
+        {
+            await Task.Yield();
+            cancellationToken.ThrowIfCancellationRequested();
+            yield break;
+        }
+    }
+
     private sealed class HostedTestExtractor : ITextExtractor
     {
         public string ExtractorId => "test.hosted";
@@ -1470,6 +1565,41 @@ public sealed class FileIndexTests : IDisposable
             await Task.Yield();
             cancellationToken.ThrowIfCancellationRequested();
             yield return new TextLine(1, "in-process fallback");
+        }
+    }
+
+    private sealed class FakeWindowsIFilterExtractionService : IWindowsIFilterExtractionService
+    {
+        public int CallCount { get; private set; }
+
+        public ITextExtractor? LastPrimaryExtractor { get; private set; }
+
+        public Exception? LastPrimaryFailure { get; private set; }
+
+        public long LastPrimaryLineCount { get; private set; }
+
+        public IReadOnlyList<TextLine> Lines { get; init; } = Array.Empty<TextLine>();
+
+        public IReadOnlyList<ExtractionIssue> Issues { get; init; } = Array.Empty<ExtractionIssue>();
+
+        public bool CanTryFallback(
+            string path,
+            ITextExtractor? primaryExtractor,
+            Exception? primaryFailure,
+            long primaryLineCount)
+        {
+            LastPrimaryExtractor = primaryExtractor;
+            LastPrimaryFailure = primaryFailure;
+            LastPrimaryLineCount = primaryLineCount;
+            return true;
+        }
+
+        public Task<WindowsIFilterExtractionResult?> TryExtractAsync(
+            string path,
+            CancellationToken cancellationToken)
+        {
+            CallCount++;
+            return Task.FromResult<WindowsIFilterExtractionResult?>(new WindowsIFilterExtractionResult(Lines, Issues));
         }
     }
 
