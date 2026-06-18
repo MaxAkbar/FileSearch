@@ -457,6 +457,7 @@ public sealed class CSharpDbFileIndex : IFileIndex, IIndexReplayWriter, IIndexUs
         long failedFileCount = 0;
         var pendingChangeCount = 0;
         IReadOnlyList<IndexVolumeHealthInfo> volumeHealth = Array.Empty<IndexVolumeHealthInfo>();
+        IReadOnlyList<IndexRootStrategyInfo> rootStrategies = Array.Empty<IndexRootStrategyInfo>();
         DateTime? lastIndexedUtc = null;
 
         try
@@ -481,6 +482,7 @@ public sealed class CSharpDbFileIndex : IFileIndex, IIndexReplayWriter, IIndexUs
             pendingChangeCount = (await IndexTables.ReadPendingChangesAsync(db, cancellationToken).ConfigureAwait(false)).Count;
             failedFileCount = await IndexTables.CountFailedFilesAsync(db, cancellationToken).ConfigureAwait(false);
             volumeHealth = await IndexTables.ListVolumeHealthAsync(db, cancellationToken).ConfigureAwait(false);
+            rootStrategies = await IndexTables.ListRootStrategiesAsync(db, cancellationToken).ConfigureAwait(false);
         }
         finally
         {
@@ -495,6 +497,7 @@ public sealed class CSharpDbFileIndex : IFileIndex, IIndexReplayWriter, IIndexUs
             pendingChangeCount,
             lastIndexedUtc,
             volumeHealth,
+            rootStrategies,
             failedFileCount);
     }
 
@@ -870,7 +873,7 @@ public sealed class CSharpDbFileIndex : IFileIndex, IIndexReplayWriter, IIndexUs
         var profile = BuildIndexProfile(walkerOptions);
         var rootId = await IndexTables.EnsureRootAsync(db, root, profile, cancellationToken).ConfigureAwait(false);
         var volumeContext = await TryPrepareVolumeAsync(db, rootId, root, cancellationToken).ConfigureAwait(false);
-        var beforeJournal = await TryQueryJournalAsync(volumeContext?.Volume, cancellationToken).ConfigureAwait(false);
+        var beforeJournal = await TryQueryJournalAsync(volumeContext, cancellationToken).ConfigureAwait(false);
         if (volumeContext?.RootIdentityChanged == true)
             await ClearRootContentAsync(db, rootId, cancellationToken).ConfigureAwait(false);
 
@@ -975,6 +978,7 @@ public sealed class CSharpDbFileIndex : IFileIndex, IIndexReplayWriter, IIndexUs
         }
 
         var volumeId = await IndexTables.EnsureVolumeAsync(db, volume, cancellationToken).ConfigureAwait(false);
+        var strategy = IndexLocationStrategyResolver.Classify(root, volume);
         var rootIdentity = TryGetIndexedFileIdentity(volumeId, root, lastObservedUsn: null);
         var rootRow = await IndexTables.GetRootAsync(db, root, cancellationToken).ConfigureAwait(false);
         var rootIdentityChanged =
@@ -983,24 +987,31 @@ public sealed class CSharpDbFileIndex : IFileIndex, IIndexReplayWriter, IIndexUs
             (rootRow.VolumeId.Value != volumeId ||
              !string.Equals(rootRow.RootFileReferenceNumber, rootIdentity.FileReferenceNumber, StringComparison.Ordinal));
 
-        await IndexTables.SetRootVolumeAsync(db, rootId, volumeId, rootIdentity, cancellationToken).ConfigureAwait(false);
-        return new IndexVolumeContext(volumeId, volume, rootIdentityChanged);
+        await IndexTables.SetRootVolumeAsync(db, rootId, volumeId, rootIdentity, strategy, cancellationToken).ConfigureAwait(false);
+        return new IndexVolumeContext(volumeId, volume, strategy, rootIdentityChanged);
     }
 
     private async Task<UsnJournalSnapshot?> TryQueryJournalAsync(
-        IndexVolumeInfo? volume,
+        IndexVolumeContext? volumeContext,
         CancellationToken cancellationToken)
     {
-        if (volume is null || _journalReader is null || volume.IsRemote || !volume.UsnSupported)
+        if (volumeContext is null ||
+            _journalReader is null ||
+            !volumeContext.Strategy.UsnCatchUpEnabled ||
+            volumeContext.Volume.IsRemote ||
+            !volumeContext.Volume.UsnSupported)
+        {
             return null;
+        }
 
         try
         {
+            var volume = volumeContext.Volume;
             return await _journalReader.QueryAsync(volume, cancellationToken).ConfigureAwait(false);
         }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or InvalidOperationException or System.ComponentModel.Win32Exception or PlatformNotSupportedException)
         {
-            _logger.LogDebug(ex, "Could not query USN journal for volume {VolumeKey}.", volume.VolumeKey);
+            _logger.LogDebug(ex, "Could not query USN journal for volume {VolumeKey}.", volumeContext.Volume.VolumeKey);
             return null;
         }
     }
@@ -1014,7 +1025,7 @@ public sealed class CSharpDbFileIndex : IFileIndex, IIndexReplayWriter, IIndexUs
         if (volumeContext is null || beforeJournal is null)
             return;
 
-        var afterJournal = await TryQueryJournalAsync(volumeContext.Volume, cancellationToken).ConfigureAwait(false);
+        var afterJournal = await TryQueryJournalAsync(volumeContext, cancellationToken).ConfigureAwait(false);
         if (afterJournal is null || afterJournal.JournalId != beforeJournal.JournalId)
             return;
 
@@ -1528,8 +1539,22 @@ public sealed class CSharpDbFileIndex : IFileIndex, IIndexReplayWriter, IIndexUs
         var indexedUtc = rootRow.IndexedUtcTicks > 0
             ? new DateTime(rootRow.IndexedUtcTicks, DateTimeKind.Utc)
             : (DateTime?)null;
+        var lastFullScanUtc = rootRow.LastFullScanUtcTicks > 0
+            ? new DateTime(rootRow.LastFullScanUtcTicks, DateTimeKind.Utc)
+            : (DateTime?)null;
+        var volumeKey = rootRow.VolumeId is { } volumeId
+            ? await IndexTables.GetVolumeKeyAsync(db, volumeId, cancellationToken).ConfigureAwait(false)
+            : null;
 
-        return new IndexedLocationInfo(root, fileCount, lineCount, indexedUtc, rootRow.OptionsHash, Exists: true);
+        return new IndexedLocationInfo(
+            root,
+            fileCount,
+            lineCount,
+            indexedUtc,
+            rootRow.OptionsHash,
+            Exists: true,
+            lastFullScanUtc,
+            volumeKey);
     }
 
     private IndexDatabaseInfo CreateDatabaseInfo(
@@ -1540,6 +1565,7 @@ public sealed class CSharpDbFileIndex : IFileIndex, IIndexReplayWriter, IIndexUs
         int pendingChangeCount = 0,
         DateTime? lastIndexedUtc = null,
         IReadOnlyList<IndexVolumeHealthInfo>? volumeHealth = null,
+        IReadOnlyList<IndexRootStrategyInfo>? rootStrategies = null,
         long failedFileCount = 0)
     {
         var databaseBytes = GetFileLength(DatabasePath);
@@ -1560,6 +1586,7 @@ public sealed class CSharpDbFileIndex : IFileIndex, IIndexReplayWriter, IIndexUs
             pendingChangeCount,
             lastIndexedUtc,
             volumeHealth,
+            rootStrategies,
             failedFileCount);
     }
 
@@ -1787,7 +1814,11 @@ public sealed class CSharpDbFileIndex : IFileIndex, IIndexReplayWriter, IIndexUs
             !Path.IsPathRooted(relative);
     }
 
-    private sealed record IndexVolumeContext(long VolumeId, IndexVolumeInfo Volume, bool RootIdentityChanged);
+    private sealed record IndexVolumeContext(
+        long VolumeId,
+        IndexVolumeInfo Volume,
+        IndexLocationStrategy Strategy,
+        bool RootIdentityChanged);
 
     private sealed record ReplayRootContext(
         long RootId,

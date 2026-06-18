@@ -1102,6 +1102,48 @@ public sealed class FileIndexTests : IDisposable
     }
 
     [Fact]
+    public async Task RefreshPersistsCloudRootStrategyAndSkipsUsnCheckpoint()
+    {
+        File.WriteAllText(Path.Combine(_root, "cloud.txt"), "cloud needle\n");
+        var previousOneDrive = Environment.GetEnvironmentVariable("OneDrive");
+        Environment.SetEnvironmentVariable("OneDrive", _root);
+        try
+        {
+            var volume = FakeVolume(_root);
+            var resolver = new FakeVolumeResolver(volume);
+            var journal = new FakeUsnJournalReader(new UsnJournalSnapshot(123, 1, 50));
+            using var index = new CSharpDbFileIndex(
+                new FileIndexOptions { DatabasePath = _dbPath },
+                new FileWalker(),
+                _registry,
+                searchOptions: null,
+                logger: null,
+                resolver,
+                journal);
+
+            await index.BuildOrRefreshAsync(
+                new IndexRequest(_root, new WalkerOptions()),
+                TestContext.Current.CancellationToken);
+
+            var info = await index.GetDatabaseInfoAsync(TestContext.Current.CancellationToken);
+            var strategy = Assert.Single(info.RootStrategies!);
+            Assert.Equal(IndexLocationKind.CloudBacked, strategy.LocationKind);
+            Assert.Equal(IndexUpdateStrategy.SnapshotScanAndWatcher, strategy.UpdateStrategy);
+            Assert.False(strategy.UsnCatchUpEnabled);
+
+            var checkpoint = await index.GetVolumeCheckpointCoreAsync(volume, TestContext.Current.CancellationToken);
+            Assert.NotNull(checkpoint);
+            Assert.Null(checkpoint.JournalId);
+            Assert.Equal(0, checkpoint.LastCommittedUsn);
+            Assert.Equal(0, journal.QueryCallCount);
+        }
+        finally
+        {
+            Environment.SetEnvironmentVariable("OneDrive", previousOneDrive);
+        }
+    }
+
+    [Fact]
     public async Task CoverageRejectsIndexWhenRootIdentityChanged()
     {
         File.WriteAllText(Path.Combine(_root, "identity.txt"), "identity needle\n");
@@ -1469,15 +1511,20 @@ public sealed class FileIndexTests : IDisposable
             .Order(StringComparer.Ordinal)
             .ToList();
 
-    private static IndexVolumeInfo FakeVolume(string root) =>
+    private static IndexVolumeInfo FakeVolume(
+        string root,
+        string filesystem = "NTFS",
+        bool usnSupported = true,
+        IndexVolumeDriveKind driveKind = IndexVolumeDriveKind.Fixed) =>
         new(
             "fake-volume",
             Path.GetPathRoot(root) ?? root,
             @"\\.\C:",
             "123",
-            "NTFS",
+            filesystem,
             IsRemote: false,
-            UsnSupported: true);
+            usnSupported,
+            driveKind);
 
     private static async ValueTask SafeDisposeAsync(Database db)
     {
@@ -1687,10 +1734,15 @@ public sealed class FileIndexTests : IDisposable
 
         public FakeUsnJournalReader(UsnJournalSnapshot snapshot) => _snapshot = snapshot;
 
+        public int QueryCallCount { get; private set; }
+
         public Task<UsnJournalSnapshot> QueryAsync(
             IndexVolumeInfo volume,
-            CancellationToken cancellationToken) =>
-            Task.FromResult(_snapshot);
+            CancellationToken cancellationToken)
+        {
+            QueryCallCount++;
+            return Task.FromResult(_snapshot);
+        }
 
         public async IAsyncEnumerable<UsnChangeRecord> ReadChangesAsync(
             IndexVolumeInfo volume,

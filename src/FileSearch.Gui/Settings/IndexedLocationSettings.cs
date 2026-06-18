@@ -15,6 +15,7 @@ public sealed class IndexedLocationSettings : INotifyPropertyChanged
     private long _lastIndexedUtcTicks;
     private long _fileCount;
     private long _lineCount;
+    private string _strategySummary = "Strategy pending";
 
     public event PropertyChangedEventHandler? PropertyChanged;
 
@@ -161,6 +162,13 @@ public sealed class IndexedLocationSettings : INotifyPropertyChanged
 
     [JsonIgnore]
     public string WatchSummary => WatchEnabled ? "Watching changes" : "Watch disabled";
+
+    [JsonIgnore]
+    public string StrategySummary
+    {
+        get => _strategySummary;
+        set => SetProperty(ref _strategySummary, string.IsNullOrWhiteSpace(value) ? "Strategy pending" : value);
+    }
 
     [JsonIgnore]
     public string RecursionSummary => Recursive ? "Includes subfolders" : "Top folder only";

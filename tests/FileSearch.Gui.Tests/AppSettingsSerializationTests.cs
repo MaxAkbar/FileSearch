@@ -102,6 +102,7 @@ public sealed class AppSettingsSerializationTests
         Assert.DoesNotContain(nameof(IndexedLocationSettings.DisplayName), json);
         Assert.DoesNotContain(nameof(IndexedLocationSettings.Summary), json);
         Assert.DoesNotContain(nameof(IndexedLocationSettings.WatchSummary), json);
+        Assert.DoesNotContain(nameof(IndexedLocationSettings.StrategySummary), json);
         Assert.DoesNotContain(nameof(IndexedLocationSettings.RecursionSummary), json);
         Assert.DoesNotContain(nameof(IndexedLocationSettings.TypeSummary), json);
         Assert.DoesNotContain(nameof(IndexedLocationSettings.LastIndexedSummary), json);

@@ -140,11 +140,11 @@ public sealed class IndexViewModelTests
             },
             RootStatusDetails: new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
             {
-                [root] = "Full scan queued: No checkpoint.",
+                [root] = "Snapshot scan queued: No checkpoint.",
             }));
 
         var location = Assert.Single(index.IndexedLocations);
-        Assert.Equal("Full scan queued: No checkpoint.", location.RuntimeStatusSummary);
+        Assert.Equal("Snapshot scan queued: No checkpoint.", location.RuntimeStatusSummary);
 
         indexingService.RaiseStatus(new IndexingStatus(
             IsRunning: true,
@@ -191,6 +191,17 @@ public sealed class IndexViewModelTests
                         LastError: null,
                         LastCheckedUtc: new DateTime(2026, 6, 14, 12, 5, 0, DateTimeKind.Utc)),
                 },
+                RootStrategies: new[]
+                {
+                    new IndexRootStrategyInfo(
+                        @"C:\Root",
+                        IndexLocationKind.CloudBacked,
+                        IndexUpdateStrategy.SnapshotScanAndWatcher,
+                        "Cloud folder: snapshot scan + watcher",
+                        "Cloud-backed folders use snapshot scans.",
+                        UsnCatchUpEnabled: false,
+                        WatcherRecommended: true),
+                },
                 FailedFileCount: 2),
             Failures = new[]
             {
@@ -219,7 +230,9 @@ public sealed class IndexViewModelTests
             },
         };
 
-        var (_, index) = Build(fileIndex);
+        var (_, index) = Build(
+            fileIndex,
+            configureSettings: settings => settings.IndexedLocations.Add(new() { Root = @"C:\Root" }));
 
         Assert.Equal(@"C:\Index\filesearch.db", index.IndexDatabasePath);
         Assert.Equal("Ready, schema 5", index.IndexDatabaseStatusText);
@@ -229,6 +242,9 @@ public sealed class IndexViewModelTests
         Assert.Equal("1 pending index change", index.IndexDatabaseQueueText);
         Assert.Equal("healthy: NTFS USN, USN 345", index.IndexDatabaseVolumeHealthText);
         Assert.Equal("IFilter fallback used; codes: ifilter_empty", index.IndexDatabaseDiagnosticsText);
+        var location = Assert.Single(index.IndexedLocations);
+        Assert.Contains("Cloud folder: snapshot scan + watcher", location.StrategySummary);
+        Assert.Contains("startup snapshot scan", location.StrategySummary);
         Assert.StartsWith("Last indexed ", index.IndexDatabaseLastIndexedText);
     }
 

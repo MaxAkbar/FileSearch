@@ -82,6 +82,7 @@ public static class ServiceCollectionExtensions
         services.TryAddSingleton<IIndexQueue, IndexQueue>();
         services.TryAddSingleton<IIndexWatcherService, IndexWatcherService>();
         services.TryAddSingleton<IIndexingService, IndexingService>();
+        services.TryAddSingleton<IIndexHealthService, IndexHealthService>();
         services.TryAddSingleton<IIndexingSearchCoordinator>(sp =>
             new IndexingServiceSearchCoordinator(sp.GetRequiredService<IIndexingService>()));
         services.TryAddSingleton<IndexCoverageService>();

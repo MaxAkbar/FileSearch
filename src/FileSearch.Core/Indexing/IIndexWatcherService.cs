@@ -7,4 +7,6 @@ public interface IIndexWatcherService
     void StopWatching(string root);
 
     void StopAll();
+
+    IReadOnlyDictionary<string, IndexWatcherDiagnosticInfo> GetDiagnostics();
 }

@@ -16,7 +16,7 @@ namespace FileSearch.Core.Indexing;
 /// </summary>
 internal sealed class IndexDatabase : IDisposable
 {
-    internal const string CurrentSchemaVersion = "11";
+    internal const string CurrentSchemaVersion = "12";
     internal const string FullTextIndexName = "fts_lines";
 
     private static readonly string[] s_fullTextColumns = { "content" };
@@ -235,8 +235,8 @@ internal sealed class IndexDatabase : IDisposable
 
     private async Task EnsureSchemaAsync(Database db, CancellationToken cancellationToken)
     {
-        await db.ExecuteAsync("CREATE TABLE IF NOT EXISTS index_volumes (id INTEGER PRIMARY KEY, volume_key TEXT, volume_serial TEXT, filesystem_name TEXT, is_remote INTEGER, usn_supported INTEGER, journal_id TEXT, last_committed_usn INTEGER, health TEXT, last_checked_utc_ticks INTEGER, last_error TEXT)", cancellationToken).ConfigureAwait(false);
-        await db.ExecuteAsync("CREATE TABLE IF NOT EXISTS index_roots (id INTEGER PRIMARY KEY, root_path TEXT, indexed_utc_ticks INTEGER, options_hash TEXT, volume_id INTEGER, last_full_scan_utc_ticks INTEGER, root_file_reference_number TEXT, root_parent_file_reference_number TEXT, content_version TEXT)", cancellationToken).ConfigureAwait(false);
+        await db.ExecuteAsync("CREATE TABLE IF NOT EXISTS index_volumes (id INTEGER PRIMARY KEY, volume_key TEXT, volume_serial TEXT, filesystem_name TEXT, is_remote INTEGER, usn_supported INTEGER, drive_kind TEXT, journal_id TEXT, last_committed_usn INTEGER, health TEXT, last_checked_utc_ticks INTEGER, last_error TEXT)", cancellationToken).ConfigureAwait(false);
+        await db.ExecuteAsync("CREATE TABLE IF NOT EXISTS index_roots (id INTEGER PRIMARY KEY, root_path TEXT, indexed_utc_ticks INTEGER, options_hash TEXT, volume_id INTEGER, last_full_scan_utc_ticks INTEGER, root_file_reference_number TEXT, root_parent_file_reference_number TEXT, content_version TEXT, location_kind TEXT, update_strategy TEXT, strategy_warning TEXT, usn_catch_up_enabled INTEGER, watcher_recommended INTEGER)", cancellationToken).ConfigureAwait(false);
         await db.ExecuteAsync("CREATE TABLE IF NOT EXISTS index_directories (id INTEGER PRIMARY KEY, root_id INTEGER, path TEXT, volume_id INTEGER, directory_reference_number TEXT, parent_file_reference_number TEXT, observed_utc_ticks INTEGER)", cancellationToken).ConfigureAwait(false);
         await db.ExecuteAsync("CREATE TABLE IF NOT EXISTS files (id INTEGER PRIMARY KEY, root_id INTEGER, path TEXT, path_lower TEXT, directory_path TEXT, directory_path_lower TEXT, file_name TEXT, file_name_lower TEXT, extension TEXT, size_bytes INTEGER, created_utc_ticks INTEGER, modified_utc_ticks INTEGER, attributes INTEGER, file_type_category TEXT, indexed_utc_ticks INTEGER, status TEXT, error TEXT, volume_id INTEGER, file_reference_number TEXT, parent_file_reference_number TEXT, last_observed_usn INTEGER, content_version TEXT, open_count INTEGER, last_opened_utc_ticks INTEGER, extractor_id TEXT, extractor_version TEXT, extraction_attempt_count INTEGER, last_extraction_attempt_utc_ticks INTEGER)", cancellationToken).ConfigureAwait(false);
         await db.ExecuteAsync("CREATE TABLE IF NOT EXISTS extraction_issues (id INTEGER PRIMARY KEY, file_id INTEGER, member_path TEXT, code TEXT, message TEXT, severity TEXT, created_utc_ticks INTEGER)", cancellationToken).ConfigureAwait(false);

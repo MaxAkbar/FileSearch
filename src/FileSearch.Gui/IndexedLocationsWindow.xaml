@@ -82,7 +82,7 @@
                                 HorizontalContentAlignment="Center">
                             <StackPanel Orientation="Horizontal">
                                 <ui:FontIcon Glyph="&#xE8B7;" FontSize="13" Margin="0,0,7,0"/>
-                                <TextBlock Text="Add folder..."/>
+                                <TextBlock Text="Add folder with options..."/>
                             </StackPanel>
                         </Button>
                     </StackPanel>
@@ -90,10 +90,10 @@
                     <ScrollViewer Grid.Row="1"
                                   VerticalScrollBarVisibility="Auto"
                                   HorizontalScrollBarVisibility="Disabled"
-                                  MaxHeight="520"
+                                  MaxHeight="320"
                                   Margin="4,0,4,10">
-                        <Expander Header="NEW INDEX OPTIONS"
-                                  IsExpanded="False">
+                        <Expander Header="ADD FOLDER OPTIONS"
+                                  IsExpanded="True">
                             <StackPanel Margin="2,8,2,0">
                                 <UniformGrid Columns="2" Margin="0,0,0,8">
                                     <CheckBox Content="Subfolders"
@@ -235,6 +235,9 @@
             <Border Grid.Column="2"
                     Style="{StaticResource WatchAwareSurfaceStyle}">
                 <Grid>
+                    <TabControl>
+                        <TabItem Header="Location">
+                            <Grid>
                     <ScrollViewer VerticalScrollBarVisibility="Auto">
                         <ScrollViewer.Style>
                             <Style TargetType="ScrollViewer">
@@ -273,6 +276,7 @@
                                 <RowDefinition Height="Auto"/>
                                 <RowDefinition Height="Auto"/>
                                 <RowDefinition Height="Auto"/>
+                                <RowDefinition Height="Auto"/>
                             </Grid.RowDefinitions>
 
                             <TextBlock Grid.Row="0" Text="Status" Style="{StaticResource MetaKeyStyle}" Margin="0,0,0,8"/>
@@ -296,13 +300,21 @@
                             <TextBlock Grid.Row="4" Text="Coverage" Style="{StaticResource MetaKeyStyle}" Margin="0,0,0,8"/>
                             <TextBlock Grid.Row="4" Grid.Column="1" Text="{Binding Index.SelectedIndexedLocation.RecursionSummary}" Style="{StaticResource MetaValueStyle}" TextAlignment="Left" Margin="0,0,0,8"/>
 
-                            <TextBlock Grid.Row="5" Text="Watcher" Style="{StaticResource MetaKeyStyle}"/>
+                            <TextBlock Grid.Row="5" Text="Watcher" Style="{StaticResource MetaKeyStyle}" Margin="0,0,0,8"/>
                             <Border Grid.Row="5" Grid.Column="1"
                                     DataContext="{Binding Index.SelectedIndexedLocation}"
-                                    Style="{StaticResource WatchStatusBadgeStyle}">
+                                    Style="{StaticResource WatchStatusBadgeStyle}"
+                                    Margin="0,0,0,8">
                                 <TextBlock Text="{Binding WatchSummary}"
                                            Style="{StaticResource IndexStatusBadgeTextStyle}"/>
                             </Border>
+
+                            <TextBlock Grid.Row="6" Text="Strategy" Style="{StaticResource MetaKeyStyle}"/>
+                            <TextBlock Grid.Row="6" Grid.Column="1"
+                                       Text="{Binding Index.SelectedIndexedLocation.StrategySummary}"
+                                       Style="{StaticResource MetaValueStyle}"
+                                       TextAlignment="Left"
+                                       TextWrapping="Wrap"/>
                         </Grid>
 
                         <Border Height="1" Background="{DynamicResource Atlas.LineBrush}" Margin="0,0,0,18"/>
@@ -463,6 +475,162 @@
                         <ui:FontIcon Glyph="&#xE8B7;" FontSize="38" Opacity="0.22" HorizontalAlignment="Center" Margin="0,0,0,12"/>
                         <TextBlock Text="No indexed location selected" Style="{StaticResource EmptyTitleStyle}"/>
                     </StackPanel>
+                            </Grid>
+                        </TabItem>
+                        <TabItem Header="Index Health">
+                            <Grid Margin="0,4,0,0">
+                                <Grid.RowDefinitions>
+                                    <RowDefinition Height="Auto"/>
+                                    <RowDefinition Height="*"/>
+                                    <RowDefinition Height="Auto"/>
+                                </Grid.RowDefinitions>
+
+                                <StackPanel Grid.Row="0" Margin="0,0,0,12">
+                                    <TextBlock Text="Index Health"
+                                               FontSize="18"
+                                               FontWeight="SemiBold"
+                                               Foreground="{DynamicResource Atlas.InkBrush}"/>
+                                    <TextBlock Text="{Binding Index.IndexHealthSummaryText}"
+                                               Style="{StaticResource MutedValueStyle}"
+                                               Margin="0,3,0,0"/>
+                                </StackPanel>
+
+                                <Grid Grid.Row="1">
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="2*"/>
+                                        <ColumnDefinition Width="14"/>
+                                        <ColumnDefinition Width="*"/>
+                                    </Grid.ColumnDefinitions>
+
+                                    <Border Grid.Column="0"
+                                            Background="{DynamicResource Atlas.SurfaceBrush}"
+                                            BorderBrush="{DynamicResource Atlas.LineBrush}"
+                                            BorderThickness="1"
+                                            CornerRadius="8">
+                                        <Grid>
+                                            <Grid.RowDefinitions>
+                                                <RowDefinition Height="Auto"/>
+                                                <RowDefinition Height="*"/>
+                                            </Grid.RowDefinitions>
+                                            <Grid Grid.Row="0"
+                                                  Margin="12,10,12,8">
+                                                <Grid.ColumnDefinitions>
+                                                    <ColumnDefinition Width="1.4*"/>
+                                                    <ColumnDefinition Width="1.1*"/>
+                                                    <ColumnDefinition Width="0.7*"/>
+                                                    <ColumnDefinition Width="0.7*"/>
+                                                    <ColumnDefinition Width="0.7*"/>
+                                                    <ColumnDefinition Width="1.2*"/>
+                                                </Grid.ColumnDefinitions>
+                                                <TextBlock Text="Root" Style="{StaticResource FieldLabelStyle}"/>
+                                                <TextBlock Grid.Column="1" Text="Status" Style="{StaticResource FieldLabelStyle}"/>
+                                                <TextBlock Grid.Column="2" Text="Indexed" Style="{StaticResource FieldLabelStyle}"/>
+                                                <TextBlock Grid.Column="3" Text="Pending" Style="{StaticResource FieldLabelStyle}"/>
+                                                <TextBlock Grid.Column="4" Text="Failed" Style="{StaticResource FieldLabelStyle}"/>
+                                                <TextBlock Grid.Column="5" Text="Journal" Style="{StaticResource FieldLabelStyle}"/>
+                                            </Grid>
+                                            <ScrollViewer Grid.Row="1" VerticalScrollBarVisibility="Auto">
+                                                <ListBox ItemsSource="{Binding Index.IndexHealthRows}"
+                                                         SelectedItem="{Binding Index.SelectedIndexHealthRoot, Mode=TwoWay}"
+                                                         Style="{StaticResource NavListBoxStyle}"
+                                                         ItemContainerStyle="{StaticResource NavListBoxItemStyle}">
+                                                    <ListBox.ItemTemplate>
+                                                        <DataTemplate>
+                                                            <Grid ToolTip="{Binding Root}">
+                                                                <Grid.ColumnDefinitions>
+                                                                    <ColumnDefinition Width="1.4*"/>
+                                                                    <ColumnDefinition Width="1.1*"/>
+                                                                    <ColumnDefinition Width="0.7*"/>
+                                                                    <ColumnDefinition Width="0.7*"/>
+                                                                    <ColumnDefinition Width="0.7*"/>
+                                                                    <ColumnDefinition Width="1.2*"/>
+                                                                </Grid.ColumnDefinitions>
+                                                                <TextBlock Text="{Binding DisplayName}"
+                                                                           TextTrimming="CharacterEllipsis"/>
+                                                                <TextBlock Grid.Column="1"
+                                                                           Text="{Binding StatusText}"
+                                                                           TextTrimming="CharacterEllipsis"/>
+                                                                <TextBlock Grid.Column="2"
+                                                                           Text="{Binding FilesIndexed, StringFormat={}{0:n0}}"
+                                                                           TextAlignment="Right"
+                                                                           Margin="0,0,16,0"/>
+                                                                <TextBlock Grid.Column="3"
+                                                                           Text="{Binding FilesPending, StringFormat={}{0:n0}}"
+                                                                           TextAlignment="Right"
+                                                                           Margin="0,0,16,0"/>
+                                                                <TextBlock Grid.Column="4"
+                                                                           Text="{Binding FilesFailed, StringFormat={}{0:n0}}"
+                                                                           TextAlignment="Right"
+                                                                           Margin="0,0,16,0"/>
+                                                                <TextBlock Grid.Column="5"
+                                                                           Text="{Binding JournalStatus}"
+                                                                           TextTrimming="CharacterEllipsis"/>
+                                                            </Grid>
+                                                        </DataTemplate>
+                                                    </ListBox.ItemTemplate>
+                                                </ListBox>
+                                            </ScrollViewer>
+                                        </Grid>
+                                    </Border>
+
+                                    <Border Grid.Column="2"
+                                            Background="{DynamicResource Atlas.SurfaceBrush}"
+                                            BorderBrush="{DynamicResource Atlas.LineBrush}"
+                                            BorderThickness="1"
+                                            CornerRadius="8"
+                                            Padding="14">
+                                        <ScrollViewer VerticalScrollBarVisibility="Auto">
+                                            <Grid>
+                                                <Grid.ColumnDefinitions>
+                                                    <ColumnDefinition Width="126"/>
+                                                    <ColumnDefinition Width="*"/>
+                                                </Grid.ColumnDefinitions>
+                                                <Grid.RowDefinitions>
+                                                    <RowDefinition Height="Auto"/>
+                                                    <RowDefinition Height="Auto"/>
+                                                    <RowDefinition Height="Auto"/>
+                                                    <RowDefinition Height="Auto"/>
+                                                    <RowDefinition Height="Auto"/>
+                                                    <RowDefinition Height="Auto"/>
+                                                    <RowDefinition Height="Auto"/>
+                                                    <RowDefinition Height="Auto"/>
+                                                    <RowDefinition Height="Auto"/>
+                                                    <RowDefinition Height="Auto"/>
+                                                </Grid.RowDefinitions>
+
+                                                <TextBlock Grid.Row="0" Text="Root" Style="{StaticResource MetaKeyStyle}" Margin="0,0,0,8"/>
+                                                <TextBlock Grid.Row="0" Grid.Column="1" Text="{Binding Index.SelectedIndexHealthRoot.Root}" Style="{StaticResource MetaValueStyle}" TextTrimming="CharacterEllipsis" ToolTip="{Binding Index.SelectedIndexHealthRoot.Root}" Margin="0,0,0,8"/>
+                                                <TextBlock Grid.Row="1" Text="Status" Style="{StaticResource MetaKeyStyle}" Margin="0,0,0,8"/>
+                                                <TextBlock Grid.Row="1" Grid.Column="1" Text="{Binding Index.SelectedIndexHealthRoot.StatusText}" Style="{StaticResource MetaValueStyle}" Margin="0,0,0,8"/>
+                                                <TextBlock Grid.Row="2" Text="Last scan" Style="{StaticResource MetaKeyStyle}" Margin="0,0,0,8"/>
+                                                <TextBlock Grid.Row="2" Grid.Column="1" Text="{Binding Index.SelectedIndexHealthRoot.LastSuccessfulScanUtc, StringFormat={}{0:g}}" Style="{StaticResource MetaValueStyle}" Margin="0,0,0,8"/>
+                                                <TextBlock Grid.Row="3" Text="USN checkpoint" Style="{StaticResource MetaKeyStyle}" Margin="0,0,0,8"/>
+                                                <TextBlock Grid.Row="3" Grid.Column="1" Text="{Binding Index.SelectedIndexHealthRoot.LastCommittedUsn, StringFormat={}{0:n0}}" Style="{StaticResource MetaValueStyle}" Margin="0,0,0,8"/>
+                                                <TextBlock Grid.Row="4" Text="Watcher event" Style="{StaticResource MetaKeyStyle}" Margin="0,0,0,8"/>
+                                                <TextBlock Grid.Row="4" Grid.Column="1" Text="{Binding Index.SelectedIndexHealthRoot.LastWatcherEventUtc, StringFormat={}{0:g}}" Style="{StaticResource MetaValueStyle}" Margin="0,0,0,8"/>
+                                                <TextBlock Grid.Row="5" Text="Validation" Style="{StaticResource MetaKeyStyle}" Margin="0,0,0,8"/>
+                                                <TextBlock Grid.Row="5" Grid.Column="1" Text="{Binding Index.SelectedIndexHealthRoot.LastFullValidationUtc, StringFormat={}{0:g}}" Style="{StaticResource MetaValueStyle}" Margin="0,0,0,8"/>
+                                                <TextBlock Grid.Row="6" Text="Failures" Style="{StaticResource MetaKeyStyle}" Margin="0,0,0,8"/>
+                                                <TextBlock Grid.Row="6" Grid.Column="1" Text="{Binding Index.SelectedIndexHealthRoot.ExtractorFailures}" Style="{StaticResource MetaValueStyle}" TextWrapping="Wrap" Margin="0,0,0,8"/>
+                                                <TextBlock Grid.Row="7" Text="Queue" Style="{StaticResource MetaKeyStyle}" Margin="0,0,0,8"/>
+                                                <TextBlock Grid.Row="7" Grid.Column="1" Text="{Binding Index.SelectedIndexHealthRoot.QueueDepth, StringFormat={}{0:n0} pending}" Style="{StaticResource MetaValueStyle}" Margin="0,0,0,8"/>
+                                                <TextBlock Grid.Row="8" Text="Catch-up" Style="{StaticResource MetaKeyStyle}" Margin="0,0,0,8"/>
+                                                <TextBlock Grid.Row="8" Grid.Column="1" Text="{Binding Index.SelectedIndexHealthRoot.EstimatedCatchUpTime}" Style="{StaticResource MetaValueStyle}" Margin="0,0,0,8"/>
+                                                <TextBlock Grid.Row="9" Text="Detail" Style="{StaticResource MetaKeyStyle}"/>
+                                                <TextBlock Grid.Row="9" Grid.Column="1" Text="{Binding Index.SelectedIndexHealthRoot.Detail}" Style="{StaticResource MetaValueStyle}" TextWrapping="Wrap"/>
+                                            </Grid>
+                                        </ScrollViewer>
+                                    </Border>
+                                </Grid>
+
+                                <TextBlock Grid.Row="2"
+                                           Text="{Binding Index.SelectedIndexHealthRoot.Strategy}"
+                                           Style="{StaticResource MutedValueStyle}"
+                                           TextWrapping="Wrap"
+                                           Margin="0,12,0,0"/>
+                            </Grid>
+                        </TabItem>
+                    </TabControl>
                 </Grid>
             </Border>
 

@@ -55,7 +55,7 @@ public sealed class IndexingServiceTests
 
         try
         {
-            Assert.Empty(queue.Enqueued);
+            Assert.Equal(0, queue.Count);
             Assert.NotNull(service.CurrentStatus.RootStatusDetails);
             var details = service.CurrentStatus.RootStatusDetails!;
             Assert.Equal(
@@ -100,13 +100,121 @@ public sealed class IndexingServiceTests
             Assert.NotNull(service.CurrentStatus.RootStatusDetails);
             var details = service.CurrentStatus.RootStatusDetails!;
             Assert.Equal(
-                "Full scan queued: No checkpoint.",
+                "Snapshot scan queued: No checkpoint.",
                 details[IndexPath.NormalizeRoot(root)]);
         }
         finally
         {
             await service.StopAsync(TestContext.Current.CancellationToken);
             Directory.Delete(root, recursive: true);
+        }
+    }
+
+    [Fact]
+    public async Task SchedulerQueuesPeriodicSnapshotForNetworkRoot()
+    {
+        var root = Path.Combine(Path.GetTempPath(), "filesearch-network-schedule-" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(root);
+        var normalizedRoot = IndexPath.NormalizeRoot(root);
+        var index = new BlockingFileIndex
+        {
+            DatabaseInfo = DatabaseInfoWithStrategy(new IndexRootStrategyInfo(
+                normalizedRoot,
+                IndexLocationKind.NetworkShare,
+                IndexUpdateStrategy.ScheduledSnapshotScan,
+                "Network share: scheduled snapshot scan",
+                "Network shares use snapshot scans.",
+                UsnCatchUpEnabled: false,
+                WatcherRecommended: false)),
+        };
+        var queue = new RecordingQueue();
+        var catchUp = new StaticStartupCatchUp(new IndexStartupCatchUpResult(
+            new HashSet<string>(StringComparer.OrdinalIgnoreCase) { normalizedRoot },
+            new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)));
+        var service = new IndexingService(
+            index,
+            queue,
+            new IndexWatcherService(queue),
+            startupCatchUp: catchUp,
+            options: FastSchedulerOptions());
+
+        await service.StartAsync(
+            new[] { new IndexedLocation(root, new WalkerOptions(), WatchEnabled: false) },
+            TestContext.Current.CancellationToken);
+
+        try
+        {
+            await WaitUntilAsync(() => queue.Count > 0, TestContext.Current.CancellationToken);
+            var item = queue.SnapshotEnqueued().First();
+            Assert.Equal(normalizedRoot, item.Root);
+            Assert.Equal(IndexChangeKind.RefreshRoot, item.Kind);
+            Assert.Equal(IndexQueuePriority.Low, item.Priority);
+            Assert.NotNull(service.CurrentStatus.RootStatusDetails);
+            Assert.StartsWith(
+                "Snapshot scan queued: scheduled refresh",
+                service.CurrentStatus.RootStatusDetails![normalizedRoot],
+                StringComparison.Ordinal);
+        }
+        finally
+        {
+            await service.StopAsync(TestContext.Current.CancellationToken);
+            Directory.Delete(root, recursive: true);
+        }
+    }
+
+    [Fact]
+    public async Task SchedulerQueuesSnapshotWhenRemovableRootReconnects()
+    {
+        var root = Path.Combine(Path.GetTempPath(), "filesearch-removable-reconnect-" + Guid.NewGuid().ToString("N"));
+        var normalizedRoot = IndexPath.NormalizeRoot(root);
+        var index = new BlockingFileIndex
+        {
+            DatabaseInfo = DatabaseInfoWithStrategy(new IndexRootStrategyInfo(
+                normalizedRoot,
+                IndexLocationKind.Removable,
+                IndexUpdateStrategy.OfflineCacheAndReconnectScan,
+                "Removable drive: offline cache + reconnect scan",
+                "Removable drive indexes are retained while offline.",
+                UsnCatchUpEnabled: false,
+                WatcherRecommended: true)),
+        };
+        var queue = new RecordingQueue();
+        var service = new IndexingService(
+            index,
+            queue,
+            new IndexWatcherService(queue),
+            options: FastSchedulerOptions());
+
+        await service.StartAsync(
+            new[] { new IndexedLocation(root, new WalkerOptions(), WatchEnabled: false) },
+            TestContext.Current.CancellationToken);
+
+        try
+        {
+            Assert.Empty(queue.Enqueued);
+            await WaitUntilAsync(
+                () => service.CurrentStatus.RootStatusDetails is { } details &&
+                    details.TryGetValue(normalizedRoot, out var detail) &&
+                    detail.Contains("cached index retained", StringComparison.Ordinal),
+                TestContext.Current.CancellationToken);
+
+            Directory.CreateDirectory(root);
+
+            await WaitUntilAsync(() => queue.Count > 0, TestContext.Current.CancellationToken);
+            var item = Assert.Single(queue.SnapshotEnqueued());
+            Assert.Equal(normalizedRoot, item.Root);
+            Assert.Equal(IndexChangeKind.RefreshRoot, item.Kind);
+            Assert.NotNull(service.CurrentStatus.RootStatusDetails);
+            Assert.Contains(
+                "removable drive reconnected",
+                service.CurrentStatus.RootStatusDetails![normalizedRoot],
+                StringComparison.OrdinalIgnoreCase);
+        }
+        finally
+        {
+            await service.StopAsync(TestContext.Current.CancellationToken);
+            if (Directory.Exists(root))
+                Directory.Delete(root, recursive: true);
         }
     }
 
@@ -291,16 +399,57 @@ public sealed class IndexingServiceTests
             await Task.Delay(25, linked.Token);
     }
 
+    private static IndexingServiceOptions FastSchedulerOptions() =>
+        new()
+        {
+            SchedulerPollInterval = TimeSpan.FromMilliseconds(25),
+            SnapshotScanInterval = TimeSpan.FromMilliseconds(25),
+            NetworkSnapshotScanInterval = TimeSpan.FromMilliseconds(25),
+            RemovableReconnectPollInterval = TimeSpan.FromMilliseconds(25),
+        };
+
+    private static IndexDatabaseInfo DatabaseInfoWithStrategy(IndexRootStrategyInfo strategy) =>
+        new(
+            DatabasePath: string.Empty,
+            Exists: true,
+            IsCompatible: true,
+            SchemaVersion: IndexDatabase.CurrentSchemaVersion,
+            DatabaseBytes: 0,
+            WalBytes: 0,
+            ShmBytes: 0,
+            LocationCount: 1,
+            TotalFileCount: 0,
+            TotalLineCount: 0,
+            PendingChangeCount: 0,
+            LastIndexedUtc: null,
+            RootStrategies: new[] { strategy });
+
     private sealed class RecordingQueue : IIndexQueue
     {
+        private readonly object _sync = new();
+
         public List<IndexQueueItem> Enqueued { get; } = new();
 
-        public int Count => Enqueued.Count;
+        public int Count
+        {
+            get
+            {
+                lock (_sync)
+                    return Enqueued.Count;
+            }
+        }
 
         public Task EnqueueAsync(IndexQueueItem item, CancellationToken cancellationToken)
         {
-            Enqueued.Add(item with { Root = IndexPath.NormalizeRoot(item.Root) });
+            lock (_sync)
+                Enqueued.Add(item with { Root = IndexPath.NormalizeRoot(item.Root) });
             return Task.CompletedTask;
+        }
+
+        public IReadOnlyList<IndexQueueItem> SnapshotEnqueued()
+        {
+            lock (_sync)
+                return Enqueued.ToArray();
         }
 
         public async Task<IndexQueueItem> DequeueAsync(CancellationToken cancellationToken)
@@ -312,14 +461,22 @@ public sealed class IndexingServiceTests
         public void RemoveRoot(string root)
         {
             var normalizedRoot = IndexPath.NormalizeRoot(root);
-            Enqueued.RemoveAll(item =>
-                string.Equals(item.Root, normalizedRoot, StringComparison.OrdinalIgnoreCase));
+            lock (_sync)
+            {
+                Enqueued.RemoveAll(item =>
+                    string.Equals(item.Root, normalizedRoot, StringComparison.OrdinalIgnoreCase));
+            }
         }
 
-        public IReadOnlyDictionary<string, int> GetQueuedRootCounts() =>
-            Enqueued
-                .GroupBy(item => item.Root, StringComparer.OrdinalIgnoreCase)
-                .ToDictionary(group => group.Key, group => group.Count(), StringComparer.OrdinalIgnoreCase);
+        public IReadOnlyDictionary<string, int> GetQueuedRootCounts()
+        {
+            lock (_sync)
+            {
+                return Enqueued
+                    .GroupBy(item => item.Root, StringComparer.OrdinalIgnoreCase)
+                    .ToDictionary(group => group.Key, group => group.Count(), StringComparer.OrdinalIgnoreCase);
+            }
+        }
 
         public Task LoadPendingAsync(
             IReadOnlyDictionary<string, IndexedLocation> locations,
@@ -350,6 +507,20 @@ public sealed class IndexingServiceTests
         public bool RefreshCanceled { get; private set; }
 
         public string DatabasePath => string.Empty;
+
+        public IndexDatabaseInfo DatabaseInfo { get; init; } = new(
+            DatabasePath: string.Empty,
+            Exists: false,
+            IsCompatible: false,
+            SchemaVersion: IndexDatabase.CurrentSchemaVersion,
+            DatabaseBytes: 0,
+            WalBytes: 0,
+            ShmBytes: 0,
+            LocationCount: 0,
+            TotalFileCount: 0,
+            TotalLineCount: 0,
+            PendingChangeCount: 0,
+            LastIndexedUtc: null);
 
         public Task BuildOrRefreshAsync(IndexRequest request, CancellationToken cancellationToken) =>
             RefreshRootAsync(request, IndexRefreshMode.Full, cancellationToken);
@@ -391,7 +562,7 @@ public sealed class IndexingServiceTests
             Task.FromResult<IReadOnlyList<IndexedLocationInfo>>(Array.Empty<IndexedLocationInfo>());
 
         public Task<IndexDatabaseInfo> GetDatabaseInfoAsync(CancellationToken cancellationToken) =>
-            Task.FromResult(new IndexDatabaseInfo(DatabasePath, false, false, "5", 0, 0, 0, 0, 0, 0, 0, null));
+            Task.FromResult(DatabaseInfo);
 
         public Task CompactAsync(CancellationToken cancellationToken) =>
             Task.CompletedTask;

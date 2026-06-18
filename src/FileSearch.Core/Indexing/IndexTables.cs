@@ -39,7 +39,8 @@ internal sealed record RootRow(
     long? VolumeId,
     string? RootFileReferenceNumber,
     string? RootParentFileReferenceNumber,
-    string ContentVersion);
+    string ContentVersion,
+    long LastFullScanUtcTicks);
 
 internal sealed record VolumeRow(
     long Id,
@@ -100,8 +101,8 @@ internal static partial class IndexTables
         var id = await GetNextIdAsync(db, "index_roots", cancellationToken).ConfigureAwait(false);
         await db.ExecuteAsync(
                 Sql.Format(
-                    $"INSERT INTO index_roots (id, root_path, indexed_utc_ticks, options_hash, volume_id, last_full_scan_utc_ticks, root_file_reference_number, root_parent_file_reference_number, content_version) " +
-                $"VALUES ({id}, {root}, 0, {profile}, {(long?)null}, {(long?)null}, {(string?)null}, {(string?)null}, {IndexContentVersion.Current})"),
+                    $"INSERT INTO index_roots (id, root_path, indexed_utc_ticks, options_hash, volume_id, last_full_scan_utc_ticks, root_file_reference_number, root_parent_file_reference_number, content_version, location_kind, update_strategy, strategy_warning, usn_catch_up_enabled, watcher_recommended) " +
+                $"VALUES ({id}, {root}, 0, {profile}, {(long?)null}, {(long?)null}, {(string?)null}, {(string?)null}, {IndexContentVersion.Current}, {IndexLocationKind.Unknown.ToString()}, {IndexUpdateStrategy.Unknown.ToString()}, {(string?)null}, 0, 1)"),
             cancellationToken).ConfigureAwait(false);
         return id;
     }
@@ -109,7 +110,7 @@ internal static partial class IndexTables
     public static async Task<RootRow?> GetRootAsync(Database db, string root, CancellationToken cancellationToken)
     {
         await using var result = await db.ExecuteAsync(
-            Sql.Format($"SELECT id, indexed_utc_ticks, options_hash, volume_id, root_file_reference_number, root_parent_file_reference_number, content_version FROM index_roots WHERE root_path = {root}"),
+            Sql.Format($"SELECT id, indexed_utc_ticks, options_hash, volume_id, root_file_reference_number, root_parent_file_reference_number, content_version, last_full_scan_utc_ticks FROM index_roots WHERE root_path = {root}"),
             cancellationToken).ConfigureAwait(false);
 
         if (!await result.MoveNextAsync(cancellationToken).ConfigureAwait(false))
@@ -122,7 +123,8 @@ internal static partial class IndexTables
             result.Current[3].IsNull ? null : result.Current[3].AsInteger,
             result.Current[4].IsNull ? null : result.Current[4].AsText,
             result.Current[5].IsNull ? null : result.Current[5].AsText,
-            result.Current[6].IsNull ? string.Empty : result.Current[6].AsText);
+            result.Current[6].IsNull ? string.Empty : result.Current[6].AsText,
+            result.Current[7].IsNull ? 0 : result.Current[7].AsInteger);
     }
 
     public static async Task<IndexRootIdentity?> GetRootIdentityAsync(
@@ -191,15 +193,56 @@ internal static partial class IndexTables
         long rootId,
         long volumeId,
         IndexedFileIdentity? rootIdentity,
+        IndexLocationStrategy strategy,
         CancellationToken cancellationToken) =>
         ExecuteAsync(
             db,
             Sql.Format(
                 $"UPDATE index_roots SET volume_id = {volumeId}, " +
                 $"root_file_reference_number = {rootIdentity?.FileReferenceNumber}, " +
-                $"root_parent_file_reference_number = {rootIdentity?.ParentFileReferenceNumber} " +
+                $"root_parent_file_reference_number = {rootIdentity?.ParentFileReferenceNumber}, " +
+                $"location_kind = {strategy.LocationKind.ToString()}, " +
+                $"update_strategy = {strategy.UpdateStrategy.ToString()}, " +
+                $"strategy_warning = {NullIfEmpty(strategy.Warning)}, " +
+                $"usn_catch_up_enabled = {Bool(strategy.UsnCatchUpEnabled)}, " +
+                $"watcher_recommended = {Bool(strategy.WatcherRecommended)} " +
                 $"WHERE id = {rootId}"),
             cancellationToken);
+
+    public static async Task<List<IndexRootStrategyInfo>> ListRootStrategiesAsync(
+        Database db,
+        CancellationToken cancellationToken)
+    {
+        var strategies = new List<IndexRootStrategyInfo>();
+        await using var result = await db.ExecuteAsync(
+            "SELECT root_path, location_kind, update_strategy, strategy_warning, usn_catch_up_enabled, watcher_recommended " +
+            "FROM index_roots ORDER BY root_path",
+            cancellationToken).ConfigureAwait(false);
+
+        while (await result.MoveNextAsync(cancellationToken).ConfigureAwait(false))
+        {
+            var row = result.Current;
+            var kind = ParseEnum(row[1].IsNull ? null : row[1].AsText, IndexLocationKind.Unknown);
+            var updateStrategy = ParseEnum(row[2].IsNull ? null : row[2].AsText, IndexUpdateStrategy.Unknown);
+            var warning = row[3].IsNull ? string.Empty : row[3].AsText;
+            var strategy = IndexLocationStrategyResolver.FromStored(
+                kind,
+                updateStrategy,
+                warning,
+                row[4].AsInteger != 0,
+                row[5].AsInteger != 0);
+            strategies.Add(new IndexRootStrategyInfo(
+                row[0].AsText,
+                kind,
+                updateStrategy,
+                strategy.StrategyLabel,
+                warning,
+                strategy.UsnCatchUpEnabled,
+                strategy.WatcherRecommended));
+        }
+
+        return strategies;
+    }
 
     // ----- index_directories -----
 
@@ -252,6 +295,7 @@ internal static partial class IndexTables
                 Sql.Format(
                     $"UPDATE index_volumes SET volume_serial = {volume.VolumeSerial}, filesystem_name = {volume.FileSystemName}, " +
                     $"is_remote = {Bool(volume.IsRemote)}, usn_supported = {Bool(volume.UsnSupported)}, " +
+                    $"drive_kind = {volume.DriveKind.ToString()}, " +
                     $"last_checked_utc_ticks = {now} WHERE id = {existing.Id}"),
                 cancellationToken).ConfigureAwait(false);
             return existing.Id;
@@ -260,8 +304,8 @@ internal static partial class IndexTables
         var id = await GetNextIdAsync(db, "index_volumes", cancellationToken).ConfigureAwait(false);
         await db.ExecuteAsync(
                 Sql.Format(
-                    $"INSERT INTO index_volumes (id, volume_key, volume_serial, filesystem_name, is_remote, usn_supported, journal_id, last_committed_usn, health, last_checked_utc_ticks, last_error) " +
-                $"VALUES ({id}, {volume.VolumeKey}, {volume.VolumeSerial}, {volume.FileSystemName}, {Bool(volume.IsRemote)}, {Bool(volume.UsnSupported)}, {(string?)null}, 0, {"unknown"}, {now}, {(string?)null})"),
+                    $"INSERT INTO index_volumes (id, volume_key, volume_serial, filesystem_name, is_remote, usn_supported, drive_kind, journal_id, last_committed_usn, health, last_checked_utc_ticks, last_error) " +
+                $"VALUES ({id}, {volume.VolumeKey}, {volume.VolumeSerial}, {volume.FileSystemName}, {Bool(volume.IsRemote)}, {Bool(volume.UsnSupported)}, {volume.DriveKind.ToString()}, {(string?)null}, 0, {"unknown"}, {now}, {(string?)null})"),
             cancellationToken).ConfigureAwait(false);
         return id;
     }
@@ -288,13 +332,27 @@ internal static partial class IndexTables
             result.Current[5].IsNull ? null : result.Current[5].AsText);
     }
 
+    public static async Task<string?> GetVolumeKeyAsync(
+        Database db,
+        long volumeId,
+        CancellationToken cancellationToken)
+    {
+        await using var result = await db.ExecuteAsync(
+            Sql.Format($"SELECT volume_key FROM index_volumes WHERE id = {volumeId}"),
+            cancellationToken).ConfigureAwait(false);
+
+        return await result.MoveNextAsync(cancellationToken).ConfigureAwait(false)
+            ? result.Current[0].AsText
+            : null;
+    }
+
     public static async Task<List<IndexVolumeHealthInfo>> ListVolumeHealthAsync(
         Database db,
         CancellationToken cancellationToken)
     {
         var volumes = new List<IndexVolumeHealthInfo>();
         await using var result = await db.ExecuteAsync(
-            "SELECT volume_key, filesystem_name, is_remote, usn_supported, journal_id, " +
+            "SELECT volume_key, filesystem_name, is_remote, usn_supported, drive_kind, journal_id, " +
             "last_committed_usn, health, last_error, last_checked_utc_ticks " +
             "FROM index_volumes ORDER BY volume_key",
             cancellationToken).ConfigureAwait(false);
@@ -302,18 +360,19 @@ internal static partial class IndexTables
         while (await result.MoveNextAsync(cancellationToken).ConfigureAwait(false))
         {
             var row = result.Current;
-            var journalText = row[4].IsNull ? null : row[4].AsText;
-            var lastCheckedTicks = row[8].IsNull ? 0 : row[8].AsInteger;
+            var journalText = row[5].IsNull ? null : row[5].AsText;
+            var lastCheckedTicks = row[9].IsNull ? 0 : row[9].AsInteger;
             volumes.Add(new IndexVolumeHealthInfo(
                 row[0].AsText,
                 row[1].AsText,
                 row[2].AsInteger != 0,
                 row[3].AsInteger != 0,
                 ulong.TryParse(journalText, out var journalId) ? journalId : null,
-                row[5].AsInteger,
-                row[6].AsText,
-                row[7].IsNull ? null : row[7].AsText,
-                lastCheckedTicks > 0 ? new DateTime(lastCheckedTicks, DateTimeKind.Utc) : null));
+                row[6].AsInteger,
+                row[7].AsText,
+                row[8].IsNull ? null : row[8].AsText,
+                lastCheckedTicks > 0 ? new DateTime(lastCheckedTicks, DateTimeKind.Utc) : null,
+                row[4].IsNull ? IndexVolumeDriveKind.Unknown.ToString() : row[4].AsText));
         }
 
         return volumes;
@@ -1129,6 +1188,15 @@ internal static partial class IndexTables
     }
 
     private static int Bool(bool value) => value ? 1 : 0;
+
+    private static string? NullIfEmpty(string value) =>
+        string.IsNullOrWhiteSpace(value) ? null : value;
+
+    private static T ParseEnum<T>(string? value, T fallback)
+        where T : struct, Enum =>
+        !string.IsNullOrWhiteSpace(value) && Enum.TryParse<T>(value, ignoreCase: true, out var parsed)
+            ? parsed
+            : fallback;
 
     private static async Task<long> GetCountAsync(Database db, string sql, CancellationToken cancellationToken)
     {

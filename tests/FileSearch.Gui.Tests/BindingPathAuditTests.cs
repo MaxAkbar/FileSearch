@@ -2,6 +2,7 @@ using System.Reflection;
 using System.Text.RegularExpressions;
 using System.Xml;
 using FileSearch.Core.Engine;
+using FileSearch.Core.Indexing;
 using FileSearch.Gui.Settings;
 using FileSearch.Gui.ViewModels;
 
@@ -24,6 +25,7 @@ public sealed class BindingPathAuditTests
     {
         typeof(FileResultViewModel),
         typeof(Hit),
+        typeof(IndexRootHealthInfo),
         typeof(IndexedLocationSettings),
         typeof(IndexFilterListSettings),
         typeof(SavedSearchSettings),

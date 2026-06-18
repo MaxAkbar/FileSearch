@@ -12,7 +12,8 @@ public sealed record IndexVolumeHealthInfo(
     long LastCommittedUsn,
     string Health,
     string? LastError,
-    DateTime? LastCheckedUtc);
+    DateTime? LastCheckedUtc,
+    string DriveKind = "Unknown");
 
 public sealed record IndexDatabaseInfo(
     string DatabasePath,
@@ -28,6 +29,7 @@ public sealed record IndexDatabaseInfo(
     int PendingChangeCount,
     DateTime? LastIndexedUtc,
     IReadOnlyList<IndexVolumeHealthInfo>? VolumeHealth = null,
+    IReadOnlyList<IndexRootStrategyInfo>? RootStrategies = null,
     long FailedFileCount = 0)
 {
     public long TotalBytes => DatabaseBytes + WalBytes + ShmBytes;

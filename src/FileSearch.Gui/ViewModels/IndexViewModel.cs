@@ -35,12 +35,16 @@ public sealed partial class IndexViewModel : ObservableObject, IDisposable
     private readonly SearchViewModel _search;
     private readonly StatusBarViewModel _status;
     private readonly IBackgroundIndexerProcessService? _backgroundIndexer;
+    private readonly IIndexHealthService _indexHealthService;
 
     private string? _pendingStatsRoot;
     private bool _isIndexingOperationActive;
     private bool _resumeIndexingAfterCompaction;
     private CancellationTokenSource? _workerStatusCts;
     private bool _usingBackgroundIndexer;
+    private IndexingStatus _lastIndexingStatus;
+    private DateTime _lastHealthRefreshUtc = DateTime.MinValue;
+    private bool _isHealthRefreshRunning;
 
     public IndexViewModel(
         IFileIndex fileIndex,
@@ -52,7 +56,8 @@ public sealed partial class IndexViewModel : ObservableObject, IDisposable
         SearchViewModel search,
         StatusBarViewModel status,
         IBackgroundIndexerProcessService? backgroundIndexer = null,
-        IFileSavePicker? fileSavePicker = null)
+        IFileSavePicker? fileSavePicker = null,
+        IIndexHealthService? indexHealthService = null)
     {
         _fileIndex = fileIndex;
         _indexingService = indexingService;
@@ -64,6 +69,8 @@ public sealed partial class IndexViewModel : ObservableObject, IDisposable
         _search = search;
         _status = status;
         _backgroundIndexer = backgroundIndexer;
+        _indexHealthService = indexHealthService ?? new IndexHealthService(fileIndex);
+        _lastIndexingStatus = _indexingService.CurrentStatus;
         _indexingService.SetResourceProfile(_applicationSettings.IndexerResourceProfile);
         _indexingService.SetRuntimeOptions(BuildRuntimeOptions());
         _newIndexRecursive = _search.IncludeSubfolders;
@@ -96,11 +103,14 @@ public sealed partial class IndexViewModel : ObservableObject, IDisposable
 
     public PagedSidebarList<IndexedLocationSettings> IndexedLocationList { get; }
 
+    public ObservableCollection<IndexRootHealthInfo> IndexHealthRows { get; } = new();
+
     [ObservableProperty] private bool _isIndexing;
     [ObservableProperty] private bool _isIndexingPaused;
     [ObservableProperty] private int _indexQueueLength;
     [ObservableProperty] private string _activeIndexingRoot = string.Empty;
     [ObservableProperty] private IndexedLocationSettings? _selectedIndexedLocation;
+    [ObservableProperty] private IndexRootHealthInfo? _selectedIndexHealthRoot;
     [ObservableProperty] private bool _indexDatabaseExists;
     [ObservableProperty] private bool _indexDatabaseIsCompatible;
     [ObservableProperty] private bool _isCompactingIndexDatabase;
@@ -113,6 +123,7 @@ public sealed partial class IndexViewModel : ObservableObject, IDisposable
     [ObservableProperty] private string _indexDatabaseVolumeHealthText = "No volume checkpoints";
     [ObservableProperty] private string _indexDatabaseDiagnosticsText = "No extraction diagnostics";
     [ObservableProperty] private string _indexDatabaseLastIndexedText = "Never indexed";
+    [ObservableProperty] private string _indexHealthSummaryText = "Health unavailable";
     [ObservableProperty] private long _indexDatabaseFailedFileCount;
     [ObservableProperty] private bool _newIndexRecursive = true;
     [ObservableProperty] private bool _newIndexIncludeHidden;
@@ -143,7 +154,7 @@ public sealed partial class IndexViewModel : ObservableObject, IDisposable
     public bool IsCurrentFolderIndexed => GetIndexedLocation(_search.SearchPath) is not null;
 
     public string CurrentFolderIndexActionText =>
-        IsCurrentFolderIndexed ? "Current folder already indexed" : "Add current folder";
+        IsCurrentFolderIndexed ? "Current folder already indexed" : "Add current folder with options";
 
     public string IndexedLocationCountText =>
         IndexedLocations.Count == 1
@@ -837,6 +848,7 @@ public sealed partial class IndexViewModel : ObservableObject, IDisposable
 
     private void ApplyIndexingStatus(IndexingStatus status)
     {
+        _lastIndexingStatus = status;
         _isIndexingOperationActive = status.IsProcessing;
         IsIndexing = status.IsProcessing || status.QueueLength > 0;
         IsIndexingPaused = status.IsPaused;
@@ -844,6 +856,7 @@ public sealed partial class IndexViewModel : ObservableObject, IDisposable
         ActiveIndexingRoot = status.ActiveRoot ?? string.Empty;
         ApplyIndexingRuntimeStatus(status);
         ApplyActiveIndexProgressStats(status);
+        RequestIndexHealthRefresh();
 
         if (!_search.IsSearching)
             _status.Text = status.Message;
@@ -939,13 +952,78 @@ public sealed partial class IndexViewModel : ObservableObject, IDisposable
         IndexDatabaseContentText = FormatDatabaseContent(info);
         IndexDatabaseQueueText = FormatPendingChanges(info.PendingChangeCount);
         IndexDatabaseVolumeHealthText = FormatVolumeHealth(info);
+        ApplyRootStrategies(info.RootStrategies);
         IndexDatabaseFailedFileCount = info.FailedFileCount;
         IndexDatabaseDiagnosticsText = await FormatExtractionDiagnosticsAsync().ConfigureAwait(true);
         IndexDatabaseLastIndexedText = info.LastIndexedUtc is { } indexedUtc
             ? $"Last indexed {indexedUtc.ToLocalTime():g}"
             : "Never indexed";
+        await RefreshIndexHealthAsync(force: true).ConfigureAwait(true);
         CompactIndexDatabaseCommand.NotifyCanExecuteChanged();
         ExportIndexFailuresCommand.NotifyCanExecuteChanged();
+    }
+
+    private void RequestIndexHealthRefresh()
+    {
+        var now = DateTime.UtcNow;
+        if (now - _lastHealthRefreshUtc < TimeSpan.FromSeconds(2))
+            return;
+
+        _ = RefreshIndexHealthAsync(force: false);
+    }
+
+    private async Task RefreshIndexHealthAsync(bool force)
+    {
+        if (_isHealthRefreshRunning)
+            return;
+
+        if (!force && DateTime.UtcNow - _lastHealthRefreshUtc < TimeSpan.FromSeconds(2))
+            return;
+
+        _isHealthRefreshRunning = true;
+        try
+        {
+            var snapshot = await _indexHealthService.GetHealthAsync(
+                    IndexedLocations.Select(ToIndexedLocation).ToArray(),
+                    _lastIndexingStatus,
+                    CancellationToken.None)
+                .ConfigureAwait(true);
+
+            ApplyIndexHealthSnapshot(snapshot);
+            _lastHealthRefreshUtc = DateTime.UtcNow;
+        }
+        catch
+        {
+            IndexHealthSummaryText = "Health unavailable";
+        }
+        finally
+        {
+            _isHealthRefreshRunning = false;
+        }
+    }
+
+    private void ApplyIndexHealthSnapshot(IndexHealthSnapshot snapshot)
+    {
+        var selectedRoot = SelectedIndexHealthRoot?.Root ?? SelectedIndexedLocation?.Root;
+        IndexHealthRows.Clear();
+        foreach (var row in snapshot.Roots)
+            IndexHealthRows.Add(row);
+
+        IndexHealthSummaryText = FormatIndexHealthSummary(snapshot);
+        SelectHealthRoot(selectedRoot);
+    }
+
+    private void SelectHealthRoot(string? root)
+    {
+        if (string.IsNullOrWhiteSpace(root))
+        {
+            SelectedIndexHealthRoot ??= IndexHealthRows.FirstOrDefault();
+            return;
+        }
+
+        var normalizedRoot = IndexPath.NormalizeRoot(root);
+        SelectedIndexHealthRoot = IndexHealthRows.FirstOrDefault(row =>
+            string.Equals(row.Root, normalizedRoot, StringComparison.OrdinalIgnoreCase)) ?? SelectedIndexHealthRoot;
     }
 
     private async Task QueueIndexDatabaseCompactionAsync()
@@ -1065,6 +1143,7 @@ public sealed partial class IndexViewModel : ObservableObject, IDisposable
     {
         RebuildSelectedIndexCommand.NotifyCanExecuteChanged();
         RemoveSelectedIndexCommand.NotifyCanExecuteChanged();
+        SelectHealthRoot(value?.Root);
     }
 
     partial void OnSelectedIndexInclusionListChanged(IndexFilterListSettings? value)
@@ -1236,15 +1315,45 @@ public sealed partial class IndexViewModel : ObservableObject, IDisposable
             volumes.Select(volume =>
             {
                 var health = string.IsNullOrWhiteSpace(volume.Health) ? "unknown" : volume.Health;
+                var drive = string.IsNullOrWhiteSpace(volume.DriveKind) || volume.DriveKind.Equals("Unknown", StringComparison.OrdinalIgnoreCase)
+                    ? string.Empty
+                    : $"{volume.DriveKind} ";
                 var capability = volume.IsRemote
                     ? "remote"
-                    : volume.UsnSupported ? $"{volume.FileSystemName} USN" : $"{volume.FileSystemName} no USN";
+                    : volume.UsnSupported ? $"{drive}{volume.FileSystemName} USN" : $"{drive}{volume.FileSystemName} no USN";
                 var checkpoint = volume.JournalId is null || volume.LastCommittedUsn <= 0
                     ? "no checkpoint"
                     : $"USN {volume.LastCommittedUsn:n0}";
                 var error = string.IsNullOrWhiteSpace(volume.LastError) ? string.Empty : $"; {volume.LastError}";
                 return $"{health}: {capability}, {checkpoint}{error}";
             }));
+    }
+
+    private void ApplyRootStrategies(IReadOnlyList<IndexRootStrategyInfo>? strategies)
+    {
+        var byRoot = (strategies ?? Array.Empty<IndexRootStrategyInfo>())
+            .ToDictionary(strategy => IndexPath.NormalizeRoot(strategy.RootPath), StringComparer.OrdinalIgnoreCase);
+        foreach (var location in IndexedLocations)
+        {
+            var root = IndexPath.NormalizeRoot(location.Root);
+            location.StrategySummary = byRoot.TryGetValue(root, out var strategy)
+                ? FormatRootStrategy(strategy)
+                : "Strategy pending";
+        }
+    }
+
+    private static string FormatRootStrategy(IndexRootStrategyInfo strategy)
+    {
+        var detail = strategy.UsnCatchUpEnabled
+            ? "startup journal catch-up"
+            : "startup snapshot scan";
+        var watcher = strategy.WatcherRecommended
+            ? "watcher enabled when selected"
+            : "watcher best effort";
+        var warning = string.IsNullOrWhiteSpace(strategy.Warning)
+            ? string.Empty
+            : $"; {strategy.Warning}";
+        return $"{strategy.StrategyLabel}; {detail}; {watcher}{warning}";
     }
 
     private async Task<string> FormatExtractionDiagnosticsAsync()
@@ -1295,6 +1404,23 @@ public sealed partial class IndexViewModel : ObservableObject, IDisposable
         return issueCodes.Length == 1
             ? $"Extraction diagnostic: {issueCodes[0]}"
             : $"Extraction diagnostics: {string.Join(", ", issueCodes.Take(4))}{(issueCodes.Length > 4 ? ", ..." : string.Empty)}";
+    }
+
+    private static string FormatIndexHealthSummary(IndexHealthSnapshot snapshot)
+    {
+        if (snapshot.Roots.Count == 0)
+            return "No indexed roots";
+
+        var attention = snapshot.Roots.Count(root =>
+            root.Status is not IndexHealthStatus.Healthy and not IndexHealthStatus.Watching);
+        var roots = snapshot.Roots.Count == 1 ? "1 root" : $"{snapshot.Roots.Count:n0} roots";
+        var queue = snapshot.QueueDepth == 0
+            ? "no queued work"
+            : snapshot.QueueDepth == 1 ? "1 queued item" : $"{snapshot.QueueDepth:n0} queued items";
+
+        return attention == 0
+            ? $"{roots}, {queue}, no health warnings"
+            : $"{roots}, {queue}, {attention:n0} need attention";
     }
 
     private static string NormalizeExtensionList(string raw) =>

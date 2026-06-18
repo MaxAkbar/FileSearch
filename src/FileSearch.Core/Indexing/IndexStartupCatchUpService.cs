@@ -389,6 +389,13 @@ internal sealed class IndexStartupCatchUpService : IIndexStartupCatchUpService
                 continue;
             }
 
+            var strategy = IndexLocationStrategyResolver.Classify(normalizedRoot, volume);
+            if (!strategy.UsnCatchUpEnabled)
+            {
+                fallback[normalizedRoot] = strategy.FallbackReason;
+                continue;
+            }
+
             if (!groups.TryGetValue(volume.VolumeKey, out var group))
             {
                 group = new VolumeLocationGroup(volume);

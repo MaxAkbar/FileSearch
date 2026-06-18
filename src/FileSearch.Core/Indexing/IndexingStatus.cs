@@ -10,4 +10,5 @@ public sealed record IndexingStatus(
     IndexChangeKind? ActiveKind = null,
     IReadOnlyDictionary<string, int>? QueuedRootCounts = null,
     IndexProgress? ActiveProgress = null,
-    IReadOnlyDictionary<string, string>? RootStatusDetails = null);
+    IReadOnlyDictionary<string, string>? RootStatusDetails = null,
+    IReadOnlyDictionary<string, IndexWatcherDiagnosticInfo>? WatcherDiagnostics = null);

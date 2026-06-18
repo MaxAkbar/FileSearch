@@ -20,12 +20,17 @@ public sealed class IndexingService : IIndexingService
     private readonly IIndexWatcherService _watchers;
     private readonly IIndexStartupCatchUpService? _startupCatchUp;
     private readonly IIndexerRuntimeCondition _runtimeCondition;
+    private readonly IndexingServiceOptions _options;
     private readonly object _sync = new();
     private readonly Dictionary<string, IndexedLocation> _locations = new(StringComparer.OrdinalIgnoreCase);
     private readonly Dictionary<string, string> _rootStatusDetails = new(StringComparer.OrdinalIgnoreCase);
+    private readonly Dictionary<string, DateTime> _lastScheduledSnapshotUtc = new(StringComparer.OrdinalIgnoreCase);
+    private readonly Dictionary<string, DateTime> _lastRemovableCheckUtc = new(StringComparer.OrdinalIgnoreCase);
+    private readonly HashSet<string> _unavailableRoots = new(StringComparer.OrdinalIgnoreCase);
 
     private CancellationTokenSource? _workerCts;
     private Task? _worker;
+    private Task? _schedulerWorker;
     private CancellationTokenSource? _currentItemCts;
     private IndexQueueItem? _currentItem;
     private bool _paused;
@@ -46,13 +51,15 @@ public sealed class IndexingService : IIndexingService
         IIndexWatcherService watchers,
         ILogger<IndexingService>? logger = null,
         IIndexStartupCatchUpService? startupCatchUp = null,
-        IIndexerRuntimeCondition? runtimeCondition = null)
+        IIndexerRuntimeCondition? runtimeCondition = null,
+        IndexingServiceOptions? options = null)
     {
         _index = index;
         _queue = queue;
         _watchers = watchers;
         _startupCatchUp = startupCatchUp;
         _runtimeCondition = runtimeCondition ?? new WindowsIndexerRuntimeCondition();
+        _options = (options ?? new IndexingServiceOptions()).Normalize();
         _logger = logger ?? NullLogger<IndexingService>.Instance;
     }
 
@@ -96,12 +103,13 @@ public sealed class IndexingService : IIndexingService
 
             if (!Directory.Exists(location.Root))
             {
-                SetRootStatusDetail(normalizedRoot, "Full scan skipped: folder is unavailable");
+                MarkRootUnavailable(normalizedRoot);
+                SetRootStatusDetail(normalizedRoot, "Snapshot scan skipped: folder unavailable; cached index retained");
                 continue;
             }
 
             if (catchUp.FallbackReasons.TryGetValue(normalizedRoot, out var fallbackReason))
-                SetRootStatusDetail(normalizedRoot, $"Full scan queued: {fallbackReason}");
+                SetRootStatusDetail(normalizedRoot, $"Snapshot scan queued: {fallbackReason}");
 
             await EnqueueRootRefreshAsync(location.Root, location.WalkerOptions, IndexQueuePriority.Low, cancellationToken).ConfigureAwait(false);
         }
@@ -113,6 +121,7 @@ public sealed class IndexingService : IIndexingService
 
             _workerCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
             _worker = Task.Run(() => RunAsync(_workerCts.Token), CancellationToken.None);
+            _schedulerWorker = Task.Run(() => RunSchedulerAsync(_workerCts.Token), CancellationToken.None);
         }
 
         Publish(false, "Background indexing ready.", force: true);
@@ -147,6 +156,7 @@ public sealed class IndexingService : IIndexingService
             await cts.CancelAsync().ConfigureAwait(false);
 
         var worker = _worker;
+        var scheduler = _schedulerWorker;
         if (worker is not null)
         {
             try
@@ -159,7 +169,20 @@ public sealed class IndexingService : IIndexingService
             }
         }
 
+        if (scheduler is not null)
+        {
+            try
+            {
+                await scheduler.WaitAsync(TimeSpan.FromSeconds(2), cancellationToken).ConfigureAwait(false);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogDebug(ex, "Indexing scheduler did not stop within the grace period.");
+            }
+        }
+
         _worker = null;
+        _schedulerWorker = null;
         _workerCts?.Dispose();
         _workerCts = null;
         Publish(false, "Background indexing stopped.", force: true);
@@ -175,6 +198,10 @@ public sealed class IndexingService : IIndexingService
             _locations[normalized.Root] = normalized;
 
         ClearRootStatusDetail(normalized.Root);
+        if (Directory.Exists(normalized.Root))
+            MarkRootAvailable(normalized.Root);
+        else
+            MarkRootUnavailable(normalized.Root);
 
         if (normalized.WatchEnabled)
             _watchers.StartWatching(normalized);
@@ -198,6 +225,12 @@ public sealed class IndexingService : IIndexingService
         _queue.RemoveRoot(normalizedRoot);
         CancelCurrentItemForRemoval(normalizedRoot);
         ClearRootStatusDetail(normalizedRoot);
+        lock (_sync)
+        {
+            _lastScheduledSnapshotUtc.Remove(normalizedRoot);
+            _lastRemovableCheckUtc.Remove(normalizedRoot);
+            _unavailableRoots.Remove(normalizedRoot);
+        }
         await _index.ClearAsync(normalizedRoot, cancellationToken).ConfigureAwait(false);
         Publish(false, $"Removed indexed location: {normalizedRoot}", force: true);
     }
@@ -262,6 +295,9 @@ public sealed class IndexingService : IIndexingService
 
     private async Task EnqueueAsync(IndexQueueItem item, CancellationToken cancellationToken)
     {
+        if (item.Kind == IndexChangeKind.RefreshRoot)
+            RememberSnapshotScheduled(item.Root, DateTime.UtcNow);
+
         SetQueuedRootStatusDetail(item);
         await _queue.EnqueueAsync(item, cancellationToken).ConfigureAwait(false);
         Publish(CurrentStatus.IsProcessing, $"Indexing {_queue.Count:n0} files queued.");
@@ -288,6 +324,190 @@ public sealed class IndexingService : IIndexingService
                 _logger.LogError(ex, "Indexing worker iteration failed; continuing.");
             }
         }
+    }
+
+    private async Task RunSchedulerAsync(CancellationToken cancellationToken)
+    {
+        while (!cancellationToken.IsCancellationRequested)
+        {
+            try
+            {
+                await RunScheduledMaintenanceAsync(cancellationToken).ConfigureAwait(false);
+            }
+            catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+            {
+                break;
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning(ex, "Indexing scheduler iteration failed; continuing.");
+            }
+
+            await Task.Delay(_options.SchedulerPollInterval, cancellationToken).ConfigureAwait(false);
+        }
+    }
+
+    private async Task RunScheduledMaintenanceAsync(CancellationToken cancellationToken)
+    {
+        var locations = SnapshotLocations();
+        if (locations.Count == 0)
+            return;
+
+        IndexDatabaseInfo info;
+        try
+        {
+            info = await _index.GetDatabaseInfoAsync(cancellationToken).ConfigureAwait(false);
+        }
+        catch (Exception ex) when (ex is IOException or InvalidOperationException or UnauthorizedAccessException)
+        {
+            _logger.LogDebug(ex, "Could not read index strategy metadata for scheduled maintenance.");
+            return;
+        }
+
+        var strategies = (info.RootStrategies ?? Array.Empty<IndexRootStrategyInfo>())
+            .ToDictionary(strategy => IndexPath.NormalizeRoot(strategy.RootPath), StringComparer.OrdinalIgnoreCase);
+        var now = DateTime.UtcNow;
+
+        foreach (var location in locations)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            var root = IndexPath.NormalizeRoot(location.Root);
+            if (!strategies.TryGetValue(root, out var strategy))
+                continue;
+
+            if (strategy.LocationKind == IndexLocationKind.Removable)
+            {
+                await CheckRemovableRootAsync(location with { Root = root }, strategy, now, cancellationToken).ConfigureAwait(false);
+                continue;
+            }
+
+            if (!Directory.Exists(root))
+            {
+                var becameUnavailable = MarkRootUnavailable(root);
+                SetRootStatusDetail(root, "Snapshot scan skipped: folder unavailable; cached index retained");
+                if (becameUnavailable)
+                    Publish(false, "Indexed location unavailable; cached index retained.", force: true);
+                continue;
+            }
+
+            MarkRootAvailable(root);
+
+            if (!ShouldPeriodicallyRefresh(strategy))
+                continue;
+
+            var interval = GetSnapshotInterval(strategy);
+            if (!IsSnapshotDue(root, now, interval))
+                continue;
+
+            await EnqueueScheduledSnapshotAsync(
+                    location with { Root = root },
+                    $"Snapshot scan queued: scheduled refresh ({strategy.StrategyLabel})",
+                    cancellationToken)
+                .ConfigureAwait(false);
+        }
+    }
+
+    private async Task CheckRemovableRootAsync(
+        IndexedLocation location,
+        IndexRootStrategyInfo strategy,
+        DateTime now,
+        CancellationToken cancellationToken)
+    {
+        var root = IndexPath.NormalizeRoot(location.Root);
+        if (!IsRemovableCheckDue(root, now))
+            return;
+
+        RememberRemovableChecked(root, now);
+        if (!Directory.Exists(root))
+        {
+            var becameUnavailable = MarkRootUnavailable(root);
+            SetRootStatusDetail(root, "Removable drive unavailable; cached index retained");
+            if (becameUnavailable)
+                Publish(false, "Removable indexed location unavailable; cached index retained.", force: true);
+            return;
+        }
+
+        var wasUnavailable = MarkRootAvailable(root);
+        if (!wasUnavailable)
+            return;
+
+        await EnqueueScheduledSnapshotAsync(
+                location with { Root = root },
+                $"Snapshot scan queued: removable drive reconnected ({strategy.StrategyLabel})",
+                cancellationToken)
+            .ConfigureAwait(false);
+    }
+
+    private async Task EnqueueScheduledSnapshotAsync(
+        IndexedLocation location,
+        string detail,
+        CancellationToken cancellationToken)
+    {
+        SetRootStatusDetail(location.Root, detail);
+        await EnqueueRootRefreshAsync(
+                location.Root,
+                location.WalkerOptions,
+                IndexQueuePriority.Low,
+                cancellationToken)
+            .ConfigureAwait(false);
+        Publish(false, detail, force: true);
+    }
+
+    private static bool ShouldPeriodicallyRefresh(IndexRootStrategyInfo strategy) =>
+        !strategy.UsnCatchUpEnabled &&
+        strategy.LocationKind is IndexLocationKind.NetworkShare or
+            IndexLocationKind.CloudBacked or
+            IndexLocationKind.LocalSnapshot;
+
+    private TimeSpan GetSnapshotInterval(IndexRootStrategyInfo strategy) =>
+        strategy.LocationKind == IndexLocationKind.NetworkShare
+            ? _options.NetworkSnapshotScanInterval
+            : _options.SnapshotScanInterval;
+
+    private bool IsSnapshotDue(string root, DateTime now, TimeSpan interval)
+    {
+        lock (_sync)
+        {
+            return !_lastScheduledSnapshotUtc.TryGetValue(IndexPath.NormalizeRoot(root), out var last) ||
+                now - last >= interval;
+        }
+    }
+
+    private void RememberSnapshotScheduled(string root, DateTime scheduledUtc)
+    {
+        var normalizedRoot = IndexPath.NormalizeRoot(root);
+        lock (_sync)
+            _lastScheduledSnapshotUtc[normalizedRoot] = scheduledUtc;
+    }
+
+    private bool IsRemovableCheckDue(string root, DateTime now)
+    {
+        lock (_sync)
+        {
+            return !_lastRemovableCheckUtc.TryGetValue(IndexPath.NormalizeRoot(root), out var last) ||
+                now - last >= _options.RemovableReconnectPollInterval;
+        }
+    }
+
+    private void RememberRemovableChecked(string root, DateTime checkedUtc)
+    {
+        var normalizedRoot = IndexPath.NormalizeRoot(root);
+        lock (_sync)
+            _lastRemovableCheckUtc[normalizedRoot] = checkedUtc;
+    }
+
+    private bool MarkRootUnavailable(string root)
+    {
+        var normalizedRoot = IndexPath.NormalizeRoot(root);
+        lock (_sync)
+            return _unavailableRoots.Add(normalizedRoot);
+    }
+
+    private bool MarkRootAvailable(string root)
+    {
+        var normalizedRoot = IndexPath.NormalizeRoot(root);
+        lock (_sync)
+            return _unavailableRoots.Remove(normalizedRoot);
     }
 
     private async Task RunIterationAsync(Stopwatch burst, CancellationToken cancellationToken)
@@ -411,7 +631,7 @@ public sealed class IndexingService : IIndexingService
             switch (item.Kind)
             {
                 case IndexChangeKind.RefreshRoot:
-                    SetRootStatusDetail(item.Root, "Full scan running");
+                    SetRootStatusDetail(item.Root, "Snapshot scan running");
                     await _index.RefreshRootAsync(
                         new IndexRequest(
                             item.Root,
@@ -422,7 +642,7 @@ public sealed class IndexingService : IIndexingService
                         cancellationToken).ConfigureAwait(false);
                     await _index.RemovePendingChangeAsync(item.Root, null, item.Kind, cancellationToken)
                         .ConfigureAwait(false);
-                    SetRootStatusDetail(item.Root, "Full scan complete");
+                    SetRootStatusDetail(item.Root, "Snapshot scan complete");
                     break;
                 case IndexChangeKind.UpsertFile:
                     if (item.Path is not null)
@@ -527,7 +747,8 @@ public sealed class IndexingService : IIndexingService
             ActiveKind: activeItem?.Kind,
             QueuedRootCounts: _queue.GetQueuedRootCounts(),
             ActiveProgress: progress,
-            RootStatusDetails: SnapshotRootStatusDetails());
+            RootStatusDetails: SnapshotRootStatusDetails(),
+            WatcherDiagnostics: _watchers.GetDiagnostics());
 
         if (StatusesEquivalent(previous, next))
             return;
@@ -561,7 +782,8 @@ public sealed class IndexingService : IIndexingService
         left.ActiveKind == right.ActiveKind &&
         QueuedRootCountsEqual(left.QueuedRootCounts, right.QueuedRootCounts) &&
         Equals(left.ActiveProgress, right.ActiveProgress) &&
-        RootStatusDetailsEqual(left.RootStatusDetails, right.RootStatusDetails);
+        RootStatusDetailsEqual(left.RootStatusDetails, right.RootStatusDetails) &&
+        WatcherDiagnosticsEqual(left.WatcherDiagnostics, right.WatcherDiagnostics);
 
     private static bool QueuedRootCountsEqual(
         IReadOnlyDictionary<string, int>? left,
@@ -601,9 +823,9 @@ public sealed class IndexingService : IIndexingService
             if (item.Kind == IndexChangeKind.RefreshRoot)
             {
                 if (!_rootStatusDetails.TryGetValue(normalizedRoot, out var existingDetail) ||
-                    !existingDetail.StartsWith("Full scan queued:", StringComparison.Ordinal))
+                    !existingDetail.StartsWith("Snapshot scan queued:", StringComparison.Ordinal))
                 {
-                    _rootStatusDetails[normalizedRoot] = "Full scan queued";
+                    _rootStatusDetails[normalizedRoot] = "Snapshot scan queued";
                 }
 
                 return;
@@ -636,6 +858,25 @@ public sealed class IndexingService : IIndexingService
         foreach (var (root, detail) in left)
             if (!right.TryGetValue(root, out var otherDetail) ||
                 !string.Equals(detail, otherDetail, StringComparison.Ordinal))
+            {
+                return false;
+            }
+
+        return true;
+    }
+
+    private static bool WatcherDiagnosticsEqual(
+        IReadOnlyDictionary<string, IndexWatcherDiagnosticInfo>? left,
+        IReadOnlyDictionary<string, IndexWatcherDiagnosticInfo>? right)
+    {
+        if (ReferenceEquals(left, right))
+            return true;
+        if (left is null || right is null || left.Count != right.Count)
+            return false;
+
+        foreach (var (root, diagnostic) in left)
+            if (!right.TryGetValue(root, out var otherDiagnostic) ||
+                !Equals(diagnostic, otherDiagnostic))
             {
                 return false;
             }

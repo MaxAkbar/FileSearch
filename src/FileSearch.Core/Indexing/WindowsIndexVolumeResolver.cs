@@ -49,7 +49,8 @@ internal sealed class WindowsIndexVolumeResolver : IIndexVolumeResolver
                 null,
                 "remote",
                 IsRemote: true,
-                UsnSupported: false);
+                UsnSupported: false,
+                IndexVolumeDriveKind.Network);
             fallbackReason = "USN replay is unavailable for remote roots.";
             return true;
         }
@@ -61,6 +62,7 @@ internal sealed class WindowsIndexVolumeResolver : IIndexVolumeResolver
             return false;
         }
 
+        var driveKind = IndexVolumeDriveKind.Unknown;
         try
         {
             var drive = new DriveInfo(rootPath);
@@ -73,10 +75,18 @@ internal sealed class WindowsIndexVolumeResolver : IIndexVolumeResolver
                     null,
                     "remote",
                     IsRemote: true,
-                    UsnSupported: false);
+                    UsnSupported: false,
+                    IndexVolumeDriveKind.Network);
                 fallbackReason = "USN replay is unavailable for mapped network drives.";
                 return true;
             }
+
+            driveKind = drive.DriveType switch
+            {
+                DriveType.Fixed => IndexVolumeDriveKind.Fixed,
+                DriveType.Removable => IndexVolumeDriveKind.Removable,
+                _ => IndexVolumeDriveKind.Unknown,
+            };
         }
         catch (Exception ex) when (ex is ArgumentException or IOException or UnauthorizedAccessException)
         {
@@ -104,7 +114,8 @@ internal sealed class WindowsIndexVolumeResolver : IIndexVolumeResolver
             serial.ToString(CultureInfo.InvariantCulture),
             filesystem,
             IsRemote: false,
-            usnSupported);
+            usnSupported,
+            driveKind);
         fallbackReason = usnSupported
             ? string.Empty
             : $"Filesystem {filesystem} does not expose a supported local USN journal.";

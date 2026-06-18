@@ -99,6 +99,39 @@ public sealed class IndexStartupCatchUpServiceTests : IDisposable
     }
 
     [Fact]
+    public async Task CatchUpAsyncFallsBackForCloudBackedRootEvenOnUsnVolume()
+    {
+        var cloudRoot = Path.Combine(Path.GetTempPath(), "OneDrive - FileSearch-" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(cloudRoot);
+        try
+        {
+            var root = IndexPath.NormalizeRoot(cloudRoot);
+            var volume = CreateVolume(usnSupported: true);
+            var store = new FakeCatchUpStore(
+                new IndexVolumeCheckpoint(1, volume.VolumeKey, 7, 10, "healthy", null),
+                DirectoryReferences: new[] { "1" });
+            var service = new IndexStartupCatchUpService(
+                new FakeIndexWriter(),
+                store,
+                new FakeVolumeResolver(volume),
+                new FakeJournalReader(new UsnJournalSnapshot(7, 1, 20)));
+
+            var result = await service.CatchUpAsync(
+                new[] { new IndexedLocation(root, new WalkerOptions(), WatchEnabled: false) },
+                TestContext.Current.CancellationToken);
+
+            Assert.Empty(result.HandledRoots);
+            Assert.Contains(root, result.FallbackReasons.Keys);
+            Assert.Contains("Cloud-backed", result.FallbackReasons[root], StringComparison.OrdinalIgnoreCase);
+            Assert.Equal(0, store.LastCommittedUsn);
+        }
+        finally
+        {
+            Directory.Delete(cloudRoot, recursive: true);
+        }
+    }
+
+    [Fact]
     public async Task CatchUpAsyncFallsBackWhenJournalIdChanged()
     {
         var root = IndexPath.NormalizeRoot(_root);
@@ -520,15 +553,19 @@ public sealed class IndexStartupCatchUpServiceTests : IDisposable
         Assert.Equal(0, store.LastCommittedUsn);
     }
 
-    private static IndexVolumeInfo CreateVolume(bool usnSupported) =>
+    private static IndexVolumeInfo CreateVolume(
+        bool usnSupported,
+        bool isRemote = false,
+        IndexVolumeDriveKind driveKind = IndexVolumeDriveKind.Fixed) =>
         new(
             "fake-volume",
             @"C:\",
             @"\\.\C:",
             "123",
             usnSupported ? "NTFS" : "exFAT",
-            IsRemote: false,
-            usnSupported);
+            isRemote,
+            usnSupported,
+            driveKind);
 
     private static UsnChangeRecord Change(
         string fileReferenceNumber,

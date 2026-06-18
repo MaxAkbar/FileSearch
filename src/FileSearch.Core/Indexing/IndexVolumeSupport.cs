@@ -13,7 +13,8 @@ internal sealed record IndexVolumeInfo(
     string? VolumeSerial,
     string FileSystemName,
     bool IsRemote,
-    bool UsnSupported);
+    bool UsnSupported,
+    IndexVolumeDriveKind DriveKind = IndexVolumeDriveKind.Unknown);
 
 internal sealed record IndexVolumeCheckpoint(
     long Id,

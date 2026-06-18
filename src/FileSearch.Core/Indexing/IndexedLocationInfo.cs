@@ -8,4 +8,6 @@ public sealed record IndexedLocationInfo(
     long LineCount,
     DateTime? IndexedUtc,
     string Profile,
-    bool Exists);
+    bool Exists,
+    DateTime? LastFullScanUtc = null,
+    string? VolumeKey = null);
