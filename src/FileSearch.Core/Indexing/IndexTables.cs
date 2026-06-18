@@ -859,11 +859,11 @@ internal static partial class IndexTables
         if (tokens.Count == 0)
             return;
 
-        var id = await AllocateIdsAsync(db, "file_metadata_tokens", tokens.Count, cancellationToken).ConfigureAwait(false);
         foreach (var token in tokens)
         {
+            var id = CreateMetadataTokenId(rootId, fileId, token);
             await db.ExecuteAsync(
-                    Sql.Format($"INSERT INTO file_metadata_tokens VALUES ({id++}, {rootId}, {fileId}, {token})"),
+                    Sql.Format($"INSERT INTO file_metadata_tokens VALUES ({id}, {rootId}, {fileId}, {token})"),
                     cancellationToken)
                 .ConfigureAwait(false);
         }
@@ -901,6 +901,35 @@ internal static partial class IndexTables
         }
 
         return tokens.ToList();
+    }
+
+    private static long CreateMetadataTokenId(long rootId, long fileId, string token)
+    {
+        const ulong offsetBasis = 14695981039346656037;
+        const ulong prime = 1099511628211;
+
+        var hash = offsetBasis;
+        AddInt64(rootId);
+        AddInt64(fileId);
+        foreach (var ch in token)
+        {
+            hash ^= char.ToLowerInvariant(ch);
+            hash *= prime;
+        }
+
+        var id = (long)(hash & 0x7FFFFFFFFFFFFFFF);
+        return id == 0 ? 1 : id;
+
+        void AddInt64(long value)
+        {
+            var bytes = unchecked((ulong)value);
+            for (var i = 0; i < sizeof(long); i++)
+            {
+                hash ^= bytes & 0xFF;
+                hash *= prime;
+                bytes >>= 8;
+            }
+        }
     }
 
     private static void AddTextTokens(HashSet<string> tokens, string value, bool includePrefixes)
