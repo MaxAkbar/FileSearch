@@ -108,6 +108,23 @@ public partial class MainWindow : Window
             viewModel.History.SaveCustomScope(scopeWindow.ScopeName, scopeWindow.FileNamePattern);
     }
 
+    private void OnRegexTesterClick(object sender, RoutedEventArgs e)
+    {
+        if (DataContext is not MainViewModel viewModel)
+            return;
+
+        var window = new RegexTesterWindow
+        {
+            Owner = this,
+            DataContext = new RegexTesterViewModel(
+                viewModel.Search.QueryText,
+                viewModel.Search.MatchCase,
+                viewModel.Search.PreviewContent),
+        };
+
+        window.ShowDialog();
+    }
+
     private void OnManageIndexesClick(object sender, RoutedEventArgs e)
     {
         var window = new IndexedLocationsWindow

@@ -50,6 +50,7 @@
                         <MenuItem Header="_Start" Command="{Binding Search.SearchCommand}" InputGestureText="Enter"/>
                         <MenuItem Header="_Cancel" Command="{Binding Search.CancelCommand}" InputGestureText="Esc"/>
                         <Separator/>
+                        <MenuItem Header="_Regex tester..." Click="OnRegexTesterClick"/>
                         <MenuItem Header="_Workflows..." Click="OnWorkflowsClick"/>
                     </MenuItem>
                     <MenuItem Header="_Index">

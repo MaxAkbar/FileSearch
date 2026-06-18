@@ -29,6 +29,8 @@ public sealed class BindingPathAuditTests
         typeof(IndexRootHealthInfo),
         typeof(IndexedLocationSettings),
         typeof(IndexFilterListSettings),
+        typeof(RegexTestGroupViewModel),
+        typeof(RegexTestMatchViewModel),
         typeof(SavedSearchSettings),
         typeof(SidebarScopeItem),
         typeof(SearchScope),
@@ -50,6 +52,7 @@ public sealed class BindingPathAuditTests
     private static readonly Dictionary<string, Type> s_rootTypeOverrides = new(StringComparer.OrdinalIgnoreCase)
     {
         ["AboutWindow.xaml"] = typeof(AboutWindow),
+        ["RegexTesterWindow.xaml"] = typeof(RegexTesterViewModel),
         ["SettingsWindow.xaml"] = typeof(ApplicationSettingsViewModel),
     };
 
