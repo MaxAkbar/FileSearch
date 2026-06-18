@@ -1297,7 +1297,7 @@ public sealed class CSharpDbFileIndex : IFileIndex, IIndexReplayWriter, IIndexUs
         try
         {
             await IndexTables.RecordExtractionAttemptAsync(db, fileId, extractorId, extractorVersion, cancellationToken).ConfigureAwait(false);
-            var nextLineId = await IndexTables.GetNextIdAsync(db, "lines", cancellationToken).ConfigureAwait(false);
+            var lineIds = new DbIdBlockAllocator(db, "lines", LineInsertBatchSize);
             var batch = db.PrepareInsertBatch("lines", LineInsertBatchSize);
 
             if (_outOfProcessExtraction?.ShouldUse(extractor) == true)
@@ -1308,7 +1308,7 @@ public sealed class CSharpDbFileIndex : IFileIndex, IIndexReplayWriter, IIndexUs
 
                 foreach (var line in result.Lines)
                 {
-                    AddLineToBatch(batch, nextLineId++, fileId, line);
+                    AddLineToBatch(batch, await lineIds.NextAsync(cancellationToken).ConfigureAwait(false), fileId, line);
                     linesIndexed++;
                     if (batch.Count >= LineInsertBatchSize)
                         await FlushBatchAsync(batch, cancellationToken).ConfigureAwait(false);
@@ -1322,7 +1322,7 @@ public sealed class CSharpDbFileIndex : IFileIndex, IIndexReplayWriter, IIndexUs
 
                 await foreach (var line in lines.ConfigureAwait(false))
                 {
-                    AddLineToBatch(batch, nextLineId++, fileId, line);
+                    AddLineToBatch(batch, await lineIds.NextAsync(cancellationToken).ConfigureAwait(false), fileId, line);
                     linesIndexed++;
                     if (batch.Count >= LineInsertBatchSize)
                         await FlushBatchAsync(batch, cancellationToken).ConfigureAwait(false);
@@ -1439,7 +1439,10 @@ public sealed class CSharpDbFileIndex : IFileIndex, IIndexReplayWriter, IIndexUs
         IReadOnlyList<TextLine> lines,
         CancellationToken cancellationToken)
     {
-        var nextLineId = await IndexTables.GetNextIdAsync(db, "lines", cancellationToken).ConfigureAwait(false);
+        if (lines.Count == 0)
+            return 0;
+
+        var nextLineId = await IndexTables.AllocateIdsAsync(db, "lines", lines.Count, cancellationToken).ConfigureAwait(false);
         var batch = db.PrepareInsertBatch("lines", LineInsertBatchSize);
         long linesIndexed = 0;
         foreach (var line in lines)
@@ -1461,6 +1464,34 @@ public sealed class CSharpDbFileIndex : IFileIndex, IIndexReplayWriter, IIndexUs
             DbValue.FromInteger(fileId),
             DbValue.FromInteger(line.Number),
             DbValue.FromText(line.Content));
+    }
+
+    private sealed class DbIdBlockAllocator
+    {
+        private readonly Database _db;
+        private readonly string _sequenceName;
+        private readonly long _blockSize;
+        private long _nextId;
+        private long _remaining;
+
+        public DbIdBlockAllocator(Database db, string sequenceName, long blockSize)
+        {
+            _db = db;
+            _sequenceName = sequenceName;
+            _blockSize = blockSize;
+        }
+
+        public async ValueTask<long> NextAsync(CancellationToken cancellationToken)
+        {
+            if (_remaining == 0)
+            {
+                _nextId = await IndexTables.AllocateIdsAsync(_db, _sequenceName, _blockSize, cancellationToken).ConfigureAwait(false);
+                _remaining = _blockSize;
+            }
+
+            _remaining--;
+            return _nextId++;
+        }
     }
 
     private static async Task<IndexedLocationInfo?> GetLocationInfoAsync(

@@ -717,7 +717,7 @@ internal static partial class IndexTables
         if (issues.Count == 0)
             return;
 
-        var id = await GetNextIdAsync(db, "extraction_issues", cancellationToken).ConfigureAwait(false);
+        var id = await AllocateIdsAsync(db, "extraction_issues", issues.Count, cancellationToken).ConfigureAwait(false);
         var batch = db.PrepareInsertBatch("extraction_issues", 100);
         var now = DateTime.UtcNow.Ticks;
         foreach (var issue in issues)
@@ -859,7 +859,7 @@ internal static partial class IndexTables
         if (tokens.Count == 0)
             return;
 
-        var id = await GetNextIdAsync(db, "file_metadata_tokens", cancellationToken).ConfigureAwait(false);
+        var id = await AllocateIdsAsync(db, "file_metadata_tokens", tokens.Count, cancellationToken).ConfigureAwait(false);
         var batch = db.PrepareInsertBatch("file_metadata_tokens", 250);
         foreach (var token in tokens)
         {
@@ -1044,16 +1044,44 @@ internal static partial class IndexTables
 
     public static async Task<long> GetNextIdAsync(Database db, string tableName, CancellationToken cancellationToken)
     {
+        return await AllocateIdsAsync(db, tableName, 1, cancellationToken).ConfigureAwait(false);
+    }
+
+    public static async Task<long> AllocateIdsAsync(Database db, string tableName, long count, CancellationToken cancellationToken)
+    {
+        ArgumentOutOfRangeException.ThrowIfNegativeOrZero(count);
+
         // Table names come from internal constants, but validate anyway so
         // this hole can never carry SQL even if a caller misuses it.
-        var table = new Sql.Identifier(tableName);
-        await using var result = await db.ExecuteAsync(
-            Sql.Format($"SELECT MAX(id) FROM {table}"),
-            cancellationToken).ConfigureAwait(false);
-        if (!await result.MoveNextAsync(cancellationToken).ConfigureAwait(false))
-            return 1;
+        _ = new Sql.Identifier(tableName);
+        long? nextId = null;
+        await using (var result = await db.ExecuteAsync(
+                         Sql.Format($"SELECT next_id FROM index_sequences WHERE name = {tableName}"),
+                         cancellationToken).ConfigureAwait(false))
+        {
+            if (await result.MoveNextAsync(cancellationToken).ConfigureAwait(false))
+                nextId = result.Current[0].AsInteger;
+        }
 
-        return result.Current[0].IsNull ? 1 : result.Current[0].AsInteger + 1;
+        var firstId = nextId ?? 1;
+        var followingId = checked(firstId + count);
+
+        if (nextId is null)
+        {
+            await db.ExecuteAsync(
+                    Sql.Format($"INSERT INTO index_sequences VALUES ({tableName}, {followingId})"),
+                    cancellationToken)
+                .ConfigureAwait(false);
+        }
+        else
+        {
+            await db.ExecuteAsync(
+                    Sql.Format($"UPDATE index_sequences SET next_id = {followingId} WHERE name = {tableName}"),
+                    cancellationToken)
+                .ConfigureAwait(false);
+        }
+
+        return firstId;
     }
 
     private static async Task ExecuteAsync(Database db, string sql, CancellationToken cancellationToken)

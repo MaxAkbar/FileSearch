@@ -16,7 +16,7 @@ namespace FileSearch.Core.Indexing;
 /// </summary>
 internal sealed class IndexDatabase : IDisposable
 {
-    internal const string CurrentSchemaVersion = "10";
+    internal const string CurrentSchemaVersion = "11";
     internal const string FullTextIndexName = "fts_lines";
 
     private static readonly string[] s_fullTextColumns = { "content" };
@@ -45,8 +45,8 @@ internal sealed class IndexDatabase : IDisposable
     /// Runs a write operation with exclusive access: serialized against other
     /// writers in this process (<see cref="_writeGate"/>) and in other
     /// processes (a sibling .lock file held with no sharing — the GUI and CLI
-    /// share the same database). IDs are allocated with MAX(id)+1, which is
-    /// only safe because every allocation happens inside this exclusion.
+    /// share the same database). IDs are allocated from index_sequences, which
+    /// is only safe because every allocation happens inside this exclusion.
     /// The OS releases the file lock if the process dies, so a crash can't
     /// strand other writers.
     /// </summary>
@@ -243,6 +243,7 @@ internal sealed class IndexDatabase : IDisposable
         await db.ExecuteAsync("CREATE TABLE IF NOT EXISTS file_metadata_tokens (id INTEGER PRIMARY KEY, root_id INTEGER, file_id INTEGER, token TEXT)", cancellationToken).ConfigureAwait(false);
         await db.ExecuteAsync("CREATE TABLE IF NOT EXISTS lines (id INTEGER PRIMARY KEY, file_id INTEGER, line_number INTEGER, content TEXT)", cancellationToken).ConfigureAwait(false);
         await db.ExecuteAsync("CREATE TABLE IF NOT EXISTS pending_changes (id INTEGER PRIMARY KEY, root_path TEXT, path TEXT, kind INTEGER, queued_utc_ticks INTEGER)", cancellationToken).ConfigureAwait(false);
+        await db.ExecuteAsync("CREATE TABLE IF NOT EXISTS index_sequences (name TEXT PRIMARY KEY, next_id INTEGER)", cancellationToken).ConfigureAwait(false);
 
         await TryExecuteAsync(db, "CREATE UNIQUE INDEX IF NOT EXISTS idx_index_roots_path ON index_roots(root_path)", cancellationToken).ConfigureAwait(false);
         await TryExecuteAsync(db, "CREATE UNIQUE INDEX IF NOT EXISTS idx_index_volumes_key ON index_volumes(volume_key)", cancellationToken).ConfigureAwait(false);
