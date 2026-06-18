@@ -4,6 +4,10 @@ public sealed class OutOfProcessExtractionOptions
 {
     public bool Enabled { get; set; } = true;
 
+    public bool UseReusableHostPool { get; set; } = true;
+
+    public int HostPoolSize { get; set; } = Math.Clamp(Environment.ProcessorCount / 2, 1, 4);
+
     public string? HostPath { get; set; }
 
     public TimeSpan Timeout { get; set; } = TimeSpan.FromSeconds(30);

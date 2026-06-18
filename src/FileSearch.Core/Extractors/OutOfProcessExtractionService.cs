@@ -6,13 +6,15 @@ using Microsoft.Extensions.Logging.Abstractions;
 
 namespace FileSearch.Core.Extractors;
 
-public sealed class OutOfProcessExtractionService : IOutOfProcessExtractionService
+public sealed class OutOfProcessExtractionService : IOutOfProcessExtractionService, IDisposable
 {
     private const int MaxErrorMessageLength = 2_000;
 
     private readonly OutOfProcessExtractionOptions _options;
     private readonly IExtractorHostProcessRunner _runner;
     private readonly ILogger _logger;
+    private readonly object _poolLock = new();
+    private ReusableExtractorHostPool? _pool;
 
     public OutOfProcessExtractionService(
         OutOfProcessExtractionOptions? options = null,
@@ -55,6 +57,35 @@ public sealed class OutOfProcessExtractionService : IOutOfProcessExtractionServi
             ExtractorHostProtocol.CurrentVersion,
             path,
             extractor.ExtractorId);
+        if (_options.UseReusableHostPool)
+            return await GetPool(command).ExtractAsync(request, cancellationToken).ConfigureAwait(false);
+
+        return await ExtractOneShotAsync(command, request, cancellationToken).ConfigureAwait(false);
+    }
+
+    public void Dispose()
+    {
+        lock (_poolLock)
+        {
+            _pool?.Dispose();
+            _pool = null;
+        }
+    }
+
+    private ReusableExtractorHostPool GetPool(ExtractorHostCommand command)
+    {
+        lock (_poolLock)
+        {
+            _pool ??= new ReusableExtractorHostPool(command, _options, _logger);
+            return _pool;
+        }
+    }
+
+    private async Task<OutOfProcessExtractionResult> ExtractOneShotAsync(
+        ExtractorHostCommand command,
+        ExtractorHostRequest request,
+        CancellationToken cancellationToken)
+    {
         var requestJson = JsonSerializer.Serialize(request, ExtractorHostProtocol.JsonOptions);
         var run = await _runner.RunAsync(command, requestJson, _options.Timeout, cancellationToken).ConfigureAwait(false);
         if (run.TimedOut)
@@ -184,6 +215,288 @@ public sealed class OutOfProcessExtractionService : IOutOfProcessExtractionServi
             return message;
 
         return message[..MaxErrorMessageLength];
+    }
+}
+
+internal sealed class ReusableExtractorHostPool : IDisposable
+{
+    private readonly ReusableExtractorHostSession[] _sessions;
+    private readonly TimeSpan _timeout;
+    private int _nextSession;
+
+    public ReusableExtractorHostPool(
+        ExtractorHostCommand command,
+        OutOfProcessExtractionOptions options,
+        ILogger logger)
+    {
+        var poolSize = Math.Clamp(options.HostPoolSize, 1, 16);
+        _timeout = options.Timeout;
+        _sessions = Enumerable
+            .Range(0, poolSize)
+            .Select(_ => new ReusableExtractorHostSession(command, logger))
+            .ToArray();
+    }
+
+    public Task<OutOfProcessExtractionResult> ExtractAsync(
+        ExtractorHostRequest request,
+        CancellationToken cancellationToken)
+    {
+        var session = _sessions[(int)((uint)Interlocked.Increment(ref _nextSession) % (uint)_sessions.Length)];
+        return session.ExtractAsync(request, _timeout, cancellationToken);
+    }
+
+    public void Dispose()
+    {
+        foreach (var session in _sessions)
+            session.Dispose();
+    }
+}
+
+internal sealed class ReusableExtractorHostSession : IDisposable
+{
+    private readonly ExtractorHostCommand _command;
+    private readonly ILogger _logger;
+    private readonly SemaphoreSlim _gate = new(1, 1);
+    private Process? _process;
+    private Task<string>? _stderrTask;
+    private bool _disposed;
+
+    public ReusableExtractorHostSession(ExtractorHostCommand command, ILogger logger)
+    {
+        _command = command;
+        _logger = logger;
+    }
+
+    public async Task<OutOfProcessExtractionResult> ExtractAsync(
+        ExtractorHostRequest request,
+        TimeSpan timeout,
+        CancellationToken cancellationToken)
+    {
+        await _gate.WaitAsync(cancellationToken).ConfigureAwait(false);
+        try
+        {
+            ObjectDisposedException.ThrowIf(_disposed, this);
+            var process = EnsureStarted();
+            var requestJson = JsonSerializer.Serialize(request, ExtractorHostProtocol.JsonOptions);
+            try
+            {
+                await process.StandardInput.WriteLineAsync(requestJson.AsMemory(), cancellationToken).ConfigureAwait(false);
+                await process.StandardInput.FlushAsync(cancellationToken).ConfigureAwait(false);
+            }
+            catch (OperationCanceledException)
+            {
+                KillProcess();
+                throw;
+            }
+            catch (Exception ex) when (ex is IOException or InvalidOperationException or ObjectDisposedException)
+            {
+                KillProcess();
+                throw new ExtractorHostException("extractor_host_crashed", TrimMessage(ex.Message));
+            }
+
+            var responseLine = await ReadResponseLineAsync(process, timeout, cancellationToken).ConfigureAwait(false);
+            ExtractorHostResponse? response;
+            try
+            {
+                response = JsonSerializer.Deserialize<ExtractorHostResponse>(
+                    responseLine,
+                    ExtractorHostProtocol.JsonOptions);
+            }
+            catch (JsonException ex)
+            {
+                KillProcess();
+                _logger.LogDebug(ex, "Reusable extractor host returned invalid JSON.");
+                throw new ExtractorHostException("extractor_host_protocol_error", TrimMessage(ex.Message));
+            }
+
+            if (response is null)
+            {
+                KillProcess();
+                throw new ExtractorHostException("extractor_host_protocol_error", "Extractor host returned an empty response.");
+            }
+
+            if (response.ProtocolVersion != ExtractorHostProtocol.CurrentVersion)
+            {
+                KillProcess();
+                throw new ExtractorHostException(
+                    "extractor_host_protocol_error",
+                    $"Extractor host returned unsupported protocol version {response.ProtocolVersion}.");
+            }
+
+            if (!response.Success)
+            {
+                throw new ExtractorHostException(
+                    string.IsNullOrWhiteSpace(response.ErrorCode) ? "extractor_host_failed" : response.ErrorCode,
+                    TrimMessage(response.ErrorMessage ?? "Extractor host failed."));
+            }
+
+            return new OutOfProcessExtractionResult(response.Lines, response.Issues);
+        }
+        finally
+        {
+            _gate.Release();
+        }
+    }
+
+    public void Dispose()
+    {
+        _disposed = true;
+        KillProcess();
+        _gate.Dispose();
+    }
+
+    private Process EnsureStarted()
+    {
+        if (_process is { HasExited: false })
+            return _process;
+
+        DisposeProcess();
+        var process = new Process
+        {
+            StartInfo = new ProcessStartInfo
+            {
+                FileName = _command.FileName,
+                UseShellExecute = false,
+                RedirectStandardInput = true,
+                RedirectStandardOutput = true,
+                RedirectStandardError = true,
+                CreateNoWindow = true,
+            },
+        };
+        foreach (var argument in _command.Arguments)
+            process.StartInfo.ArgumentList.Add(argument);
+        process.StartInfo.ArgumentList.Add("--serve");
+
+        try
+        {
+            if (!process.Start())
+            {
+                process.Dispose();
+                throw new ExtractorHostException(
+                    "extractor_host_start_failed",
+                    $"Extractor host could not be started from {_command.DisplayPath}.");
+            }
+        }
+        catch (Win32Exception ex)
+        {
+            process.Dispose();
+            throw new ExtractorHostException("extractor_host_start_failed", TrimMessage(ex.Message));
+        }
+
+        _process = process;
+        _stderrTask = process.StandardError.ReadToEndAsync();
+        return process;
+    }
+
+    private async Task<string> ReadResponseLineAsync(
+        Process process,
+        TimeSpan timeout,
+        CancellationToken cancellationToken)
+    {
+        Task<string?> readTask;
+        try
+        {
+            readTask = process.StandardOutput.ReadLineAsync(cancellationToken).AsTask();
+        }
+        catch (Exception ex) when (ex is IOException or InvalidOperationException)
+        {
+            KillProcess();
+            throw new ExtractorHostException("extractor_host_crashed", TrimMessage(ex.Message));
+        }
+
+        var completed = await Task.WhenAny(readTask, Task.Delay(timeout, cancellationToken)).ConfigureAwait(false);
+        if (completed != readTask)
+        {
+            KillProcess();
+            cancellationToken.ThrowIfCancellationRequested();
+            throw new ExtractorHostException(
+                "extractor_host_timeout",
+                $"Extractor host timed out after {timeout.TotalSeconds:n0} seconds.");
+        }
+
+        string? responseLine;
+        try
+        {
+            responseLine = await readTask.ConfigureAwait(false);
+        }
+        catch (OperationCanceledException)
+        {
+            KillProcess();
+            throw;
+        }
+        catch (Exception ex) when (ex is IOException or InvalidOperationException)
+        {
+            KillProcess();
+            throw new ExtractorHostException("extractor_host_crashed", TrimMessage(ex.Message));
+        }
+
+        if (responseLine is not null)
+            return responseLine;
+
+        var stderr = await ReadErrorIfCompletedAsync().ConfigureAwait(false);
+        var message = string.IsNullOrWhiteSpace(stderr)
+            ? "Extractor host exited before returning a response."
+            : stderr;
+        KillProcess();
+        throw new ExtractorHostException("extractor_host_crashed", TrimMessage(message));
+    }
+
+    private async Task<string> ReadErrorIfCompletedAsync()
+    {
+        if (_stderrTask is null || !_stderrTask.IsCompleted)
+            return string.Empty;
+
+        try
+        {
+            return await _stderrTask.ConfigureAwait(false);
+        }
+        catch (Exception ex) when (ex is IOException or InvalidOperationException)
+        {
+            return ex.Message;
+        }
+    }
+
+    private void KillProcess()
+    {
+        try
+        {
+            if (_process is { HasExited: false })
+                _process.Kill(entireProcessTree: true);
+        }
+        catch (InvalidOperationException)
+        {
+        }
+        catch (Win32Exception)
+        {
+        }
+        finally
+        {
+            DisposeProcess();
+        }
+    }
+
+    private void DisposeProcess()
+    {
+        if (_process is null)
+            return;
+
+        try
+        {
+            _process.Dispose();
+        }
+        finally
+        {
+            _process = null;
+            _stderrTask = null;
+        }
+    }
+
+    private static string TrimMessage(string message)
+    {
+        if (message.Length <= 2_000)
+            return message;
+
+        return message[..2_000];
     }
 }
 
