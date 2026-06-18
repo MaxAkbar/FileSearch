@@ -611,6 +611,8 @@
                                                     <RowDefinition Height="Auto"/>
                                                     <RowDefinition Height="Auto"/>
                                                     <RowDefinition Height="Auto"/>
+                                                    <RowDefinition Height="Auto"/>
+                                                    <RowDefinition Height="Auto"/>
                                                 </Grid.RowDefinitions>
 
                                                 <TextBlock Grid.Row="0" Text="Root" Style="{StaticResource MetaKeyStyle}" Margin="0,0,0,8"/>
@@ -635,6 +637,39 @@
                                                 <TextBlock Grid.Row="9" Grid.Column="1" Text="{Binding Index.SelectedIndexHealthRoot.EstimatedCatchUpTime}" Style="{StaticResource MetaValueStyle}" Margin="0,0,0,8"/>
                                                 <TextBlock Grid.Row="10" Text="Detail" Style="{StaticResource MetaKeyStyle}"/>
                                                 <TextBlock Grid.Row="10" Grid.Column="1" Text="{Binding Index.SelectedIndexHealthRoot.Detail}" Style="{StaticResource MetaValueStyle}" TextWrapping="Wrap"/>
+                                                <TextBlock Grid.Row="11" Text="Drift files" Style="{StaticResource MetaKeyStyle}" Margin="0,14,0,8"/>
+                                                <TextBlock Grid.Row="11" Grid.Column="1" Text="{Binding Index.SelectedIndexValidationDriftSummaryText}" Style="{StaticResource MetaValueStyle}" Margin="0,14,0,8"/>
+                                                <ListBox Grid.Row="12"
+                                                         Grid.ColumnSpan="2"
+                                                         ItemsSource="{Binding Index.SelectedIndexValidationDrift}"
+                                                         MaxHeight="220"
+                                                         BorderBrush="{DynamicResource Atlas.LineBrush}"
+                                                         Background="{DynamicResource Atlas.Surface2Brush}"
+                                                         Foreground="{DynamicResource Atlas.InkBrush}"
+                                                         ScrollViewer.HorizontalScrollBarVisibility="Disabled">
+                                                    <ListBox.ItemTemplate>
+                                                        <DataTemplate>
+                                                            <Grid Margin="0,4" ToolTip="{Binding Path}">
+                                                                <Grid.ColumnDefinitions>
+                                                                    <ColumnDefinition Width="138"/>
+                                                                    <ColumnDefinition Width="*"/>
+                                                                </Grid.ColumnDefinitions>
+                                                                <TextBlock Text="{Binding KindText}"
+                                                                           Style="{StaticResource MetaKeyStyle}"
+                                                                           Margin="0,0,12,0"/>
+                                                                <StackPanel Grid.Column="1">
+                                                                    <TextBlock Text="{Binding Path}"
+                                                                               Style="{StaticResource MetaValueStyle}"
+                                                                               TextTrimming="CharacterEllipsis"/>
+                                                                    <TextBlock Text="{Binding Message}"
+                                                                               Style="{StaticResource MutedValueStyle}"
+                                                                               TextWrapping="Wrap"
+                                                                               Margin="0,2,0,0"/>
+                                                                </StackPanel>
+                                                            </Grid>
+                                                        </DataTemplate>
+                                                    </ListBox.ItemTemplate>
+                                                </ListBox>
                                             </Grid>
                                         </ScrollViewer>
                                     </Border>

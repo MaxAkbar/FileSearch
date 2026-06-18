@@ -359,6 +359,8 @@ internal sealed class FakeFileIndex : IFileIndex
 
     public IReadOnlyList<IndexFailureInfo> Failures { get; set; } = Array.Empty<IndexFailureInfo>();
 
+    public IReadOnlyList<IndexValidationDriftInfo> ValidationDrift { get; set; } = Array.Empty<IndexValidationDriftInfo>();
+
     public string DatabasePath => DatabaseInfo.DatabasePath;
 
     public Task BuildOrRefreshAsync(IndexRequest request, CancellationToken cancellationToken) => Task.CompletedTask;
@@ -410,6 +412,11 @@ internal sealed class FakeFileIndex : IFileIndex
 
     public Task<IReadOnlyList<IndexFailureInfo>> GetFailedFilesAsync(CancellationToken cancellationToken) =>
         Task.FromResult(Failures);
+
+    public Task<IReadOnlyList<IndexValidationDriftInfo>> GetValidationDriftAsync(
+        string root,
+        CancellationToken cancellationToken) =>
+        Task.FromResult(ValidationDrift);
 
     public Task ExportFailedFilesAsync(
         string path,

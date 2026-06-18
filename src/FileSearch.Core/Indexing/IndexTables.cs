@@ -225,8 +225,12 @@ internal static partial class IndexTables
                 $"last_validation_failed_count = {result.FailedChecks} WHERE id = {rootId}"),
             cancellationToken);
 
-    public static Task DeleteRootAsync(Database db, long rootId, CancellationToken cancellationToken) =>
-        ExecuteAsync(db, Sql.Format($"DELETE FROM index_roots WHERE id = {rootId}"), cancellationToken);
+    public static async Task DeleteRootAsync(Database db, long rootId, CancellationToken cancellationToken)
+    {
+        await DeleteValidationDriftsForRootAsync(db, rootId, cancellationToken).ConfigureAwait(false);
+        await ExecuteAsync(db, Sql.Format($"DELETE FROM index_roots WHERE id = {rootId}"), cancellationToken)
+            .ConfigureAwait(false);
+    }
 
     public static Task SetRootVolumeAsync(
         Database db,
@@ -816,6 +820,66 @@ internal static partial class IndexTables
             .ToList();
     }
 
+    public static async Task ReplaceValidationDriftsAsync(
+        Database db,
+        long rootId,
+        IReadOnlyList<IndexValidationDriftInfo> drifts,
+        CancellationToken cancellationToken)
+    {
+        await DeleteValidationDriftsForRootAsync(db, rootId, cancellationToken).ConfigureAwait(false);
+        if (drifts.Count == 0)
+            return;
+
+        var id = await AllocateIdsAsync(db, "validation_drifts", drifts.Count, cancellationToken).ConfigureAwait(false);
+        var batch = db.PrepareInsertBatch("validation_drifts", 250);
+        foreach (var drift in drifts)
+        {
+            batch.AddRow(
+                DbValue.FromInteger(id++),
+                DbValue.FromInteger(rootId),
+                DbValue.FromText(drift.Path),
+                DbValue.FromText(drift.Kind.ToString()),
+                DbValue.FromText(drift.Message),
+                DbValue.FromInteger(drift.ObservedUtc.Ticks));
+
+            if (batch.Count >= 250)
+            {
+                await batch.ExecuteAsync(cancellationToken).ConfigureAwait(false);
+                batch.Clear();
+            }
+        }
+
+        if (batch.Count > 0)
+            await batch.ExecuteAsync(cancellationToken).ConfigureAwait(false);
+    }
+
+    public static async Task<IReadOnlyList<IndexValidationDriftInfo>> ListValidationDriftsAsync(
+        Database db,
+        string root,
+        CancellationToken cancellationToken)
+    {
+        var drifts = new List<IndexValidationDriftInfo>();
+        await using var result = await db.ExecuteAsync(
+            Sql.Format(
+                $"SELECT r.root_path, d.path, d.kind, d.message, d.observed_utc_ticks " +
+                $"FROM validation_drifts d INNER JOIN index_roots r ON r.id = d.root_id " +
+                $"WHERE r.root_path = {root} ORDER BY d.kind, d.path"),
+            cancellationToken).ConfigureAwait(false);
+
+        while (await result.MoveNextAsync(cancellationToken).ConfigureAwait(false))
+        {
+            var observedTicks = result.Current[4].IsNull ? 0 : result.Current[4].AsInteger;
+            drifts.Add(new IndexValidationDriftInfo(
+                result.Current[0].AsText,
+                result.Current[1].AsText,
+                ParseEnum(result.Current[2].IsNull ? null : result.Current[2].AsText, IndexValidationDriftKind.FailedCheck),
+                result.Current[3].IsNull ? string.Empty : result.Current[3].AsText,
+                observedTicks > 0 ? new DateTime(observedTicks, DateTimeKind.Utc) : DateTime.MinValue));
+        }
+
+        return drifts;
+    }
+
     public static async Task ReplaceExtractionIssuesAsync(
         Database db,
         long fileId,
@@ -1179,6 +1243,12 @@ internal static partial class IndexTables
         path is null
             ? "path IS NULL"
             : Sql.Format($"path = {path}");
+
+    private static Task DeleteValidationDriftsForRootAsync(
+        Database db,
+        long rootId,
+        CancellationToken cancellationToken) =>
+        ExecuteAsync(db, Sql.Format($"DELETE FROM validation_drifts WHERE root_id = {rootId}"), cancellationToken);
 
     public static async Task<long> GetNextIdAsync(Database db, string tableName, CancellationToken cancellationToken)
     {

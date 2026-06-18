@@ -517,6 +517,25 @@ public sealed class CSharpDbFileIndex : IFileIndex, IIndexReplayWriter, IIndexUs
         }
     }
 
+    public async Task<IReadOnlyList<IndexValidationDriftInfo>> GetValidationDriftAsync(
+        string root,
+        CancellationToken cancellationToken)
+    {
+        var db = await _database.OpenExistingAsync(cancellationToken).ConfigureAwait(false);
+        if (db is null)
+            return Array.Empty<IndexValidationDriftInfo>();
+
+        try
+        {
+            return await IndexTables.ListValidationDriftsAsync(db, IndexPath.NormalizeRoot(root), cancellationToken)
+                .ConfigureAwait(false);
+        }
+        finally
+        {
+            await IndexDatabase.CloseQuietlyAsync(db).ConfigureAwait(false);
+        }
+    }
+
     public async Task<IndexValidationResult> ValidateRootAsync(
         IndexRequest request,
         CancellationToken cancellationToken)
@@ -996,6 +1015,12 @@ public sealed class CSharpDbFileIndex : IFileIndex, IIndexReplayWriter, IIndexUs
         if (!Directory.Exists(root))
         {
             result = IndexValidationResult.Unavailable(root, checkedUtc, "Folder is not reachable.");
+            await IndexTables.ReplaceValidationDriftsAsync(
+                    db,
+                    rootRow.Id,
+                    Array.Empty<IndexValidationDriftInfo>(),
+                    cancellationToken)
+                .ConfigureAwait(false);
             await IndexTables.MarkRootValidatedAsync(db, rootRow.Id, result, cancellationToken).ConfigureAwait(false);
             return result;
         }
@@ -1010,6 +1035,10 @@ public sealed class CSharpDbFileIndex : IFileIndex, IIndexReplayWriter, IIndexUs
             long missingFromIndex = 0;
             long changedSinceIndex = 0;
             long failedChecks = 0;
+            var drift = new List<IndexValidationDriftInfo>();
+            void AddDrift(string path, IndexValidationDriftKind kind, string message) =>
+                drift.Add(new IndexValidationDriftInfo(root, path, kind, message, checkedUtc));
+
             void PublishValidation() => request.ValidationProgress?.Invoke(new IndexValidationProgress(
                 filesChecked,
                 filesMatched,
@@ -1030,21 +1059,37 @@ public sealed class CSharpDbFileIndex : IFileIndex, IIndexReplayWriter, IIndexUs
                     if (!File.Exists(normalizedPath))
                     {
                         failedChecks++;
+                        AddDrift(
+                            normalizedPath,
+                            IndexValidationDriftKind.FailedCheck,
+                            "File disappeared while validation was reading it.");
                         continue;
                     }
 
                     if (!existing.TryGetValue(normalizedPath, out var row))
                     {
                         missingFromIndex++;
+                        AddDrift(
+                            normalizedPath,
+                            IndexValidationDriftKind.MissingFromIndex,
+                            "File exists on disk but is not indexed.");
                         continue;
                     }
 
                     var info = new FileInfo(normalizedPath);
                     var extractor = _extractors.GetFor(normalizedPath);
                     if (IsValidationCurrent(row, info, extractor))
+                    {
                         filesMatched++;
+                    }
                     else
+                    {
                         changedSinceIndex++;
+                        AddDrift(
+                            normalizedPath,
+                            IndexValidationDriftKind.ChangedSinceIndex,
+                            "File metadata or extractor version differs from the indexed row.");
+                    }
                 }
                 catch (OperationCanceledException)
                 {
@@ -1054,6 +1099,7 @@ public sealed class CSharpDbFileIndex : IFileIndex, IIndexReplayWriter, IIndexUs
                 {
                     _logger.LogDebug(ex, "Validation failed for file {Path}.", path);
                     failedChecks++;
+                    AddDrift(normalizedPath, IndexValidationDriftKind.FailedCheck, ex.Message);
                 }
 
                 if (request.Throttle is { } throttle)
@@ -1062,7 +1108,16 @@ public sealed class CSharpDbFileIndex : IFileIndex, IIndexReplayWriter, IIndexUs
                 PublishValidation();
             }
 
-            var missingFromDisk = existing.Values.LongCount(file => !seen.Contains(file.Path));
+            var missingFromDiskRows = existing.Values.Where(file => !seen.Contains(file.Path)).ToArray();
+            var missingFromDisk = missingFromDiskRows.LongLength;
+            foreach (var file in missingFromDiskRows)
+            {
+                AddDrift(
+                    file.Path,
+                    IndexValidationDriftKind.MissingFromDisk,
+                    "Indexed file was not found by validation; it may be deleted or no longer match index filters.");
+            }
+
             request.ValidationProgress?.Invoke(new IndexValidationProgress(
                 filesChecked,
                 filesMatched,
@@ -1078,7 +1133,8 @@ public sealed class CSharpDbFileIndex : IFileIndex, IIndexReplayWriter, IIndexUs
                 missingFromIndex,
                 changedSinceIndex,
                 missingFromDisk,
-                failedChecks);
+                failedChecks,
+                drift);
         }
         catch (OperationCanceledException)
         {
@@ -1090,6 +1146,8 @@ public sealed class CSharpDbFileIndex : IFileIndex, IIndexReplayWriter, IIndexUs
             result = IndexValidationResult.Failed(root, checkedUtc, ex.Message);
         }
 
+        await IndexTables.ReplaceValidationDriftsAsync(db, rootRow.Id, result.DriftDetails, cancellationToken)
+            .ConfigureAwait(false);
         await IndexTables.MarkRootValidatedAsync(db, rootRow.Id, result, cancellationToken).ConfigureAwait(false);
         return result;
     }

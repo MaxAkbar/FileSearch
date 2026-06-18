@@ -273,7 +273,7 @@ public sealed class IndexHealthServiceTests
             string.Empty,
             Exists: true,
             IsCompatible: true,
-            SchemaVersion: "13",
+            SchemaVersion: IndexDatabase.CurrentSchemaVersion,
             DatabaseBytes: 0,
             WalBytes: 0,
             ShmBytes: 0,

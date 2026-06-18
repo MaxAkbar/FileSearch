@@ -590,6 +590,37 @@ public sealed class IndexViewModelTests
     }
 
     [Fact]
+    public async Task SelectingHealthRootLoadsValidationDriftDetails()
+    {
+        var root = IndexPath.NormalizeRoot(Path.Combine(Path.GetTempPath(), "filesearch-health-drift"));
+        var driftPath = IndexPath.NormalizeFile(Path.Combine(root, "added.txt"));
+        var fileIndex = new FakeFileIndex
+        {
+            ValidationDrift = new[]
+            {
+                new IndexValidationDriftInfo(
+                    root,
+                    driftPath,
+                    IndexValidationDriftKind.MissingFromIndex,
+                    "File exists on disk but is not indexed.",
+                    DateTime.UtcNow),
+            },
+        };
+        var (_, index) = Build(
+            fileIndex,
+            configureSettings: settings => settings.IndexedLocations.Add(new() { Root = root }));
+
+        await WaitUntilAsync(() => index.IndexHealthRows.Count == 1);
+        index.SelectedIndexHealthRoot = Assert.Single(index.IndexHealthRows);
+        await WaitUntilAsync(() => index.SelectedIndexValidationDrift.Count == 1);
+
+        var item = Assert.Single(index.SelectedIndexValidationDrift);
+        Assert.Equal(IndexValidationDriftKind.MissingFromIndex, item.Kind);
+        Assert.Equal(driftPath, item.Path);
+        Assert.Equal("1 validation drift item", index.SelectedIndexValidationDriftSummaryText);
+    }
+
+    [Fact]
     public void IndexerResourceProfileSettingUpdatesIndexingService()
     {
         var status = new StatusBarViewModel();

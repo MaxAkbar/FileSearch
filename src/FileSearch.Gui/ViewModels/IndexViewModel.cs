@@ -105,6 +105,8 @@ public sealed partial class IndexViewModel : ObservableObject, IDisposable
 
     public ObservableCollection<IndexRootHealthInfo> IndexHealthRows { get; } = new();
 
+    public ObservableCollection<IndexValidationDriftInfo> SelectedIndexValidationDrift { get; } = new();
+
     [ObservableProperty] private bool _isIndexing;
     [ObservableProperty] private bool _isIndexingPaused;
     [ObservableProperty] private int _indexQueueLength;
@@ -113,6 +115,7 @@ public sealed partial class IndexViewModel : ObservableObject, IDisposable
     [ObservableProperty] private IndexRootHealthInfo? _selectedIndexHealthRoot;
     [ObservableProperty] private bool _isValidatingSelectedIndex;
     [ObservableProperty] private string _selectedIndexValidationProgressText = string.Empty;
+    [ObservableProperty] private string _selectedIndexValidationDriftSummaryText = "No validation drift details";
     [ObservableProperty] private bool _indexDatabaseExists;
     [ObservableProperty] private bool _indexDatabaseIsCompatible;
     [ObservableProperty] private bool _isCompactingIndexDatabase;
@@ -409,6 +412,7 @@ public sealed partial class IndexViewModel : ObservableObject, IDisposable
                 : validation.Message;
             SelectedIndexValidationProgressText = validation.Message;
             await RefreshIndexDatabaseInfoAsync().ConfigureAwait(true);
+            await RefreshSelectedValidationDriftAsync(location.Root).ConfigureAwait(true);
         }
         catch (Exception ex)
         {
@@ -1120,6 +1124,43 @@ public sealed partial class IndexViewModel : ObservableObject, IDisposable
             string.Equals(row.Root, normalizedRoot, StringComparison.OrdinalIgnoreCase)) ?? SelectedIndexHealthRoot;
     }
 
+    private async Task RefreshSelectedValidationDriftAsync(string? root)
+    {
+        SelectedIndexValidationDrift.Clear();
+
+        if (string.IsNullOrWhiteSpace(root))
+        {
+            SelectedIndexValidationDriftSummaryText = "No validation drift details";
+            return;
+        }
+
+        var normalizedRoot = IndexPath.NormalizeRoot(root);
+        IReadOnlyList<IndexValidationDriftInfo> drift;
+        try
+        {
+            drift = await _fileIndex.GetValidationDriftAsync(normalizedRoot, CancellationToken.None)
+                .ConfigureAwait(true);
+        }
+        catch
+        {
+            SelectedIndexValidationDriftSummaryText = "Validation drift details unavailable";
+            return;
+        }
+
+        if (!string.Equals(SelectedIndexHealthRoot?.Root, normalizedRoot, StringComparison.OrdinalIgnoreCase))
+            return;
+
+        foreach (var item in drift)
+            SelectedIndexValidationDrift.Add(item);
+
+        SelectedIndexValidationDriftSummaryText = drift.Count switch
+        {
+            0 => "No validation drift details",
+            1 => "1 validation drift item",
+            _ => $"{drift.Count:n0} validation drift items",
+        };
+    }
+
     private async Task QueueIndexDatabaseCompactionAsync()
     {
         IsIndexDatabaseCompactionQueued = true;
@@ -1242,8 +1283,11 @@ public sealed partial class IndexViewModel : ObservableObject, IDisposable
         SelectHealthRoot(value?.Root);
     }
 
-    partial void OnSelectedIndexHealthRootChanged(IndexRootHealthInfo? value) =>
+    partial void OnSelectedIndexHealthRootChanged(IndexRootHealthInfo? value)
+    {
         RebuildSelectedHealthRootCommand.NotifyCanExecuteChanged();
+        _ = RefreshSelectedValidationDriftAsync(value?.Root);
+    }
 
     partial void OnSelectedIndexInclusionListChanged(IndexFilterListSettings? value)
     {

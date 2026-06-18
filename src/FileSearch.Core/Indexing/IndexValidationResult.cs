@@ -11,6 +11,32 @@ public enum IndexValidationStatus
     Failed,
 }
 
+public enum IndexValidationDriftKind
+{
+    MissingFromIndex,
+    ChangedSinceIndex,
+    MissingFromDisk,
+    FailedCheck,
+}
+
+public sealed record IndexValidationDriftInfo(
+    string Root,
+    string Path,
+    IndexValidationDriftKind Kind,
+    string Message,
+    DateTime ObservedUtc)
+{
+    public string KindText =>
+        Kind switch
+        {
+            IndexValidationDriftKind.MissingFromIndex => "Missing from index",
+            IndexValidationDriftKind.ChangedSinceIndex => "Changed since index",
+            IndexValidationDriftKind.MissingFromDisk => "Missing from disk",
+            IndexValidationDriftKind.FailedCheck => "Failed check",
+            _ => Kind.ToString(),
+        };
+}
+
 public sealed record IndexValidationResult(
     string Root,
     IndexValidationStatus Status,
@@ -21,8 +47,11 @@ public sealed record IndexValidationResult(
     long ChangedSinceIndex,
     long MissingFromDisk,
     long FailedChecks,
-    string Message)
+    string Message,
+    IReadOnlyList<IndexValidationDriftInfo>? Drift = null)
 {
+    public IReadOnlyList<IndexValidationDriftInfo> DriftDetails => Drift ?? Array.Empty<IndexValidationDriftInfo>();
+
     public bool HasDrift =>
         MissingFromIndex > 0 ||
         ChangedSinceIndex > 0 ||
@@ -37,7 +66,8 @@ public sealed record IndexValidationResult(
         long missingFromIndex,
         long changedSinceIndex,
         long missingFromDisk,
-        long failedChecks)
+        long failedChecks,
+        IReadOnlyList<IndexValidationDriftInfo>? drift = null)
     {
         var hasDrift =
             missingFromIndex > 0 ||
@@ -58,7 +88,8 @@ public sealed record IndexValidationResult(
             changedSinceIndex,
             missingFromDisk,
             failedChecks,
-            message);
+            message,
+            drift);
     }
 
     public static IndexValidationResult MissingIndex(string root, DateTime checkedUtc) =>

@@ -52,6 +52,11 @@ public interface IIndexMaintenance
             System.DateTime.UtcNow,
             "Index validation is not supported by this index implementation."));
 
+    Task<IReadOnlyList<IndexValidationDriftInfo>> GetValidationDriftAsync(
+        string root,
+        CancellationToken cancellationToken) =>
+        Task.FromResult<IReadOnlyList<IndexValidationDriftInfo>>(System.Array.Empty<IndexValidationDriftInfo>());
+
     Task<IReadOnlyList<IndexFailureInfo>> GetFailedFilesAsync(CancellationToken cancellationToken) =>
         Task.FromResult<IReadOnlyList<IndexFailureInfo>>(System.Array.Empty<IndexFailureInfo>());
 

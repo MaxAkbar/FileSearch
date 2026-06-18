@@ -25,6 +25,7 @@ public sealed class BindingPathAuditTests
     {
         typeof(FileResultViewModel),
         typeof(Hit),
+        typeof(IndexValidationDriftInfo),
         typeof(IndexRootHealthInfo),
         typeof(IndexedLocationSettings),
         typeof(IndexFilterListSettings),

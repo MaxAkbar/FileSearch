@@ -176,6 +176,8 @@ public sealed class FileIndexTests : IDisposable
         Assert.Equal(IndexValidationStatus.Passed.ToString(), location.LastValidationStatus);
         Assert.Equal(1, location.LastValidationFilesChecked);
         Assert.Equal(0, location.LastValidationMissingFromIndexCount);
+        Assert.Empty(validation.DriftDetails);
+        Assert.Empty(await _index.GetValidationDriftAsync(_root, TestContext.Current.CancellationToken));
     }
 
     [Fact]
@@ -208,6 +210,24 @@ public sealed class FileIndexTests : IDisposable
         Assert.Equal(1, location.LastValidationChangedCount);
         Assert.Equal(1, location.LastValidationMissingFromDiskCount);
         Assert.Contains("Drift detected", location.LastValidationMessage);
+
+        var drift = await _index.GetValidationDriftAsync(_root, TestContext.Current.CancellationToken);
+        Assert.Contains(drift, item =>
+            item.Kind == IndexValidationDriftKind.MissingFromIndex &&
+            string.Equals(item.Path, IndexPath.NormalizeFile(added), StringComparison.OrdinalIgnoreCase));
+        Assert.Contains(drift, item =>
+            item.Kind == IndexValidationDriftKind.ChangedSinceIndex &&
+            string.Equals(item.Path, IndexPath.NormalizeFile(changed), StringComparison.OrdinalIgnoreCase));
+        Assert.Contains(drift, item =>
+            item.Kind == IndexValidationDriftKind.MissingFromDisk &&
+            string.Equals(item.Path, IndexPath.NormalizeFile(deleted), StringComparison.OrdinalIgnoreCase));
+
+        await BuildAsync();
+        var cleanValidation = await _index.ValidateRootAsync(
+            new IndexRequest(_root, new WalkerOptions()),
+            TestContext.Current.CancellationToken);
+        Assert.Equal(IndexValidationStatus.Passed, cleanValidation.Status);
+        Assert.Empty(await _index.GetValidationDriftAsync(_root, TestContext.Current.CancellationToken));
     }
 
     [Fact]
