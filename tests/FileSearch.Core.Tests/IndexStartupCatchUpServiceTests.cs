@@ -283,6 +283,45 @@ public sealed class IndexStartupCatchUpServiceTests : IDisposable
     }
 
     [Fact]
+    public async Task CatchUpAsyncDoesNotCommitFinalCursorWhenJournalReaderFailsAfterPartialReplay()
+    {
+        var root = IndexPath.NormalizeRoot(_root);
+        var volume = CreateVolume(usnSupported: true);
+        var store = new FakeCatchUpStore(
+            new IndexVolumeCheckpoint(1, volume.VolumeKey, 7, 10, "healthy", null),
+            DirectoryReferences: new[] { "known-dir" });
+        var writer = new FakeReplayIndexWriter();
+        var records = Enumerable.Range(0, 513)
+            .Select(i => Change(
+                $"unrelated-{i}",
+                UsnReasonDataOverwrite,
+                FileAttributes.Archive,
+                string.Empty,
+                parent: "unrelated-dir",
+                usn: 10 + i))
+            .ToArray();
+        var reader = new FakeJournalReader(new UsnJournalSnapshot(7, 1, 1000), records)
+        {
+            ThrowAfterRecords = new IOException("USN journal read made no progress. Cursor=522, NextUsn=522."),
+        };
+        var service = new IndexStartupCatchUpService(
+            writer,
+            store,
+            new FakeVolumeResolver(volume),
+            reader);
+
+        var result = await service.CatchUpAsync(
+            new[] { new IndexedLocation(root, new WalkerOptions(), WatchEnabled: false) },
+            TestContext.Current.CancellationToken);
+
+        Assert.Empty(result.HandledRoots);
+        Assert.Contains(root, result.FallbackReasons.Keys);
+        Assert.Contains("no progress", result.FallbackReasons[root], StringComparison.OrdinalIgnoreCase);
+        Assert.Equal(new long[] { 522 }, writer.CommittedUsns);
+        Assert.DoesNotContain(1000, writer.CommittedUsns);
+    }
+
+    [Fact]
     public async Task CatchUpAsyncSkipsUnrelatedFileRecordWithoutResolvingPath()
     {
         var root = IndexPath.NormalizeRoot(_root);
@@ -683,6 +722,8 @@ public sealed class IndexStartupCatchUpServiceTests : IDisposable
             _records = records;
         }
 
+        public Exception? ThrowAfterRecords { get; set; }
+
         public Task<UsnJournalSnapshot> QueryAsync(
             IndexVolumeInfo volume,
             CancellationToken cancellationToken) =>
@@ -698,6 +739,9 @@ public sealed class IndexStartupCatchUpServiceTests : IDisposable
             await Task.CompletedTask;
             foreach (var record in _records)
                 yield return record;
+
+            if (ThrowAfterRecords is not null)
+                throw ThrowAfterRecords;
         }
     }
 

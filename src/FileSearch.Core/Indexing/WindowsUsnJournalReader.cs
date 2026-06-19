@@ -97,6 +97,9 @@ internal sealed class WindowsUsnJournalReader : IUsnJournalReader
             if (!UsnRecordParser.TryParseBuffer(output, bytesReturned, out var nextUsn, out var records, out var error))
                 throw new InvalidOperationException(error);
 
+            if (nextUsn <= cursor)
+                throw new IOException($"USN journal read made no progress. Cursor={cursor}, NextUsn={nextUsn}.");
+
             foreach (var record in records)
             {
                 if (record.Usn >= stopAtUsn)
@@ -104,9 +107,6 @@ internal sealed class WindowsUsnJournalReader : IUsnJournalReader
 
                 yield return record;
             }
-
-            if (nextUsn <= cursor)
-                yield break;
 
             cursor = nextUsn;
         }
