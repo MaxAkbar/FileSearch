@@ -288,18 +288,16 @@ jobs:
       - name: Create MSI installer
         shell: pwsh
         run: |
-          $msiArgs = @(
-            "-Configuration", "Release",
-            "-RuntimeIdentifier", "${{ needs.prepare.outputs.runtime }}",
-            "-Version", "${{ needs.prepare.outputs.version }}"
-          )
+          $msiArgs = @{
+            Configuration = "Release"
+            RuntimeIdentifier = "${{ needs.prepare.outputs.runtime }}"
+            Version = "${{ needs.prepare.outputs.version }}"
+          }
 
           $thumbprint = "${{ steps.signing.outputs.thumbprint }}"
           if (-not [string]::IsNullOrWhiteSpace($thumbprint)) {
-            $msiArgs += @(
-              "-CertificateThumbprint", $thumbprint,
-              "-TimestampUrl", "${{ steps.release_config.outputs.timestamp_url }}"
-            )
+            $msiArgs.CertificateThumbprint = $thumbprint
+            $msiArgs.TimestampUrl = "${{ steps.release_config.outputs.timestamp_url }}"
           }
 
           .\scripts\New-MsiInstaller.ps1 @msiArgs
