@@ -16,7 +16,7 @@ Completed since the older roadmap:
 - Index management UI with status badges, health diagnostics, validation, compaction, and pause/resume controls.
 - Resource controls for battery, CPU profile, and disk pauses.
 - Out-of-process extractor host, reusable extractor host pool, extractor versioning, IFilter fallback, archive limits, and failed-file export.
-- Spectre.Console CLI REPL with live search, indexed search, index maintenance, filter commands, one-shot search export, and one-shot index reporting to CSV/JSON/JSON Lines/Markdown.
+- Spectre.Console CLI REPL with live search, indexed search, index maintenance, filter commands, one-shot search export, one-shot index reporting, and one-shot index build/rebuild/clear actions to CSV/JSON/JSON Lines/Markdown.
 - Programmatic Core API examples and PowerShell CLI automation docs.
 - GitHub Actions CI foundation for build, test, formatting, CLI smoke, published sidecar smoke, dependency review, and manual Store packaging.
 - Security, privacy, and release checklist documentation.
@@ -24,7 +24,7 @@ Completed since the older roadmap:
 Still missing or partial:
 
 - No benchmark/performance harness for live scan, index build, or indexed query latency.
-- Action-oriented one-shot index maintenance commands for build, rebuild, clear, and retry failed files remain future work.
+- Retrying failed index files from the CLI remains future work.
 - Saved searches, custom scopes, and workspace bundles exist; richer profile sharing/import-export remains future work.
 - Results now have GUI facets, grouping, sort presets, direct CSV/JSON/JSON Lines/Markdown export, drag-and-drop, persistent favorites, shared pinned paths, and safe result rename/delete; richer reporting remains missing.
 - Durable USN replay is NTFS-only. ReFS remains on snapshot validation until 128-bit file identifiers are supported and tested.
@@ -66,15 +66,12 @@ Still missing or partial:
 
 ### 4. CLI, PowerShell, and API Surface
 
-- One-shot CLI output now covers search results plus `filesearch index locations`, `filesearch index stats [FOLDER]`, and `filesearch index failures`.
-- Add remaining action-oriented one-shot maintenance commands:
-  - `filesearch index build C:\src`
-  - `filesearch index rebuild C:\src`
-  - `filesearch index clear C:\src`
+- One-shot CLI output now covers search results, `filesearch index build [FOLDER]`, `filesearch index rebuild [FOLDER]`, `filesearch index clear [FOLDER]`, `filesearch index locations`, `filesearch index stats [FOLDER]`, and `filesearch index failures`.
+- Add remaining failed-file retry command once the core index exposes a targeted retry API:
   - `filesearch index retry-failures`
 - Document and test stable DTO contracts for automation output: search hit, search summary, index location, index stats, and index error.
 - Keep PowerShell usage CLI-driven for now.
-- Defer a dedicated PowerShell module until the remaining action-oriented maintenance commands have matching one-shot CLI forms.
+- Defer a dedicated PowerShell module until failed-file retry and DTO contracts are finalized.
 - If a PowerShell module is added later, it should wrap the CLI/API with cmdlets such as `Search-FileContent`, `Update-FileSearchIndex`, `Get-FileSearchIndexLocation`, and `Clear-FileSearchIndex`.
 
 ### 5. Product Maturity
@@ -94,7 +91,7 @@ Still missing or partial:
 - Add benchmark tests with tracked baselines for live and indexed paths.
 - Add Core tests for search-all-indexed-locations, default excluded folders, rebuild-all/clear/retry maintenance commands, ReFS replay support when implemented, hard-link policy, and ranked/snippet results matching live-search correctness.
 - Add GUI tests for saved search persistence, richer index health remediation, facet selection, and export command availability.
-- Add CLI tests for one-shot search, one-shot index locations/stats/failures, JSON output shape, CSV escaping, exit codes, and index stats/build/clear commands.
+- Add CLI tests for one-shot search, one-shot index build/rebuild/clear/locations/stats/failures, JSON output shape, CSV escaping, exit codes, and index stats/build/clear commands.
 - Add accessibility smoke checks for key windows and dialogs.
 
 ## Assumptions

@@ -364,6 +364,24 @@ internal sealed class FileSearchRepl
         var action = args[0].ToLowerInvariant();
         switch (action)
         {
+            case "build":
+            case "refresh":
+                return await RunOneShotIndexRefreshAsync(
+                        args[1..],
+                        "build",
+                        IndexRefreshMode.Incremental,
+                        cancellationToken)
+                    .ConfigureAwait(false);
+            case "rebuild":
+            case "full":
+                return await RunOneShotIndexRefreshAsync(
+                        args[1..],
+                        "rebuild",
+                        IndexRefreshMode.Full,
+                        cancellationToken)
+                    .ConfigureAwait(false);
+            case "clear":
+                return await RunOneShotIndexClearAsync(args[1..], cancellationToken).ConfigureAwait(false);
             case "locations":
             case "roots":
             {
@@ -398,6 +416,72 @@ internal sealed class FileSearchRepl
                 Console.Error.WriteLine(OneShotIndexUsage);
                 return 2;
         }
+    }
+
+    private async Task<int> RunOneShotIndexRefreshAsync(
+        string[] args,
+        string action,
+        IndexRefreshMode mode,
+        CancellationToken cancellationToken)
+    {
+        var options = ParseOneShotIndexOptions(args, allowTargetPath: true, allowWalkerOptions: true);
+        var root = ResolveOneShotIndexTarget(options);
+        if (!Directory.Exists(root))
+        {
+            Console.Error.WriteLine($"Folder does not exist: {root}");
+            return 2;
+        }
+
+        var progress = new IndexProgress(0, 0, 0, 0, 0, 0);
+        var stopwatch = System.Diagnostics.Stopwatch.StartNew();
+        var request = new IndexRequest(
+            root,
+            options.State.ToWalkerOptions(),
+            p => progress = p);
+
+        await _index.RefreshRootAsync(request, mode, cancellationToken).ConfigureAwait(false);
+        stopwatch.Stop();
+
+        var stats = await _index.GetStatsAsync(root, cancellationToken).ConfigureAwait(false);
+        var document = new OneShotIndexActionDocument(
+            action,
+            root,
+            "completed",
+            mode.ToString(),
+            stopwatch.Elapsed.TotalSeconds,
+            ToOneShotIndexProgress(progress),
+            null,
+            ToOneShotIndexStats(stats),
+            null);
+        var rendered = RenderOneShotIndexAction(document, options.Format);
+        await WriteOneShotOutputAsync(rendered, options.OutputPath, cancellationToken).ConfigureAwait(false);
+        return 0;
+    }
+
+    private async Task<int> RunOneShotIndexClearAsync(string[] args, CancellationToken cancellationToken)
+    {
+        var options = ParseOneShotIndexOptions(args, allowTargetPath: true);
+        var root = ResolveOneShotIndexTarget(options);
+        var before = await _index.GetStatsAsync(root, cancellationToken).ConfigureAwait(false);
+
+        var stopwatch = System.Diagnostics.Stopwatch.StartNew();
+        await _index.ClearAsync(root, cancellationToken).ConfigureAwait(false);
+        stopwatch.Stop();
+
+        var after = await _index.GetStatsAsync(root, cancellationToken).ConfigureAwait(false);
+        var document = new OneShotIndexActionDocument(
+            "clear",
+            root,
+            "completed",
+            null,
+            stopwatch.Elapsed.TotalSeconds,
+            null,
+            ToOneShotIndexStats(before),
+            ToOneShotIndexStats(after),
+            null);
+        var rendered = RenderOneShotIndexAction(document, options.Format);
+        await WriteOneShotOutputAsync(rendered, options.OutputPath, cancellationToken).ConfigureAwait(false);
+        return 0;
     }
 
     private static OneShotSearchOptions ParseOneShotSearchOptions(string[] args)
@@ -531,8 +615,12 @@ internal sealed class FileSearchRepl
         return new OneShotSearchOptions(queryText, state, format, outputPath);
     }
 
-    private static OneShotIndexOptions ParseOneShotIndexOptions(string[] args, bool allowTargetPath)
+    private static OneShotIndexOptions ParseOneShotIndexOptions(
+        string[] args,
+        bool allowTargetPath,
+        bool allowWalkerOptions = false)
     {
+        var state = new CliState();
         var format = OneShotOutputFormat.Json;
         string? outputPath = null;
         string? targetPath = null;
@@ -550,6 +638,12 @@ internal sealed class FileSearchRepl
                 case "-o":
                     outputPath = NextValue(args, ref i, arg);
                     break;
+                case "--path":
+                case "--root":
+                case "-p":
+                    EnsureOneShotIndexTargetAllowed(allowTargetPath, arg);
+                    targetPath = NextValue(args, ref i, arg);
+                    break;
                 case "--json":
                     format = OneShotOutputFormat.Json;
                     break;
@@ -564,6 +658,68 @@ internal sealed class FileSearchRepl
                 case "--md":
                     format = OneShotOutputFormat.Markdown;
                     break;
+                case "--recursive":
+                    EnsureOneShotWalkerOptionsAllowed(allowWalkerOptions, arg);
+                    state.Recursive = true;
+                    break;
+                case "--no-recursive":
+                    EnsureOneShotWalkerOptionsAllowed(allowWalkerOptions, arg);
+                    state.Recursive = false;
+                    break;
+                case "--hidden":
+                case "--include-hidden":
+                    EnsureOneShotWalkerOptionsAllowed(allowWalkerOptions, arg);
+                    state.IncludeHidden = true;
+                    break;
+                case "--include":
+                    EnsureOneShotWalkerOptionsAllowed(allowWalkerOptions, arg);
+                    state.IncludeGlobs.Clear();
+                    state.IncludeGlobs.AddRange(CliState.SplitList(NextValue(args, ref i, arg)));
+                    break;
+                case "--exclude":
+                    EnsureOneShotWalkerOptionsAllowed(allowWalkerOptions, arg);
+                    state.ExcludeGlobs.Clear();
+                    state.ExcludeGlobs.AddRange(CliState.SplitList(NextValue(args, ref i, arg)));
+                    break;
+                case "--ext":
+                case "--include-ext":
+                    EnsureOneShotWalkerOptionsAllowed(allowWalkerOptions, arg);
+                    state.IncludeExtensions.Clear();
+                    foreach (var extension in CliState.SplitList(NextValue(args, ref i, arg)).Select(CliState.NormalizeExtension))
+                        state.IncludeExtensions.Add(extension);
+                    break;
+                case "--exclude-ext":
+                    EnsureOneShotWalkerOptionsAllowed(allowWalkerOptions, arg);
+                    state.ExcludeExtensions.Clear();
+                    foreach (var extension in CliState.SplitList(NextValue(args, ref i, arg)).Select(CliState.NormalizeExtension))
+                        state.ExcludeExtensions.Add(extension);
+                    break;
+                case "--exclude-dir":
+                case "--exclude-dirs":
+                    EnsureOneShotWalkerOptionsAllowed(allowWalkerOptions, arg);
+                    state.ExcludeDirectories.Clear();
+                    state.ExcludeDirectories.UnionWith(CliState.SplitList(NextValue(args, ref i, arg)));
+                    break;
+                case "--min-size":
+                    EnsureOneShotWalkerOptionsAllowed(allowWalkerOptions, arg);
+                    if (!CliState.TryParseSize(NextValue(args, ref i, arg), out var minSize))
+                        throw new ArgumentException("Minimum size must be a number with an optional kb, mb, or gb suffix.");
+                    state.MinFileSizeBytes = minSize;
+                    break;
+                case "--max-size":
+                    EnsureOneShotWalkerOptionsAllowed(allowWalkerOptions, arg);
+                    if (!CliState.TryParseSize(NextValue(args, ref i, arg), out var maxSize))
+                        throw new ArgumentException("Maximum size must be a number with an optional kb, mb, or gb suffix.");
+                    state.MaxFileSizeBytes = maxSize;
+                    break;
+                case "--after":
+                    EnsureOneShotWalkerOptionsAllowed(allowWalkerOptions, arg);
+                    state.ModifiedAfterUtc = ParseOneShotDate(NextValue(args, ref i, arg));
+                    break;
+                case "--before":
+                    EnsureOneShotWalkerOptionsAllowed(allowWalkerOptions, arg);
+                    state.ModifiedBeforeUtc = ParseOneShotDate(NextValue(args, ref i, arg));
+                    break;
                 default:
                     if (arg.StartsWith('-'))
                         throw new ArgumentException($"Unknown option: {arg}");
@@ -576,8 +732,25 @@ internal sealed class FileSearchRepl
             }
         }
 
-        return new OneShotIndexOptions(targetPath, format, outputPath);
+        return new OneShotIndexOptions(targetPath, state, format, outputPath);
     }
+
+    private static void EnsureOneShotIndexTargetAllowed(bool allowTargetPath, string option)
+    {
+        if (!allowTargetPath)
+            throw new ArgumentException($"{option} is not supported for this index command.");
+    }
+
+    private static void EnsureOneShotWalkerOptionsAllowed(bool allowWalkerOptions, string option)
+    {
+        if (!allowWalkerOptions)
+            throw new ArgumentException($"{option} is only supported by index build and index rebuild.");
+    }
+
+    private static string ResolveOneShotIndexTarget(OneShotIndexOptions options) =>
+        string.IsNullOrWhiteSpace(options.TargetPath)
+            ? Path.GetFullPath(Directory.GetCurrentDirectory())
+            : Path.GetFullPath(ExpandHome(options.TargetPath));
 
     private static async Task WriteOneShotOutputAsync(
         string rendered,
@@ -765,6 +938,17 @@ internal sealed class FileSearchRepl
                 s_oneShotJsonOptions) + Environment.NewLine,
         };
 
+    private static string RenderOneShotIndexAction(
+        OneShotIndexActionDocument document,
+        OneShotOutputFormat format) =>
+        format switch
+        {
+            OneShotOutputFormat.Csv => RenderOneShotIndexActionCsv(document),
+            OneShotOutputFormat.JsonLines => JsonSerializer.Serialize(document, s_oneShotJsonLineOptions) + Environment.NewLine,
+            OneShotOutputFormat.Markdown => RenderOneShotIndexActionMarkdown(document),
+            _ => JsonSerializer.Serialize(document, s_oneShotJsonOptions) + Environment.NewLine,
+        };
+
     private static string RenderOneShotIndexLocationsJsonLines(IReadOnlyList<IndexedLocationInfo> locations)
     {
         var sb = new StringBuilder();
@@ -911,6 +1095,82 @@ internal sealed class FileSearchRepl
         return sb.ToString();
     }
 
+    private static string RenderOneShotIndexActionCsv(OneShotIndexActionDocument document)
+    {
+        var sb = new StringBuilder();
+        sb.AppendLine("action,root,status,mode,elapsedSeconds,filesEnumerated,filesIndexed,filesSkippedUnchanged,filesRemoved,filesFailed,linesIndexed,beforeExists,beforeFileCount,beforeLineCount,beforeIndexedUtc,afterExists,afterFileCount,afterLineCount,afterIndexedUtc,message");
+        sb.Append(CsvField(document.Action)).Append(',');
+        sb.Append(CsvField(document.Root)).Append(',');
+        sb.Append(CsvField(document.Status)).Append(',');
+        sb.Append(CsvField(document.Mode ?? string.Empty)).Append(',');
+        sb.Append(document.ElapsedSeconds.ToString(CultureInfo.InvariantCulture)).Append(',');
+        sb.Append(document.Progress?.FilesEnumerated.ToString(CultureInfo.InvariantCulture) ?? string.Empty).Append(',');
+        sb.Append(document.Progress?.FilesIndexed.ToString(CultureInfo.InvariantCulture) ?? string.Empty).Append(',');
+        sb.Append(document.Progress?.FilesSkippedUnchanged.ToString(CultureInfo.InvariantCulture) ?? string.Empty).Append(',');
+        sb.Append(document.Progress?.FilesRemoved.ToString(CultureInfo.InvariantCulture) ?? string.Empty).Append(',');
+        sb.Append(document.Progress?.FilesFailed.ToString(CultureInfo.InvariantCulture) ?? string.Empty).Append(',');
+        sb.Append(document.Progress?.LinesIndexed.ToString(CultureInfo.InvariantCulture) ?? string.Empty).Append(',');
+        sb.Append(document.Before?.Exists.ToString(CultureInfo.InvariantCulture).ToLowerInvariant() ?? string.Empty).Append(',');
+        sb.Append(document.Before?.FileCount.ToString(CultureInfo.InvariantCulture) ?? string.Empty).Append(',');
+        sb.Append(document.Before?.LineCount.ToString(CultureInfo.InvariantCulture) ?? string.Empty).Append(',');
+        sb.Append(CsvField(FormatIsoDate(document.Before?.IndexedUtc))).Append(',');
+        sb.Append(document.After?.Exists.ToString(CultureInfo.InvariantCulture).ToLowerInvariant() ?? string.Empty).Append(',');
+        sb.Append(document.After?.FileCount.ToString(CultureInfo.InvariantCulture) ?? string.Empty).Append(',');
+        sb.Append(document.After?.LineCount.ToString(CultureInfo.InvariantCulture) ?? string.Empty).Append(',');
+        sb.Append(CsvField(FormatIsoDate(document.After?.IndexedUtc))).Append(',');
+        sb.AppendLine(CsvField(document.Message ?? string.Empty));
+        return sb.ToString();
+    }
+
+    private static string RenderOneShotIndexActionMarkdown(OneShotIndexActionDocument document)
+    {
+        var sb = new StringBuilder();
+        sb.AppendLine("# Index Action");
+        sb.AppendLine();
+        sb.AppendLine(CultureInfo.InvariantCulture, $"- Action: {document.Action}");
+        sb.AppendLine(CultureInfo.InvariantCulture, $"- Root: {document.Root}");
+        sb.AppendLine(CultureInfo.InvariantCulture, $"- Status: {document.Status}");
+        if (!string.IsNullOrWhiteSpace(document.Mode))
+            sb.AppendLine(CultureInfo.InvariantCulture, $"- Mode: {document.Mode}");
+        sb.AppendLine(CultureInfo.InvariantCulture, $"- Elapsed: {document.ElapsedSeconds:0.###}s");
+        if (!string.IsNullOrWhiteSpace(document.Message))
+            sb.AppendLine(CultureInfo.InvariantCulture, $"- Message: {document.Message}");
+
+        if (document.Progress is not null)
+        {
+            sb.AppendLine();
+            sb.AppendLine("## Progress");
+            sb.AppendLine();
+            sb.AppendLine(CultureInfo.InvariantCulture, $"- Files enumerated: {document.Progress.FilesEnumerated:n0}");
+            sb.AppendLine(CultureInfo.InvariantCulture, $"- Files indexed: {document.Progress.FilesIndexed:n0}");
+            sb.AppendLine(CultureInfo.InvariantCulture, $"- Files skipped unchanged: {document.Progress.FilesSkippedUnchanged:n0}");
+            sb.AppendLine(CultureInfo.InvariantCulture, $"- Files removed: {document.Progress.FilesRemoved:n0}");
+            sb.AppendLine(CultureInfo.InvariantCulture, $"- Files failed: {document.Progress.FilesFailed:n0}");
+            sb.AppendLine(CultureInfo.InvariantCulture, $"- Lines indexed: {document.Progress.LinesIndexed:n0}");
+        }
+
+        if (document.Before is not null)
+            AppendOneShotIndexStatsMarkdown(sb, "Before", document.Before);
+        if (document.After is not null)
+            AppendOneShotIndexStatsMarkdown(sb, "After", document.After);
+
+        return sb.ToString();
+    }
+
+    private static void AppendOneShotIndexStatsMarkdown(
+        StringBuilder sb,
+        string title,
+        OneShotIndexStats stats)
+    {
+        sb.AppendLine();
+        sb.AppendLine(CultureInfo.InvariantCulture, $"## {title}");
+        sb.AppendLine();
+        sb.AppendLine(CultureInfo.InvariantCulture, $"- Exists: {(stats.Exists ? "yes" : "no")}");
+        sb.AppendLine(CultureInfo.InvariantCulture, $"- Files: {stats.FileCount:n0}");
+        sb.AppendLine(CultureInfo.InvariantCulture, $"- Lines: {stats.LineCount:n0}");
+        sb.AppendLine(CultureInfo.InvariantCulture, $"- Last indexed: {FormatIsoDate(stats.IndexedUtc)}");
+    }
+
     private static readonly SearchValues<char> s_csvSpecialChars = SearchValues.Create(",\"\n\r");
 
     private static readonly JsonSerializerOptions s_oneShotJsonOptions = new()
@@ -973,6 +1233,15 @@ internal sealed class FileSearchRepl
             failure.RetryCount,
             failure.LastAttemptUtc,
             failure.Error);
+
+    private static OneShotIndexProgress ToOneShotIndexProgress(IndexProgress progress) =>
+        new(
+            progress.FilesEnumerated,
+            progress.FilesIndexed,
+            progress.FilesSkippedUnchanged,
+            progress.FilesRemoved,
+            progress.FilesFailed,
+            progress.LinesIndexed);
 
     private static string FormatIsoDate(DateTime? date) =>
         date?.ToString("O", CultureInfo.InvariantCulture) ?? string.Empty;
@@ -1672,7 +1941,7 @@ internal sealed class FileSearchRepl
         "[--json|--jsonl|--csv|--markdown] [--output PATH] [--limit N]";
 
     private const string OneShotIndexUsage =
-        "Usage: filesearch index locations|stats [FOLDER]|failures " +
+        "Usage: filesearch index build|rebuild|clear [FOLDER] OR locations|stats [FOLDER]|failures " +
         "[--json|--jsonl|--csv|--markdown] [--output PATH]";
 
     private enum OneShotOutputFormat
@@ -1691,6 +1960,7 @@ internal sealed class FileSearchRepl
 
     private sealed record OneShotIndexOptions(
         string? TargetPath,
+        CliState State,
         OneShotOutputFormat Format,
         string? OutputPath);
 
@@ -1746,6 +2016,25 @@ internal sealed class FileSearchRepl
     private sealed record OneShotIndexFailuresDocument(
         int Count,
         IReadOnlyList<OneShotIndexFailure> Failures);
+
+    private sealed record OneShotIndexActionDocument(
+        string Action,
+        string Root,
+        string Status,
+        string? Mode,
+        double ElapsedSeconds,
+        OneShotIndexProgress? Progress,
+        OneShotIndexStats? Before,
+        OneShotIndexStats? After,
+        string? Message);
+
+    private sealed record OneShotIndexProgress(
+        long FilesEnumerated,
+        long FilesIndexed,
+        long FilesSkippedUnchanged,
+        long FilesRemoved,
+        long FilesFailed,
+        long LinesIndexed);
 
     private sealed record OneShotIndexFailure(
         string Root,
