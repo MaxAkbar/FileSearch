@@ -128,7 +128,7 @@ jobs:
           retention-days: 30
 
   package:
-    name: Build signed package
+    name: Build release artifacts
     runs-on: windows-latest
     needs:
       - prepare
@@ -171,19 +171,25 @@ jobs:
             }
           }
 
-          if ($missing.Count -gt 0) {
-            throw "Missing release configuration values: $($missing -join ', ')"
-          }
-
           $timestampUrl = $env:WINDOWS_TIMESTAMP_URL
           if ([string]::IsNullOrWhiteSpace($timestampUrl)) {
             $timestampUrl = "http://timestamp.digicert.com"
           }
 
+          if ($missing.Count -gt 0) {
+            "signed_store_enabled=false" >> $env:GITHUB_OUTPUT
+            "timestamp_url=$timestampUrl" >> $env:GITHUB_OUTPUT
+            Write-Warning "Skipping signed Store package because release configuration is missing: $($missing -join ', ')"
+            Write-Host "Portable release artifacts will still be created."
+            return
+          }
+
+          "signed_store_enabled=true" >> $env:GITHUB_OUTPUT
           "timestamp_url=$timestampUrl" >> $env:GITHUB_OUTPUT
-          Write-Host "Release configuration is present."
+          Write-Host "Signed Store release configuration is present."
 
       - name: Import signing certificate
+        if: steps.release_config.outputs.signed_store_enabled == 'true'
         id: signing
         shell: pwsh
         env:
@@ -208,6 +214,7 @@ jobs:
           Write-Host "Imported signing certificate with thumbprint $($cert.Thumbprint)."
 
       - name: Create signed Store package
+        if: steps.release_config.outputs.signed_store_enabled == 'true'
         shell: pwsh
         env:
           STORE_PACKAGE_IDENTITY_NAME: ${{ vars.STORE_PACKAGE_IDENTITY_NAME }}
@@ -226,11 +233,13 @@ jobs:
             -TimestampUrl "$env:TIMESTAMP_URL"
 
       - name: Run published sidecar smoke test
+        if: steps.release_config.outputs.signed_store_enabled == 'true'
         shell: pwsh
         run: |
           .\scripts\Test-PublishedSidecars.ps1 -PublishDirectory ".\artifacts\store\publish\${{ needs.prepare.outputs.runtime }}"
 
       - name: Verify signed Store package
+        if: steps.release_config.outputs.signed_store_enabled == 'true'
         shell: pwsh
         env:
           STORE_PACKAGE_IDENTITY_NAME: ${{ vars.STORE_PACKAGE_IDENTITY_NAME }}
@@ -247,11 +256,26 @@ jobs:
             -RequireSymbols `
             -ChecksumPath ".\artifacts\store\SHA256SUMS-${{ needs.prepare.outputs.runtime }}.txt"
 
-      - name: Upload signed release artifacts
+      - name: Create portable release archive
+        shell: pwsh
+        run: |
+          .\scripts\New-PortableRelease.ps1 `
+            -Configuration Release `
+            -RuntimeIdentifier "${{ needs.prepare.outputs.runtime }}" `
+            -Version "${{ needs.prepare.outputs.version }}"
+
+      - name: Run portable sidecar smoke test
+        shell: pwsh
+        run: |
+          .\scripts\Test-PublishedSidecars.ps1 -PublishDirectory ".\artifacts\release\publish\${{ needs.prepare.outputs.runtime }}"
+
+      - name: Upload release artifacts
         uses: actions/upload-artifact@v7
         with:
           name: filesearch-release-${{ needs.prepare.outputs.version }}-${{ needs.prepare.outputs.runtime }}
           path: |
+            artifacts/release/*.zip
+            artifacts/release/SHA256SUMS*.txt
             artifacts/store/*.msix
             artifacts/store/*.appxsym
             artifacts/store/*.msixupload
@@ -281,6 +305,7 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           $files = Get-ChildItem -LiteralPath .\release-artifacts -File | Where-Object {
+            $_.Name -like "*.zip" -or
             $_.Name -like "*.msix" -or
             $_.Name -like "*.appxsym" -or
             $_.Name -like "*.msixupload" -or

@@ -408,7 +408,7 @@ Directly loading `FileSearch.Core` from PowerShell is possible, but it is not th
 
 FileSearch is packaged as an MSIX for Store distribution. The repository includes a PowerShell packaging script that publishes the app, background indexer, and extractor host self-contained, creates the MSIX layout, generates tile assets, and emits a Partner Center upload file.
 
-CI builds, tests, CLI smoke tests, published sidecar smoke tests, dependency review, manual Store packaging, and signed tag-based releases are configured with GitHub Actions. Release steps are documented in [docs/RELEASE_CHECKLIST.md](docs/RELEASE_CHECKLIST.md).
+CI builds, tests, CLI smoke tests, published sidecar smoke tests, dependency review, manual Store packaging, portable tag-based releases, and optional signed Store artifacts are configured with GitHub Actions. Release steps are documented in [docs/RELEASE_CHECKLIST.md](docs/RELEASE_CHECKLIST.md).
 
 Run from the repository root:
 
@@ -426,7 +426,7 @@ Outputs are written to `artifacts\store`:
 - `.appxsym` public symbols.
 - `.msixupload` file for Microsoft Store submission.
 
-For sideload testing, pass `-CertificateThumbprint` with a certificate trusted on the test machine. For signed public releases, use the GitHub Actions **Release** workflow with signing secrets in the protected `release-signing` environment. For Microsoft Store submission, upload the generated `.msixupload` file using the reserved identity and publisher values for the app in Partner Center.
+For sideload testing, pass `-CertificateThumbprint` with a certificate trusted on the test machine. For GitHub releases, the **Release** workflow creates a portable ZIP even when Store signing is not configured. When Store variables and signing secrets exist in the protected `release-signing` environment, the same workflow also creates signed Store artifacts. For Microsoft Store submission, upload the generated `.msixupload` file using the reserved identity and publisher values for the app in Partner Center.
 
 ## Development notes
 

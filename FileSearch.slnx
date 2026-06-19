@@ -10,4 +10,7 @@
     <Project Path="tests/FileSearch.Core.Tests/FileSearch.Core.Tests.csproj" />
     <Project Path="tests/FileSearch.Gui.Tests/FileSearch.Gui.Tests.csproj" />
   </Folder>
+  <Folder Name="/benchmarks/">
+    <Project Path="benchmarks/FileSearch.Benchmarks/FileSearch.Benchmarks.csproj" />
+  </Folder>
 </Solution>

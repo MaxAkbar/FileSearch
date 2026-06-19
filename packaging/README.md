@@ -37,7 +37,7 @@ Use `scripts\Test-StorePackageArtifact.ps1` to verify package contents,
 signature state, Store upload contents, and checksums.
 
 For Microsoft Store submission, upload the `.msixupload` file generated with
-the identity and publisher values reserved for the app in Partner Center. Public
-signed releases should use the GitHub Actions **Release** workflow, which
-requires signing secrets in the protected `release-signing` environment and
-creates a draft GitHub Release for version tags.
+the identity and publisher values reserved for the app in Partner Center. The
+GitHub Actions **Release** workflow always creates a portable ZIP for version
+tags. It also creates signed Store artifacts when the Store variables and
+signing secrets are configured in the protected `release-signing` environment.

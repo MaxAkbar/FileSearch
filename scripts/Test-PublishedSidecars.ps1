@@ -70,7 +70,12 @@ function Invoke-IndexerCommand(
             $writer.WriteLineAsync($payload).GetAwaiter().GetResult()
             Write-SmokeLog "Wrote $Command."
 
-            $responsePayload = $reader.ReadLineAsync($timeoutCts.Token).GetAwaiter().GetResult()
+            $readTask = $reader.ReadLineAsync()
+            if (-not $readTask.Wait($TimeoutMilliseconds)) {
+                throw "Timed out waiting for $Command response from $PipeName."
+            }
+
+            $responsePayload = $readTask.GetAwaiter().GetResult()
             if ([string]::IsNullOrWhiteSpace($responsePayload)) {
                 throw "$Command returned an empty response."
             }
