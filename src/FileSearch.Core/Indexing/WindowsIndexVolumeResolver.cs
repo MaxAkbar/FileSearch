@@ -17,6 +17,12 @@ internal sealed class WindowsIndexVolumeResolver : IIndexVolumeResolver
     private const uint FileSupportsUsnJournal = 0x02000000;
     private const int FileIdType = 0;
     private const uint VolumeNameDos = 0;
+    private const int ErrorFileNotFound = 2;
+    private const int ErrorPathNotFound = 3;
+    private const int ErrorAccessDenied = 5;
+    private const int ErrorInvalidHandle = 6;
+    private const int ErrorInvalidParameter = 87;
+    private const int ErrorNotFound = 1168;
 
     public bool TryResolveVolume(string root, out IndexVolumeInfo volume, out string fallbackReason)
     {
@@ -150,32 +156,33 @@ internal sealed class WindowsIndexVolumeResolver : IIndexVolumeResolver
         return true;
     }
 
-    public bool TryResolvePathFromFileId(
+    public FileIdResolutionResult ResolvePathFromFileId(
         IndexVolumeInfo volume,
-        string fileReferenceNumber,
-        out string path,
-        out string fallbackReason)
+        string fileReferenceNumber)
     {
-        path = string.Empty;
-        fallbackReason = string.Empty;
-
         if (!OperatingSystem.IsWindows())
         {
-            fallbackReason = "File ID path resolution is only available on Windows.";
-            return false;
+            return ResolutionFailure(
+                FileIdResolutionStatus.UnsupportedIdentifier,
+                null,
+                "File ID path resolution is only available on Windows.");
         }
 
         if (volume.IsRemote || string.IsNullOrWhiteSpace(volume.DevicePath))
         {
-            fallbackReason = "File ID path resolution requires a local volume handle.";
-            return false;
+            return ResolutionFailure(
+                FileIdResolutionStatus.InvalidVolumeHandle,
+                null,
+                "File ID path resolution requires a local volume handle.");
         }
 
         if (!ulong.TryParse(fileReferenceNumber, NumberStyles.None, CultureInfo.InvariantCulture, out var parsed) ||
             parsed > long.MaxValue)
         {
-            fallbackReason = "Only 64-bit file reference numbers can be resolved in V1.";
-            return false;
+            return ResolutionFailure(
+                FileIdResolutionStatus.UnsupportedIdentifier,
+                null,
+                "Only 64-bit file reference numbers can be resolved in V1.");
         }
 
         using var volumeHandle = CreateFileW(
@@ -189,8 +196,8 @@ internal sealed class WindowsIndexVolumeResolver : IIndexVolumeResolver
 
         if (volumeHandle.IsInvalid)
         {
-            fallbackReason = new Win32Exception(Marshal.GetLastWin32Error()).Message;
-            return false;
+            var error = Marshal.GetLastWin32Error();
+            return ResolutionFailure(ClassifyVolumeHandleError(error), error);
         }
 
         var descriptor = new FileIdDescriptor
@@ -211,20 +218,23 @@ internal sealed class WindowsIndexVolumeResolver : IIndexVolumeResolver
 
         if (fileHandle.IsInvalid)
         {
-            fallbackReason = new Win32Exception(Marshal.GetLastWin32Error()).Message;
-            return false;
+            var error = Marshal.GetLastWin32Error();
+            return ResolutionFailure(ClassifyFileIdOpenError(error), error);
         }
 
         var builder = new StringBuilder(MaxPathBuffer);
         var length = GetFinalPathNameByHandleW(fileHandle, builder, builder.Capacity, VolumeNameDos);
         if (length == 0 || length >= builder.Capacity)
         {
-            fallbackReason = new Win32Exception(Marshal.GetLastWin32Error()).Message;
-            return false;
+            var error = Marshal.GetLastWin32Error();
+            return ResolutionFailure(ClassifyFinalPathError(error), error);
         }
 
-        path = StripExtendedPrefix(builder.ToString());
-        return true;
+        return new FileIdResolutionResult(
+            FileIdResolutionStatus.Found,
+            StripExtendedPrefix(builder.ToString()),
+            null,
+            null);
     }
 
     private static bool IsUncPath(string path) =>
@@ -314,6 +324,43 @@ internal sealed class WindowsIndexVolumeResolver : IIndexVolumeResolver
             ? path[4..]
             : path;
     }
+
+    private static FileIdResolutionResult ResolutionFailure(
+        FileIdResolutionStatus status,
+        int? error,
+        string? message = null) =>
+        new FileIdResolutionResult(
+            status,
+            null,
+            error,
+            message ?? (error is null ? null : new Win32Exception(error.Value).Message));
+
+    private static FileIdResolutionStatus ClassifyVolumeHandleError(int error) =>
+        error switch
+        {
+            ErrorAccessDenied => FileIdResolutionStatus.AccessDenied,
+            ErrorFileNotFound or ErrorPathNotFound or ErrorInvalidHandle or ErrorInvalidParameter =>
+                FileIdResolutionStatus.InvalidVolumeHandle,
+            _ => FileIdResolutionStatus.TransientFailure,
+        };
+
+    private static FileIdResolutionStatus ClassifyFileIdOpenError(int error) =>
+        error switch
+        {
+            ErrorFileNotFound or ErrorPathNotFound or ErrorNotFound => FileIdResolutionStatus.FileNoLongerExists,
+            ErrorAccessDenied => FileIdResolutionStatus.AccessDenied,
+            ErrorInvalidParameter => FileIdResolutionStatus.UnsupportedIdentifier,
+            ErrorInvalidHandle => FileIdResolutionStatus.InvalidVolumeHandle,
+            _ => FileIdResolutionStatus.TransientFailure,
+        };
+
+    private static FileIdResolutionStatus ClassifyFinalPathError(int error) =>
+        error switch
+        {
+            ErrorAccessDenied => FileIdResolutionStatus.AccessDenied,
+            ErrorInvalidHandle => FileIdResolutionStatus.InvalidVolumeHandle,
+            _ => FileIdResolutionStatus.TransientFailure,
+        };
 
 #pragma warning disable CA1838
     [DllImport("kernel32.dll", SetLastError = true, CharSet = CharSet.Unicode)]

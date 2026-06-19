@@ -262,17 +262,20 @@ internal sealed class IndexStartupCatchUpService : IIndexStartupCatchUpService
                 if (!parentDirectoryIsKnown)
                     continue;
 
-                if (!_volumeResolver.TryResolvePathFromFileId(
-                        group.Volume,
-                        record.FileReferenceNumber,
-                        out var resolvedDirectory,
-                        out var resolveReason))
+                var directoryResolution = _volumeResolver.ResolvePathFromFileId(
+                    group.Volume,
+                    record.FileReferenceNumber);
+                if (directoryResolution.Status != FileIdResolutionStatus.Found ||
+                    string.IsNullOrWhiteSpace(directoryResolution.Path))
                 {
-                    AddFallback(group, fallback, $"Could not resolve changed directory path: {resolveReason}");
+                    AddFallback(
+                        group,
+                        fallback,
+                        $"Could not resolve changed directory path: {FormatResolutionFailure(directoryResolution)}");
                     return false;
                 }
 
-                var normalizedDirectory = IndexPath.NormalizeFile(resolvedDirectory);
+                var normalizedDirectory = IndexPath.NormalizeFile(directoryResolution.Path);
                 var matchingDirectoryRoots = MatchingRoots(group.Locations, normalizedDirectory).ToArray();
                 if (matchingDirectoryRoots.Length > 0)
                     SetDirectory(record.FileReferenceNumber, matchingDirectoryRoots, normalizedDirectory);
@@ -291,17 +294,20 @@ internal sealed class IndexStartupCatchUpService : IIndexStartupCatchUpService
             if (!fileIsKnown && !parentDirectoryIsKnown)
                 continue;
 
-            if (!_volumeResolver.TryResolvePathFromFileId(
-                    group.Volume,
-                    record.FileReferenceNumber,
-                    out var resolvedPath,
-                    out _))
+            var fileResolution = _volumeResolver.ResolvePathFromFileId(
+                group.Volume,
+                record.FileReferenceNumber);
+            if (fileResolution.Status != FileIdResolutionStatus.Found ||
+                string.IsNullOrWhiteSpace(fileResolution.Path))
             {
-                SetDelete(record.FileReferenceNumber);
-                continue;
+                AddFallback(
+                    group,
+                    fallback,
+                    $"Could not resolve changed file path: {FormatResolutionFailure(fileResolution)}");
+                return false;
             }
 
-            var normalizedPath = IndexPath.NormalizeFile(resolvedPath);
+            var normalizedPath = IndexPath.NormalizeFile(fileResolution.Path);
             var matchingFileRoots = MatchingRoots(group.Locations, normalizedPath).ToArray();
             if (matchingFileRoots.Length == 0)
             {
@@ -464,6 +470,27 @@ internal sealed class IndexStartupCatchUpService : IIndexStartupCatchUpService
 
     private static bool HasReason(UsnChangeRecord record, uint reason) =>
         (record.Reason & reason) != 0;
+
+    private static string FormatResolutionFailure(FileIdResolutionResult result)
+    {
+        var status = result.Status switch
+        {
+            FileIdResolutionStatus.FileNoLongerExists => "file no longer exists",
+            FileIdResolutionStatus.AccessDenied => "access denied",
+            FileIdResolutionStatus.UnsupportedIdentifier => "unsupported file identifier",
+            FileIdResolutionStatus.InvalidVolumeHandle => "invalid volume handle",
+            FileIdResolutionStatus.TransientFailure => "transient failure",
+            _ => result.Status.ToString(),
+        };
+
+        var message = string.IsNullOrWhiteSpace(result.Message)
+            ? status
+            : $"{status}: {result.Message}";
+
+        return result.Win32Error is int error
+            ? $"{message} (Win32 {error})"
+            : message;
+    }
 
     private static long NextCheckpointUsn(long recordUsn, long journalNextUsn)
     {

@@ -28,6 +28,22 @@ internal readonly record struct ResolvedFileIdentity(
     string FileReferenceNumber,
     string? ParentFileReferenceNumber);
 
+internal enum FileIdResolutionStatus
+{
+    Found,
+    FileNoLongerExists,
+    AccessDenied,
+    UnsupportedIdentifier,
+    InvalidVolumeHandle,
+    TransientFailure,
+}
+
+internal sealed record FileIdResolutionResult(
+    FileIdResolutionStatus Status,
+    string? Path,
+    int? Win32Error,
+    string? Message);
+
 internal sealed record IndexedFileIdentity(
     long VolumeId,
     string FileReferenceNumber,
@@ -82,11 +98,9 @@ internal interface IIndexVolumeResolver
 
     bool TryGetFileIdentity(string path, out ResolvedFileIdentity identity);
 
-    bool TryResolvePathFromFileId(
+    FileIdResolutionResult ResolvePathFromFileId(
         IndexVolumeInfo volume,
-        string fileReferenceNumber,
-        out string path,
-        out string fallbackReason);
+        string fileReferenceNumber);
 }
 
 internal interface IUsnJournalReader

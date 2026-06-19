@@ -460,7 +460,7 @@ public sealed class IndexStartupCatchUpServiceTests : IDisposable
     }
 
     [Fact]
-    public async Task CatchUpAsyncDeletesIdentityForUnresolvedFileRecord()
+    public async Task CatchUpAsyncFallsBackForUnresolvedNonDeleteFileRecord()
     {
         var root = IndexPath.NormalizeRoot(_root);
         var volume = CreateVolume(usnSupported: true);
@@ -481,11 +481,48 @@ public sealed class IndexStartupCatchUpServiceTests : IDisposable
             new[] { new IndexedLocation(root, new WalkerOptions(), WatchEnabled: false) },
             TestContext.Current.CancellationToken);
 
-        Assert.Contains(root, result.HandledRoots);
-        Assert.Empty(result.FallbackReasons);
-        Assert.Equal(new[] { "79" }, store.DeletedFileReferences);
+        Assert.Empty(result.HandledRoots);
+        Assert.Contains(root, result.FallbackReasons.Keys);
+        Assert.Contains("Could not resolve changed file path", result.FallbackReasons[root], StringComparison.OrdinalIgnoreCase);
+        Assert.Empty(store.DeletedFileReferences);
         Assert.Empty(writer.Upserts);
-        Assert.Equal(20, store.LastCommittedUsn);
+        Assert.Equal(0, store.LastCommittedUsn);
+    }
+
+    [Fact]
+    public async Task CatchUpAsyncFallsBackForAccessDeniedFileIdResolution()
+    {
+        var root = IndexPath.NormalizeRoot(_root);
+        var volume = CreateVolume(usnSupported: true);
+        var store = new FakeCatchUpStore(
+            new IndexVolumeCheckpoint(1, volume.VolumeKey, 7, 10, "healthy", null),
+            FileReferences: new[] { "80" },
+            DirectoryReferences: new[] { "1" });
+        var writer = new FakeIndexWriter();
+        var resolver = new FakeVolumeResolver(volume);
+        resolver.ResolutionResults["80"] = new FileIdResolutionResult(
+            FileIdResolutionStatus.AccessDenied,
+            null,
+            5,
+            "Access is denied.");
+        var service = new IndexStartupCatchUpService(
+            writer,
+            store,
+            resolver,
+            new FakeJournalReader(
+                new UsnJournalSnapshot(7, 1, 20),
+                Change("80", UsnReasonDataOverwrite, FileAttributes.Archive, string.Empty)));
+
+        var result = await service.CatchUpAsync(
+            new[] { new IndexedLocation(root, new WalkerOptions(), WatchEnabled: false) },
+            TestContext.Current.CancellationToken);
+
+        Assert.Empty(result.HandledRoots);
+        Assert.Contains(root, result.FallbackReasons.Keys);
+        Assert.Contains("access denied", result.FallbackReasons[root], StringComparison.OrdinalIgnoreCase);
+        Assert.Empty(store.DeletedFileReferences);
+        Assert.Empty(writer.Upserts);
+        Assert.Equal(0, store.LastCommittedUsn);
     }
 
     [Fact]
@@ -591,6 +628,8 @@ public sealed class IndexStartupCatchUpServiceTests : IDisposable
 
         public Dictionary<string, string> PathsByFileId { get; } = new(StringComparer.Ordinal);
 
+        public Dictionary<string, FileIdResolutionResult> ResolutionResults { get; } = new(StringComparer.Ordinal);
+
         public Dictionary<string, ResolvedFileIdentity> IdentitiesByPath { get; } =
             new(StringComparer.OrdinalIgnoreCase);
 
@@ -608,22 +647,28 @@ public sealed class IndexStartupCatchUpServiceTests : IDisposable
             return IdentitiesByPath.TryGetValue(IndexPath.NormalizeRoot(path), out identity);
         }
 
-        public bool TryResolvePathFromFileId(
+        public FileIdResolutionResult ResolvePathFromFileId(
             IndexVolumeInfo volume,
-            string fileReferenceNumber,
-            out string path,
-            out string fallbackReason)
+            string fileReferenceNumber)
         {
             ResolvePathCallCount++;
-            if (PathsByFileId.TryGetValue(fileReferenceNumber, out path!))
+            if (PathsByFileId.TryGetValue(fileReferenceNumber, out var path))
             {
-                fallbackReason = string.Empty;
-                return true;
+                return new FileIdResolutionResult(
+                    FileIdResolutionStatus.Found,
+                    path,
+                    null,
+                    null);
             }
 
-            path = string.Empty;
-            fallbackReason = "No path.";
-            return false;
+            if (ResolutionResults.TryGetValue(fileReferenceNumber, out var result))
+                return result;
+
+            return new FileIdResolutionResult(
+                FileIdResolutionStatus.FileNoLongerExists,
+                null,
+                null,
+                "No path.");
         }
     }
 

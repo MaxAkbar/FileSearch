@@ -1817,15 +1817,15 @@ public sealed class FileIndexTests : IDisposable
             return true;
         }
 
-        public bool TryResolvePathFromFileId(
+        public FileIdResolutionResult ResolvePathFromFileId(
             IndexVolumeInfo volume,
-            string fileReferenceNumber,
-            out string path,
-            out string fallbackReason)
+            string fileReferenceNumber)
         {
-            path = string.Empty;
-            fallbackReason = "Not used by this test.";
-            return false;
+            return new FileIdResolutionResult(
+                FileIdResolutionStatus.UnsupportedIdentifier,
+                null,
+                null,
+                "Not used by this test.");
         }
     }
 
