@@ -36,6 +36,10 @@ on:
         description: Publisher display name
         required: true
         default: FileSearch
+      timestamp_url:
+        description: RFC3161 timestamp server URL used when signing
+        required: true
+        default: http://timestamp.digicert.com
 
 permissions:
   contents: read
@@ -100,7 +104,29 @@ jobs:
             -PackageIdentityName "${{ inputs.package_identity_name }}" `
             -Publisher "${{ inputs.publisher }}" `
             -PublisherDisplayName "${{ inputs.publisher_display_name }}" `
-            -CertificateThumbprint "${{ steps.signing.outputs.thumbprint }}"
+            -CertificateThumbprint "${{ steps.signing.outputs.thumbprint }}" `
+            -TimestampUrl "${{ inputs.timestamp_url }}"
+
+      - name: Verify Store package
+        shell: pwsh
+        run: |
+          $verifyArgs = @(
+            "-ArtifactDirectory", ".\artifacts\store",
+            "-Version", "${{ inputs.version }}",
+            "-RuntimeIdentifier", "${{ inputs.runtime }}",
+            "-PackageIdentityName", "${{ inputs.package_identity_name }}",
+            "-Publisher", "${{ inputs.publisher }}",
+            "-RequireSymbols"
+          )
+
+          if (-not [string]::IsNullOrWhiteSpace("${{ steps.signing.outputs.thumbprint }}")) {
+            $verifyArgs += "-RequireSigned"
+            if (-not [string]::IsNullOrWhiteSpace("${{ inputs.timestamp_url }}")) {
+              $verifyArgs += "-RequireTimestamp"
+            }
+          }
+
+          & .\scripts\Test-StorePackageArtifact.ps1 @verifyArgs
 
       - name: Upload Store artifacts
         uses: actions/upload-artifact@v7
@@ -110,5 +136,6 @@ jobs:
             artifacts/store/*.msix
             artifacts/store/*.appxsym
             artifacts/store/*.msixupload
+            artifacts/store/SHA256SUMS.txt
           if-no-files-found: error
           retention-days: 30

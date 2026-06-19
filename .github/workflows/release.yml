@@ -1,0 +1,298 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - v*.*.*
+  workflow_dispatch:
+    inputs:
+      version:
+        description: MSIX version, for example 1.2.3.0
+        required: true
+        default: 1.0.0.0
+      runtime:
+        description: Runtime identifier
+        required: true
+        type: choice
+        options:
+          - win-x64
+          - win-x86
+          - win-arm64
+        default: win-x64
+
+permissions:
+  contents: write
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+env:
+  DOTNET_CLI_TELEMETRY_OPTOUT: "1"
+  DOTNET_NOLOGO: "1"
+  SOLUTION: FileSearch.slnx
+
+jobs:
+  prepare:
+    name: Prepare release metadata
+    runs-on: windows-latest
+    outputs:
+      version: ${{ steps.metadata.outputs.version }}
+      runtime: ${{ steps.metadata.outputs.runtime }}
+
+    steps:
+      - name: Resolve version and runtime
+        id: metadata
+        shell: pwsh
+        run: |
+          $runtime = "${{ inputs.runtime }}"
+          if ([string]::IsNullOrWhiteSpace($runtime)) {
+            $runtime = "win-x64"
+          }
+
+          $version = "${{ inputs.version }}"
+          if ([string]::IsNullOrWhiteSpace($version)) {
+            $tag = "${{ github.ref_name }}"
+            if ($tag -notmatch '^v(?<version>\d+\.\d+\.\d+(?:\.\d+)?)$') {
+              throw "Release tags must look like v1.2.3 or v1.2.3.4. Found: $tag"
+            }
+
+            $version = $Matches.version
+            if (($version -split '\.').Count -eq 3) {
+              $version = "$version.0"
+            }
+          }
+
+          if ($version -notmatch '^\d+\.\d+\.\d+\.\d+$') {
+            throw "MSIX package version must use four integer parts, for example 1.2.3.0. Found: $version"
+          }
+
+          "version=$version" >> $env:GITHUB_OUTPUT
+          "runtime=$runtime" >> $env:GITHUB_OUTPUT
+          Write-Host "Version: $version"
+          Write-Host "Runtime: $runtime"
+
+  validate:
+    name: Validate release build
+    runs-on: windows-latest
+    needs: prepare
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v5
+        with:
+          dotnet-version: 10.0.x
+
+      - name: Cache NuGet packages
+        uses: actions/cache@v5
+        with:
+          path: ~\.nuget\packages
+          key: nuget-release-${{ runner.os }}-${{ hashFiles('**/*.csproj', 'Directory.Build.props') }}
+          restore-keys: nuget-release-${{ runner.os }}-
+
+      - name: Restore
+        run: dotnet restore .\${{ env.SOLUTION }}
+
+      - name: Check formatting
+        run: dotnet format .\${{ env.SOLUTION }} --verify-no-changes --no-restore
+
+      - name: Build Release
+        run: dotnet build .\${{ env.SOLUTION }} --configuration Release --no-restore
+
+      - name: Test Release
+        run: dotnet test .\${{ env.SOLUTION }} --configuration Release --no-build --logger trx --results-directory TestResults
+
+      - name: CLI smoke test
+        shell: pwsh
+        run: |
+          @(
+            'path .\src\FileSearch.Cli'
+            'help'
+            'options'
+            'limit 2'
+            'search FileSearch'
+            'index locations'
+            'exit'
+          ) | dotnet run --project .\src\FileSearch.Cli\FileSearch.Cli.csproj --configuration Release --no-build
+
+      - name: Upload release test results
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: release-test-results
+          path: TestResults/**/*.trx
+          if-no-files-found: ignore
+          retention-days: 30
+
+  package:
+    name: Build signed package
+    runs-on: windows-latest
+    needs:
+      - prepare
+      - validate
+    environment: release-signing
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v5
+        with:
+          dotnet-version: 10.0.x
+
+      - name: Restore
+        run: dotnet restore .\${{ env.SOLUTION }}
+
+      - name: Validate release configuration
+        id: release_config
+        shell: pwsh
+        env:
+          STORE_PACKAGE_IDENTITY_NAME: ${{ vars.STORE_PACKAGE_IDENTITY_NAME }}
+          STORE_PUBLISHER: ${{ vars.STORE_PUBLISHER }}
+          STORE_PUBLISHER_DISPLAY_NAME: ${{ vars.STORE_PUBLISHER_DISPLAY_NAME }}
+          WINDOWS_SIGNING_PFX_BASE64: ${{ secrets.WINDOWS_SIGNING_PFX_BASE64 }}
+          WINDOWS_SIGNING_PFX_PASSWORD: ${{ secrets.WINDOWS_SIGNING_PFX_PASSWORD }}
+          WINDOWS_TIMESTAMP_URL: ${{ vars.WINDOWS_TIMESTAMP_URL }}
+        run: |
+          $missing = @()
+          foreach ($name in @(
+            "STORE_PACKAGE_IDENTITY_NAME",
+            "STORE_PUBLISHER",
+            "STORE_PUBLISHER_DISPLAY_NAME",
+            "WINDOWS_SIGNING_PFX_BASE64",
+            "WINDOWS_SIGNING_PFX_PASSWORD"
+          )) {
+            if ([string]::IsNullOrWhiteSpace([Environment]::GetEnvironmentVariable($name))) {
+              $missing += $name
+            }
+          }
+
+          if ($missing.Count -gt 0) {
+            throw "Missing release configuration values: $($missing -join ', ')"
+          }
+
+          $timestampUrl = $env:WINDOWS_TIMESTAMP_URL
+          if ([string]::IsNullOrWhiteSpace($timestampUrl)) {
+            $timestampUrl = "http://timestamp.digicert.com"
+          }
+
+          "timestamp_url=$timestampUrl" >> $env:GITHUB_OUTPUT
+          Write-Host "Release configuration is present."
+
+      - name: Import signing certificate
+        id: signing
+        shell: pwsh
+        env:
+          WINDOWS_SIGNING_PFX_BASE64: ${{ secrets.WINDOWS_SIGNING_PFX_BASE64 }}
+          WINDOWS_SIGNING_PFX_PASSWORD: ${{ secrets.WINDOWS_SIGNING_PFX_PASSWORD }}
+        run: |
+          $certPath = Join-Path $env:RUNNER_TEMP "filesearch-signing.pfx"
+          [IO.File]::WriteAllBytes($certPath, [Convert]::FromBase64String($env:WINDOWS_SIGNING_PFX_BASE64))
+          try {
+            $password = ConvertTo-SecureString $env:WINDOWS_SIGNING_PFX_PASSWORD -AsPlainText -Force
+            $cert = Import-PfxCertificate -FilePath $certPath -CertStoreLocation Cert:\CurrentUser\My -Password $password
+          }
+          finally {
+            Remove-Item -LiteralPath $certPath -Force -ErrorAction SilentlyContinue
+          }
+
+          if ($null -eq $cert) {
+            throw "Failed to import signing certificate."
+          }
+
+          "thumbprint=$($cert.Thumbprint)" >> $env:GITHUB_OUTPUT
+          Write-Host "Imported signing certificate with thumbprint $($cert.Thumbprint)."
+
+      - name: Create signed Store package
+        shell: pwsh
+        env:
+          STORE_PACKAGE_IDENTITY_NAME: ${{ vars.STORE_PACKAGE_IDENTITY_NAME }}
+          STORE_PUBLISHER: ${{ vars.STORE_PUBLISHER }}
+          STORE_PUBLISHER_DISPLAY_NAME: ${{ vars.STORE_PUBLISHER_DISPLAY_NAME }}
+          TIMESTAMP_URL: ${{ steps.release_config.outputs.timestamp_url }}
+        run: |
+          powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\New-StorePackage.ps1 `
+            -Configuration Release `
+            -RuntimeIdentifier "${{ needs.prepare.outputs.runtime }}" `
+            -Version "${{ needs.prepare.outputs.version }}" `
+            -PackageIdentityName "$env:STORE_PACKAGE_IDENTITY_NAME" `
+            -Publisher "$env:STORE_PUBLISHER" `
+            -PublisherDisplayName "$env:STORE_PUBLISHER_DISPLAY_NAME" `
+            -CertificateThumbprint "${{ steps.signing.outputs.thumbprint }}" `
+            -TimestampUrl "$env:TIMESTAMP_URL"
+
+      - name: Run published sidecar smoke test
+        shell: pwsh
+        run: |
+          .\scripts\Test-PublishedSidecars.ps1 -PublishDirectory ".\artifacts\store\publish\${{ needs.prepare.outputs.runtime }}"
+
+      - name: Verify signed Store package
+        shell: pwsh
+        env:
+          STORE_PACKAGE_IDENTITY_NAME: ${{ vars.STORE_PACKAGE_IDENTITY_NAME }}
+          STORE_PUBLISHER: ${{ vars.STORE_PUBLISHER }}
+        run: |
+          .\scripts\Test-StorePackageArtifact.ps1 `
+            -ArtifactDirectory ".\artifacts\store" `
+            -Version "${{ needs.prepare.outputs.version }}" `
+            -RuntimeIdentifier "${{ needs.prepare.outputs.runtime }}" `
+            -PackageIdentityName "$env:STORE_PACKAGE_IDENTITY_NAME" `
+            -Publisher "$env:STORE_PUBLISHER" `
+            -RequireSigned `
+            -RequireTimestamp `
+            -RequireSymbols `
+            -ChecksumPath ".\artifacts\store\SHA256SUMS-${{ needs.prepare.outputs.runtime }}.txt"
+
+      - name: Upload signed release artifacts
+        uses: actions/upload-artifact@v7
+        with:
+          name: filesearch-release-${{ needs.prepare.outputs.version }}-${{ needs.prepare.outputs.runtime }}
+          path: |
+            artifacts/store/*.msix
+            artifacts/store/*.appxsym
+            artifacts/store/*.msixupload
+            artifacts/store/SHA256SUMS*.txt
+          if-no-files-found: error
+          retention-days: 90
+
+  github-release:
+    name: Create draft GitHub release
+    runs-on: windows-latest
+    needs:
+      - prepare
+      - package
+    if: startsWith(github.ref, 'refs/tags/')
+
+    steps:
+      - name: Download signed release artifacts
+        uses: actions/download-artifact@v7
+        with:
+          pattern: filesearch-release-${{ needs.prepare.outputs.version }}-*
+          path: release-artifacts
+          merge-multiple: true
+
+      - name: Create draft release
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          $files = Get-ChildItem -LiteralPath .\release-artifacts -File | Where-Object {
+            $_.Name -like "*.msix" -or
+            $_.Name -like "*.appxsym" -or
+            $_.Name -like "*.msixupload" -or
+            $_.Name -like "SHA256SUMS*.txt"
+          } | Sort-Object Name | ForEach-Object { $_.FullName }
+
+          if ($files.Count -eq 0) {
+            throw "No release files were downloaded."
+          }
+
+          gh release create "${{ github.ref_name }}" $files `
+            --draft `
+            --verify-tag `
+            --title "FileSearch ${{ needs.prepare.outputs.version }}" `
+            --generate-notes

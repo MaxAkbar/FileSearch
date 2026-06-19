@@ -10,10 +10,23 @@ param(
     [string]$DisplayName = "FileSearch",
     [string]$Description = "Search files by name and content.",
     [string]$OutputRoot = "artifacts\store",
-    [string]$CertificateThumbprint = ""
+    [string]$CertificateThumbprint = "",
+    [string]$TimestampUrl = "http://timestamp.digicert.com"
 )
 
 $ErrorActionPreference = "Stop"
+
+function Invoke-CheckedCommand(
+    [string]$FilePath,
+    [string[]]$Arguments,
+    [string]$Description
+) {
+    Write-Host $Description
+    & $FilePath @Arguments
+    if ($LASTEXITCODE -ne 0) {
+        throw "$Description failed with exit code $LASTEXITCODE."
+    }
+}
 
 function Resolve-RepoPath([string]$Path) {
     return [System.IO.Path]::GetFullPath((Join-Path $PSScriptRoot "..\$Path"))
@@ -81,16 +94,22 @@ function Publish-Project(
     [string]$ProjectDisplayName,
     [string]$Destination
 ) {
-    Write-Host "Publishing $ProjectDisplayName $RuntimeIdentifier $Configuration..."
-    dotnet publish $ProjectPath `
-        --configuration $Configuration `
-        --runtime $RuntimeIdentifier `
-        --self-contained true `
-        -p:PublishSingleFile=false `
-        -p:PublishReadyToRun=true `
-        -p:DebugType=portable `
-        -p:DebugSymbols=true `
-        -o $Destination
+    Invoke-CheckedCommand "dotnet" @(
+        "publish",
+        $ProjectPath,
+        "--configuration",
+        $Configuration,
+        "--runtime",
+        $RuntimeIdentifier,
+        "--self-contained",
+        "true",
+        "-p:PublishSingleFile=false",
+        "-p:PublishReadyToRun=true",
+        "-p:DebugType=portable",
+        "-p:DebugSymbols=true",
+        "-o",
+        $Destination
+    ) "Publishing $ProjectDisplayName $RuntimeIdentifier $Configuration..."
 }
 
 function ConvertTo-XmlEscaped([string]$Value) {
@@ -289,11 +308,35 @@ Copy-DirectoryContents $assetsDirectory (Join-Path $packageRoot "Assets")
 Write-Manifest $manifestTemplate (Join-Path $packageRoot "AppxManifest.xml") $packageArchitecture
 
 Write-Host "Creating MSIX..."
-& $makeAppx pack /d $packageRoot /p $msixPath /o | Write-Host
+Invoke-CheckedCommand $makeAppx @(
+    "pack",
+    "/d",
+    $packageRoot,
+    "/p",
+    $msixPath,
+    "/o"
+) "Creating MSIX..."
 
 if (-not [string]::IsNullOrWhiteSpace($CertificateThumbprint)) {
-    Write-Host "Signing MSIX with certificate thumbprint $CertificateThumbprint..."
-    & $signTool sign /fd SHA256 /sha1 $CertificateThumbprint $msixPath | Write-Host
+    $signArguments = @(
+        "sign",
+        "/fd",
+        "SHA256",
+        "/sha1",
+        $CertificateThumbprint
+    )
+
+    if (-not [string]::IsNullOrWhiteSpace($TimestampUrl)) {
+        $signArguments += @(
+            "/tr",
+            $TimestampUrl,
+            "/td",
+            "SHA256"
+        )
+    }
+
+    $signArguments += $msixPath
+    Invoke-CheckedCommand $signTool $signArguments "Signing MSIX with certificate thumbprint $CertificateThumbprint..."
 }
 
 Write-Host "Creating symbols package..."

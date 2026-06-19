@@ -29,6 +29,15 @@ the companion `FileSearch.Indexer.exe` background worker and
 `FileSearch.Gui.exe`; all three are verified before creating the MSIX.
 
 For local sideload testing, sign the `.msix` by passing `-CertificateThumbprint`
-with a certificate trusted on the test machine. For Microsoft Store submission,
-upload the `.msixupload` file generated with the identity and publisher values
-reserved for the app in Partner Center.
+with a certificate trusted on the test machine. The script timestamps signed
+packages by default with `http://timestamp.digicert.com`; pass `-TimestampUrl`
+to use a different RFC3161 timestamp server.
+
+Use `scripts\Test-StorePackageArtifact.ps1` to verify package contents,
+signature state, Store upload contents, and checksums.
+
+For Microsoft Store submission, upload the `.msixupload` file generated with
+the identity and publisher values reserved for the app in Partner Center. Public
+signed releases should use the GitHub Actions **Release** workflow, which
+requires signing secrets in the protected `release-signing` environment and
+creates a draft GitHub Release for version tags.
