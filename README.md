@@ -97,7 +97,7 @@ Interactive REPL front end for the core search library. It targets `net10.0` and
 - `Spectre.Console` for rich terminal prompts, status spinners, tables, panels, and highlighted match output.
 - `Microsoft.Extensions.DependencyInjection` for the same core service registration used by the GUI.
 
-The CLI supports live search, covered indexed search, query mode switching, file filters, one-shot CSV/JSON/JSON Lines/Markdown search output, CSharpDB index build/clear/stats commands, and direct query entry from the prompt.
+The CLI supports live search, covered indexed search, query mode switching, file filters, one-shot CSV/JSON/JSON Lines/Markdown search output, structured one-shot index reporting, CSharpDB index build/clear/stats commands, and direct query entry from the prompt.
 
 ### `FileSearch.Core.Tests`
 
@@ -208,6 +208,17 @@ dotnet run --project .\src\FileSearch.Cli\FileSearch.Cli.csproj -- search needle
 ```
 
 One-shot search accepts the same common filters as the REPL, including `--include`, `--exclude`, `--ext`, `--exclude-ext`, `--exclude-dir`, `--min-size`, `--max-size`, `--after`, `--before`, `--recursive`, `--no-recursive`, `--hidden`, `--case`, `--index`, and `--no-index`.
+
+Index reporting also has one-shot structured output. Use it when scripts need to inspect configured roots, per-root stats, or failed extraction details without parsing the interactive tables:
+
+```powershell
+dotnet run --project .\src\FileSearch.Cli\FileSearch.Cli.csproj -- index locations --json
+dotnet run --project .\src\FileSearch.Cli\FileSearch.Cli.csproj -- index stats C:\src --csv
+dotnet run --project .\src\FileSearch.Cli\FileSearch.Cli.csproj -- index failures --jsonl --output .\index-failures.jsonl
+dotnet run --project .\src\FileSearch.Cli\FileSearch.Cli.csproj -- index locations --markdown --output .\index-locations.md
+```
+
+`index locations`, `index stats [FOLDER]`, and `index failures` support `--json`, `--jsonl`, `--csv`, `--markdown`, `--format`, and `--output`. If no folder is passed to `index stats`, the current working directory is used.
 
 The CLI uses the same `FileSearch.Core` search pipeline and CSharpDB index database as the desktop app. Indexed search is opt-in with `index on`; when the current search is not covered by the index, the CLI falls back to live scan.
 
@@ -407,6 +418,14 @@ For structured search automation, prefer one-shot output:
 ```powershell
 dotnet run --project .\src\FileSearch.Cli\FileSearch.Cli.csproj -- search TODO --path C:\src\project --json |
   ConvertFrom-Json
+```
+
+For structured index automation, call the one-shot index commands directly:
+
+```powershell
+dotnet run --project .\src\FileSearch.Cli\FileSearch.Cli.csproj -- index locations --json |
+  ConvertFrom-Json
+dotnet run --project .\src\FileSearch.Cli\FileSearch.Cli.csproj -- index failures --csv --output .\failures.csv
 ```
 
 Index maintenance works the same way:

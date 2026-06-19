@@ -49,6 +49,21 @@ internal sealed class FileSearchRepl
             }
         }
 
+        if (args.Length > 0 &&
+            args[0].Equals("index", StringComparison.OrdinalIgnoreCase))
+        {
+            try
+            {
+                return await RunOneShotIndexAsync(args.Skip(1).ToArray(), CancellationToken.None)
+                    .ConfigureAwait(false);
+            }
+            catch (Exception ex) when (ex is not OperationCanceledException)
+            {
+                Console.Error.WriteLine($"Error: {ex.Message}");
+                return 1;
+            }
+        }
+
         ApplyStartupArgs(args);
         RenderHeader();
         RenderQuickHelp();
@@ -333,20 +348,56 @@ internal sealed class FileSearchRepl
 
         stopwatch.Stop();
         var rendered = RenderOneShotSearch(options, hits, totalHits, indexed, stopwatch.Elapsed, statusMessages);
-        if (string.IsNullOrWhiteSpace(options.OutputPath))
+        await WriteOneShotOutputAsync(rendered, options.OutputPath, cancellationToken).ConfigureAwait(false);
+        return 0;
+    }
+
+    private async Task<int> RunOneShotIndexAsync(string[] args, CancellationToken cancellationToken)
+    {
+        if (args.Length == 0 ||
+            args.Any(arg => arg is "--help" or "-h" or "/?"))
         {
-            Console.Out.Write(rendered);
-        }
-        else
-        {
-            var fullPath = Path.GetFullPath(options.OutputPath);
-            var directory = Path.GetDirectoryName(fullPath);
-            if (!string.IsNullOrWhiteSpace(directory))
-                Directory.CreateDirectory(directory);
-            await File.WriteAllTextAsync(fullPath, rendered, cancellationToken).ConfigureAwait(false);
+            Console.Out.WriteLine(OneShotIndexUsage);
+            return 0;
         }
 
-        return 0;
+        var action = args[0].ToLowerInvariant();
+        switch (action)
+        {
+            case "locations":
+            case "roots":
+            {
+                var options = ParseOneShotIndexOptions(args[1..], allowTargetPath: false);
+                var locations = await _index.GetLocationsAsync(cancellationToken).ConfigureAwait(false);
+                var rendered = RenderOneShotIndexLocations(locations, options.Format);
+                await WriteOneShotOutputAsync(rendered, options.OutputPath, cancellationToken).ConfigureAwait(false);
+                return 0;
+            }
+            case "stats":
+            {
+                var options = ParseOneShotIndexOptions(args[1..], allowTargetPath: true);
+                var root = string.IsNullOrWhiteSpace(options.TargetPath)
+                    ? Path.GetFullPath(Directory.GetCurrentDirectory())
+                    : Path.GetFullPath(ExpandHome(options.TargetPath));
+                var stats = await _index.GetStatsAsync(root, cancellationToken).ConfigureAwait(false);
+                var rendered = RenderOneShotIndexStats(stats, options.Format);
+                await WriteOneShotOutputAsync(rendered, options.OutputPath, cancellationToken).ConfigureAwait(false);
+                return 0;
+            }
+            case "failures":
+            case "failed":
+            {
+                var options = ParseOneShotIndexOptions(args[1..], allowTargetPath: false);
+                var failures = await _index.GetFailedFilesAsync(cancellationToken).ConfigureAwait(false);
+                var rendered = RenderOneShotIndexFailures(failures, options.Format);
+                await WriteOneShotOutputAsync(rendered, options.OutputPath, cancellationToken).ConfigureAwait(false);
+                return 0;
+            }
+            default:
+                Console.Error.WriteLine($"Unknown index command: {args[0]}");
+                Console.Error.WriteLine(OneShotIndexUsage);
+                return 2;
+        }
     }
 
     private static OneShotSearchOptions ParseOneShotSearchOptions(string[] args)
@@ -356,7 +407,7 @@ internal sealed class FileSearchRepl
 
         var state = new CliState();
         var queryParts = new List<string>();
-        var format = OneShotSearchOutputFormat.Json;
+        var format = OneShotOutputFormat.Json;
         string? outputPath = null;
 
         for (var i = 0; i < args.Length; i++)
@@ -367,7 +418,7 @@ internal sealed class FileSearchRepl
                 case "--path":
                 case "--root":
                 case "-p":
-                    state.Root = Path.GetFullPath(NextValue(args, ref i, arg));
+                    state.Root = Path.GetFullPath(ExpandHome(NextValue(args, ref i, arg)));
                     break;
                 case "--mode":
                 case "-m":
@@ -389,18 +440,18 @@ internal sealed class FileSearchRepl
                     outputPath = NextValue(args, ref i, arg);
                     break;
                 case "--json":
-                    format = OneShotSearchOutputFormat.Json;
+                    format = OneShotOutputFormat.Json;
                     break;
                 case "--jsonl":
                 case "--json-lines":
-                    format = OneShotSearchOutputFormat.JsonLines;
+                    format = OneShotOutputFormat.JsonLines;
                     break;
                 case "--csv":
-                    format = OneShotSearchOutputFormat.Csv;
+                    format = OneShotOutputFormat.Csv;
                     break;
                 case "--markdown":
                 case "--md":
-                    format = OneShotSearchOutputFormat.Markdown;
+                    format = OneShotOutputFormat.Markdown;
                     break;
                 case "--case":
                 case "--case-sensitive":
@@ -480,6 +531,72 @@ internal sealed class FileSearchRepl
         return new OneShotSearchOptions(queryText, state, format, outputPath);
     }
 
+    private static OneShotIndexOptions ParseOneShotIndexOptions(string[] args, bool allowTargetPath)
+    {
+        var format = OneShotOutputFormat.Json;
+        string? outputPath = null;
+        string? targetPath = null;
+
+        for (var i = 0; i < args.Length; i++)
+        {
+            var arg = args[i];
+            switch (arg.ToLowerInvariant())
+            {
+                case "--format":
+                case "-f":
+                    format = ParseOutputFormat(NextValue(args, ref i, arg));
+                    break;
+                case "--output":
+                case "-o":
+                    outputPath = NextValue(args, ref i, arg);
+                    break;
+                case "--json":
+                    format = OneShotOutputFormat.Json;
+                    break;
+                case "--jsonl":
+                case "--json-lines":
+                    format = OneShotOutputFormat.JsonLines;
+                    break;
+                case "--csv":
+                    format = OneShotOutputFormat.Csv;
+                    break;
+                case "--markdown":
+                case "--md":
+                    format = OneShotOutputFormat.Markdown;
+                    break;
+                default:
+                    if (arg.StartsWith('-'))
+                        throw new ArgumentException($"Unknown option: {arg}");
+                    if (!allowTargetPath)
+                        throw new ArgumentException($"Unexpected argument: {arg}");
+                    if (!string.IsNullOrWhiteSpace(targetPath))
+                        throw new ArgumentException("Only one folder can be provided.");
+                    targetPath = arg;
+                    break;
+            }
+        }
+
+        return new OneShotIndexOptions(targetPath, format, outputPath);
+    }
+
+    private static async Task WriteOneShotOutputAsync(
+        string rendered,
+        string? outputPath,
+        CancellationToken cancellationToken)
+    {
+        if (string.IsNullOrWhiteSpace(outputPath))
+        {
+            Console.Out.Write(rendered);
+            return;
+        }
+
+        var fullPath = Path.GetFullPath(ExpandHome(outputPath));
+        var directory = Path.GetDirectoryName(fullPath);
+        if (!string.IsNullOrWhiteSpace(directory))
+            Directory.CreateDirectory(directory);
+        await File.WriteAllTextAsync(fullPath, rendered, cancellationToken).ConfigureAwait(false);
+    }
+
     private static string NextValue(string[] args, ref int index, string option)
     {
         if (index + 1 >= args.Length)
@@ -497,13 +614,13 @@ internal sealed class FileSearchRepl
             _ => throw new ArgumentException("Mode must be plain, regex, or boolean."),
         };
 
-    private static OneShotSearchOutputFormat ParseOutputFormat(string value) =>
+    private static OneShotOutputFormat ParseOutputFormat(string value) =>
         value.ToLowerInvariant() switch
         {
-            "json" => OneShotSearchOutputFormat.Json,
-            "jsonl" or "json-lines" or "jsonlines" => OneShotSearchOutputFormat.JsonLines,
-            "csv" => OneShotSearchOutputFormat.Csv,
-            "markdown" or "md" => OneShotSearchOutputFormat.Markdown,
+            "json" => OneShotOutputFormat.Json,
+            "jsonl" or "json-lines" or "jsonlines" => OneShotOutputFormat.JsonLines,
+            "csv" => OneShotOutputFormat.Csv,
+            "markdown" or "md" => OneShotOutputFormat.Markdown,
             _ => throw new ArgumentException("Format must be json, jsonl, csv, or markdown."),
         };
 
@@ -524,9 +641,9 @@ internal sealed class FileSearchRepl
         ConcurrentQueue<string> statusMessages) =>
         options.Format switch
         {
-            OneShotSearchOutputFormat.Csv => RenderOneShotCsv(hits),
-            OneShotSearchOutputFormat.JsonLines => RenderOneShotJsonLines(hits),
-            OneShotSearchOutputFormat.Markdown => RenderOneShotMarkdown(options, hits, totalHits, indexed, elapsed, statusMessages),
+            OneShotOutputFormat.Csv => RenderOneShotCsv(hits),
+            OneShotOutputFormat.JsonLines => RenderOneShotJsonLines(hits),
+            OneShotOutputFormat.Markdown => RenderOneShotMarkdown(options, hits, totalHits, indexed, elapsed, statusMessages),
             _ => RenderOneShotJson(options, hits, totalHits, indexed, elapsed, statusMessages),
         };
 
@@ -610,6 +727,190 @@ internal sealed class FileSearchRepl
         return sb.ToString();
     }
 
+    private static string RenderOneShotIndexLocations(
+        IReadOnlyList<IndexedLocationInfo> locations,
+        OneShotOutputFormat format) =>
+        format switch
+        {
+            OneShotOutputFormat.Csv => RenderOneShotIndexLocationsCsv(locations),
+            OneShotOutputFormat.JsonLines => RenderOneShotIndexLocationsJsonLines(locations),
+            OneShotOutputFormat.Markdown => RenderOneShotIndexLocationsMarkdown(locations),
+            _ => JsonSerializer.Serialize(
+                new OneShotIndexLocationsDocument(locations.Count, locations.Select(ToOneShotIndexLocation).ToArray()),
+                s_oneShotJsonOptions) + Environment.NewLine,
+        };
+
+    private static string RenderOneShotIndexStats(IndexStats stats, OneShotOutputFormat format)
+    {
+        var document = ToOneShotIndexStats(stats);
+        return format switch
+        {
+            OneShotOutputFormat.Csv => RenderOneShotIndexStatsCsv(document),
+            OneShotOutputFormat.JsonLines => JsonSerializer.Serialize(document, s_oneShotJsonLineOptions) + Environment.NewLine,
+            OneShotOutputFormat.Markdown => RenderOneShotIndexStatsMarkdown(document),
+            _ => JsonSerializer.Serialize(document, s_oneShotJsonOptions) + Environment.NewLine,
+        };
+    }
+
+    private static string RenderOneShotIndexFailures(
+        IReadOnlyList<IndexFailureInfo> failures,
+        OneShotOutputFormat format) =>
+        format switch
+        {
+            OneShotOutputFormat.Csv => RenderOneShotIndexFailuresCsv(failures),
+            OneShotOutputFormat.JsonLines => RenderOneShotIndexFailuresJsonLines(failures),
+            OneShotOutputFormat.Markdown => RenderOneShotIndexFailuresMarkdown(failures),
+            _ => JsonSerializer.Serialize(
+                new OneShotIndexFailuresDocument(failures.Count, failures.Select(ToOneShotIndexFailure).ToArray()),
+                s_oneShotJsonOptions) + Environment.NewLine,
+        };
+
+    private static string RenderOneShotIndexLocationsJsonLines(IReadOnlyList<IndexedLocationInfo> locations)
+    {
+        var sb = new StringBuilder();
+        foreach (var location in locations)
+            sb.AppendLine(JsonSerializer.Serialize(ToOneShotIndexLocation(location), s_oneShotJsonLineOptions));
+        return sb.ToString();
+    }
+
+    private static string RenderOneShotIndexLocationsCsv(IReadOnlyList<IndexedLocationInfo> locations)
+    {
+        var sb = new StringBuilder();
+        sb.AppendLine("root,exists,fileCount,lineCount,indexedUtc,profile,lastFullScanUtc,volumeKey,lastFullValidationUtc,lastValidationStatus,lastValidationMessage,lastValidationFilesChecked,lastValidationMissingFromIndexCount,lastValidationChangedCount,lastValidationMissingFromDiskCount,lastValidationFailedCount");
+        foreach (var location in locations)
+        {
+            sb.Append(CsvField(location.Root)).Append(',');
+            sb.Append(location.Exists ? "true" : "false").Append(',');
+            sb.Append(location.FileCount.ToString(CultureInfo.InvariantCulture)).Append(',');
+            sb.Append(location.LineCount.ToString(CultureInfo.InvariantCulture)).Append(',');
+            sb.Append(CsvField(FormatIsoDate(location.IndexedUtc))).Append(',');
+            sb.Append(CsvField(location.Profile)).Append(',');
+            sb.Append(CsvField(FormatIsoDate(location.LastFullScanUtc))).Append(',');
+            sb.Append(CsvField(location.VolumeKey ?? string.Empty)).Append(',');
+            sb.Append(CsvField(FormatIsoDate(location.LastFullValidationUtc))).Append(',');
+            sb.Append(CsvField(location.LastValidationStatus)).Append(',');
+            sb.Append(CsvField(location.LastValidationMessage)).Append(',');
+            sb.Append(location.LastValidationFilesChecked.ToString(CultureInfo.InvariantCulture)).Append(',');
+            sb.Append(location.LastValidationMissingFromIndexCount.ToString(CultureInfo.InvariantCulture)).Append(',');
+            sb.Append(location.LastValidationChangedCount.ToString(CultureInfo.InvariantCulture)).Append(',');
+            sb.Append(location.LastValidationMissingFromDiskCount.ToString(CultureInfo.InvariantCulture)).Append(',');
+            sb.AppendLine(location.LastValidationFailedCount.ToString(CultureInfo.InvariantCulture));
+        }
+
+        return sb.ToString();
+    }
+
+    private static string RenderOneShotIndexLocationsMarkdown(IReadOnlyList<IndexedLocationInfo> locations)
+    {
+        var sb = new StringBuilder();
+        sb.AppendLine("# Indexed Locations");
+        sb.AppendLine();
+        sb.AppendLine(CultureInfo.InvariantCulture, $"- Count: {locations.Count:n0}");
+        if (locations.Count == 0)
+            return sb.ToString();
+
+        sb.AppendLine();
+        sb.AppendLine("| Root | Exists | Files | Lines | Last indexed | Profile | Validation |");
+        sb.AppendLine("| --- | --- | ---: | ---: | --- | --- | --- |");
+        foreach (var location in locations)
+        {
+            sb.Append("| ")
+                .Append(MarkdownCell(location.Root)).Append(" | ")
+                .Append(location.Exists ? "yes" : "no").Append(" | ")
+                .Append(location.FileCount.ToString("n0", CultureInfo.InvariantCulture)).Append(" | ")
+                .Append(location.LineCount.ToString("n0", CultureInfo.InvariantCulture)).Append(" | ")
+                .Append(MarkdownCell(FormatIsoDate(location.IndexedUtc))).Append(" | ")
+                .Append(MarkdownCell(location.Profile)).Append(" | ")
+                .Append(MarkdownCell(location.LastValidationStatus)).AppendLine(" |");
+        }
+
+        return sb.ToString();
+    }
+
+    private static string RenderOneShotIndexStatsCsv(OneShotIndexStats stats)
+    {
+        var sb = new StringBuilder();
+        sb.AppendLine("root,exists,fileCount,lineCount,indexedUtc");
+        sb.Append(CsvField(stats.Root)).Append(',');
+        sb.Append(stats.Exists ? "true" : "false").Append(',');
+        sb.Append(stats.FileCount.ToString(CultureInfo.InvariantCulture)).Append(',');
+        sb.Append(stats.LineCount.ToString(CultureInfo.InvariantCulture)).Append(',');
+        sb.AppendLine(CsvField(FormatIsoDate(stats.IndexedUtc)));
+        return sb.ToString();
+    }
+
+    private static string RenderOneShotIndexStatsMarkdown(OneShotIndexStats stats)
+    {
+        var sb = new StringBuilder();
+        sb.AppendLine("# Index Stats");
+        sb.AppendLine();
+        sb.AppendLine(CultureInfo.InvariantCulture, $"- Root: {stats.Root}");
+        sb.AppendLine(CultureInfo.InvariantCulture, $"- Exists: {(stats.Exists ? "yes" : "no")}");
+        sb.AppendLine(CultureInfo.InvariantCulture, $"- Files: {stats.FileCount:n0}");
+        sb.AppendLine(CultureInfo.InvariantCulture, $"- Lines: {stats.LineCount:n0}");
+        sb.AppendLine(CultureInfo.InvariantCulture, $"- Last indexed: {FormatIsoDate(stats.IndexedUtc)}");
+        return sb.ToString();
+    }
+
+    private static string RenderOneShotIndexFailuresJsonLines(IReadOnlyList<IndexFailureInfo> failures)
+    {
+        var sb = new StringBuilder();
+        foreach (var failure in failures)
+            sb.AppendLine(JsonSerializer.Serialize(ToOneShotIndexFailure(failure), s_oneShotJsonLineOptions));
+        return sb.ToString();
+    }
+
+    private static string RenderOneShotIndexFailuresCsv(IReadOnlyList<IndexFailureInfo> failures)
+    {
+        var sb = new StringBuilder();
+        sb.AppendLine("root,path,memberPath,failureKind,issueCode,severity,extractorId,extractorVersion,extractionAttemptCount,retryCount,lastAttemptUtc,error");
+        foreach (var failure in failures)
+        {
+            sb.Append(CsvField(failure.Root)).Append(',');
+            sb.Append(CsvField(failure.Path)).Append(',');
+            sb.Append(CsvField(failure.MemberPath ?? string.Empty)).Append(',');
+            sb.Append(CsvField(failure.FailureKind)).Append(',');
+            sb.Append(CsvField(failure.IssueCode ?? string.Empty)).Append(',');
+            sb.Append(CsvField(failure.Severity ?? string.Empty)).Append(',');
+            sb.Append(CsvField(failure.ExtractorId)).Append(',');
+            sb.Append(CsvField(failure.ExtractorVersion)).Append(',');
+            sb.Append(failure.ExtractionAttemptCount.ToString(CultureInfo.InvariantCulture)).Append(',');
+            sb.Append(failure.RetryCount.ToString(CultureInfo.InvariantCulture)).Append(',');
+            sb.Append(CsvField(FormatIsoDate(failure.LastAttemptUtc))).Append(',');
+            sb.AppendLine(CsvField(failure.Error));
+        }
+
+        return sb.ToString();
+    }
+
+    private static string RenderOneShotIndexFailuresMarkdown(IReadOnlyList<IndexFailureInfo> failures)
+    {
+        var sb = new StringBuilder();
+        sb.AppendLine("# Index Failures");
+        sb.AppendLine();
+        sb.AppendLine(CultureInfo.InvariantCulture, $"- Count: {failures.Count:n0}");
+        if (failures.Count == 0)
+            return sb.ToString();
+
+        sb.AppendLine();
+        sb.AppendLine("| Path | Issue | Severity | Extractor | Attempts | Last attempt |");
+        sb.AppendLine("| --- | --- | --- | --- | ---: | --- |");
+        foreach (var failure in failures)
+        {
+            sb.Append("| ")
+                .Append(MarkdownCell(string.IsNullOrWhiteSpace(failure.MemberPath)
+                    ? failure.Path
+                    : $"{failure.Path}!{failure.MemberPath}")).Append(" | ")
+                .Append(MarkdownCell(failure.IssueCode ?? failure.FailureKind)).Append(" | ")
+                .Append(MarkdownCell(failure.Severity ?? string.Empty)).Append(" | ")
+                .Append(MarkdownCell($"{failure.ExtractorId} {failure.ExtractorVersion}".Trim())).Append(" | ")
+                .Append(failure.ExtractionAttemptCount.ToString("n0", CultureInfo.InvariantCulture)).Append(" | ")
+                .Append(MarkdownCell(FormatIsoDate(failure.LastAttemptUtc))).AppendLine(" |");
+        }
+
+        return sb.ToString();
+    }
+
     private static readonly SearchValues<char> s_csvSpecialChars = SearchValues.Create(",\"\n\r");
 
     private static readonly JsonSerializerOptions s_oneShotJsonOptions = new()
@@ -635,6 +936,51 @@ internal sealed class FileSearchRepl
             hit.SizeBytes,
             hit.ModifiedUtc,
             hit.LineContent);
+
+    private static OneShotIndexLocation ToOneShotIndexLocation(IndexedLocationInfo location) =>
+        new(
+            location.Root,
+            location.Exists,
+            location.FileCount,
+            location.LineCount,
+            location.IndexedUtc,
+            location.Profile,
+            location.LastFullScanUtc,
+            location.VolumeKey,
+            location.LastFullValidationUtc,
+            location.LastValidationStatus,
+            location.LastValidationMessage,
+            location.LastValidationFilesChecked,
+            location.LastValidationMissingFromIndexCount,
+            location.LastValidationChangedCount,
+            location.LastValidationMissingFromDiskCount,
+            location.LastValidationFailedCount);
+
+    private static OneShotIndexStats ToOneShotIndexStats(IndexStats stats) =>
+        new(stats.Root, stats.Exists, stats.FileCount, stats.LineCount, stats.IndexedUtc);
+
+    private static OneShotIndexFailure ToOneShotIndexFailure(IndexFailureInfo failure) =>
+        new(
+            failure.Root,
+            failure.Path,
+            failure.MemberPath,
+            failure.FailureKind,
+            failure.IssueCode,
+            failure.Severity,
+            failure.ExtractorId,
+            failure.ExtractorVersion,
+            failure.ExtractionAttemptCount,
+            failure.RetryCount,
+            failure.LastAttemptUtc,
+            failure.Error);
+
+    private static string FormatIsoDate(DateTime? date) =>
+        date?.ToString("O", CultureInfo.InvariantCulture) ?? string.Empty;
+
+    private static string MarkdownCell(string value) =>
+        value.Replace("|", "\\|", StringComparison.Ordinal)
+            .Replace("\r", " ", StringComparison.Ordinal)
+            .Replace("\n", " ", StringComparison.Ordinal);
 
     private async Task ExecuteIndexCommandAsync(IReadOnlyList<string> tokens, CancellationToken cancellationToken)
     {
@@ -1325,7 +1671,11 @@ internal sealed class FileSearchRepl
         "Usage: filesearch search QUERY [--path FOLDER] [--mode plain|regex|boolean] " +
         "[--json|--jsonl|--csv|--markdown] [--output PATH] [--limit N]";
 
-    private enum OneShotSearchOutputFormat
+    private const string OneShotIndexUsage =
+        "Usage: filesearch index locations|stats [FOLDER]|failures " +
+        "[--json|--jsonl|--csv|--markdown] [--output PATH]";
+
+    private enum OneShotOutputFormat
     {
         Json,
         JsonLines,
@@ -1336,7 +1686,12 @@ internal sealed class FileSearchRepl
     private sealed record OneShotSearchOptions(
         string QueryText,
         CliState State,
-        OneShotSearchOutputFormat Format,
+        OneShotOutputFormat Format,
+        string? OutputPath);
+
+    private sealed record OneShotIndexOptions(
+        string? TargetPath,
+        OneShotOutputFormat Format,
         string? OutputPath);
 
     private sealed record OneShotSearchDocument(
@@ -1358,6 +1713,53 @@ internal sealed class FileSearchRepl
         long? SizeBytes,
         DateTime? ModifiedUtc,
         string Line);
+
+    private sealed record OneShotIndexLocationsDocument(
+        int Count,
+        IReadOnlyList<OneShotIndexLocation> Locations);
+
+    private sealed record OneShotIndexLocation(
+        string Root,
+        bool Exists,
+        long FileCount,
+        long LineCount,
+        DateTime? IndexedUtc,
+        string Profile,
+        DateTime? LastFullScanUtc,
+        string? VolumeKey,
+        DateTime? LastFullValidationUtc,
+        string LastValidationStatus,
+        string LastValidationMessage,
+        long LastValidationFilesChecked,
+        long LastValidationMissingFromIndexCount,
+        long LastValidationChangedCount,
+        long LastValidationMissingFromDiskCount,
+        long LastValidationFailedCount);
+
+    private sealed record OneShotIndexStats(
+        string Root,
+        bool Exists,
+        long FileCount,
+        long LineCount,
+        DateTime? IndexedUtc);
+
+    private sealed record OneShotIndexFailuresDocument(
+        int Count,
+        IReadOnlyList<OneShotIndexFailure> Failures);
+
+    private sealed record OneShotIndexFailure(
+        string Root,
+        string Path,
+        string? MemberPath,
+        string FailureKind,
+        string? IssueCode,
+        string? Severity,
+        string ExtractorId,
+        string ExtractorVersion,
+        long ExtractionAttemptCount,
+        long RetryCount,
+        DateTime? LastAttemptUtc,
+        string Error);
 
     private void OnCancelKeyPress(object? sender, ConsoleCancelEventArgs e)
     {
