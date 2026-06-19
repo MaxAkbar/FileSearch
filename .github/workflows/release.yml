@@ -344,7 +344,7 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          $files = Get-ChildItem -LiteralPath .\release-artifacts -File | Where-Object {
+          $files = Get-ChildItem -LiteralPath .\release-artifacts -File -Recurse | Where-Object {
             $_.Name -like "*.zip" -or
             $_.Name -like "*.msi" -or
             $_.Name -like "*.msix" -or
