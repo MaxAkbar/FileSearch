@@ -49,6 +49,7 @@ public sealed class BindingPathAuditTests
         typeof(WorkflowConditionViewModel),
         typeof(WorkflowParameterSetViewModel),
         typeof(QuickIndexedLocationSelection),
+        typeof(AppShortcutBindingViewModel),
     };
 
     /// <summary>Window-scope (DataContext) type per file; default is the shell.</summary>

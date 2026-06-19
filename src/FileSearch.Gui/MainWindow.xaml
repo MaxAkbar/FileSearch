@@ -834,12 +834,14 @@
                             </Grid.ColumnDefinitions>
                             <ui:FontIcon Glyph="&#xE721;" FontSize="15" Margin="0,0,10,0"
                                          Foreground="{DynamicResource Atlas.Ink3Brush}" VerticalAlignment="Center"/>
-                            <TextBox Grid.Column="1"
+                            <TextBox x:Name="SearchPathBox"
+                                     Grid.Column="1"
                                      Text="{Binding Search.SearchPath, UpdateSourceTrigger=LostFocus}"
                                      Style="{StaticResource OmniPathBoxStyle}"
                                      ui:ControlHelper.PlaceholderText="Folder to search"/>
                             <Border Grid.Column="2" Style="{StaticResource OmniDividerStyle}"/>
-                            <TextBox Grid.Column="3"
+                            <TextBox x:Name="QueryBox"
+                                     Grid.Column="3"
                                      Text="{Binding Search.QueryText, UpdateSourceTrigger=PropertyChanged}"
                                      Style="{StaticResource OmniQueryBoxStyle}"
                                      ui:ControlHelper.PlaceholderText="Search text, regex, or Boolean query"/>

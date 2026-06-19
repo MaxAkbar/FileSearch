@@ -1,10 +1,13 @@
 using System;
 using System.ComponentModel;
 using System.IO;
+using System.Linq;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Controls.Primitives;
 using System.Windows.Input;
+using System.Windows.Media;
+using FileSearch.Gui.Settings;
 using FileSearch.Gui.ViewModels;
 
 namespace FileSearch.Gui;
@@ -18,6 +21,7 @@ public partial class MainWindow : Window
         InitializeComponent();
         UpdateNavSectionRows();
         DataContextChanged += OnDataContextChanged;
+        PreviewKeyDown += OnMainWindowPreviewKeyDown;
         ShellRoot.SizeChanged += OnShellRootSizeChanged;
     }
 
@@ -204,6 +208,210 @@ public partial class MainWindow : Window
             file.OpenCommand.Execute(null);
             e.Handled = true;
         }
+    }
+
+    private void OnMainWindowPreviewKeyDown(object sender, System.Windows.Input.KeyEventArgs e)
+    {
+        if (DataContext is not MainViewModel viewModel)
+            return;
+
+        foreach (var shortcut in viewModel.Settings.ShortcutBindings)
+        {
+            if (!MatchesShortcut(shortcut.Gesture, e))
+                continue;
+
+            if (ShouldIgnoreShortcut(shortcut.Action, shortcut.Gesture, e.OriginalSource))
+                return;
+
+            if (RequiresResultsFocus(shortcut.Action, shortcut.Gesture) && !ResultsList.IsKeyboardFocusWithin)
+                return;
+
+            if (!TryExecuteShortcut(shortcut.Action, viewModel))
+                return;
+
+            e.Handled = true;
+            return;
+        }
+    }
+
+    private bool TryExecuteShortcut(AppShortcutAction action, MainViewModel viewModel)
+    {
+        var search = viewModel.Search;
+        var file = search.SelectedFile;
+
+        switch (action)
+        {
+            case AppShortcutAction.FocusQuery:
+                QueryBox.Focus();
+                QueryBox.SelectAll();
+                return true;
+
+            case AppShortcutAction.FocusFolder:
+                SearchPathBox.Focus();
+                SearchPathBox.SelectAll();
+                return true;
+
+            case AppShortcutAction.StartSearch:
+                return ExecuteCommand(search.SearchCommand);
+
+            case AppShortcutAction.CancelSearch:
+                return ExecuteCommand(search.CancelCommand);
+
+            case AppShortcutAction.FocusResults:
+                search.SelectedFile ??= search.FilesView.Cast<FileResultViewModel>().FirstOrDefault();
+                ResultsList.Focus();
+                if (search.SelectedFile is not null)
+                    ResultsList.ScrollIntoView(search.SelectedFile);
+                return true;
+
+            case AppShortcutAction.TogglePreviewPane:
+                return ExecuteCommand(search.TogglePreviewPaneCommand);
+
+            case AppShortcutAction.OpenSelectedResult:
+                return file is not null && ExecuteCommand(file.OpenCommand);
+
+            case AppShortcutAction.RevealSelectedResult:
+                return file is not null && ExecuteCommand(file.RevealInExplorerCommand);
+
+            case AppShortcutAction.CopySelectedResultPath:
+                return file is not null && ExecuteCommand(file.CopyPathCommand);
+
+            case AppShortcutAction.PinSelectedResult:
+                return file is not null && ExecuteCommand(search.TogglePinResultCommand, file);
+
+            case AppShortcutAction.FavoriteSelectedResult:
+                return file is not null && ExecuteCommand(search.ToggleFavoriteResultCommand, file);
+
+            case AppShortcutAction.RenameSelectedResult:
+                return file is not null && ExecuteCommand(search.RenameResultCommand, file);
+
+            case AppShortcutAction.DeleteSelectedResult:
+                return file is not null && ExecuteCommand(search.DeleteResultCommand, file);
+
+            case AppShortcutAction.SaveWorkspace:
+                return ExecuteCommand(search.SaveWorkspaceCommand);
+
+            case AppShortcutAction.ClearResultFacets:
+                return ExecuteCommand(search.ClearResultFacetsCommand);
+
+            default:
+                return false;
+        }
+    }
+
+    private static bool ExecuteCommand(ICommand command, object? parameter = null)
+    {
+        if (!command.CanExecute(parameter))
+            return false;
+
+        command.Execute(parameter);
+        return true;
+    }
+
+    private static bool MatchesShortcut(AppShortcutGesture gesture, System.Windows.Input.KeyEventArgs e)
+    {
+        var key = NormalizeKey(e);
+        var modifiers = Keyboard.Modifiers;
+
+        return gesture switch
+        {
+            AppShortcutGesture.CtrlF => modifiers == ModifierKeys.Control && key == Key.F,
+            AppShortcutGesture.CtrlL => modifiers == ModifierKeys.Control && key == Key.L,
+            AppShortcutGesture.CtrlEnter => modifiers == ModifierKeys.Control && key == Key.Return,
+            AppShortcutGesture.Escape => modifiers == ModifierKeys.None && key == Key.Escape,
+            AppShortcutGesture.CtrlR => modifiers == ModifierKeys.Control && key == Key.R,
+            AppShortcutGesture.F8 => modifiers == ModifierKeys.None && key == Key.F8,
+            AppShortcutGesture.Enter => modifiers == ModifierKeys.None && key == Key.Return,
+            AppShortcutGesture.CtrlO => modifiers == ModifierKeys.Control && key == Key.O,
+            AppShortcutGesture.CtrlE => modifiers == ModifierKeys.Control && key == Key.E,
+            AppShortcutGesture.CtrlShiftC => modifiers == (ModifierKeys.Control | ModifierKeys.Shift) && key == Key.C,
+            AppShortcutGesture.CtrlP => modifiers == ModifierKeys.Control && key == Key.P,
+            AppShortcutGesture.CtrlShiftS => modifiers == (ModifierKeys.Control | ModifierKeys.Shift) && key == Key.S,
+            AppShortcutGesture.F2 => modifiers == ModifierKeys.None && key == Key.F2,
+            AppShortcutGesture.Delete => modifiers == ModifierKeys.None && key == Key.Delete,
+            AppShortcutGesture.CtrlShiftW => modifiers == (ModifierKeys.Control | ModifierKeys.Shift) && key == Key.W,
+            AppShortcutGesture.CtrlShiftBackspace => modifiers == (ModifierKeys.Control | ModifierKeys.Shift) && key == Key.Back,
+            _ => false,
+        };
+    }
+
+    private static Key NormalizeKey(System.Windows.Input.KeyEventArgs e)
+    {
+        if (e.Key == Key.System)
+            return e.SystemKey;
+
+        if (e.Key == Key.ImeProcessed)
+            return e.ImeProcessedKey;
+
+        return e.Key;
+    }
+
+    private static bool ShouldIgnoreShortcut(AppShortcutAction action, AppShortcutGesture gesture, object? source)
+    {
+        if (action == AppShortcutAction.CancelSearch || GestureHasModifiers(gesture))
+            return false;
+
+        return IsWithin<System.Windows.Controls.Primitives.TextBoxBase>(source)
+            || IsWithin<PasswordBox>(source)
+            || IsWithin<System.Windows.Controls.ComboBox>(source);
+    }
+
+    private static bool RequiresResultsFocus(AppShortcutAction action, AppShortcutGesture gesture) =>
+        !GestureHasModifiers(gesture)
+        && action is AppShortcutAction.OpenSelectedResult
+            or AppShortcutAction.RenameSelectedResult
+            or AppShortcutAction.DeleteSelectedResult;
+
+    private static bool GestureHasModifiers(AppShortcutGesture gesture) =>
+        gesture is AppShortcutGesture.CtrlF
+            or AppShortcutGesture.CtrlL
+            or AppShortcutGesture.CtrlEnter
+            or AppShortcutGesture.CtrlR
+            or AppShortcutGesture.CtrlO
+            or AppShortcutGesture.CtrlE
+            or AppShortcutGesture.CtrlShiftC
+            or AppShortcutGesture.CtrlP
+            or AppShortcutGesture.CtrlShiftS
+            or AppShortcutGesture.CtrlShiftW
+            or AppShortcutGesture.CtrlShiftBackspace;
+
+    private static bool IsWithin<T>(object? source)
+        where T : DependencyObject
+    {
+        var current = source as DependencyObject;
+        while (current is not null)
+        {
+            if (current is T)
+                return true;
+
+            current = GetParent(current);
+        }
+
+        return false;
+    }
+
+    private static DependencyObject? GetParent(DependencyObject source)
+    {
+        try
+        {
+            var visualParent = VisualTreeHelper.GetParent(source);
+            if (visualParent is not null)
+                return visualParent;
+        }
+        catch (InvalidOperationException)
+        {
+        }
+        catch (ArgumentException)
+        {
+        }
+
+        if (source is FrameworkElement element)
+            return element.Parent;
+
+        if (source is FrameworkContentElement contentElement)
+            return contentElement.Parent;
+
+        return null;
     }
 
     private void OnResultsPreviewMouseMove(object sender, System.Windows.Input.MouseEventArgs e)

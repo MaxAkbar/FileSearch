@@ -215,6 +215,53 @@
                             Background="{DynamicResource Atlas.LineBrush}"
                             Margin="0,18"/>
 
+                    <TextBlock Text="KEYBOARD SHORTCUTS" Style="{StaticResource SectionHeaderStyle}"/>
+                    <ItemsControl ItemsSource="{Binding ShortcutBindings}"
+                                  Margin="0,8,0,0">
+                        <ItemsControl.ItemTemplate>
+                            <DataTemplate>
+                                <Grid Margin="0,0,0,12">
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="*"/>
+                                        <ColumnDefinition Width="Auto"/>
+                                    </Grid.ColumnDefinitions>
+
+                                    <StackPanel Grid.Column="0" Margin="0,0,20,0">
+                                        <TextBlock Text="{Binding DisplayName}"
+                                                   Style="{StaticResource FieldLabelStyle}"/>
+                                        <TextBlock Text="{Binding Description}"
+                                                   Style="{StaticResource MutedValueStyle}"
+                                                   TextWrapping="Wrap"
+                                                   Margin="0,4,0,0"/>
+                                    </StackPanel>
+
+                                    <ComboBox Grid.Column="1"
+                                              ItemsSource="{Binding ShortcutOptions}"
+                                              SelectedItem="{Binding SelectedShortcut, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
+                                              DisplayMemberPath="DisplayName"
+                                              MinWidth="180"
+                                              VerticalAlignment="Center"/>
+                                </Grid>
+                            </DataTemplate>
+                        </ItemsControl.ItemTemplate>
+                    </ItemsControl>
+
+                    <Button Command="{Binding ResetShortcutDefaultsCommand}"
+                            Style="{StaticResource SecondaryButtonStyle}"
+                            Height="34"
+                            MinWidth="132"
+                            HorizontalAlignment="Left"
+                            Margin="0,2,0,0">
+                        <StackPanel Orientation="Horizontal">
+                            <ui:FontIcon Glyph="&#xE72C;" FontSize="12" Margin="0,0,7,0"/>
+                            <TextBlock Text="Reset shortcuts"/>
+                        </StackPanel>
+                    </Button>
+
+                    <Border Height="1"
+                            Background="{DynamicResource Atlas.LineBrush}"
+                            Margin="0,18"/>
+
                     <TextBlock Text="THEMES" Style="{StaticResource SectionHeaderStyle}"/>
                     <Grid Margin="0,8,0,0">
                         <Grid.ColumnDefinitions>

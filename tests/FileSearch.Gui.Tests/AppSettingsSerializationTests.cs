@@ -32,6 +32,11 @@ public sealed class AppSettingsSerializationTests
             IndexerDiskPauseMilliseconds = 100,
             QuickSearchIncludeContent = false,
             QuickSearchFolderPath = @"C:\Quick",
+            Shortcuts = new AppShortcutSettings
+            {
+                FocusQuery = AppShortcutGesture.CtrlL,
+                RenameSelectedResult = AppShortcutGesture.Disabled,
+            },
             SavedSearches =
             [
                 new()
@@ -169,6 +174,8 @@ public sealed class AppSettingsSerializationTests
         Assert.Equal(100, loaded.IndexerDiskPauseMilliseconds);
         Assert.False(loaded.QuickSearchIncludeContent);
         Assert.Equal(@"C:\Quick", loaded.QuickSearchFolderPath);
+        Assert.Equal(AppShortcutGesture.CtrlL, loaded.Shortcuts.FocusQuery);
+        Assert.Equal(AppShortcutGesture.Disabled, loaded.Shortcuts.RenameSelectedResult);
         Assert.Null(loaded.RunInBackground);
 
         var savedSearch = Assert.Single(loaded.SavedSearches);

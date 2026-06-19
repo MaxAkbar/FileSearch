@@ -39,6 +39,7 @@ public sealed partial class ApplicationSettingsViewModel : ObservableObject
     private int _indexerCpuLimitPercent;
     private int _indexerDiskPauseMilliseconds;
     private CustomThemeInfo? _selectedCustomTheme;
+    private bool _isUpdatingShortcuts;
 
     public ApplicationSettingsViewModel(
         ISettingsService settingsService,
@@ -66,6 +67,7 @@ public sealed partial class ApplicationSettingsViewModel : ObservableObject
         _indexOnlyWhenIdle = _settingsService.Current.IndexOnlyWhenIdle;
         _indexerCpuLimitPercent = NormalizeCpuLimit(_settingsService.Current.IndexerCpuLimitPercent);
         _indexerDiskPauseMilliseconds = NormalizeDiskPause(_settingsService.Current.IndexerDiskPauseMilliseconds);
+        ApplyShortcutSettings(NormalizeShortcutSettings(_settingsService.Current.Shortcuts));
         RefreshQuickIndexedLocationSelectionsCore();
         RefreshCustomThemesCore();
         _isInitialized = true;
@@ -94,6 +96,29 @@ public sealed partial class ApplicationSettingsViewModel : ObservableObject
         new(QuickSearchScopeKind.SelectedIndexedLocations, "Selected indexed locations"),
         new(QuickSearchScopeKind.AllIndexedLocations, "All indexed locations"),
         new(QuickSearchScopeKind.EntireMachineMetadata, "Entire machine metadata"),
+    ];
+
+    public ObservableCollection<AppShortcutBindingViewModel> ShortcutBindings { get; } = new();
+
+    public IReadOnlyList<AppShortcutOption> ShortcutOptions { get; } =
+    [
+        new(AppShortcutGesture.Disabled, "Disabled"),
+        new(AppShortcutGesture.CtrlF, "Ctrl+F"),
+        new(AppShortcutGesture.CtrlL, "Ctrl+L"),
+        new(AppShortcutGesture.CtrlEnter, "Ctrl+Enter"),
+        new(AppShortcutGesture.Escape, "Esc"),
+        new(AppShortcutGesture.CtrlR, "Ctrl+R"),
+        new(AppShortcutGesture.F8, "F8"),
+        new(AppShortcutGesture.Enter, "Enter"),
+        new(AppShortcutGesture.CtrlO, "Ctrl+O"),
+        new(AppShortcutGesture.CtrlE, "Ctrl+E"),
+        new(AppShortcutGesture.CtrlShiftC, "Ctrl+Shift+C"),
+        new(AppShortcutGesture.CtrlP, "Ctrl+P"),
+        new(AppShortcutGesture.CtrlShiftS, "Ctrl+Shift+S"),
+        new(AppShortcutGesture.F2, "F2"),
+        new(AppShortcutGesture.Delete, "Delete"),
+        new(AppShortcutGesture.CtrlShiftW, "Ctrl+Shift+W"),
+        new(AppShortcutGesture.CtrlShiftBackspace, "Ctrl+Shift+Backspace"),
     ];
 
     public ObservableCollection<CustomThemeInfo> CustomThemes { get; } = new();
@@ -390,6 +415,14 @@ public sealed partial class ApplicationSettingsViewModel : ObservableObject
     }
 
     [RelayCommand]
+    private void ResetShortcutDefaults()
+    {
+        ApplyShortcutSettings(AppShortcutSettings.CreateDefaults());
+        SaveSettings(updateStartupRegistration: false);
+        _status.Text = "Keyboard shortcuts reset.";
+    }
+
+    [RelayCommand]
     private void RefreshQuickIndexedLocations()
     {
         RefreshQuickIndexedLocationSelectionsCore();
@@ -438,6 +471,7 @@ public sealed partial class ApplicationSettingsViewModel : ObservableObject
             settings.IndexOnlyWhenIdle = IndexOnlyWhenIdle;
             settings.IndexerCpuLimitPercent = IndexerCpuLimitPercent;
             settings.IndexerDiskPauseMilliseconds = IndexerDiskPauseMilliseconds;
+            settings.Shortcuts = BuildShortcutSettings();
             settings.RunInBackground = null;
         });
 
@@ -482,6 +516,132 @@ public sealed partial class ApplicationSettingsViewModel : ObservableObject
 
     private static int NormalizeDiskPause(int value) =>
         Math.Clamp(value, 0, 1_000);
+
+    private void ApplyShortcutSettings(AppShortcutSettings settings)
+    {
+        _isUpdatingShortcuts = true;
+
+        try
+        {
+            if (ShortcutBindings.Count == 0)
+            {
+                AddShortcutBinding(AppShortcutAction.FocusQuery, "Focus search text", "Move focus to the main search text box.", settings.FocusQuery);
+                AddShortcutBinding(AppShortcutAction.FocusFolder, "Focus folder", "Move focus to the folder field.", settings.FocusFolder);
+                AddShortcutBinding(AppShortcutAction.StartSearch, "Start search", "Run the current full-window search.", settings.StartSearch);
+                AddShortcutBinding(AppShortcutAction.CancelSearch, "Cancel search", "Stop the running search.", settings.CancelSearch);
+                AddShortcutBinding(AppShortcutAction.FocusResults, "Focus results", "Move focus into the visible results list.", settings.FocusResults);
+                AddShortcutBinding(AppShortcutAction.TogglePreviewPane, "Toggle preview", "Show or hide the preview pane.", settings.TogglePreviewPane);
+                AddShortcutBinding(AppShortcutAction.OpenSelectedResult, "Open selected result", "Open the selected result.", settings.OpenSelectedResult);
+                AddShortcutBinding(AppShortcutAction.RevealSelectedResult, "Reveal selected result", "Show the selected result in Explorer.", settings.RevealSelectedResult);
+                AddShortcutBinding(AppShortcutAction.CopySelectedResultPath, "Copy selected path", "Copy the selected result path.", settings.CopySelectedResultPath);
+                AddShortcutBinding(AppShortcutAction.PinSelectedResult, "Pin selected result", "Pin or unpin the selected result.", settings.PinSelectedResult);
+                AddShortcutBinding(AppShortcutAction.FavoriteSelectedResult, "Favorite selected result", "Add or remove the selected result as a favorite.", settings.FavoriteSelectedResult);
+                AddShortcutBinding(AppShortcutAction.RenameSelectedResult, "Rename selected result", "Safely rename the selected result.", settings.RenameSelectedResult);
+                AddShortcutBinding(AppShortcutAction.DeleteSelectedResult, "Move selected result to Recycle Bin", "Confirm and move the selected result to the Recycle Bin.", settings.DeleteSelectedResult);
+                AddShortcutBinding(AppShortcutAction.SaveWorkspace, "Save workspace", "Save the current search, result view, favorites, and pins as a workspace.", settings.SaveWorkspace);
+                AddShortcutBinding(AppShortcutAction.ClearResultFacets, "Clear result facets", "Reset result type, folder, date, source, and size facets.", settings.ClearResultFacets);
+                return;
+            }
+
+            SetShortcut(AppShortcutAction.FocusQuery, settings.FocusQuery);
+            SetShortcut(AppShortcutAction.FocusFolder, settings.FocusFolder);
+            SetShortcut(AppShortcutAction.StartSearch, settings.StartSearch);
+            SetShortcut(AppShortcutAction.CancelSearch, settings.CancelSearch);
+            SetShortcut(AppShortcutAction.FocusResults, settings.FocusResults);
+            SetShortcut(AppShortcutAction.TogglePreviewPane, settings.TogglePreviewPane);
+            SetShortcut(AppShortcutAction.OpenSelectedResult, settings.OpenSelectedResult);
+            SetShortcut(AppShortcutAction.RevealSelectedResult, settings.RevealSelectedResult);
+            SetShortcut(AppShortcutAction.CopySelectedResultPath, settings.CopySelectedResultPath);
+            SetShortcut(AppShortcutAction.PinSelectedResult, settings.PinSelectedResult);
+            SetShortcut(AppShortcutAction.FavoriteSelectedResult, settings.FavoriteSelectedResult);
+            SetShortcut(AppShortcutAction.RenameSelectedResult, settings.RenameSelectedResult);
+            SetShortcut(AppShortcutAction.DeleteSelectedResult, settings.DeleteSelectedResult);
+            SetShortcut(AppShortcutAction.SaveWorkspace, settings.SaveWorkspace);
+            SetShortcut(AppShortcutAction.ClearResultFacets, settings.ClearResultFacets);
+        }
+        finally
+        {
+            _isUpdatingShortcuts = false;
+        }
+    }
+
+    private void AddShortcutBinding(AppShortcutAction action, string displayName, string description, AppShortcutGesture gesture)
+    {
+        ShortcutBindings.Add(new AppShortcutBindingViewModel(
+            action,
+            displayName,
+            description,
+            NormalizeShortcutGesture(gesture),
+            ShortcutOptions,
+            OnShortcutChanged));
+    }
+
+    private void SetShortcut(AppShortcutAction action, AppShortcutGesture gesture)
+    {
+        var binding = ShortcutBindings.FirstOrDefault(item => item.Action == action);
+        if (binding is null)
+            return;
+
+        binding.SetGesture(NormalizeShortcutGesture(gesture));
+    }
+
+    private void OnShortcutChanged()
+    {
+        if (_isUpdatingShortcuts)
+            return;
+
+        if (_isInitialized)
+            SaveSettings(updateStartupRegistration: false);
+    }
+
+    public AppShortcutGesture GetShortcut(AppShortcutAction action) =>
+        ShortcutBindings.FirstOrDefault(binding => binding.Action == action)?.Gesture ?? AppShortcutGesture.Disabled;
+
+    private AppShortcutSettings BuildShortcutSettings() => new()
+    {
+        FocusQuery = GetShortcut(AppShortcutAction.FocusQuery),
+        FocusFolder = GetShortcut(AppShortcutAction.FocusFolder),
+        StartSearch = GetShortcut(AppShortcutAction.StartSearch),
+        CancelSearch = GetShortcut(AppShortcutAction.CancelSearch),
+        FocusResults = GetShortcut(AppShortcutAction.FocusResults),
+        TogglePreviewPane = GetShortcut(AppShortcutAction.TogglePreviewPane),
+        OpenSelectedResult = GetShortcut(AppShortcutAction.OpenSelectedResult),
+        RevealSelectedResult = GetShortcut(AppShortcutAction.RevealSelectedResult),
+        CopySelectedResultPath = GetShortcut(AppShortcutAction.CopySelectedResultPath),
+        PinSelectedResult = GetShortcut(AppShortcutAction.PinSelectedResult),
+        FavoriteSelectedResult = GetShortcut(AppShortcutAction.FavoriteSelectedResult),
+        RenameSelectedResult = GetShortcut(AppShortcutAction.RenameSelectedResult),
+        DeleteSelectedResult = GetShortcut(AppShortcutAction.DeleteSelectedResult),
+        SaveWorkspace = GetShortcut(AppShortcutAction.SaveWorkspace),
+        ClearResultFacets = GetShortcut(AppShortcutAction.ClearResultFacets),
+    };
+
+    private static AppShortcutSettings NormalizeShortcutSettings(AppShortcutSettings? settings)
+    {
+        settings ??= AppShortcutSettings.CreateDefaults();
+
+        return new AppShortcutSettings
+        {
+            FocusQuery = NormalizeShortcutGesture(settings.FocusQuery),
+            FocusFolder = NormalizeShortcutGesture(settings.FocusFolder),
+            StartSearch = NormalizeShortcutGesture(settings.StartSearch),
+            CancelSearch = NormalizeShortcutGesture(settings.CancelSearch),
+            FocusResults = NormalizeShortcutGesture(settings.FocusResults),
+            TogglePreviewPane = NormalizeShortcutGesture(settings.TogglePreviewPane),
+            OpenSelectedResult = NormalizeShortcutGesture(settings.OpenSelectedResult),
+            RevealSelectedResult = NormalizeShortcutGesture(settings.RevealSelectedResult),
+            CopySelectedResultPath = NormalizeShortcutGesture(settings.CopySelectedResultPath),
+            PinSelectedResult = NormalizeShortcutGesture(settings.PinSelectedResult),
+            FavoriteSelectedResult = NormalizeShortcutGesture(settings.FavoriteSelectedResult),
+            RenameSelectedResult = NormalizeShortcutGesture(settings.RenameSelectedResult),
+            DeleteSelectedResult = NormalizeShortcutGesture(settings.DeleteSelectedResult),
+            SaveWorkspace = NormalizeShortcutGesture(settings.SaveWorkspace),
+            ClearResultFacets = NormalizeShortcutGesture(settings.ClearResultFacets),
+        };
+    }
+
+    private static AppShortcutGesture NormalizeShortcutGesture(AppShortcutGesture gesture) =>
+        Enum.IsDefined(gesture) ? gesture : AppShortcutGesture.Disabled;
 
     private void RefreshCustomThemesCore()
     {
@@ -544,6 +704,65 @@ public sealed partial class ApplicationSettingsViewModel : ObservableObject
 public sealed record QuickSearchHotkeyOption(QuickSearchHotkey Value, string DisplayName)
 {
     public override string ToString() => DisplayName;
+}
+
+public sealed record AppShortcutOption(AppShortcutGesture Value, string DisplayName)
+{
+    public override string ToString() => DisplayName;
+}
+
+public sealed class AppShortcutBindingViewModel : ObservableObject
+{
+    private readonly IReadOnlyList<AppShortcutOption> _shortcutOptions;
+    private readonly Action _changed;
+    private AppShortcutOption _selectedShortcut;
+
+    public AppShortcutBindingViewModel(
+        AppShortcutAction action,
+        string displayName,
+        string description,
+        AppShortcutGesture selectedShortcut,
+        IReadOnlyList<AppShortcutOption> shortcutOptions,
+        Action changed)
+    {
+        Action = action;
+        DisplayName = displayName;
+        Description = description;
+        _shortcutOptions = shortcutOptions;
+        _changed = changed;
+        _selectedShortcut = FindOption(selectedShortcut);
+    }
+
+    public AppShortcutAction Action { get; }
+
+    public string DisplayName { get; }
+
+    public string Description { get; }
+
+    public IReadOnlyList<AppShortcutOption> ShortcutOptions => _shortcutOptions;
+
+    public AppShortcutOption SelectedShortcut
+    {
+        get => _selectedShortcut;
+        set
+        {
+            if (value is null || !SetProperty(ref _selectedShortcut, value))
+                return;
+
+            _changed();
+        }
+    }
+
+    public AppShortcutGesture Gesture => SelectedShortcut.Value;
+
+    public void SetGesture(AppShortcutGesture gesture)
+    {
+        SelectedShortcut = FindOption(gesture);
+    }
+
+    private AppShortcutOption FindOption(AppShortcutGesture gesture) =>
+        _shortcutOptions.FirstOrDefault(option => option.Value == gesture)
+        ?? _shortcutOptions.First(option => option.Value == AppShortcutGesture.Disabled);
 }
 
 public sealed class QuickIndexedLocationSelection : ObservableObject

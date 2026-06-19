@@ -46,6 +46,8 @@ public sealed class AppSettings
 
     public QuickSearchHotkey QuickSearchHotkey { get; set; } = QuickSearchHotkey.WinShiftF;
 
+    public AppShortcutSettings Shortcuts { get; set; } = AppShortcutSettings.CreateDefaults();
+
     public QuickSearchScopeKind QuickSearchDefaultScope { get; set; } = QuickSearchScopeKind.AllIndexedLocations;
 
     public QuickSearchScopeKind QuickSearchLastScope { get; set; } = QuickSearchScopeKind.AllIndexedLocations;

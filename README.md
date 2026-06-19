@@ -18,6 +18,7 @@ FileSearch is a Windows desktop application for searching text across files and 
 - Refine, facet, sort, group, favorite, pin, drag, export, and save or share workspace bundles without rescanning files.
 - Optional CSharpDB-backed indexing for faster repeat searches across multiple locations, with GUI or tray-indexer background updates.
 - Open matched files, reveal them in Explorer, copy file or folder paths, rename files, or move files to the Recycle Bin.
+- Configure the Quick Search global hotkey and main-window keyboard shortcuts.
 - Light, dark, system, and Visual Studio-inspired themes.
 - Optional Windows shell integration from the app menu.
 - MSI and MSIX packaging scripts for Microsoft Store submission.

@@ -1,4 +1,5 @@
 using FileSearch.Gui.Services;
+using FileSearch.Gui.Settings;
 using FileSearch.Gui.ViewModels;
 
 namespace FileSearch.Gui.Tests;
@@ -101,6 +102,40 @@ public sealed class ApplicationSettingsViewModelTests
         Assert.Equal(100, settings.Current.IndexerDiskPauseMilliseconds);
         Assert.Equal(0, startup.EnableCallCount);
         Assert.Equal(0, startup.DisableCallCount);
+    }
+
+    [Fact]
+    public void ShortcutSettingsLoadAndPersist()
+    {
+        var settings = new FakeSettingsService();
+        settings.Current.Shortcuts.FocusQuery = AppShortcutGesture.CtrlL;
+        var appSettings = new ApplicationSettingsViewModel(
+            settings,
+            new StatusBarViewModel());
+
+        var binding = appSettings.ShortcutBindings.Single(item => item.Action == AppShortcutAction.FocusQuery);
+
+        Assert.Equal(AppShortcutGesture.CtrlL, binding.Gesture);
+
+        binding.SelectedShortcut = binding.ShortcutOptions.Single(option => option.Value == AppShortcutGesture.CtrlR);
+
+        Assert.Equal(AppShortcutGesture.CtrlR, settings.Current.Shortcuts.FocusQuery);
+    }
+
+    [Fact]
+    public void ResetShortcutDefaultsRestoresDefaultGestures()
+    {
+        var settings = new FakeSettingsService();
+        settings.Current.Shortcuts.FocusQuery = AppShortcutGesture.Disabled;
+        var appSettings = new ApplicationSettingsViewModel(
+            settings,
+            new StatusBarViewModel());
+
+        appSettings.ResetShortcutDefaultsCommand.Execute(null);
+
+        var binding = appSettings.ShortcutBindings.Single(item => item.Action == AppShortcutAction.FocusQuery);
+        Assert.Equal(AppShortcutGesture.CtrlF, binding.Gesture);
+        Assert.Equal(AppShortcutGesture.CtrlF, settings.Current.Shortcuts.FocusQuery);
     }
 
     [Fact]
