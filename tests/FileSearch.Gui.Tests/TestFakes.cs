@@ -113,6 +113,22 @@ internal sealed class FakeFileSavePicker : IFileSavePicker
     }
 }
 
+internal sealed class FakeFileOpenPicker : IFileOpenPicker
+{
+    public string? PathToReturn { get; set; }
+
+    public string? LastTitle { get; private set; }
+
+    public string? LastFilter { get; private set; }
+
+    public string? PickOpenFile(string title, string filter)
+    {
+        LastTitle = title;
+        LastFilter = filter;
+        return PathToReturn;
+    }
+}
+
 internal sealed class FakeStartupRegistrationService : IStartupRegistrationService
 {
     public bool IsEnabled { get; set; }

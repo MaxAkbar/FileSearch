@@ -9,6 +9,12 @@ public enum HitKind
     Metadata,
 }
 
+public enum HitRoute
+{
+    Live,
+    Indexed,
+}
+
 /// <summary>
 /// A single match found by the search engine.
 /// </summary>
@@ -20,4 +26,5 @@ public sealed record Hit(
     HitKind Kind = HitKind.Content,
     double Score = 0,
     long? SizeBytes = null,
-    DateTime? ModifiedUtc = null);
+    DateTime? ModifiedUtc = null,
+    HitRoute Route = HitRoute.Live);

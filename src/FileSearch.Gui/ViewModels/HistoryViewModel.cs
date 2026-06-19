@@ -1,9 +1,13 @@
 using System;
 using System.Collections.ObjectModel;
 using System.ComponentModel;
+using System.IO;
 using System.Linq;
+using System.Text.Json;
+using System.Text.Json.Serialization;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
+using FileSearch.Gui.Services;
 using FileSearch.Gui.Settings;
 
 namespace FileSearch.Gui.ViewModels;
@@ -19,16 +23,22 @@ public sealed partial class HistoryViewModel : ObservableObject
     private readonly ISettingsService _settingsService;
     private readonly ApplicationSettingsViewModel _applicationSettings;
     private readonly StatusBarViewModel _status;
+    private readonly IFileOpenPicker? _fileOpenPicker;
+    private readonly IFileSavePicker? _fileSavePicker;
     private readonly ObservableCollection<SidebarScopeItem> _scopeItems = new();
 
     public HistoryViewModel(
         ISettingsService settingsService,
         ApplicationSettingsViewModel applicationSettings,
-        StatusBarViewModel status)
+        StatusBarViewModel status,
+        IFileOpenPicker? fileOpenPicker = null,
+        IFileSavePicker? fileSavePicker = null)
     {
         _settingsService = settingsService;
         _applicationSettings = applicationSettings;
         _status = status;
+        _fileOpenPicker = fileOpenPicker;
+        _fileSavePicker = fileSavePicker;
         ScopeList = new PagedSidebarList<SidebarScopeItem>(
             _scopeItems,
             MatchesScope,
@@ -79,7 +89,11 @@ public sealed partial class HistoryViewModel : ObservableObject
 
         SavedSearches.CollectionChanged += (_, _) => ClearSavedSearchesCommand.NotifyCanExecuteChanged();
         FavoriteResults.CollectionChanged += (_, _) => ClearFavoriteResultsCommand.NotifyCanExecuteChanged();
-        Workspaces.CollectionChanged += (_, _) => ClearWorkspacesCommand.NotifyCanExecuteChanged();
+        Workspaces.CollectionChanged += (_, _) =>
+        {
+            ClearWorkspacesCommand.NotifyCanExecuteChanged();
+            ExportAllWorkspacesCommand.NotifyCanExecuteChanged();
+        };
         RecentQueries.CollectionChanged += (_, _) => ClearRecentQueriesCommand.NotifyCanExecuteChanged();
         RecentPaths.CollectionChanged += (_, _) => ClearRecentPathsCommand.NotifyCanExecuteChanged();
         CustomScopes.CollectionChanged += (_, _) =>
@@ -167,16 +181,7 @@ public sealed partial class HistoryViewModel : ObservableObject
         if (!IsUsableWorkspace(normalized))
             return;
 
-        for (var i = Workspaces.Count - 1; i >= 0; i--)
-        {
-            if (string.Equals(Workspaces[i].Name, normalized.Name, StringComparison.OrdinalIgnoreCase))
-                Workspaces.RemoveAt(i);
-        }
-
-        Workspaces.Insert(0, normalized);
-        while (Workspaces.Count > MaxWorkspaceEntries)
-            Workspaces.RemoveAt(Workspaces.Count - 1);
-
+        UpsertWorkspace(normalized);
         SaveHistory();
         _status.Text = $"Saved workspace {normalized.DisplayName}.";
     }
@@ -308,6 +313,123 @@ public sealed partial class HistoryViewModel : ObservableObject
     }
 
     private bool CanClearWorkspaces() => Workspaces.Count > 0;
+
+    [RelayCommand]
+    private void ImportWorkspace()
+    {
+        if (_fileOpenPicker is null)
+        {
+            _status.Text = "Workspace import is not available.";
+            return;
+        }
+
+        var path = _fileOpenPicker.PickOpenFile(
+            "Import workspace",
+            WorkspaceFileFilter);
+        if (string.IsNullOrWhiteSpace(path))
+            return;
+
+        try
+        {
+            var imported = ReadWorkspaceFile(path)
+                .Select(NormalizeWorkspace)
+                .Where(IsUsableWorkspace)
+                .ToArray();
+            if (imported.Length == 0)
+            {
+                _status.Text = "No usable workspaces found in the selected file.";
+                return;
+            }
+
+            foreach (var workspace in imported)
+                UpsertWorkspace(workspace);
+
+            SaveHistory();
+            _status.Text = imported.Length == 1
+                ? $"Imported workspace {imported[0].DisplayName}."
+                : $"Imported {imported.Length:n0} workspaces.";
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or JsonException or NotSupportedException)
+        {
+            _status.Text = $"Could not import workspace: {ex.Message}";
+        }
+    }
+
+    [RelayCommand]
+    private void ExportWorkspace(WorkspaceSettings? workspace)
+    {
+        if (workspace is null)
+            return;
+
+        if (_fileSavePicker is null)
+        {
+            _status.Text = "Workspace export is not available.";
+            return;
+        }
+
+        var normalized = NormalizeWorkspace(workspace);
+        if (!IsUsableWorkspace(normalized))
+            return;
+
+        var path = _fileSavePicker.PickSaveFile(
+            "Export workspace",
+            WorkspaceFileFilter,
+            BuildWorkspaceFileName(normalized.DisplayName));
+        if (string.IsNullOrWhiteSpace(path))
+            return;
+
+        try
+        {
+            WriteWorkspaceFile(path, new WorkspaceFile
+            {
+                Workspace = normalized,
+            });
+            _status.Text = $"Exported workspace {normalized.DisplayName}.";
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or NotSupportedException)
+        {
+            _status.Text = $"Could not export workspace: {ex.Message}";
+        }
+    }
+
+    [RelayCommand(CanExecute = nameof(CanExportAllWorkspaces))]
+    private void ExportAllWorkspaces()
+    {
+        if (_fileSavePicker is null)
+        {
+            _status.Text = "Workspace export is not available.";
+            return;
+        }
+
+        var workspaces = Workspaces
+            .Select(NormalizeWorkspace)
+            .Where(IsUsableWorkspace)
+            .ToArray();
+        if (workspaces.Length == 0)
+            return;
+
+        var path = _fileSavePicker.PickSaveFile(
+            "Export workspaces",
+            WorkspaceFileFilter,
+            "filesearch-workspaces.filesearch-workspace.json");
+        if (string.IsNullOrWhiteSpace(path))
+            return;
+
+        try
+        {
+            WriteWorkspaceFile(path, new WorkspaceFile
+            {
+                Workspaces = workspaces.ToList(),
+            });
+            _status.Text = $"Exported {workspaces.Length:n0} workspaces.";
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or NotSupportedException)
+        {
+            _status.Text = $"Could not export workspaces: {ex.Message}";
+        }
+    }
+
+    private bool CanExportAllWorkspaces() => _fileSavePicker is not null && Workspaces.Count > 0;
 
     [RelayCommand]
     private void RemoveCustomScope(SearchScope? scope)
@@ -461,6 +583,19 @@ public sealed partial class HistoryViewModel : ObservableObject
 
         while (SavedSearches.Count > MaxHistoryEntries)
             SavedSearches.RemoveAt(SavedSearches.Count - 1);
+    }
+
+    private void UpsertWorkspace(WorkspaceSettings normalized)
+    {
+        for (var i = Workspaces.Count - 1; i >= 0; i--)
+        {
+            if (string.Equals(Workspaces[i].Name, normalized.Name, StringComparison.OrdinalIgnoreCase))
+                Workspaces.RemoveAt(i);
+        }
+
+        Workspaces.Insert(0, normalized);
+        while (Workspaces.Count > MaxWorkspaceEntries)
+            Workspaces.RemoveAt(Workspaces.Count - 1);
     }
 
     private static bool HasSameSavedSearchIdentity(SavedSearchSettings left, SavedSearchSettings right) =>
@@ -646,4 +781,70 @@ public sealed partial class HistoryViewModel : ObservableObject
 
     private static bool IsUsableScope(SearchScope scope) =>
         !string.IsNullOrWhiteSpace(scope.Name);
+
+    private static List<WorkspaceSettings> ReadWorkspaceFile(string path)
+    {
+        var json = File.ReadAllText(path);
+        var package = JsonSerializer.Deserialize<WorkspaceFile>(json, s_workspaceJsonOptions);
+        if (package?.Workspaces is { Count: > 0 })
+            return package.Workspaces;
+        if (package?.Workspace is not null)
+            return [package.Workspace];
+
+        var workspace = JsonSerializer.Deserialize<WorkspaceSettings>(json, s_workspaceJsonOptions);
+        return workspace is null ? [] : [workspace];
+    }
+
+    private static void WriteWorkspaceFile(string path, WorkspaceFile package)
+    {
+        var fullPath = Path.GetFullPath(path);
+        var directory = Path.GetDirectoryName(fullPath);
+        if (!string.IsNullOrWhiteSpace(directory))
+            Directory.CreateDirectory(directory);
+
+        package.Format = WorkspaceFileFormat;
+        package.Version = WorkspaceFileVersion;
+        var json = JsonSerializer.Serialize(package, s_workspaceJsonOptions);
+        File.WriteAllText(fullPath, json);
+    }
+
+    private static string BuildWorkspaceFileName(string displayName)
+    {
+        var invalid = Path.GetInvalidFileNameChars();
+        var safe = string.Join(
+            "-",
+            displayName.Split(invalid, StringSplitOptions.TrimEntries | StringSplitOptions.RemoveEmptyEntries));
+        if (string.IsNullOrWhiteSpace(safe))
+            safe = "workspace";
+
+        return $"{safe}.filesearch-workspace.json";
+    }
+
+    private const string WorkspaceFileFormat = "FileSearch.Workspace";
+
+    private const int WorkspaceFileVersion = 1;
+
+    private const string WorkspaceFileFilter =
+        "FileSearch workspace (*.filesearch-workspace.json;*.json)|*.filesearch-workspace.json;*.json|JSON files (*.json)|*.json|All files (*.*)|*.*";
+
+    private static readonly JsonSerializerOptions s_workspaceJsonOptions = new()
+    {
+        WriteIndented = true,
+        PropertyNameCaseInsensitive = true,
+        ReadCommentHandling = JsonCommentHandling.Skip,
+        AllowTrailingCommas = true,
+        DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull,
+        Converters = { new JsonStringEnumConverter() },
+    };
+
+    private sealed class WorkspaceFile
+    {
+        public string Format { get; set; } = WorkspaceFileFormat;
+
+        public int Version { get; set; } = WorkspaceFileVersion;
+
+        public WorkspaceSettings? Workspace { get; set; }
+
+        public List<WorkspaceSettings> Workspaces { get; set; } = new();
+    }
 }

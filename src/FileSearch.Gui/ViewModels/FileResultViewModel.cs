@@ -30,8 +30,8 @@ public sealed partial class FileResultViewModel : ObservableObject
     private bool _metadataLoaded;
     private long? _sizeBytes;
     private DateTime? _modifiedUtc;
-    private bool _hasContentHits;
-    private bool _hasMetadataHits;
+    private bool _hasIndexedHits;
+    private bool _hasLiveHits;
 
     public FileResultViewModel(
         string fullPath,
@@ -138,9 +138,13 @@ public sealed partial class FileResultViewModel : ObservableObject
     {
         get
         {
-            if (_hasContentHits && _hasMetadataHits)
-                return "Content + metadata";
-            return _hasMetadataHits ? "Metadata" : "Content";
+            if (_hasIndexedHits && _hasLiveHits)
+                return "Indexed + live scan";
+            if (_hasIndexedHits)
+                return "Indexed";
+            if (_hasLiveHits)
+                return "Live scan";
+            return "Unknown";
         }
     }
 
@@ -173,8 +177,8 @@ public sealed partial class FileResultViewModel : ObservableObject
         }
 
         var oldSource = SourceGroup;
-        _hasContentHits |= hit.Kind == HitKind.Content;
-        _hasMetadataHits |= hit.Kind == HitKind.Metadata;
+        _hasIndexedHits |= hit.Route == HitRoute.Indexed;
+        _hasLiveHits |= hit.Route == HitRoute.Live;
         if (!string.Equals(oldSource, SourceGroup, StringComparison.Ordinal))
             OnPropertyChanged(nameof(SourceGroup));
 

@@ -61,6 +61,7 @@ public partial class App : System.Windows.Application
                 services.AddSingleton<IThemeService, ThemeService>();
                 services.AddSingleton<IFileLauncher, FileLauncher>();
                 services.AddSingleton<IFileOperationService, FileOperationService>();
+                services.AddSingleton<IFileOpenPicker, FileOpenPicker>();
                 services.AddSingleton<IFileSavePicker, FileSavePicker>();
                 services.AddSingleton<IShellIntegrationService, ShellIntegrationService>();
                 services.AddSingleton<IStartupRegistrationService, StartupRegistrationService>();

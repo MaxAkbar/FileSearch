@@ -337,7 +337,8 @@ public sealed class CSharpDbFileIndex : IFileIndex, IIndexReplayWriter, IIndexUs
                 HitKind.Metadata,
                 score,
                 file.SizeBytes,
-                file.ModifiedUtcTicks > 0 ? new DateTime(file.ModifiedUtcTicks, DateTimeKind.Utc) : null));
+                file.ModifiedUtcTicks > 0 ? new DateTime(file.ModifiedUtcTicks, DateTimeKind.Utc) : null,
+                HitRoute.Indexed));
         }
 
         return hits
@@ -2002,7 +2003,12 @@ public sealed class CSharpDbFileIndex : IFileIndex, IIndexReplayWriter, IIndexUs
         query.CollectHighlights(line.Content, highlightBuffer);
 
         hitsByPath[line.Path] = hitsForFile + 1;
-        hit = new Hit(line.Path, line.LineNumber, line.Content, highlightBuffer.ToArray());
+        hit = new Hit(
+            line.Path,
+            line.LineNumber,
+            line.Content,
+            highlightBuffer.ToArray(),
+            Route: HitRoute.Indexed);
         return true;
     }
 

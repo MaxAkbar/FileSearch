@@ -311,6 +311,20 @@
                                                 <TextBlock Text="Save current workspace" VerticalAlignment="Center"/>
                                             </StackPanel>
                                         </Button>
+                                        <Button Command="{Binding History.ImportWorkspaceCommand}"
+                                                Style="{StaticResource NavItemButtonStyle}">
+                                            <StackPanel Orientation="Horizontal">
+                                                <ui:FontIcon Glyph="&#xE8B5;" FontSize="14" Margin="0,0,11,0"/>
+                                                <TextBlock Text="Import workspace" VerticalAlignment="Center"/>
+                                            </StackPanel>
+                                        </Button>
+                                        <Button Command="{Binding History.ExportAllWorkspacesCommand}"
+                                                Style="{StaticResource NavItemButtonStyle}">
+                                            <StackPanel Orientation="Horizontal">
+                                                <ui:FontIcon Glyph="&#xE8B6;" FontSize="14" Margin="0,0,11,0"/>
+                                                <TextBlock Text="Export workspaces" VerticalAlignment="Center"/>
+                                            </StackPanel>
+                                        </Button>
                                         <Button Command="{Binding History.ClearWorkspacesCommand}"
                                                 Style="{StaticResource NavItemButtonStyle}">
                                             <StackPanel Orientation="Horizontal">
@@ -383,15 +397,25 @@
                                                         <TextBlock Text="{Binding DisplayName}" TextTrimming="CharacterEllipsis"/>
                                                         <TextBlock Text="{Binding Summary}" Style="{StaticResource MutedValueStyle}" TextTrimming="CharacterEllipsis"/>
                                                     </StackPanel>
-                                                    <Button Grid.Column="2"
-                                                            Command="{Binding DataContext.History.RemoveWorkspaceCommand, RelativeSource={RelativeSource AncestorType=ListBox}}"
-                                                            CommandParameter="{Binding}"
-                                                            Style="{StaticResource IconButtonStyle}"
-                                                            Width="24" Height="24"
-                                                            Margin="4,0,0,0"
-                                                            ToolTip="Remove workspace">
-                                                        <ui:FontIcon Glyph="&#xE74D;" FontSize="11"/>
-                                                    </Button>
+                                                    <StackPanel Grid.Column="2"
+                                                                Orientation="Horizontal"
+                                                                Margin="4,0,0,0">
+                                                        <Button Command="{Binding DataContext.History.ExportWorkspaceCommand, RelativeSource={RelativeSource AncestorType=ListBox}}"
+                                                                CommandParameter="{Binding}"
+                                                                Style="{StaticResource IconButtonStyle}"
+                                                                Width="24" Height="24"
+                                                                ToolTip="Export workspace">
+                                                            <ui:FontIcon Glyph="&#xE8B6;" FontSize="11"/>
+                                                        </Button>
+                                                        <Button Command="{Binding DataContext.History.RemoveWorkspaceCommand, RelativeSource={RelativeSource AncestorType=ListBox}}"
+                                                                CommandParameter="{Binding}"
+                                                                Style="{StaticResource IconButtonStyle}"
+                                                                Width="24" Height="24"
+                                                                Margin="2,0,0,0"
+                                                                ToolTip="Remove workspace">
+                                                            <ui:FontIcon Glyph="&#xE74D;" FontSize="11"/>
+                                                        </Button>
+                                                    </StackPanel>
                                                 </Grid>
                                             </DataTemplate>
                                         </ListBox.ItemTemplate>

@@ -25,8 +25,8 @@ Still missing or partial:
 
 - No benchmark/performance harness for live scan, index build, or indexed query latency.
 - Retrying failed index files from the CLI remains future work.
-- Saved searches, custom scopes, and workspace bundles exist; richer profile sharing/import-export remains future work.
-- Results now have GUI facets, grouping, sort presets, direct CSV/JSON/JSON Lines/Markdown export, drag-and-drop, persistent favorites, shared pinned paths, and safe result rename/delete; richer reporting remains missing.
+- Saved searches, custom scopes, and shareable workspace import/export exist; optional workspace auto-run-on-load remains future work.
+- Results now have GUI facets, indexed/live source route filtering, grouping, sort presets, direct CSV/JSON/JSON Lines/Markdown export, drag-and-drop, persistent favorites, shared pinned paths, and safe result rename/delete; richer reporting remains missing.
 - Durable USN replay is NTFS-only. ReFS remains on snapshot validation until 128-bit file identifiers are supported and tested.
 - Hard-link-aware path identity is not fully implemented; ambiguous USN deletes fall back to root validation.
 - There is no true Windows Service yet. Background indexing is a per-user tray process that starts after user sign-in.
@@ -57,9 +57,9 @@ Still missing or partial:
 
 ### 3. Search Workflow and Result UX
 
-- Extend workspace bundles with import/export, explicit profile sharing, and optional auto-run-on-load behavior.
-- Workspace bundles now store name, search settings, custom scopes, result view state, selected Quick Search indexed roots, and pinned/favorite result sets.
-- Extend result facets from the current extension, folder, modified date, hit source, and file size facets toward indexed/live source when per-hit route metadata is available.
+- Add optional workspace auto-run-on-load behavior.
+- Workspace bundles now store name, search settings, custom scopes, result view state, selected Quick Search indexed roots, and pinned/favorite result sets, and can be imported/exported as shareable JSON files.
+- Extend result facets beyond the current extension, folder, modified date, indexed/live source route, and file size facets when users need additional indexed metadata.
 - Extend sort/group presets beyond the current relevance, recency, filename, hit count, folder, file type, and modified date controls when users need more advanced path and size views.
 - Add richer GUI reports and report-oriented rollups beyond the current GUI and CLI CSV, JSON, JSON Lines, and Markdown export paths.
 - Add richer preview controls for context size and copy/export of selected result snippets.

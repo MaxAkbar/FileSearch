@@ -361,6 +361,28 @@ public sealed class SearchViewModelTests
     }
 
     [Fact]
+    public void SourceFacetUsesSearchRoute()
+    {
+        RunWithPump((pump, vm, history, status, settings) =>
+        {
+            vm.QueryText = "needle";
+            vm.SearchPath = Path.GetTempPath();
+
+            var task = vm.SearchCommand.ExecuteAsync(null);
+            pump.PumpUntil(() => task.IsCompleted, TimeSpan.FromSeconds(10));
+
+            Assert.Contains(vm.SourceFacetOptions, option => option.Label == "Indexed");
+            Assert.Contains(vm.SourceFacetOptions, option => option.Label == "Live scan");
+
+            vm.SelectedSourceFacet = vm.SourceFacetOptions.Single(option => option.Value == "Indexed");
+
+            var visible = vm.FilesView.Cast<FileResultViewModel>().ToList();
+            var result = Assert.Single(visible);
+            Assert.Equal(@"C:\results\indexed.txt", result.FullPath);
+        }, new MixedRouteSearcher());
+    }
+
+    [Fact]
     public void ExportResultsWritesJsonLinesForVisibleHits()
     {
         var exportPath = Path.Combine(Path.GetTempPath(), $"{Guid.NewGuid():N}.jsonl");
@@ -773,6 +795,30 @@ public sealed class SearchViewModelTests
                 Score: 0.3,
                 SizeBytes: 20 * 1024,
                 ModifiedUtc: DateTime.UtcNow);
+        }
+    }
+
+    private sealed class MixedRouteSearcher : ISearcher
+    {
+        public async IAsyncEnumerable<Hit> SearchAsync(
+            SearchRequest request,
+            [EnumeratorCancellation] CancellationToken cancellationToken)
+        {
+            await Task.Yield();
+            yield return new Hit(
+                @"C:\results\indexed.txt",
+                1,
+                "needle indexed",
+                Array.Empty<MatchSpan>(),
+                HitKind.Content,
+                Route: HitRoute.Indexed);
+            yield return new Hit(
+                @"C:\results\live.txt",
+                1,
+                "needle live",
+                Array.Empty<MatchSpan>(),
+                HitKind.Metadata,
+                Route: HitRoute.Live);
         }
     }
 
