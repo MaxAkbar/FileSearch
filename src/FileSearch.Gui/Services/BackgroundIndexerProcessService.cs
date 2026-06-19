@@ -6,7 +6,26 @@ namespace FileSearch.Gui.Services;
 
 public sealed class BackgroundIndexerProcessService : IBackgroundIndexerProcessService
 {
-    private static readonly TimeSpan IpcTimeout = TimeSpan.FromSeconds(1);
+    private static readonly TimeSpan QuickIpcTimeout = TimeSpan.FromSeconds(1);
+    private static readonly TimeSpan MutationIpcTimeout = TimeSpan.FromSeconds(10);
+    private static readonly TimeSpan MaintenanceIpcTimeout = TimeSpan.FromSeconds(90);
+    private static readonly TimeSpan ShutdownIpcTimeout = TimeSpan.FromSeconds(5);
+
+    private readonly Func<BackgroundIndexerRequest, TimeSpan, CancellationToken, Task<BackgroundIndexerResponse?>> _sendAsync;
+    private readonly Func<TimeSpan, CancellationToken, Task> _delayAsync;
+
+    public BackgroundIndexerProcessService()
+        : this(BackgroundIndexerClient.TrySendAsync, Task.Delay)
+    {
+    }
+
+    internal BackgroundIndexerProcessService(
+        Func<BackgroundIndexerRequest, TimeSpan, CancellationToken, Task<BackgroundIndexerResponse?>> sendAsync,
+        Func<TimeSpan, CancellationToken, Task> delayAsync)
+    {
+        _sendAsync = sendAsync;
+        _delayAsync = delayAsync;
+    }
 
     public async Task<bool> EnsureRunningAsync(CancellationToken cancellationToken)
     {
@@ -25,7 +44,7 @@ public sealed class BackgroundIndexerProcessService : IBackgroundIndexerProcessS
 
         for (var attempt = 0; attempt < 10; attempt++)
         {
-            await Task.Delay(200, cancellationToken).ConfigureAwait(false);
+            await _delayAsync(TimeSpan.FromMilliseconds(200), cancellationToken).ConfigureAwait(false);
             if (await IsRunningAsync(cancellationToken).ConfigureAwait(false))
                 return true;
         }
@@ -35,18 +54,19 @@ public sealed class BackgroundIndexerProcessService : IBackgroundIndexerProcessS
 
     public async Task<bool> ShutdownIfRunningAsync(CancellationToken cancellationToken)
     {
-        var response = await SendAsync(BackgroundIndexerCommand.Shutdown, cancellationToken).ConfigureAwait(false);
+        var response = await SendAsync(BackgroundIndexerCommand.Shutdown, ShutdownIpcTimeout, cancellationToken)
+            .ConfigureAwait(false);
         if (response?.Success != true)
             return false;
 
         for (var attempt = 0; attempt < 15; attempt++)
         {
-            await Task.Delay(200, cancellationToken).ConfigureAwait(false);
+            await _delayAsync(TimeSpan.FromMilliseconds(200), cancellationToken).ConfigureAwait(false);
             if (!await IsRunningAsync(cancellationToken).ConfigureAwait(false))
                 return true;
         }
 
-        return true;
+        return false;
     }
 
     public async Task<IndexingStatus?> GetStatusAsync(CancellationToken cancellationToken)
@@ -75,6 +95,7 @@ public sealed class BackgroundIndexerProcessService : IBackgroundIndexerProcessS
                 new BackgroundIndexerRequest(
                     BackgroundIndexerCommand.SetResourceProfile,
                     ResourceProfile: profile),
+                MutationIpcTimeout,
                 cancellationToken)
             .ConfigureAwait(false);
         return response?.Success == true;
@@ -88,6 +109,7 @@ public sealed class BackgroundIndexerProcessService : IBackgroundIndexerProcessS
                 new BackgroundIndexerRequest(
                     BackgroundIndexerCommand.SetRuntimeOptions,
                     RuntimeOptions: options.Normalize()),
+                MutationIpcTimeout,
                 cancellationToken)
             .ConfigureAwait(false);
         return response?.Success == true;
@@ -99,6 +121,7 @@ public sealed class BackgroundIndexerProcessService : IBackgroundIndexerProcessS
                 new BackgroundIndexerRequest(
                     BackgroundIndexerCommand.SetForegroundSearchActive,
                     ForegroundSearchActive: isActive),
+                MutationIpcTimeout,
                 cancellationToken)
             .ConfigureAwait(false);
         return response?.Success == true;
@@ -122,6 +145,7 @@ public sealed class BackgroundIndexerProcessService : IBackgroundIndexerProcessS
                 new BackgroundIndexerRequest(
                     BackgroundIndexerCommand.RemoveLocation,
                     Root: IndexPath.NormalizeRoot(root)),
+                MutationIpcTimeout,
                 cancellationToken)
             .ConfigureAwait(false);
         return response?.Success == true;
@@ -149,6 +173,7 @@ public sealed class BackgroundIndexerProcessService : IBackgroundIndexerProcessS
                     BackgroundIndexerCommand.QueueRootRefresh,
                     Location: BackgroundIndexedLocation.FromIndexedLocation(location),
                     Priority: priority),
+                MutationIpcTimeout,
                 cancellationToken)
             .ConfigureAwait(false);
         return response?.Success == true;
@@ -161,6 +186,7 @@ public sealed class BackgroundIndexerProcessService : IBackgroundIndexerProcessS
         var response = await SendLocationAsync(
                 BackgroundIndexerCommand.ValidateRoot,
                 location,
+                MaintenanceIpcTimeout,
                 cancellationToken)
             .ConfigureAwait(false);
         return response?.Success == true ? response.ValidationResult : null;
@@ -168,7 +194,7 @@ public sealed class BackgroundIndexerProcessService : IBackgroundIndexerProcessS
 
     public async Task<bool> CompactDatabaseAsync(CancellationToken cancellationToken)
     {
-        var response = await SendAsync(BackgroundIndexerCommand.CompactDatabase, cancellationToken)
+        var response = await SendAsync(BackgroundIndexerCommand.CompactDatabase, MaintenanceIpcTimeout, cancellationToken)
             .ConfigureAwait(false);
         return response?.Success == true;
     }
@@ -191,29 +217,49 @@ public sealed class BackgroundIndexerProcessService : IBackgroundIndexerProcessS
             "FileSearch.Indexer.exe"));
     }
 
-    private static async Task<bool> IsRunningAsync(CancellationToken cancellationToken)
+    private async Task<bool> IsRunningAsync(CancellationToken cancellationToken)
     {
         var response = await SendAsync(BackgroundIndexerCommand.Ping, cancellationToken).ConfigureAwait(false);
         return response?.Success == true;
     }
 
-    private static Task<BackgroundIndexerResponse?> SendLocationAsync(
+    private Task<BackgroundIndexerResponse?> SendLocationAsync(
         BackgroundIndexerCommand command,
         IndexedLocation location,
+        CancellationToken cancellationToken) =>
+        SendLocationAsync(command, location, MutationIpcTimeout, cancellationToken);
+
+    private Task<BackgroundIndexerResponse?> SendLocationAsync(
+        BackgroundIndexerCommand command,
+        IndexedLocation location,
+        TimeSpan timeout,
         CancellationToken cancellationToken) =>
         SendAsync(
             new BackgroundIndexerRequest(
                 command,
                 Location: BackgroundIndexedLocation.FromIndexedLocation(location)),
+            timeout,
             cancellationToken);
 
-    private static Task<BackgroundIndexerResponse?> SendAsync(
+    private Task<BackgroundIndexerResponse?> SendAsync(
         BackgroundIndexerCommand command,
         CancellationToken cancellationToken) =>
-        SendAsync(new BackgroundIndexerRequest(command), cancellationToken);
+        SendAsync(new BackgroundIndexerRequest(command), QuickIpcTimeout, cancellationToken);
 
-    private static Task<BackgroundIndexerResponse?> SendAsync(
+    private Task<BackgroundIndexerResponse?> SendAsync(
+        BackgroundIndexerCommand command,
+        TimeSpan timeout,
+        CancellationToken cancellationToken) =>
+        SendAsync(new BackgroundIndexerRequest(command), timeout, cancellationToken);
+
+    private Task<BackgroundIndexerResponse?> SendAsync(
         BackgroundIndexerRequest request,
         CancellationToken cancellationToken) =>
-        BackgroundIndexerClient.TrySendAsync(request, IpcTimeout, cancellationToken);
+        SendAsync(request, QuickIpcTimeout, cancellationToken);
+
+    private Task<BackgroundIndexerResponse?> SendAsync(
+        BackgroundIndexerRequest request,
+        TimeSpan timeout,
+        CancellationToken cancellationToken) =>
+        _sendAsync(request, timeout, cancellationToken);
 }

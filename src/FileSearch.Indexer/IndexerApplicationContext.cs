@@ -16,6 +16,8 @@ namespace FileSearch.Indexer;
 
 internal sealed class IndexerApplicationContext : Forms.ApplicationContext
 {
+    private const int MaxPipeServerInstances = 8;
+
     private static readonly JsonSerializerOptions s_jsonOptions = new()
     {
         Converters = { new JsonStringEnumConverter() },
@@ -31,6 +33,7 @@ internal sealed class IndexerApplicationContext : Forms.ApplicationContext
     private readonly Forms.ToolStripMenuItem _pauseMenuItem;
     private readonly Forms.ToolStripMenuItem _resumeMenuItem;
     private readonly Task _startupTask;
+    private readonly SemaphoreSlim _maintenanceGate = new(1, 1);
     private int _stopping;
 
     public IndexerApplicationContext(IReadOnlyList<string> args)
@@ -108,16 +111,47 @@ internal sealed class IndexerApplicationContext : Forms.ApplicationContext
     {
         while (!cancellationToken.IsCancellationRequested)
         {
+            NamedPipeServerStream? pipe = null;
             try
             {
-                await using var pipe = new NamedPipeServerStream(
+                pipe = new NamedPipeServerStream(
                     BackgroundIndexerEndpoint.PipeName,
                     PipeDirection.InOut,
-                    maxNumberOfServerInstances: 1,
+                    maxNumberOfServerInstances: MaxPipeServerInstances,
                     PipeTransmissionMode.Byte,
                     PipeOptions.Asynchronous);
                 await pipe.WaitForConnectionAsync(cancellationToken).ConfigureAwait(false);
+                var connectedPipe = pipe;
+                pipe = null;
+                _ = Task.Run(
+                    () => HandlePipeConnectionAsync(connectedPipe, cancellationToken),
+                    CancellationToken.None);
+            }
+            catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+            {
+                pipe?.Dispose();
+                return;
+            }
+            catch (ObjectDisposedException) when (cancellationToken.IsCancellationRequested)
+            {
+                pipe?.Dispose();
+                return;
+            }
+            catch (IOException)
+            {
+                pipe?.Dispose();
+            }
+        }
+    }
 
+    private async Task HandlePipeConnectionAsync(
+        NamedPipeServerStream pipe,
+        CancellationToken cancellationToken)
+    {
+        await using (pipe.ConfigureAwait(false))
+        {
+            try
+            {
                 using var reader = new StreamReader(pipe, Encoding.UTF8, leaveOpen: true);
                 await using var writer = new StreamWriter(pipe, Encoding.UTF8, leaveOpen: true)
                 {
@@ -133,10 +167,6 @@ internal sealed class IndexerApplicationContext : Forms.ApplicationContext
                 await writer.WriteLineAsync(responsePayload).ConfigureAwait(false);
             }
             catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
-            {
-                return;
-            }
-            catch (ObjectDisposedException) when (cancellationToken.IsCancellationRequested)
             {
                 return;
             }
@@ -258,12 +288,15 @@ internal sealed class IndexerApplicationContext : Forms.ApplicationContext
     {
         await _startupTask.ConfigureAwait(false);
 
-        var resumeIndexing = !_indexingService.IsPaused;
-        if (resumeIndexing)
-            _indexingService.Pause();
+        if (!await _maintenanceGate.WaitAsync(0, cancellationToken).ConfigureAwait(false))
+            return new BackgroundIndexerResponse(false, "Another index maintenance operation is already running.", _indexingService.CurrentStatus);
 
+        var resumeIndexing = !_indexingService.IsPaused;
         try
         {
+            if (resumeIndexing)
+                _indexingService.Pause();
+
             if (!await WaitForIdleAsync(TimeSpan.FromSeconds(30), cancellationToken).ConfigureAwait(false))
                 return new BackgroundIndexerResponse(false, "Indexer is still busy; compact later.", _indexingService.CurrentStatus);
 
@@ -274,6 +307,8 @@ internal sealed class IndexerApplicationContext : Forms.ApplicationContext
         {
             if (resumeIndexing)
                 _indexingService.Resume();
+
+            _maintenanceGate.Release();
         }
     }
 
@@ -283,18 +318,28 @@ internal sealed class IndexerApplicationContext : Forms.ApplicationContext
     {
         await _startupTask.ConfigureAwait(false);
 
-        if (!await WaitForIdleAsync(TimeSpan.FromSeconds(30), cancellationToken).ConfigureAwait(false))
-            return new BackgroundIndexerResponse(false, "Indexer is still busy; validate later.", _indexingService.CurrentStatus);
+        if (!await _maintenanceGate.WaitAsync(0, cancellationToken).ConfigureAwait(false))
+            return new BackgroundIndexerResponse(false, "Another index maintenance operation is already running.", _indexingService.CurrentStatus);
 
-        var validation = await _fileIndex.ValidateRootAsync(
-                new IndexRequest(location.Root, location.WalkerOptions),
-                cancellationToken)
-            .ConfigureAwait(false);
-        return new BackgroundIndexerResponse(
-            true,
-            validation.Message,
-            _indexingService.CurrentStatus,
-            validation);
+        try
+        {
+            if (!await WaitForIdleAsync(TimeSpan.FromSeconds(30), cancellationToken).ConfigureAwait(false))
+                return new BackgroundIndexerResponse(false, "Indexer is still busy; validate later.", _indexingService.CurrentStatus);
+
+            var validation = await _fileIndex.ValidateRootAsync(
+                    new IndexRequest(location.Root, location.WalkerOptions),
+                    cancellationToken)
+                .ConfigureAwait(false);
+            return new BackgroundIndexerResponse(
+                true,
+                validation.Message,
+                _indexingService.CurrentStatus,
+                validation);
+        }
+        finally
+        {
+            _maintenanceGate.Release();
+        }
     }
 
     private async Task<bool> WaitForIdleAsync(TimeSpan timeout, CancellationToken cancellationToken)
@@ -400,6 +445,7 @@ internal sealed class IndexerApplicationContext : Forms.ApplicationContext
             _indexingService.StatusChanged -= OnIndexingStatusChanged;
             _notifyIcon.Dispose();
             _icon.Dispose();
+            _maintenanceGate.Dispose();
             _cts.Dispose();
             _host.Dispose();
         }
