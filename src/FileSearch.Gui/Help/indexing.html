@@ -33,13 +33,14 @@
             <section class="hero">
                 <div class="eyebrow">Indexed Search</div>
                 <h1>Speed up repeat searches with a background index.</h1>
-                <p class="lead">FileSearch can index folders you search often. Indexed searches read prepared text from a local database instead of re-opening every file, and a background watcher keeps the index current while the app is running.</p>
+                <p class="lead">FileSearch can index folders you search often. Indexed searches read prepared text from a local database instead of re-opening every file, and the GUI or tray indexer can keep the index current in the background.</p>
             </section>
 
             <h2>How It Works</h2>
             <ul class="plain-list">
                 <li>You choose folders to index, called <strong>indexed locations</strong>. FileSearch scans them in the background and stores their text in a local database.</li>
-                <li>While the app is open, a file watcher batches changes inside indexed locations and refreshes the affected entries automatically.</li>
+                <li>The visible GUI owns indexing while it is open. If background mode is enabled, closing the window hands indexing to the per-user tray indexer.</li>
+                <li>A file watcher batches changes inside indexed locations while either the GUI or tray indexer is running. Local NTFS roots can also catch up from USN journal checkpoints after FileSearch restarts.</li>
                 <li>A search uses the index only when it is <strong>covered</strong>: the <strong>Look in</strong> folder falls inside an indexed location and the current options match what was indexed. When a search is not covered, FileSearch automatically falls back to a normal live scan.</li>
             </ul>
 
@@ -86,9 +87,27 @@
                             <td><strong>Indexer resource use</strong></td>
                             <td>Use <strong>File &gt; Settings</strong> to choose how aggressively background indexing uses CPU and disk. Lower settings pause more often between files.</td>
                         </tr>
+                        <tr>
+                            <td><strong>Keep index updated after closing window</strong></td>
+                            <td>Starts or keeps the tray indexer running when the search window closes.</td>
+                        </tr>
+                        <tr>
+                            <td><strong>Start background indexer when Windows starts</strong></td>
+                            <td>Registers the per-user tray indexer to start after Windows sign-in. This is not a Windows Service and does not run before sign-in.</td>
+                        </tr>
                     </tbody>
                 </table>
             </div>
+
+            <h2>Startup Catch-Up</h2>
+            <p>When FileSearch starts, it loads pending changes, starts watchers for configured roots, then chooses the safest catch-up strategy for each location.</p>
+            <ul class="plain-list">
+                <li><strong>Local NTFS</strong> uses USN journal replay when a valid checkpoint is available.</li>
+                <li><strong>ReFS, FAT/exFAT, cloud folders, and removable drives</strong> use snapshot scans plus watcher updates when available.</li>
+                <li><strong>Network shares</strong> use scheduled snapshot scans. Watcher events are treated as best effort.</li>
+                <li><strong>Unavailable drives</strong> keep cached index entries and show as offline until the folder is reachable again.</li>
+            </ul>
+            <p>USN replay falls back to a snapshot scan when the journal was recreated, the saved checkpoint expired, access is denied, a changed path cannot be resolved, or a known-file delete could be ambiguous because of hard links. ReFS durable replay is deferred until FileSearch supports 128-bit ReFS file identifiers.</p>
 
             <h2>Location Details</h2>
             <p>Selecting a location shows its current state:</p>
@@ -136,6 +155,30 @@
 
             <div class="callout">
                 The right side of the status bar shows live background indexing activity, so you can keep searching while the index builds.
+            </div>
+
+            <h2>Index Health</h2>
+            <p>The Index Health tab shows each root's status, files indexed, pending and failed counts, last successful scan, last USN checkpoint, watcher activity, validation state, journal status, extractor failures, queue depth, estimated catch-up time, and strategy.</p>
+            <div class="table-wrap">
+                <table>
+                    <thead>
+                        <tr>
+                            <th>Status</th>
+                            <th>Meaning</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <tr><td><strong>Healthy</strong></td><td>No queued catch-up work and the latest diagnostics look current.</td></tr>
+                        <tr><td><strong>Watching</strong></td><td>A watcher is active and no queued catch-up work is pending.</td></tr>
+                        <tr><td><strong>Catching up</strong></td><td>The root is being refreshed or has queued work.</td></tr>
+                        <tr><td><strong>Paused</strong></td><td>Indexing is paused while work is active or queued.</td></tr>
+                        <tr><td><strong>Needs full scan</strong></td><td>Journal replay or validation found a condition requiring a snapshot scan.</td></tr>
+                        <tr><td><strong>Journal unavailable / expired</strong></td><td>The USN journal cannot be used, or the saved checkpoint is older than the retained journal range.</td></tr>
+                        <tr><td><strong>Access denied</strong></td><td>A root, watcher, journal, or path-resolution operation was blocked.</td></tr>
+                        <tr><td><strong>Offline</strong></td><td>The folder is not reachable; cached index entries are retained.</td></tr>
+                        <tr><td><strong>Too many extractor failures</strong></td><td>Failed files exceed the current warning threshold.</td></tr>
+                    </tbody>
+                </table>
             </div>
 
             <h2>Where the Index Is Stored</h2>

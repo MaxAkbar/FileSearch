@@ -6,14 +6,14 @@ param(
 
 $ErrorActionPreference = "Stop"
 
-$isWindows = [System.Runtime.InteropServices.RuntimeInformation]::IsOSPlatform(
+$runningOnWindows = [System.Runtime.InteropServices.RuntimeInformation]::IsOSPlatform(
     [System.Runtime.InteropServices.OSPlatform]::Windows)
-if (-not $isWindows) {
+if (-not $runningOnWindows) {
     throw "USN startup catch-up smoke testing requires Windows."
 }
 
 $repoRoot = [System.IO.Path]::GetFullPath((Join-Path $PSScriptRoot ".."))
-$solution = Join-Path $repoRoot "FileSearch.slnx"
+$testProject = Join-Path $repoRoot "tests\FileSearch.Core.Tests\FileSearch.Core.Tests.csproj"
 
 if ([string]::IsNullOrWhiteSpace($Root)) {
     $Root = [System.IO.Path]::GetTempPath()
@@ -34,9 +34,9 @@ try {
     $env:FILESEARCH_RUN_USN_SMOKE = "1"
     $env:FILESEARCH_USN_SMOKE_ROOT = $fullRoot
 
-    dotnet test $solution `
+    dotnet test $testProject `
         --configuration $Configuration `
-        --filter "FullyQualifiedName~UsnStartupCatchUpSmokeTests.RealVolumeStartupCatchUpReplaysChanges"
+        --filter "FullyQualifiedName~UsnStartupCatchUpSmokeTests"
 }
 finally {
     if ($null -eq $previousRun) {

@@ -132,6 +132,10 @@ internal sealed class WorkerSettingsLoader
 
     private static string GetDefaultSettingsPath()
     {
+        var overridePath = Environment.GetEnvironmentVariable("FILESEARCH_WORKER_SETTINGS_PATH");
+        if (!string.IsNullOrWhiteSpace(overridePath))
+            return overridePath;
+
         var folder = Path.Combine(
             Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData),
             "FileSearch");

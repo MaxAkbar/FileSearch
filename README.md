@@ -16,7 +16,7 @@ FileSearch is a Windows desktop application for searching text across files and 
 - Filter by file size and modified date range.
 - Preview matching lines and context for selected results.
 - Refine/filter results in memory without rescanning files.
-- Optional CSharpDB-backed indexing for faster repeat searches across multiple watched locations.
+- Optional CSharpDB-backed indexing for faster repeat searches across multiple locations, with GUI or tray-indexer background updates.
 - Open matched files, reveal them in Explorer, and copy file or folder paths.
 - Light, dark, system, and Visual Studio-inspired themes.
 - Optional Windows shell integration from the app menu.
@@ -201,9 +201,9 @@ The CLI uses the same `FileSearch.Core` search pipeline and CSharpDB index datab
 
 ## Indexed search
 
-Use **Index > Manage indexed locations...** to opt folders into background indexing. The app watches indexed locations while it is open, batches file changes, and updates the local CSharpDB index without blocking searches. **Use index** controls whether a search may use covered indexed locations; live scan remains the fallback when the index is missing, stale, or does not cover the current options.
+Use **Index > Manage indexed locations...** to opt folders into background indexing. FileSearch watches indexed locations while either the GUI or the per-user tray indexer is running, batches file changes, and updates the local CSharpDB index without blocking searches. **Use index** controls whether a search may use covered indexed locations; live scan remains the fallback when the index is missing, stale, or does not cover the current options.
 
-Background indexing can be paused or resumed from the **Index** menu. Details are documented in [README.Indexing.md](README.Indexing.md).
+The Settings window can keep the tray indexer running after the search window closes and can register it to start after Windows sign-in. Local NTFS roots can catch up from USN journal checkpoints after restart; ReFS, network, cloud, removable, and unsupported roots use snapshot validation. Background indexing can be paused or resumed from the **Index** menu. Details are documented in [README.Indexing.md](README.Indexing.md).
 
 ## Query modes
 
@@ -408,7 +408,7 @@ Directly loading `FileSearch.Core` from PowerShell is possible, but it is not th
 
 FileSearch is packaged as an MSIX for Store distribution. The repository includes a PowerShell packaging script that publishes the app, background indexer, and extractor host self-contained, creates the MSIX layout, generates tile assets, and emits a Partner Center upload file.
 
-CI builds, tests, CLI smoke tests, GUI publish smoke tests, dependency review, and manual Store packaging are configured with GitHub Actions. Release steps are documented in [docs/RELEASE_CHECKLIST.md](docs/RELEASE_CHECKLIST.md).
+CI builds, tests, CLI smoke tests, published sidecar smoke tests, dependency review, and manual Store packaging are configured with GitHub Actions. Release steps are documented in [docs/RELEASE_CHECKLIST.md](docs/RELEASE_CHECKLIST.md).
 
 Run from the repository root:
 
@@ -435,7 +435,7 @@ For sideload testing, pass `-CertificateThumbprint` with a certificate trusted o
 - The GUI project references the core project directly.
 - Tests use xUnit and `Microsoft.NET.Test.Sdk`.
 - The core search pipeline is designed around dependency injection so extractors and options can be swapped or extended.
-- Indexed search and background watcher behavior are documented in [README.Indexing.md](README.Indexing.md).
+- Indexed search, tray-indexer lifecycle, USN catch-up, snapshot fallback, and index health behavior are documented in [README.Indexing.md](README.Indexing.md).
 - Workflow search and the workflow JSON file format are documented in [README.Workflows.md](README.Workflows.md).
 - The competitive roadmap refresh is documented in [README.Roadmap.md](README.Roadmap.md).
 - Security and privacy posture are documented in [SECURITY.md](SECURITY.md) and [PRIVACY.md](PRIVACY.md).

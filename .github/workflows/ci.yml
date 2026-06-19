@@ -77,9 +77,14 @@ jobs:
             'exit'
           ) | dotnet run --project .\src\FileSearch.Cli\FileSearch.Cli.csproj --configuration Debug --no-build
 
-      - name: GUI publish smoke test
+      - name: Published sidecar smoke test
         shell: pwsh
         run: |
+          $publishDir = ".\artifacts\ci-publish\win-x64"
+          if (Test-Path $publishDir) {
+            Remove-Item -LiteralPath $publishDir -Recurse -Force
+          }
+
           dotnet publish .\src\FileSearch.Gui\FileSearch.Gui.csproj `
             --configuration Release `
             --runtime win-x64 `
@@ -88,12 +93,29 @@ jobs:
             -p:PublishReadyToRun=true `
             -p:DebugType=portable `
             -p:DebugSymbols=true `
-            -o .\artifacts\ci-publish\win-x64
+            -o $publishDir
 
-          $helpIndex = ".\artifacts\ci-publish\win-x64\Help\index.html"
-          if (-not (Test-Path $helpIndex)) {
-            throw "Published help bundle missing: $helpIndex"
-          }
+          dotnet publish .\src\FileSearch.Indexer\FileSearch.Indexer.csproj `
+            --configuration Release `
+            --runtime win-x64 `
+            --self-contained true `
+            -p:PublishSingleFile=false `
+            -p:PublishReadyToRun=true `
+            -p:DebugType=portable `
+            -p:DebugSymbols=true `
+            -o $publishDir
+
+          dotnet publish .\src\FileSearch.ExtractorHost\FileSearch.ExtractorHost.csproj `
+            --configuration Release `
+            --runtime win-x64 `
+            --self-contained true `
+            -p:PublishSingleFile=false `
+            -p:PublishReadyToRun=true `
+            -p:DebugType=portable `
+            -p:DebugSymbols=true `
+            -o $publishDir
+
+          .\scripts\Test-PublishedSidecars.ps1 -PublishDirectory $publishDir
 
       - name: Upload test results and coverage
         if: always()
@@ -109,7 +131,7 @@ jobs:
       - name: Upload publish smoke artifact
         uses: actions/upload-artifact@v7
         with:
-          name: filesearch-gui-publish-smoke-win-x64
+          name: filesearch-publish-smoke-win-x64
           path: artifacts/ci-publish/win-x64
           if-no-files-found: error
           retention-days: 7

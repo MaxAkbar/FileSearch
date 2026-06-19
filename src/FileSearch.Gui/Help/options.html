@@ -103,7 +103,15 @@
             </div>
 
             <h2>Indexed Search</h2>
-            <p>The <strong>Use index</strong> checkbox next to the search controls lets covered searches read from the local file index instead of rescanning files; live scan remains the fallback when a search is not covered. Indexed locations, background indexing, pause/resume, and status badges are described on the <a href="indexing.html">Indexed Search</a> page.</p>
+            <p>The <strong>Use index</strong> checkbox next to the search controls lets covered searches read from the local file index instead of rescanning files; live scan remains the fallback when a search is not covered. Indexed locations, background indexing, pause/resume, health, and status badges are described on the <a href="indexing.html">Indexed Search</a> page.</p>
+
+            <h2>Background Indexer</h2>
+            <p>Use <strong>File &gt; Settings</strong> to control whether indexing continues after the search window closes and whether the tray indexer starts when Windows starts.</p>
+            <ul class="plain-list">
+                <li><strong>Keep index updated after closing window</strong> hands indexing to the per-user tray indexer when the main window closes.</li>
+                <li><strong>Start background indexer when Windows starts</strong> starts the tray indexer after user sign-in. This is not a Windows Service.</li>
+                <li><strong>Pause indexing on battery</strong>, <strong>Indexer resource use</strong>, <strong>CPU limit</strong>, and <strong>Disk pause</strong> reduce background indexing impact.</li>
+            </ul>
 
             <h2>Themes</h2>
             <p>Use <strong>View &gt; Theme</strong> to choose Light, Dark, Visual Studio, or System. Theme selection is saved and restored the next time FileSearch starts.</p>

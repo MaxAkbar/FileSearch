@@ -9,11 +9,16 @@ FileSearch has already closed two major gaps from the older competitive analysis
 Completed since the older roadmap:
 
 - Hybrid live/indexed search with CSharpDB-backed extracted line storage.
-- Multi-location indexed folders with background watcher updates.
-- Index management UI with status badges and pause/resume controls.
+- Multi-location indexed folders with GUI and tray-indexer background updates.
+- Per-user tray indexer with optional Windows sign-in startup.
+- NTFS startup catch-up through USN journal checkpoints, with snapshot fallback for unsupported or unsafe roots.
+- Local filesystem strategy classification for NTFS, ReFS, FAT/exFAT, network, cloud-backed, and removable roots.
+- Index management UI with status badges, health diagnostics, validation, compaction, and pause/resume controls.
+- Resource controls for battery, CPU profile, and disk pauses.
+- Out-of-process extractor host, reusable extractor host pool, extractor versioning, IFilter fallback, archive limits, and failed-file export.
 - Spectre.Console CLI REPL with live search, indexed search, index maintenance, and filter commands.
 - Programmatic Core API examples and PowerShell CLI automation docs.
-- GitHub Actions CI foundation for build, test, CLI smoke, GUI publish smoke, dependency review, and manual Store packaging.
+- GitHub Actions CI foundation for build, test, formatting, CLI smoke, published sidecar smoke, dependency review, and manual Store packaging.
 - Security, privacy, and release checklist documentation.
 
 Still missing or partial:
@@ -22,6 +27,9 @@ Still missing or partial:
 - CLI is interactive-first; it lacks first-class one-shot commands and JSON/CSV output.
 - Saved scopes exist, but full saved searches/profiles do not.
 - Results lack facets, grouping, advanced sort presets, and export/reporting.
+- Durable USN replay is NTFS-only. ReFS remains on snapshot validation until 128-bit file identifiers are supported and tested.
+- Hard-link-aware path identity is not fully implemented; ambiguous USN deletes fall back to root validation.
+- There is no true Windows Service yet. Background indexing is a per-user tray process that starts after user sign-in.
 - Accessibility, localization, release signing, and benchmark maturity are still partial.
 
 ## Roadmap
@@ -37,12 +45,15 @@ Still missing or partial:
 ### 2. Indexing Platform V2
 
 - Keep CSharpDB as the embedded index store for the next phase.
-- Add an **Index Health** view showing indexed roots, file count, line count, index size, queue depth, last refresh, failed/skipped files, and extractor error counts.
-- Add maintenance commands for compact/vacuum database, rebuild all indexes, clear all indexes, and retry failed files.
+- Expand **Index Health** with richer trend/history data, machine-specific journal diagnostics, and clearer remediation actions.
+- Add remaining maintenance commands for rebuild all indexes, clear all indexes, and retry failed files.
 - Improve stale-index handling with clearer status messages and per-location warnings.
 - Add default excluded folders for large noisy trees: `.git`, `.vs`, `bin`, `obj`, `node_modules`, package caches, and build outputs.
 - Add optional **Search all indexed locations** mode separate from folder-specific search.
 - Add ranking and snippets for indexed results while still rechecking every hit with the existing query engine.
+- Add ReFS-safe durable replay with 128-bit file identifiers, `ExtendedFileIdType`, and native integration tests.
+- Add explicit hard-link policy or path-level identity storage for USN delete/rename replay.
+- Consider a true non-UI Windows Service only as a later, separate component for startup-before-login and deeper enterprise scenarios.
 
 ### 3. Search Workflow and Result UX
 
@@ -78,9 +89,11 @@ Still missing or partial:
 ## Test Plan
 
 - CI verifies `dotnet build .\FileSearch.slnx` and `dotnet test .\FileSearch.slnx`.
+- CI publishes the GUI, tray indexer, and extractor host together, then runs a sidecar smoke test that launches the indexer, pings IPC, reads status, pauses, resumes, requests shutdown, and verifies exit.
+- Windows-only native smoke tests cover NTFS USN startup replay and safe fallback behavior.
 - Add benchmark tests with tracked baselines for live and indexed paths.
-- Add Core tests for search-all-indexed-locations, default excluded folders, index health stats, compact/rebuild/clear maintenance commands, and ranked/snippet results matching live-search correctness.
-- Add GUI tests for saved search persistence, index health display, facet selection, and export command availability.
+- Add Core tests for search-all-indexed-locations, default excluded folders, rebuild-all/clear/retry maintenance commands, ReFS replay support when implemented, hard-link policy, and ranked/snippet results matching live-search correctness.
+- Add GUI tests for saved search persistence, richer index health remediation, facet selection, and export command availability.
 - Add CLI tests for one-shot search, JSON output shape, CSV escaping, exit codes, and index stats/build/clear commands.
 - Add accessibility smoke checks for key windows and dialogs.
 
@@ -91,5 +104,5 @@ Still missing or partial:
 - CSharpDB remains the embedded database for the next roadmap phase.
 - Live scan remains the correctness fallback.
 - Indexing remains opt-in by location.
-- Watchers continue to run only while the app is open.
+- Watchers run while an indexing owner is running: either the GUI process or the per-user tray indexer.
 - PowerShell support should initially use CLI automation, not a separate module.

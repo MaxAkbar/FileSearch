@@ -23,6 +23,8 @@ internal sealed class IndexerApplicationContext : Forms.ApplicationContext
         Converters = { new JsonStringEnumConverter() },
     };
 
+    private static readonly Encoding s_utf8NoBom = new UTF8Encoding(encoderShouldEmitUTF8Identifier: false);
+
     private readonly CancellationTokenSource _cts = new();
     private readonly SynchronizationContext _uiContext;
     private readonly IHost _host;
@@ -34,11 +36,13 @@ internal sealed class IndexerApplicationContext : Forms.ApplicationContext
     private readonly Forms.ToolStripMenuItem _resumeMenuItem;
     private readonly Task _startupTask;
     private readonly SemaphoreSlim _maintenanceGate = new(1, 1);
+    private readonly string? _ipcTracePath;
     private int _stopping;
 
     public IndexerApplicationContext(IReadOnlyList<string> args)
     {
         _uiContext = SynchronizationContext.Current ?? new SynchronizationContext();
+        _ipcTracePath = Environment.GetEnvironmentVariable("FILESEARCH_INDEXER_IPC_TRACE_PATH");
         _host = BuildHost();
         _indexingService = _host.Services.GetRequiredService<IIndexingService>();
         _fileIndex = _host.Services.GetRequiredService<IFileIndex>();
@@ -69,6 +73,7 @@ internal sealed class IndexerApplicationContext : Forms.ApplicationContext
 
         _startupTask = StartIndexingAsync(_cts.Token);
         _ = RunPipeServerAsync(_cts.Token);
+        TraceIpc("application context started");
     }
 
     private static IHost BuildHost() =>
@@ -109,11 +114,13 @@ internal sealed class IndexerApplicationContext : Forms.ApplicationContext
 
     private async Task RunPipeServerAsync(CancellationToken cancellationToken)
     {
+        TraceIpc("pipe server starting");
         while (!cancellationToken.IsCancellationRequested)
         {
             NamedPipeServerStream? pipe = null;
             try
             {
+                TraceIpc("pipe server waiting for connection");
                 pipe = new NamedPipeServerStream(
                     BackgroundIndexerEndpoint.PipeName,
                     PipeDirection.InOut,
@@ -121,6 +128,7 @@ internal sealed class IndexerApplicationContext : Forms.ApplicationContext
                     PipeTransmissionMode.Byte,
                     PipeOptions.Asynchronous | PipeOptions.CurrentUserOnly);
                 await pipe.WaitForConnectionAsync(cancellationToken).ConfigureAwait(false);
+                TraceIpc("pipe server accepted connection");
                 var connectedPipe = pipe;
                 pipe = null;
                 _ = Task.Run(
@@ -148,34 +156,62 @@ internal sealed class IndexerApplicationContext : Forms.ApplicationContext
         NamedPipeServerStream pipe,
         CancellationToken cancellationToken)
     {
+        TraceIpc("pipe handler starting");
         await using (pipe.ConfigureAwait(false))
         {
             try
             {
-                using var reader = new StreamReader(pipe, Encoding.UTF8, leaveOpen: true);
-                await using var writer = new StreamWriter(pipe, Encoding.UTF8, leaveOpen: true)
+                TraceIpc("pipe handler creating reader");
+                using var reader = new StreamReader(pipe, s_utf8NoBom, leaveOpen: true);
+                TraceIpc("pipe handler created reader");
+                TraceIpc("pipe handler creating writer");
+                await using var writer = new StreamWriter(pipe, s_utf8NoBom, leaveOpen: true)
                 {
                     AutoFlush = true,
                 };
+                TraceIpc("pipe handler created writer");
 
+                TraceIpc("pipe handler waiting for request");
                 var payload = await reader.ReadLineAsync(cancellationToken).ConfigureAwait(false);
+                TraceIpc("pipe handler received request");
                 var request = string.IsNullOrWhiteSpace(payload)
                     ? null
                     : JsonSerializer.Deserialize<BackgroundIndexerRequest>(payload, s_jsonOptions);
                 var response = await HandleRequestAsync(request, cancellationToken).ConfigureAwait(false);
                 var responsePayload = JsonSerializer.Serialize(response, s_jsonOptions);
-                await writer.WriteLineAsync(responsePayload).ConfigureAwait(false);
+                TraceIpc("pipe handler writing response");
+                await writer.WriteLineAsync(responsePayload).WaitAsync(cancellationToken).ConfigureAwait(false);
+                TraceIpc("pipe handler wrote response");
             }
             catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
             {
+                TraceIpc("pipe handler canceled");
                 return;
             }
-            catch (IOException)
+            catch (IOException ex)
             {
+                TraceIpc($"pipe handler IO error: {ex.Message}");
             }
-            catch (JsonException)
+            catch (JsonException ex)
             {
+                TraceIpc($"pipe handler JSON error: {ex.Message}");
             }
+        }
+    }
+
+    private void TraceIpc(string message)
+    {
+        if (string.IsNullOrWhiteSpace(_ipcTracePath))
+            return;
+
+        try
+        {
+            File.AppendAllText(
+                _ipcTracePath,
+                $"{DateTimeOffset.Now:O} {message}{Environment.NewLine}");
+        }
+        catch
+        {
         }
     }
 
@@ -201,7 +237,13 @@ internal sealed class IndexerApplicationContext : Forms.ApplicationContext
                     _indexingService.Resume();
                     return new BackgroundIndexerResponse(true, "Indexing resumed.", _indexingService.CurrentStatus);
                 case BackgroundIndexerCommand.Shutdown:
-                    BeginShutdown();
+                    _ = Task.Run(
+                        async () =>
+                        {
+                            await Task.Delay(50, CancellationToken.None).ConfigureAwait(false);
+                            BeginShutdown();
+                        },
+                        CancellationToken.None);
                     return new BackgroundIndexerResponse(true, "FileSearch indexer is shutting down.");
                 case BackgroundIndexerCommand.SetResourceProfile:
                     if (request.ResourceProfile is not { } profile)

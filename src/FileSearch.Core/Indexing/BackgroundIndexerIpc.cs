@@ -100,6 +100,7 @@ public static class BackgroundIndexerEndpoint
 
 public static class BackgroundIndexerClient
 {
+    private static readonly Encoding s_utf8NoBom = new UTF8Encoding(encoderShouldEmitUTF8Identifier: false);
     private static readonly JsonSerializerOptions s_jsonOptions = new()
     {
         Converters = { new JsonStringEnumConverter() },
@@ -122,14 +123,14 @@ public static class BackgroundIndexerClient
                 PipeOptions.Asynchronous | PipeOptions.CurrentUserOnly);
             await pipe.ConnectAsync(timeoutCts.Token).ConfigureAwait(false);
 
-            await using var writer = new StreamWriter(pipe, Encoding.UTF8, leaveOpen: true)
+            await using var writer = new StreamWriter(pipe, s_utf8NoBom, leaveOpen: true)
             {
                 AutoFlush = true,
             };
-            using var reader = new StreamReader(pipe, Encoding.UTF8, leaveOpen: true);
+            using var reader = new StreamReader(pipe, s_utf8NoBom, leaveOpen: true);
 
             var payload = JsonSerializer.Serialize(request, s_jsonOptions);
-            await writer.WriteLineAsync(payload).ConfigureAwait(false);
+            await writer.WriteLineAsync(payload).WaitAsync(timeoutCts.Token).ConfigureAwait(false);
 
             var responsePayload = await reader.ReadLineAsync(timeoutCts.Token).ConfigureAwait(false);
             return string.IsNullOrWhiteSpace(responsePayload)

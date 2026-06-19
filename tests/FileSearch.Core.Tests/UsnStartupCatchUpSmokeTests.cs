@@ -59,9 +59,10 @@ public sealed class UsnStartupCatchUpSmokeTests
                 journal);
 
             var changed = Path.Combine(root, "changed.txt");
-            var deleted = Path.Combine(root, "deleted.txt");
+            var renamedOld = Path.Combine(root, "rename-old.txt");
+            var renamedNew = Path.Combine(root, "rename-new.txt");
             File.WriteAllText(changed, "old needle\n");
-            File.WriteAllText(deleted, "delete needle\n");
+            File.WriteAllText(renamedOld, "rename needle\n");
 
             await index.BuildOrRefreshAsync(
                 new IndexRequest(root, new WalkerOptions()),
@@ -77,9 +78,11 @@ public sealed class UsnStartupCatchUpSmokeTests
             var nested = Path.Combine(nestedDir, "nested.txt");
             File.WriteAllText(changed, "updated needle\n");
             File.WriteAllText(added, "fresh needle\n");
+            File.Move(renamedOld, renamedNew);
             Directory.CreateDirectory(nestedDir);
             File.WriteAllText(nested, "nested needle\n");
-            File.Delete(deleted);
+
+            var expectedReplayJournal = await journal.QueryAsync(volume, TestContext.Current.CancellationToken);
 
             var catchUp = new IndexStartupCatchUpService(
                 index,
@@ -102,7 +105,100 @@ public sealed class UsnStartupCatchUpSmokeTests
             Assert.Single(await SearchAsync(index, root, "fresh"));
             Assert.Single(await SearchAsync(index, root, "nested"));
             Assert.Empty(await SearchAsync(index, root, "old"));
-            Assert.Empty(await SearchAsync(index, root, "delete"));
+            var renameHits = await SearchAsync(index, root, "rename");
+            var renameHit = Assert.Single(renameHits);
+            Assert.Equal(renamedNew, renameHit.Path);
+
+            var replayedCheckpoint = await index.GetVolumeCheckpointCoreAsync(volume, TestContext.Current.CancellationToken);
+            Assert.NotNull(replayedCheckpoint);
+            var postReplayJournal = await journal.QueryAsync(volume, TestContext.Current.CancellationToken);
+            Assert.True(
+                replayedCheckpoint.LastCommittedUsn > checkpoint.LastCommittedUsn,
+                "USN replay must advance the previous checkpoint.");
+            Assert.InRange(
+                replayedCheckpoint.LastCommittedUsn,
+                expectedReplayJournal.NextUsn,
+                postReplayJournal.NextUsn);
+        }
+        finally
+        {
+            TryDelete(basePath);
+        }
+    }
+
+    [Fact]
+    public async Task RealVolumeStartupCatchUpFallsBackForKnownFileDelete()
+    {
+        if (!string.Equals(
+                Environment.GetEnvironmentVariable("FILESEARCH_RUN_USN_SMOKE"),
+                "1",
+                StringComparison.Ordinal))
+        {
+            return;
+        }
+
+        var requestedRoot = Environment.GetEnvironmentVariable("FILESEARCH_USN_SMOKE_ROOT");
+        var parent = string.IsNullOrWhiteSpace(requestedRoot)
+            ? Path.GetTempPath()
+            : requestedRoot;
+        var basePath = Path.Combine(parent, "filesearch-usn-delete-smoke-" + Guid.NewGuid().ToString("N"));
+        var root = Path.Combine(basePath, "root");
+        var dbPath = Path.Combine(basePath, "index", "filesearch.db");
+
+        Directory.CreateDirectory(root);
+        try
+        {
+            var resolver = new WindowsIndexVolumeResolver();
+            Assert.True(
+                resolver.TryResolveVolume(root, out var volume, out var volumeReason),
+                $"Could not resolve volume: {volumeReason}");
+            Assert.False(volume.IsRemote, "USN smoke test requires a local volume.");
+            Assert.True(volume.UsnSupported, $"USN smoke test requires NTFS with journal support. Resolved filesystem: {volume.FileSystemName}");
+
+            var journal = new WindowsUsnJournalReader();
+            var plain = new PlainTextExtractor();
+            var registry = new ExtractorRegistry(new ITextExtractor[] { plain }, plain);
+            using var index = new CSharpDbFileIndex(
+                new FileIndexOptions { DatabasePath = dbPath },
+                new FileWalker(),
+                registry,
+                searchOptions: null,
+                logger: null,
+                resolver,
+                journal);
+
+            var deleted = Path.Combine(root, "deleted.txt");
+            File.WriteAllText(deleted, "delete needle\n");
+
+            await index.BuildOrRefreshAsync(
+                new IndexRequest(root, new WalkerOptions()),
+                TestContext.Current.CancellationToken);
+
+            var checkpoint = await index.GetVolumeCheckpointCoreAsync(volume, TestContext.Current.CancellationToken);
+            Assert.NotNull(checkpoint);
+            Assert.NotNull(checkpoint.JournalId);
+            Assert.True(checkpoint.LastCommittedUsn > 0);
+
+            File.Delete(deleted);
+
+            var catchUp = new IndexStartupCatchUpService(
+                index,
+                new CSharpDbIndexCatchUpStore(index),
+                resolver,
+                journal);
+
+            var result = await catchUp.CatchUpAsync(
+                new[] { new IndexedLocation(root, new WalkerOptions(), WatchEnabled: false) },
+                TestContext.Current.CancellationToken);
+
+            var normalizedRoot = IndexPath.NormalizeRoot(root);
+            Assert.Empty(result.HandledRoots);
+            Assert.True(result.FallbackReasons.TryGetValue(normalizedRoot, out var reason));
+            Assert.Contains("hard links", reason, StringComparison.OrdinalIgnoreCase);
+
+            var unchangedCheckpoint = await index.GetVolumeCheckpointCoreAsync(volume, TestContext.Current.CancellationToken);
+            Assert.NotNull(unchangedCheckpoint);
+            Assert.Equal(checkpoint.LastCommittedUsn, unchangedCheckpoint.LastCommittedUsn);
         }
         finally
         {

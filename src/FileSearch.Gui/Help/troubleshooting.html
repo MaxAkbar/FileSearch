@@ -74,9 +74,19 @@
 
             <h2>Indexed Results Look Stale</h2>
             <ul class="plain-list">
-                <li>Check the location's watcher badge: <strong>Watch disabled</strong> means file changes are not applied automatically.</li>
-                <li>Check whether background indexing is paused — the <strong>Index</strong> menu and the status bar show indexing activity.</li>
-                <li>Use <strong>Rebuild selected</strong> in Manage indexed locations to re-scan the location from scratch.</li>
+                <li>Open <strong>Index &gt; Manage indexed locations...</strong> and check the <strong>Index Health</strong> tab. Statuses such as <strong>Catching up</strong>, <strong>Paused</strong>, <strong>Needs full scan</strong>, <strong>Journal unavailable</strong>, <strong>Journal expired</strong>, or <strong>Offline</strong> explain why results may lag.</li>
+                <li>Check the location's watcher badge: <strong>Watch disabled</strong> means live file changes are not applied automatically while FileSearch is running.</li>
+                <li>Check whether background indexing is paused. The <strong>Index</strong> menu, status bar, and tray indexer menu show pause/resume state.</li>
+                <li>For network, cloud, removable, ReFS, FAT, or exFAT locations, FileSearch uses snapshot scans instead of durable NTFS journal replay. Reconnect unavailable drives and allow a refresh to run.</li>
+                <li>Use <strong>Validate selected</strong> or <strong>Rebuild selected</strong> in Manage indexed locations to re-scan the location from scratch.</li>
+            </ul>
+
+            <h2>Background Indexer Is Not Running</h2>
+            <ul class="plain-list">
+                <li>Open <strong>File &gt; Settings</strong> and enable <strong>Keep index updated after closing window</strong> if you want indexing to continue after the search window closes.</li>
+                <li>Enable <strong>Start background indexer when Windows starts</strong> if you want the tray indexer to start after sign-in. It does not run before sign-in and is not a Windows Service.</li>
+                <li>If you used the tray icon's <strong>Exit</strong> command, start FileSearch again to restart indexing.</li>
+                <li>If indexing is paused from the tray or <strong>Index</strong> menu, choose <strong>Resume</strong>.</li>
             </ul>
 
             <h2>Preview Fails or Looks Incomplete</h2>
