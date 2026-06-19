@@ -7,7 +7,7 @@ param(
     [Parameter(Mandatory = $true)]
     [string]$Version,
     [string]$ProductName = "FileSearch",
-    [string]$Manufacturer = "MaxAkbar",
+    [string]$Manufacturer = "Max Akbar",
     [string]$CertificateThumbprint = "",
     [string]$TimestampUrl = "http://timestamp.digicert.com",
     [string]$OutputRoot = "artifacts\msi"

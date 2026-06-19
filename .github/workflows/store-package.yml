@@ -27,15 +27,19 @@ on:
       package_identity_name:
         description: Partner Center package identity name
         required: true
-        default: FileSearch
+        default: MaxAkbar.WindowsFileSearch
       publisher:
         description: Publisher value, for example CN=...
         required: true
-        default: CN=FileSearch
+        default: CN=CE11F335-A232-43CF-824D-292CFB1D1A12
+      display_name:
+        description: Reserved Store app display name
+        required: true
+        default: Windows File Search
       publisher_display_name:
         description: Publisher display name
         required: true
-        default: FileSearch
+        default: Max Akbar
       timestamp_url:
         description: RFC3161 timestamp server URL used when signing
         required: true
@@ -103,6 +107,7 @@ jobs:
             -Version "${{ inputs.version }}" `
             -PackageIdentityName "${{ inputs.package_identity_name }}" `
             -Publisher "${{ inputs.publisher }}" `
+            -DisplayName "${{ inputs.display_name }}" `
             -PublisherDisplayName "${{ inputs.publisher_display_name }}" `
             -CertificateThumbprint "${{ steps.signing.outputs.thumbprint }}" `
             -TimestampUrl "${{ inputs.timestamp_url }}"
@@ -116,6 +121,9 @@ jobs:
             "-RuntimeIdentifier", "${{ inputs.runtime }}",
             "-PackageIdentityName", "${{ inputs.package_identity_name }}",
             "-Publisher", "${{ inputs.publisher }}",
+            "-DisplayName", "${{ inputs.display_name }}",
+            "-PublisherDisplayName", "${{ inputs.publisher_display_name }}",
+            "-RequireRunFullTrust",
             "-RequireSymbols"
           )
 

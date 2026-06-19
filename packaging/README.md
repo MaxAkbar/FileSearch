@@ -41,9 +41,10 @@ Run from the repository root:
 ```powershell
 powershell -ExecutionPolicy Bypass -File .\scripts\New-StorePackage.ps1 `
   -Version 1.0.0.0 `
-  -PackageIdentityName "<Partner Center package identity name>" `
-  -Publisher "<Partner Center publisher, for example CN=...>" `
-  -PublisherDisplayName "<Publisher display name>"
+  -PackageIdentityName "MaxAkbar.WindowsFileSearch" `
+  -Publisher "CN=CE11F335-A232-43CF-824D-292CFB1D1A12" `
+  -DisplayName "Windows File Search" `
+  -PublisherDisplayName "Max Akbar"
 ```
 
 The script writes outputs to `artifacts\store`:
@@ -67,8 +68,19 @@ Use `scripts\Test-StorePackageArtifact.ps1` to verify package contents,
 signature state, Store upload contents, and checksums.
 
 For Microsoft Store submission, upload the `.msixupload` file generated with
-the identity and publisher values reserved for the app in Partner Center. The
-GitHub Actions **Release** workflow always creates a portable ZIP for version
+the identity, publisher, and display name values reserved for the app in Partner Center. The
+`DisplayName` value must exactly match a reserved app display name in Partner Center, and the
+`PublisherDisplayName` value must exactly match the publisher display name shown
+in Partner Center.
+
+The MSIX manifest declares the restricted `runFullTrust` capability because
+FileSearch is packaged as a WPF desktop app with `Windows.FullTrustApplication`
+entry point and sidecar desktop processes. Microsoft Store submission may ask
+for approval or justification for this restricted capability. Removing it would
+require changing the app to an AppContainer-compatible architecture or using the
+MSI/EXE Store submission path instead of the MSIX path.
+
+The GitHub Actions **Release** workflow always creates a portable ZIP for version
 tags and an MSI for the Store MSI/EXE path. It also creates signed MSIX Store
 artifacts when the Store variables and signing secrets are configured in the
 protected `release-signing` environment.

@@ -162,6 +162,7 @@ jobs:
           foreach ($name in @(
             "STORE_PACKAGE_IDENTITY_NAME",
             "STORE_PUBLISHER",
+            "STORE_DISPLAY_NAME",
             "STORE_PUBLISHER_DISPLAY_NAME"
           )) {
             if ([string]::IsNullOrWhiteSpace([Environment]::GetEnvironmentVariable($name))) {
@@ -235,6 +236,7 @@ jobs:
         env:
           STORE_PACKAGE_IDENTITY_NAME: ${{ vars.STORE_PACKAGE_IDENTITY_NAME }}
           STORE_PUBLISHER: ${{ vars.STORE_PUBLISHER }}
+          STORE_DISPLAY_NAME: ${{ vars.STORE_DISPLAY_NAME }}
           STORE_PUBLISHER_DISPLAY_NAME: ${{ vars.STORE_PUBLISHER_DISPLAY_NAME }}
           TIMESTAMP_URL: ${{ steps.release_config.outputs.timestamp_url }}
         run: |
@@ -244,6 +246,7 @@ jobs:
             -Version "${{ needs.prepare.outputs.version }}" `
             -PackageIdentityName "$env:STORE_PACKAGE_IDENTITY_NAME" `
             -Publisher "$env:STORE_PUBLISHER" `
+            -DisplayName "$env:STORE_DISPLAY_NAME" `
             -PublisherDisplayName "$env:STORE_PUBLISHER_DISPLAY_NAME" `
             -CertificateThumbprint "${{ steps.signing.outputs.thumbprint }}" `
             -TimestampUrl "$env:TIMESTAMP_URL"
@@ -260,6 +263,8 @@ jobs:
         env:
           STORE_PACKAGE_IDENTITY_NAME: ${{ vars.STORE_PACKAGE_IDENTITY_NAME }}
           STORE_PUBLISHER: ${{ vars.STORE_PUBLISHER }}
+          STORE_DISPLAY_NAME: ${{ vars.STORE_DISPLAY_NAME }}
+          STORE_PUBLISHER_DISPLAY_NAME: ${{ vars.STORE_PUBLISHER_DISPLAY_NAME }}
         run: |
           .\scripts\Test-StorePackageArtifact.ps1 `
             -ArtifactDirectory ".\artifacts\store" `
@@ -267,6 +272,9 @@ jobs:
             -RuntimeIdentifier "${{ needs.prepare.outputs.runtime }}" `
             -PackageIdentityName "$env:STORE_PACKAGE_IDENTITY_NAME" `
             -Publisher "$env:STORE_PUBLISHER" `
+            -DisplayName "$env:STORE_DISPLAY_NAME" `
+            -PublisherDisplayName "$env:STORE_PUBLISHER_DISPLAY_NAME" `
+            -RequireRunFullTrust `
             -RequireSigned `
             -RequireTimestamp `
             -RequireSymbols `

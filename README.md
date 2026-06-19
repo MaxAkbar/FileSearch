@@ -431,9 +431,10 @@ Run from the repository root:
 ```powershell
 powershell -ExecutionPolicy Bypass -File .\scripts\New-StorePackage.ps1 `
   -Version 1.0.0.0 `
-  -PackageIdentityName "<Partner Center package identity name>" `
-  -Publisher "<Partner Center publisher, for example CN=...>" `
-  -PublisherDisplayName "<Publisher display name>"
+  -PackageIdentityName "MaxAkbar.WindowsFileSearch" `
+  -Publisher "CN=CE11F335-A232-43CF-824D-292CFB1D1A12" `
+  -DisplayName "Windows File Search" `
+  -PublisherDisplayName "Max Akbar"
 ```
 
 MSIX outputs are written to `artifacts\store`:
@@ -442,7 +443,7 @@ MSIX outputs are written to `artifacts\store`:
 - `.appxsym` public symbols.
 - `.msixupload` file for Microsoft Store submission.
 
-For sideload testing, pass `-CertificateThumbprint` with a certificate trusted on the test machine. For GitHub releases, the **Release** workflow creates a portable ZIP and MSI even when Store signing is not configured. When Windows signing secrets exist, it signs the MSI. When Store variables and signing secrets exist in the protected `release-signing` environment, the same workflow also creates signed MSIX Store artifacts. For MSIX Store submission, upload the generated `.msixupload` file using the reserved identity and publisher values for the app in Partner Center.
+For sideload testing, pass `-CertificateThumbprint` with a certificate trusted on the test machine. For GitHub releases, the **Release** workflow creates a portable ZIP and MSI even when Store signing is not configured. When Windows signing secrets exist, it signs the MSI. When Store variables and signing secrets exist in the protected `release-signing` environment, the same workflow also creates signed MSIX Store artifacts. For MSIX Store submission, upload the generated `.msixupload` file using the reserved identity, publisher, and display name values for the app in Partner Center, and make sure `PublisherDisplayName` exactly matches Partner Center.
 
 ## Development notes
 

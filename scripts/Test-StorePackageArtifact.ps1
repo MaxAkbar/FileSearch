@@ -6,9 +6,12 @@ param(
     [string]$RuntimeIdentifier = "",
     [string]$PackageIdentityName = "",
     [string]$Publisher = "",
+    [string]$DisplayName = "",
+    [string]$PublisherDisplayName = "",
     [switch]$RequireSigned,
     [switch]$RequireTrustedSignature,
     [switch]$RequireTimestamp,
+    [switch]$RequireRunFullTrust,
     [switch]$RequireSymbols,
     [string]$ChecksumPath = ""
 )
@@ -160,6 +163,31 @@ try {
 
     if (-not [string]::IsNullOrWhiteSpace($Publisher) -and $identity.Publisher -ne $Publisher) {
         throw "MSIX publisher mismatch. Expected $Publisher, found $($identity.Publisher)."
+    }
+
+    $properties = $manifest.Package.Properties
+    if (-not [string]::IsNullOrWhiteSpace($DisplayName) -and $properties.DisplayName -ne $DisplayName) {
+        throw "MSIX display name mismatch. Expected $DisplayName, found $($properties.DisplayName)."
+    }
+
+    if (-not [string]::IsNullOrWhiteSpace($PublisherDisplayName) -and $properties.PublisherDisplayName -ne $PublisherDisplayName) {
+        throw "MSIX publisher display name mismatch. Expected $PublisherDisplayName, found $($properties.PublisherDisplayName)."
+    }
+
+    if ($RequireRunFullTrust) {
+        $namespaceManager = [System.Xml.XmlNamespaceManager]::new($manifest.NameTable)
+        $namespaceManager.AddNamespace("m", "http://schemas.microsoft.com/appx/manifest/foundation/windows10")
+        $namespaceManager.AddNamespace("rescap", "http://schemas.microsoft.com/appx/manifest/foundation/windows10/restrictedcapabilities")
+
+        $fullTrustApplication = $manifest.SelectSingleNode("/m:Package/m:Applications/m:Application[@EntryPoint='Windows.FullTrustApplication']", $namespaceManager)
+        if ($null -eq $fullTrustApplication) {
+            throw "MSIX manifest is missing the Windows.FullTrustApplication entry point required by the packaged desktop app."
+        }
+
+        $runFullTrustCapability = $manifest.SelectSingleNode("/m:Package/m:Capabilities/rescap:Capability[@Name='runFullTrust']", $namespaceManager)
+        if ($null -eq $runFullTrustCapability) {
+            throw "MSIX manifest is missing the runFullTrust restricted capability required by the packaged desktop app."
+        }
     }
 }
 finally {

@@ -18,9 +18,10 @@ Use this checklist before creating a public FileSearch release or Microsoft Stor
 - Confirm the `CI` workflow is green for the target branch or pull request.
 - Confirm dependency review is green for dependency-changing pull requests.
 - Configure repository variables before using the signed MSIX Store package path in the release workflow:
-  - `STORE_PACKAGE_IDENTITY_NAME`
-  - `STORE_PUBLISHER`
-  - `STORE_PUBLISHER_DISPLAY_NAME`
+  - `STORE_PACKAGE_IDENTITY_NAME`, currently `MaxAkbar.WindowsFileSearch`.
+  - `STORE_PUBLISHER`, currently `CN=CE11F335-A232-43CF-824D-292CFB1D1A12`.
+  - `STORE_DISPLAY_NAME`, which must exactly match a reserved app display name in Partner Center. The current packaging default is `Windows File Search`.
+  - `STORE_PUBLISHER_DISPLAY_NAME`, which must exactly match Partner Center. For the current Store listing, use `Max Akbar`.
   - optional `WINDOWS_TIMESTAMP_URL`, defaulting to `http://timestamp.digicert.com`.
 - Configure signing secrets in the protected `release-signing` environment for signed MSI and MSIX packages:
   - `WINDOWS_SIGNING_PFX_BASE64`
@@ -30,7 +31,7 @@ Use this checklist before creating a public FileSearch release or Microsoft Stor
 - The **Release** workflow runs Release build/test gates, creates a portable ZIP and MSI, verifies sidecars, writes `SHA256SUMS-<runtime>.txt`, uploads artifacts, and creates a draft GitHub Release for tag pushes.
 - When signing secrets are configured, the **Release** workflow signs and timestamps the MSI. When they are missing, it still creates an unsigned MSI for validation.
 - When all Store variables and signing secrets are configured, the **Release** workflow also creates and verifies a signed MSIX Store package. When they are missing, it logs a warning and skips only the MSIX artifacts.
-- For Store packages, run the **Store package** workflow manually with the intended version, runtime, package identity, publisher, and publisher display name.
+- For Store packages, run the **Store package** workflow manually with the intended version, runtime, package identity, publisher, and publisher display name. The default publisher display name is `Max Akbar`, but confirm it against Partner Center before submitting.
 - Use one runtime per workflow run: `win-x64`, `win-x86`, or `win-arm64`.
 
 ## Signing
@@ -61,6 +62,8 @@ The Release workflow creates portable ZIP and MSI artifacts without signing secr
 - Confirm the packaged app includes `FileSearch.Indexer.exe`.
 - Confirm the packaged app includes `FileSearch.ExtractorHost.exe`.
 - Confirm the package identity and publisher match the Partner Center reservation for MSIX artifacts.
+- Confirm the MSIX display name exactly matches a reserved app name in Partner Center.
+- Confirm the MSIX publisher display name exactly matches the Partner Center publisher display name.
 - Confirm signed `.msi` and `.msix` Authenticode signatures are present and timestamped when signing was configured.
 
 ## Submission

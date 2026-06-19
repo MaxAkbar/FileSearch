@@ -4,7 +4,7 @@
     <OutputType>Package</OutputType>
     <ProductName Condition="'$(ProductName)' == ''">FileSearch</ProductName>
     <ProductVersion Condition="'$(ProductVersion)' == ''">1.0.0.0</ProductVersion>
-    <Manufacturer Condition="'$(Manufacturer)' == ''">MaxAkbar</Manufacturer>
+    <Manufacturer Condition="'$(Manufacturer)' == ''">Max Akbar</Manufacturer>
     <RuntimeIdentifier Condition="'$(RuntimeIdentifier)' == ''">win-x64</RuntimeIdentifier>
     <InstallerPlatform Condition="'$(RuntimeIdentifier)' == 'win-x64'">x64</InstallerPlatform>
     <InstallerPlatform Condition="'$(RuntimeIdentifier)' == 'win-x86'">x86</InstallerPlatform>

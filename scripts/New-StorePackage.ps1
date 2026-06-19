@@ -4,10 +4,10 @@ param(
     [ValidateSet("win-x64", "win-x86", "win-arm64")]
     [string]$RuntimeIdentifier = "win-x64",
     [string]$Version = "1.0.0.0",
-    [string]$PackageIdentityName = "FileSearch",
-    [string]$Publisher = "CN=FileSearch",
-    [string]$PublisherDisplayName = "FileSearch",
-    [string]$DisplayName = "FileSearch",
+    [string]$PackageIdentityName = "MaxAkbar.WindowsFileSearch",
+    [string]$Publisher = "CN=CE11F335-A232-43CF-824D-292CFB1D1A12",
+    [string]$PublisherDisplayName = "Max Akbar",
+    [string]$DisplayName = "Windows File Search",
     [string]$Description = "Search files by name and content.",
     [string]$OutputRoot = "artifacts\store",
     [string]$CertificateThumbprint = "",
@@ -276,9 +276,10 @@ $signTool = if ([string]::IsNullOrWhiteSpace($CertificateThumbprint)) { "" } els
 New-Item -ItemType Directory -Force -Path $outputRootPath | Out-Null
 if (Test-Path $publishDirectory) { Remove-Item -LiteralPath $publishDirectory -Recurse -Force }
 if (Test-Path $packageRoot) { Remove-Item -LiteralPath $packageRoot -Recurse -Force }
-if (Test-Path $msixPath) { Remove-Item -LiteralPath $msixPath -Force }
-if (Test-Path $symbolsPath) { Remove-Item -LiteralPath $symbolsPath -Force }
-if (Test-Path $uploadPath) { Remove-Item -LiteralPath $uploadPath -Force }
+foreach ($pattern in @("*.msix", "*.appxsym", "*.msixupload", "SHA256SUMS*.txt")) {
+    Get-ChildItem -LiteralPath $outputRootPath -Filter $pattern -File -ErrorAction SilentlyContinue |
+        Remove-Item -Force
+}
 
 Publish-Project $projectPath "FileSearch.Gui" $publishDirectory
 Publish-Project $indexerProjectPath "FileSearch.Indexer" $publishDirectory
