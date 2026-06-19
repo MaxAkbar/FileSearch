@@ -1,0 +1,51 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Wix xmlns="http://wixtoolset.org/schemas/v4/wxs">
+  <Package
+    Name="$(var.ProductName)"
+    Manufacturer="$(var.Manufacturer)"
+    Version="$(var.ProductVersion)"
+    UpgradeCode="6FB3FA2A-C4CC-4E60-B5E9-9F9C9F3936DA"
+    Scope="perMachine">
+
+    <MajorUpgrade DowngradeErrorMessage="A newer version of FileSearch is already installed." />
+    <MediaTemplate EmbedCab="yes" CompressionLevel="high" />
+
+    <Icon Id="FileSearchIcon" SourceFile="$(var.RepoRoot)\src\FileSearch.Gui\Assets\FileSearch.ico" />
+    <Property Id="ARPPRODUCTICON" Value="FileSearchIcon" />
+    <Property Id="ARPURLINFOABOUT" Value="https://github.com/MaxAkbar/FileSearch" />
+
+    <StandardDirectory Id="$(var.ProgramFilesDirectoryId)">
+      <Directory Id="INSTALLFOLDER" Name="FileSearch" />
+    </StandardDirectory>
+
+    <StandardDirectory Id="ProgramMenuFolder">
+      <Directory Id="ApplicationProgramsFolder" Name="FileSearch" />
+    </StandardDirectory>
+
+    <DirectoryRef Id="INSTALLFOLDER">
+      <Component Id="ApplicationShortcut" Guid="96C4C7DB-BBA8-4E4D-9EA7-E5835D5D2CBF">
+        <Shortcut
+          Id="StartMenuShortcut"
+          Directory="ApplicationProgramsFolder"
+          Name="FileSearch"
+          Description="Search files by name, metadata, and content."
+          Target="[INSTALLFOLDER]FileSearch.Gui.exe"
+          WorkingDirectory="INSTALLFOLDER"
+          Icon="FileSearchIcon" />
+        <RemoveFolder Id="RemoveApplicationProgramsFolder" Directory="ApplicationProgramsFolder" On="uninstall" />
+        <RegistryValue Root="HKCU" Key="Software\FileSearch" Name="Installed" Type="integer" Value="1" KeyPath="yes" />
+      </Component>
+    </DirectoryRef>
+
+    <ComponentGroup Id="PublishedFiles">
+      <Files Directory="INSTALLFOLDER" Include="$(var.PublishDirectory)\**">
+        <Exclude Files="$(var.PublishDirectory)\**\*.pdb" />
+      </Files>
+    </ComponentGroup>
+
+    <Feature Id="MainFeature" Title="FileSearch" Level="1">
+      <ComponentGroupRef Id="PublishedFiles" />
+      <ComponentRef Id="ApplicationShortcut" />
+    </Feature>
+  </Package>
+</Wix>

@@ -1,0 +1,20 @@
+<Project Sdk="WixToolset.Sdk/6.0.2">
+
+  <PropertyGroup>
+    <OutputType>Package</OutputType>
+    <ProductName Condition="'$(ProductName)' == ''">FileSearch</ProductName>
+    <ProductVersion Condition="'$(ProductVersion)' == ''">1.0.0.0</ProductVersion>
+    <Manufacturer Condition="'$(Manufacturer)' == ''">MaxAkbar</Manufacturer>
+    <RuntimeIdentifier Condition="'$(RuntimeIdentifier)' == ''">win-x64</RuntimeIdentifier>
+    <InstallerPlatform Condition="'$(RuntimeIdentifier)' == 'win-x64'">x64</InstallerPlatform>
+    <InstallerPlatform Condition="'$(RuntimeIdentifier)' == 'win-x86'">x86</InstallerPlatform>
+    <InstallerPlatform Condition="'$(RuntimeIdentifier)' == 'win-arm64'">arm64</InstallerPlatform>
+    <ProgramFilesDirectoryId Condition="'$(RuntimeIdentifier)' == 'win-x86'">ProgramFilesFolder</ProgramFilesDirectoryId>
+    <ProgramFilesDirectoryId Condition="'$(RuntimeIdentifier)' != 'win-x86'">ProgramFiles64Folder</ProgramFilesDirectoryId>
+    <OutputName>$(ProductName)-$(ProductVersion)-$(RuntimeIdentifier)</OutputName>
+    <PublishDirectory Condition="'$(PublishDirectory)' == ''">$(MSBuildThisFileDirectory)..\..\artifacts\msi\publish\$(RuntimeIdentifier)</PublishDirectory>
+    <RepoRoot>$([System.IO.Path]::GetFullPath('$(MSBuildThisFileDirectory)..\..'))</RepoRoot>
+    <DefineConstants>$(DefineConstants);ProductName=$(ProductName);ProductVersion=$(ProductVersion);Manufacturer=$(Manufacturer);PublishDirectory=$([System.IO.Path]::GetFullPath('$(PublishDirectory)'));RepoRoot=$(RepoRoot);ProgramFilesDirectoryId=$(ProgramFilesDirectoryId)</DefineConstants>
+  </PropertyGroup>
+
+</Project>

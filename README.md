@@ -20,7 +20,7 @@ FileSearch is a Windows desktop application for searching text across files and 
 - Open matched files, reveal them in Explorer, and copy file or folder paths.
 - Light, dark, system, and Visual Studio-inspired themes.
 - Optional Windows shell integration from the app menu.
-- MSIX packaging script for Microsoft Store submission.
+- MSI and MSIX packaging scripts for Microsoft Store submission.
 
 ## Supported file types
 
@@ -56,6 +56,7 @@ Document extraction can be disabled in the UI for Office and PDF documents when 
 ├── tests
 │   ├── FileSearch.Core.Tests
 │   └── FileSearch.Gui.Tests
+├── installer           # WiX MSI installer project
 ├── packaging           # MSIX manifest template and packaging assets
 └── scripts             # Build/package automation scripts
 ```
@@ -406,9 +407,24 @@ Directly loading `FileSearch.Core` from PowerShell is possible, but it is not th
 
 ## Packaging for Microsoft Store
 
-FileSearch is packaged as an MSIX for Store distribution. The repository includes a PowerShell packaging script that publishes the app, background indexer, and extractor host self-contained, creates the MSIX layout, generates tile assets, and emits a Partner Center upload file.
+FileSearch can produce both MSI and MSIX artifacts for Store distribution. The MSI path is useful for the Microsoft Store MSI/EXE submission flow; the MSIX path remains available when a Partner Center package identity is reserved.
 
-CI builds, tests, CLI smoke tests, published sidecar smoke tests, dependency review, manual Store packaging, portable tag-based releases, and optional signed Store artifacts are configured with GitHub Actions. Release steps are documented in [docs/RELEASE_CHECKLIST.md](docs/RELEASE_CHECKLIST.md).
+CI builds, tests, CLI smoke tests, published sidecar smoke tests, dependency review, manual Store packaging, portable tag-based releases, MSI artifacts, and optional signed Store artifacts are configured with GitHub Actions. Release steps are documented in [docs/RELEASE_CHECKLIST.md](docs/RELEASE_CHECKLIST.md).
+
+Create an MSI installer from the repository root:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File .\scripts\New-MsiInstaller.ps1 `
+  -Version 1.0.0.0 `
+  -RuntimeIdentifier win-x64
+```
+
+Outputs are written to `artifacts\msi`:
+
+- `.msi` installer containing the GUI, background indexer, extractor host, and help bundle.
+- `SHA256SUMS-<runtime>.txt` for checksum review.
+
+For Store submission through the MSI/EXE path, sign the MSI with a certificate that chains to a Microsoft Trusted Root Program certificate authority. For local testing, an unsigned MSI can still validate the installer layout.
 
 Run from the repository root:
 
@@ -420,13 +436,13 @@ powershell -ExecutionPolicy Bypass -File .\scripts\New-StorePackage.ps1 `
   -PublisherDisplayName "<Publisher display name>"
 ```
 
-Outputs are written to `artifacts\store`:
+MSIX outputs are written to `artifacts\store`:
 
 - `.msix` packaged app.
 - `.appxsym` public symbols.
 - `.msixupload` file for Microsoft Store submission.
 
-For sideload testing, pass `-CertificateThumbprint` with a certificate trusted on the test machine. For GitHub releases, the **Release** workflow creates a portable ZIP even when Store signing is not configured. When Store variables and signing secrets exist in the protected `release-signing` environment, the same workflow also creates signed Store artifacts. For Microsoft Store submission, upload the generated `.msixupload` file using the reserved identity and publisher values for the app in Partner Center.
+For sideload testing, pass `-CertificateThumbprint` with a certificate trusted on the test machine. For GitHub releases, the **Release** workflow creates a portable ZIP and MSI even when Store signing is not configured. When Windows signing secrets exist, it signs the MSI. When Store variables and signing secrets exist in the protected `release-signing` environment, the same workflow also creates signed MSIX Store artifacts. For MSIX Store submission, upload the generated `.msixupload` file using the reserved identity and publisher values for the app in Partner Center.
 
 ## Development notes
 

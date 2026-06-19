@@ -7,7 +7,7 @@ on:
   workflow_dispatch:
     inputs:
       version:
-        description: MSIX version, for example 1.2.3.0
+        description: Package version, for example 1.2.3.0
         required: true
         default: 1.0.0.0
       runtime:
@@ -64,7 +64,7 @@ jobs:
           }
 
           if ($version -notmatch '^\d+\.\d+\.\d+\.\d+$') {
-            throw "MSIX package version must use four integer parts, for example 1.2.3.0. Found: $version"
+            throw "Package version must use four integer parts, for example 1.2.3.0. Found: $version"
           }
 
           "version=$version" >> $env:GITHUB_OUTPUT
@@ -158,16 +158,24 @@ jobs:
           WINDOWS_SIGNING_PFX_PASSWORD: ${{ secrets.WINDOWS_SIGNING_PFX_PASSWORD }}
           WINDOWS_TIMESTAMP_URL: ${{ vars.WINDOWS_TIMESTAMP_URL }}
         run: |
-          $missing = @()
+          $missingStore = @()
           foreach ($name in @(
             "STORE_PACKAGE_IDENTITY_NAME",
             "STORE_PUBLISHER",
-            "STORE_PUBLISHER_DISPLAY_NAME",
+            "STORE_PUBLISHER_DISPLAY_NAME"
+          )) {
+            if ([string]::IsNullOrWhiteSpace([Environment]::GetEnvironmentVariable($name))) {
+              $missingStore += $name
+            }
+          }
+
+          $missingSigning = @()
+          foreach ($name in @(
             "WINDOWS_SIGNING_PFX_BASE64",
             "WINDOWS_SIGNING_PFX_PASSWORD"
           )) {
             if ([string]::IsNullOrWhiteSpace([Environment]::GetEnvironmentVariable($name))) {
-              $missing += $name
+              $missingSigning += $name
             }
           }
 
@@ -176,20 +184,28 @@ jobs:
             $timestampUrl = "http://timestamp.digicert.com"
           }
 
-          if ($missing.Count -gt 0) {
-            "signed_store_enabled=false" >> $env:GITHUB_OUTPUT
-            "timestamp_url=$timestampUrl" >> $env:GITHUB_OUTPUT
-            Write-Warning "Skipping signed Store package because release configuration is missing: $($missing -join ', ')"
-            Write-Host "Portable release artifacts will still be created."
-            return
+          $signingEnabled = $missingSigning.Count -eq 0
+          $signedStoreEnabled = $missingStore.Count -eq 0 -and $signingEnabled
+
+          "signing_enabled=$($signingEnabled.ToString().ToLowerInvariant())" >> $env:GITHUB_OUTPUT
+          "signed_store_enabled=$($signedStoreEnabled.ToString().ToLowerInvariant())" >> $env:GITHUB_OUTPUT
+          "timestamp_url=$timestampUrl" >> $env:GITHUB_OUTPUT
+
+          if (-not $signingEnabled) {
+            Write-Warning "Windows signing is disabled because release configuration is missing: $($missingSigning -join ', ')"
+            Write-Host "Portable ZIP and unsigned MSI artifacts will still be created."
           }
 
-          "signed_store_enabled=true" >> $env:GITHUB_OUTPUT
-          "timestamp_url=$timestampUrl" >> $env:GITHUB_OUTPUT
-          Write-Host "Signed Store release configuration is present."
+          if (-not $signedStoreEnabled) {
+            $missing = @($missingStore + $missingSigning)
+            Write-Warning "Skipping signed Store/MSIX package because release configuration is missing: $($missing -join ', ')"
+          }
+          else {
+            Write-Host "Signed Store release configuration is present."
+          }
 
       - name: Import signing certificate
-        if: steps.release_config.outputs.signed_store_enabled == 'true'
+        if: steps.release_config.outputs.signing_enabled == 'true'
         id: signing
         shell: pwsh
         env:
@@ -269,6 +285,30 @@ jobs:
         run: |
           .\scripts\Test-PublishedSidecars.ps1 -PublishDirectory ".\artifacts\release\publish\${{ needs.prepare.outputs.runtime }}"
 
+      - name: Create MSI installer
+        shell: pwsh
+        run: |
+          $msiArgs = @(
+            "-Configuration", "Release",
+            "-RuntimeIdentifier", "${{ needs.prepare.outputs.runtime }}",
+            "-Version", "${{ needs.prepare.outputs.version }}"
+          )
+
+          $thumbprint = "${{ steps.signing.outputs.thumbprint }}"
+          if (-not [string]::IsNullOrWhiteSpace($thumbprint)) {
+            $msiArgs += @(
+              "-CertificateThumbprint", $thumbprint,
+              "-TimestampUrl", "${{ steps.release_config.outputs.timestamp_url }}"
+            )
+          }
+
+          .\scripts\New-MsiInstaller.ps1 @msiArgs
+
+      - name: Run MSI sidecar smoke test
+        shell: pwsh
+        run: |
+          .\scripts\Test-PublishedSidecars.ps1 -PublishDirectory ".\artifacts\msi\publish\${{ needs.prepare.outputs.runtime }}"
+
       - name: Upload release artifacts
         uses: actions/upload-artifact@v7
         with:
@@ -276,6 +316,8 @@ jobs:
           path: |
             artifacts/release/*.zip
             artifacts/release/SHA256SUMS*.txt
+            artifacts/msi/*.msi
+            artifacts/msi/SHA256SUMS*.txt
             artifacts/store/*.msix
             artifacts/store/*.appxsym
             artifacts/store/*.msixupload
@@ -292,7 +334,7 @@ jobs:
     if: startsWith(github.ref, 'refs/tags/')
 
     steps:
-      - name: Download signed release artifacts
+      - name: Download release artifacts
         uses: actions/download-artifact@v7
         with:
           pattern: filesearch-release-${{ needs.prepare.outputs.version }}-*
@@ -306,6 +348,7 @@ jobs:
         run: |
           $files = Get-ChildItem -LiteralPath .\release-artifacts -File | Where-Object {
             $_.Name -like "*.zip" -or
+            $_.Name -like "*.msi" -or
             $_.Name -like "*.msix" -or
             $_.Name -like "*.appxsym" -or
             $_.Name -like "*.msixupload" -or

@@ -1,10 +1,40 @@
 # Microsoft Store packaging
 
-FileSearch is a WPF desktop app, so the Store distribution artifact is an MSIX package.
-The repository includes a command-line packaging script that publishes the app self-contained,
-creates the MSIX layout, generates required tile assets, and emits a Partner Center upload file.
+FileSearch is a WPF desktop app, so the repository supports both Store-friendly
+MSI output and MSIX packaging. The MSI artifact is intended for the Microsoft
+Store MSI/EXE submission path. The MSIX artifact remains available when a
+Partner Center package identity is reserved.
+
+## Create an MSI installer
+
+Run from the repository root:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File .\scripts\New-MsiInstaller.ps1 `
+  -Version 1.0.0.0 `
+  -RuntimeIdentifier win-x64
+```
+
+The script writes outputs to `artifacts\msi`:
+
+- `.msi` installer.
+- `SHA256SUMS-<runtime>.txt`.
+
+The MSI publishes the GUI, `FileSearch.Indexer.exe`, `FileSearch.ExtractorHost.exe`,
+and `Help\index.html`, then packages them with WiX. Pass `-CertificateThumbprint`
+to Authenticode-sign the MSI. For final Microsoft Store MSI/EXE submission, use
+a signing certificate that chains to a Microsoft Trusted Root Program certificate
+authority.
+
+The GitHub Actions **Release** workflow always creates the MSI for tag releases.
+If signing secrets are configured in the protected `release-signing` environment,
+the workflow signs and timestamps the MSI before attaching it to the draft GitHub
+Release.
 
 ## Create a Store upload package
+
+The MSIX packaging script publishes the app self-contained, creates the MSIX
+layout, generates required tile assets, and emits a Partner Center upload file.
 
 Run from the repository root:
 
@@ -39,5 +69,6 @@ signature state, Store upload contents, and checksums.
 For Microsoft Store submission, upload the `.msixupload` file generated with
 the identity and publisher values reserved for the app in Partner Center. The
 GitHub Actions **Release** workflow always creates a portable ZIP for version
-tags. It also creates signed Store artifacts when the Store variables and
-signing secrets are configured in the protected `release-signing` environment.
+tags and an MSI for the Store MSI/EXE path. It also creates signed MSIX Store
+artifacts when the Store variables and signing secrets are configured in the
+protected `release-signing` environment.
