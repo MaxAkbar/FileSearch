@@ -48,10 +48,11 @@ internal sealed class WindowsIndexVolumeResolver : IIndexVolumeResolver
 
         if (IsUncPath(fullPath))
         {
+            var remoteRoot = Path.GetPathRoot(fullPath) ?? fullPath;
             volume = new IndexVolumeInfo(
                 NormalizeRemoteKey(fullPath),
-                Path.GetPathRoot(fullPath) ?? fullPath,
                 string.Empty,
+                remoteRoot,
                 null,
                 "remote",
                 IsRemote: true,
@@ -76,8 +77,8 @@ internal sealed class WindowsIndexVolumeResolver : IIndexVolumeResolver
             {
                 volume = new IndexVolumeInfo(
                     rootPath.TrimEnd(Path.DirectorySeparatorChar).ToUpperInvariant(),
-                    rootPath,
                     string.Empty,
+                    rootPath,
                     null,
                     "remote",
                     IsRemote: true,
@@ -108,15 +109,16 @@ internal sealed class WindowsIndexVolumeResolver : IIndexVolumeResolver
             ? guidPath.TrimEnd('\\').ToUpperInvariant()
             : volumeRoot.TrimEnd('\\').ToUpperInvariant();
 
-        var devicePath = ToVolumeDevicePath(volumeRoot, guidPath);
+        var volumeDevicePath = ToVolumeDevicePath(volumeRoot, guidPath);
+        var rootDirectoryPath = ToRootDirectoryPath(volumeRoot, guidPath);
         var usnSupported = ((flags & FileSupportsUsnJournal) != 0) &&
             (filesystem.Equals("NTFS", StringComparison.OrdinalIgnoreCase) ||
              filesystem.Equals("ReFS", StringComparison.OrdinalIgnoreCase));
 
         volume = new IndexVolumeInfo(
             volumeKey,
-            volumeRoot,
-            devicePath,
+            volumeDevicePath,
+            rootDirectoryPath,
             serial.ToString(CultureInfo.InvariantCulture),
             filesystem,
             IsRemote: false,
@@ -168,12 +170,12 @@ internal sealed class WindowsIndexVolumeResolver : IIndexVolumeResolver
                 "File ID path resolution is only available on Windows.");
         }
 
-        if (volume.IsRemote || string.IsNullOrWhiteSpace(volume.DevicePath))
+        if (volume.IsRemote || string.IsNullOrWhiteSpace(volume.RootDirectoryPath))
         {
             return ResolutionFailure(
                 FileIdResolutionStatus.InvalidVolumeHandle,
                 null,
-                "File ID path resolution requires a local volume handle.");
+                "File ID path resolution requires a local root-directory handle.");
         }
 
         if (!ulong.TryParse(fileReferenceNumber, NumberStyles.None, CultureInfo.InvariantCulture, out var parsed) ||
@@ -186,7 +188,7 @@ internal sealed class WindowsIndexVolumeResolver : IIndexVolumeResolver
         }
 
         using var volumeHandle = CreateFileW(
-            volume.DevicePath,
+            volume.RootDirectoryPath,
             0,
             FileShareReadWriteDelete,
             IntPtr.Zero,
@@ -301,16 +303,22 @@ internal sealed class WindowsIndexVolumeResolver : IIndexVolumeResolver
         return false;
     }
 
-    private static string ToVolumeDevicePath(string volumeRoot, string guidPath)
+    internal static string ToVolumeDevicePath(string volumeRoot, string guidPath)
     {
+        if (!string.IsNullOrWhiteSpace(guidPath))
+            return guidPath.TrimEnd('\\');
+
         var trimmedRoot = volumeRoot.TrimEnd('\\');
         if (trimmedRoot.EndsWith(':'))
-            return @"\\.\" + trimmedRoot + "\\";
+            return @"\\.\" + trimmedRoot;
 
-        return !string.IsNullOrWhiteSpace(guidPath)
-            ? EnsureTrailingSlash(guidPath)
-            : EnsureTrailingSlash(trimmedRoot);
+        return trimmedRoot.TrimEnd('\\');
     }
+
+    internal static string ToRootDirectoryPath(string volumeRoot, string guidPath) =>
+        !string.IsNullOrWhiteSpace(guidPath)
+            ? EnsureTrailingSlash(guidPath)
+            : EnsureTrailingSlash(volumeRoot);
 
     private static string EnsureTrailingSlash(string path) =>
         path.EndsWith('\\') ? path : path + "\\";

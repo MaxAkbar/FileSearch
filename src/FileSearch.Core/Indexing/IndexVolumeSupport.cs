@@ -8,8 +8,8 @@ namespace FileSearch.Core.Indexing;
 
 internal sealed record IndexVolumeInfo(
     string VolumeKey,
-    string VolumeRoot,
-    string DevicePath,
+    string VolumeDevicePath,
+    string RootDirectoryPath,
     string? VolumeSerial,
     string FileSystemName,
     bool IsRemote,

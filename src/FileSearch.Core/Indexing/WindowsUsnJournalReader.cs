@@ -114,11 +114,11 @@ internal sealed class WindowsUsnJournalReader : IUsnJournalReader
 
     private static SafeFileHandle OpenVolume(IndexVolumeInfo volume)
     {
-        if (string.IsNullOrWhiteSpace(volume.DevicePath))
+        if (string.IsNullOrWhiteSpace(volume.VolumeDevicePath))
             throw new InvalidOperationException("Volume device path is required for USN replay.");
 
         var handle = CreateFileW(
-            volume.DevicePath,
+            volume.VolumeDevicePath,
             FileTraverse,
             FileShareReadWriteDelete,
             IntPtr.Zero,

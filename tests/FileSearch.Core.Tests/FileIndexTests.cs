@@ -1619,8 +1619,8 @@ public sealed class FileIndexTests : IDisposable
         IndexVolumeDriveKind driveKind = IndexVolumeDriveKind.Fixed) =>
         new(
             "fake-volume",
-            Path.GetPathRoot(root) ?? root,
             @"\\.\C:",
+            Path.GetPathRoot(root) ?? root,
             "123",
             filesystem,
             IsRemote: false,

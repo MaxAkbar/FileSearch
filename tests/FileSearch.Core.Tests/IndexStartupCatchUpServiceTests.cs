@@ -635,8 +635,8 @@ public sealed class IndexStartupCatchUpServiceTests : IDisposable
         IndexVolumeDriveKind driveKind = IndexVolumeDriveKind.Fixed) =>
         new(
             "fake-volume",
-            @"C:\",
             @"\\.\C:",
+            @"C:\",
             "123",
             usnSupported ? "NTFS" : "exFAT",
             isRemote,

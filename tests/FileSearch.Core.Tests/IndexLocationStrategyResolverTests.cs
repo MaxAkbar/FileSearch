@@ -31,7 +31,7 @@ public sealed class IndexLocationStrategyResolverTests
             @"\\server\share\docs",
             Volume(
                 volumeKey: @"\\server\share",
-                volumeRoot: @"\\server\share\",
+                rootDirectoryPath: @"\\server\share\",
                 filesystem: "remote",
                 isRemote: true,
                 driveKind: IndexVolumeDriveKind.Network));
@@ -68,15 +68,16 @@ public sealed class IndexLocationStrategyResolverTests
 
     private static IndexVolumeInfo Volume(
         string volumeKey = @"C:",
-        string volumeRoot = @"C:\",
+        string volumeDevicePath = @"\\.\C:",
+        string rootDirectoryPath = @"C:\",
         string filesystem = "NTFS",
         bool isRemote = false,
         bool usnSupported = false,
         IndexVolumeDriveKind driveKind = IndexVolumeDriveKind.Fixed) =>
         new(
             volumeKey,
-            volumeRoot,
-            @"\\.\C:",
+            volumeDevicePath,
+            rootDirectoryPath,
             "123",
             filesystem,
             isRemote,
