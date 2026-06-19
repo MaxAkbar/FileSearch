@@ -44,6 +44,11 @@ public sealed partial class HistoryViewModel : ObservableObject
             MatchesSavedSearch,
             "saved searches",
             _applicationSettings.SidebarPageSize);
+        FavoriteResultList = new PagedSidebarList<FavoriteResultSettings>(
+            FavoriteResults,
+            MatchesFavorite,
+            "favorites",
+            _applicationSettings.SidebarPageSize);
 
         var saved = _settingsService.Current;
         foreach (var search in saved.SavedSearches.Select(NormalizeSavedSearch).Where(IsUsableSavedSearch))
@@ -54,6 +59,8 @@ public sealed partial class HistoryViewModel : ObservableObject
 
         foreach (var query in saved.RecentQueries) RecentQueries.Add(query);
         foreach (var path in saved.RecentPaths) RecentPaths.Add(path);
+        foreach (var favorite in saved.FavoriteResults.Select(NormalizeFavorite).Where(IsUsableFavorite))
+            FavoriteResults.Add(favorite);
         foreach (var scope in saved.CustomScopes.Where(scope => !string.IsNullOrWhiteSpace(scope.Name)))
         {
             CustomScopes.Add(new SearchScope
@@ -64,6 +71,7 @@ public sealed partial class HistoryViewModel : ObservableObject
         }
 
         SavedSearches.CollectionChanged += (_, _) => ClearSavedSearchesCommand.NotifyCanExecuteChanged();
+        FavoriteResults.CollectionChanged += (_, _) => ClearFavoriteResultsCommand.NotifyCanExecuteChanged();
         RecentQueries.CollectionChanged += (_, _) => ClearRecentQueriesCommand.NotifyCanExecuteChanged();
         RecentPaths.CollectionChanged += (_, _) => ClearRecentPathsCommand.NotifyCanExecuteChanged();
         CustomScopes.CollectionChanged += (_, _) =>
@@ -81,6 +89,8 @@ public sealed partial class HistoryViewModel : ObservableObject
 
     public PagedSidebarList<SavedSearchSettings> SavedSearchList { get; }
 
+    public PagedSidebarList<FavoriteResultSettings> FavoriteResultList { get; }
+
     public ObservableCollection<SavedSearchSettings> SavedSearches { get; } = new();
 
     /// <summary>Dropdown for the "Containing text" field (most-recent first).</summary>
@@ -90,6 +100,8 @@ public sealed partial class HistoryViewModel : ObservableObject
     public ObservableCollection<string> RecentPaths { get; } = new();
 
     public ObservableCollection<SearchScope> CustomScopes { get; } = new();
+
+    public ObservableCollection<FavoriteResultSettings> FavoriteResults { get; } = new();
 
     /// <summary>Promotes the attempt into saved searches, both legacy lists, and persists.</summary>
     public void RecordSearch(SavedSearchSettings search)
@@ -136,6 +148,92 @@ public sealed partial class HistoryViewModel : ObservableObject
         SaveHistory();
         _status.Text = $"Saved scope {trimmedName}.";
     }
+
+    public bool IsFavorite(string path) =>
+        FavoriteResults.Any(favorite =>
+            string.Equals(favorite.Path, path?.Trim(), StringComparison.OrdinalIgnoreCase));
+
+    public bool ToggleFavorite(string path)
+    {
+        var trimmedPath = path.Trim();
+        if (string.IsNullOrWhiteSpace(trimmedPath))
+            return false;
+
+        for (var i = FavoriteResults.Count - 1; i >= 0; i--)
+        {
+            if (!string.Equals(FavoriteResults[i].Path, trimmedPath, StringComparison.OrdinalIgnoreCase))
+                continue;
+
+            FavoriteResults.RemoveAt(i);
+            SaveHistory();
+            return false;
+        }
+
+        FavoriteResults.Insert(0, new FavoriteResultSettings
+        {
+            Path = trimmedPath,
+            AddedUtc = DateTime.UtcNow,
+        });
+
+        while (FavoriteResults.Count > MaxFavoriteEntries)
+            FavoriteResults.RemoveAt(FavoriteResults.Count - 1);
+
+        SaveHistory();
+        return true;
+    }
+
+    public void UpdateFavoritePath(string oldPath, string newPath)
+    {
+        var changed = false;
+        foreach (var favorite in FavoriteResults)
+        {
+            if (!string.Equals(favorite.Path, oldPath, StringComparison.OrdinalIgnoreCase))
+                continue;
+
+            favorite.Path = newPath;
+            changed = true;
+        }
+
+        if (!changed)
+            return;
+
+        FavoriteResultList.Refresh();
+        SaveHistory();
+    }
+
+    public void RemoveFavoritePath(string path)
+    {
+        var removed = false;
+        for (var i = FavoriteResults.Count - 1; i >= 0; i--)
+        {
+            if (!string.Equals(FavoriteResults[i].Path, path, StringComparison.OrdinalIgnoreCase))
+                continue;
+
+            FavoriteResults.RemoveAt(i);
+            removed = true;
+        }
+
+        if (removed)
+            SaveHistory();
+    }
+
+    [RelayCommand]
+    private void RemoveFavoriteResult(FavoriteResultSettings? favorite)
+    {
+        if (favorite is null)
+            return;
+
+        RemoveFavoritePath(favorite.Path);
+    }
+
+    [RelayCommand(CanExecute = nameof(CanClearFavoriteResults))]
+    private void ClearFavoriteResults()
+    {
+        FavoriteResults.Clear();
+        SaveHistory();
+    }
+
+    private bool CanClearFavoriteResults() => FavoriteResults.Count > 0;
 
     [RelayCommand]
     private void RemoveCustomScope(SearchScope? scope)
@@ -234,6 +332,10 @@ public sealed partial class HistoryViewModel : ObservableObject
             settings.SavedSearches = SavedSearches
                 .Select(NormalizeSavedSearch)
                 .Where(IsUsableSavedSearch)
+                .ToList();
+            settings.FavoriteResults = FavoriteResults
+                .Select(NormalizeFavorite)
+                .Where(IsUsableFavorite)
                 .ToList();
             settings.CustomScopes = CustomScopes
                 .Where(scope => !string.IsNullOrWhiteSpace(scope.Name))
@@ -359,6 +461,11 @@ public sealed partial class HistoryViewModel : ObservableObject
         Contains(item.ExcludeFileNamePattern, needle) ||
         Contains(item.SearchMode.ToString(), needle);
 
+    private static bool MatchesFavorite(FavoriteResultSettings item, string needle) =>
+        Contains(item.Path, needle) ||
+        Contains(item.DisplayName, needle) ||
+        Contains(item.Folder, needle);
+
     private static bool MatchesText(string item, string needle) => Contains(item, needle);
 
     private static bool Contains(string? value, string needle) =>
@@ -373,6 +480,7 @@ public sealed partial class HistoryViewModel : ObservableObject
         ScopeList.PageSize = _applicationSettings.SidebarPageSize;
         RecentPathList.PageSize = _applicationSettings.SidebarPageSize;
         SavedSearchList.PageSize = _applicationSettings.SidebarPageSize;
+        FavoriteResultList.PageSize = _applicationSettings.SidebarPageSize;
     }
 
     private static SavedSearchSettings NormalizeSavedSearch(SavedSearchSettings search) =>
@@ -396,4 +504,16 @@ public sealed partial class HistoryViewModel : ObservableObject
             ModifiedBefore = search.ModifiedBefore == default ? DateTime.Today : search.ModifiedBefore,
             AdditionalPlainTextExtensions = search.AdditionalPlainTextExtensions?.Trim() ?? string.Empty,
         };
+
+    private const int MaxFavoriteEntries = 100;
+
+    private static FavoriteResultSettings NormalizeFavorite(FavoriteResultSettings favorite) =>
+        new()
+        {
+            Path = favorite.Path?.Trim() ?? string.Empty,
+            AddedUtc = favorite.AddedUtc == default ? DateTime.UtcNow : favorite.AddedUtc,
+        };
+
+    private static bool IsUsableFavorite(FavoriteResultSettings favorite) =>
+        !string.IsNullOrWhiteSpace(favorite.Path);
 }

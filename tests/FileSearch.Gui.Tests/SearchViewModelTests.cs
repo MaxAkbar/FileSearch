@@ -421,6 +421,140 @@ public sealed class SearchViewModelTests
     }
 
     [Fact]
+    public void ToggleFavoriteResultPersistsFavoriteAndUpdatesVisibleResult()
+    {
+        RunWithPump((pump, vm, history, status, settings) =>
+        {
+            vm.QueryText = "needle";
+            vm.SearchPath = Path.GetTempPath();
+
+            var task = vm.SearchCommand.ExecuteAsync(null);
+            pump.PumpUntil(() => task.IsCompleted, TimeSpan.FromSeconds(10));
+
+            var result = vm.Files.Single(file => file.FullPath == @"C:\results\a.cs");
+
+            vm.ToggleFavoriteResultCommand.Execute(result);
+
+            Assert.True(result.IsFavorite);
+            Assert.Equal(@"C:\results\a.cs", Assert.Single(history.FavoriteResults).Path);
+            Assert.Equal(@"C:\results\a.cs", Assert.Single(settings.Current.FavoriteResults).Path);
+
+            vm.ToggleFavoriteResultCommand.Execute(result);
+
+            Assert.False(result.IsFavorite);
+            Assert.Empty(history.FavoriteResults);
+            Assert.Empty(settings.Current.FavoriteResults);
+        }, new ResultManagementSearcher());
+    }
+
+    [Fact]
+    public void RemovingFavoriteFromSidebarUpdatesVisibleResult()
+    {
+        RunWithPump((pump, vm, history, status, settings) =>
+        {
+            vm.QueryText = "needle";
+            vm.SearchPath = Path.GetTempPath();
+
+            var task = vm.SearchCommand.ExecuteAsync(null);
+            pump.PumpUntil(() => task.IsCompleted, TimeSpan.FromSeconds(10));
+
+            var result = vm.Files.Single(file => file.FullPath == @"C:\results\a.cs");
+            vm.ToggleFavoriteResultCommand.Execute(result);
+
+            history.RemoveFavoriteResultCommand.Execute(history.FavoriteResults[0]);
+
+            Assert.False(result.IsFavorite);
+            Assert.Empty(history.FavoriteResults);
+        }, new ResultManagementSearcher());
+    }
+
+    [Fact]
+    public void OpenFavoriteResultUsesFileLauncher()
+    {
+        var launcher = new FakeFileLauncher();
+        RunWithPump((pump, vm, history, status, settings) =>
+        {
+            var favorite = new FavoriteResultSettings { Path = @"C:\results\a.cs" };
+
+            var task = vm.OpenFavoriteResultCommand.ExecuteAsync(favorite);
+            pump.PumpUntil(() => task.IsCompleted, TimeSpan.FromSeconds(10));
+
+            Assert.Equal(@"C:\results\a.cs", launcher.LastOpenedPath);
+        }, fileLauncher: launcher);
+    }
+
+    [Fact]
+    public void RenameResultUpdatesResultPathHitsAndPinnedPath()
+    {
+        var operations = new FakeFileOperationService
+        {
+            RenameResult = FileOperationResult.Renamed(@"C:\results\renamed.cs"),
+        };
+
+        RunWithPump((pump, vm, history, status, settings) =>
+        {
+            vm.QueryText = "needle";
+            vm.SearchPath = Path.GetTempPath();
+
+            var search = vm.SearchCommand.ExecuteAsync(null);
+            pump.PumpUntil(() => search.IsCompleted, TimeSpan.FromSeconds(10));
+
+            var result = vm.Files.Single(file => file.FullPath == @"C:\results\a.cs");
+            vm.TogglePinResultCommand.Execute(result);
+            vm.ToggleFavoriteResultCommand.Execute(result);
+
+            var rename = vm.RenameResultCommand.ExecuteAsync(result);
+            pump.PumpUntil(() => rename.IsCompleted, TimeSpan.FromSeconds(10));
+
+            Assert.Equal(1, operations.RenameCallCount);
+            Assert.Equal(@"C:\results\a.cs", operations.RenamePath);
+            Assert.Equal(@"C:\results\renamed.cs", result.FullPath);
+            Assert.Equal("renamed.cs", result.FileName);
+            Assert.All(result.Hits, hit => Assert.Equal(@"C:\results\renamed.cs", hit.Path));
+            Assert.Equal(@"C:\results\renamed.cs", Assert.Single(settings.Current.QuickSearchPinnedPaths));
+            Assert.Equal(@"C:\results\renamed.cs", Assert.Single(history.FavoriteResults).Path);
+            Assert.Equal("Renamed file.", status.Text);
+        }, new ResultManagementSearcher(), fileOperationService: operations);
+    }
+
+    [Fact]
+    public void DeleteResultRemovesResultAndPinnedPath()
+    {
+        var operations = new FakeFileOperationService
+        {
+            DeleteResult = FileOperationResult.Deleted(),
+        };
+
+        RunWithPump((pump, vm, history, status, settings) =>
+        {
+            vm.QueryText = "needle";
+            vm.SearchPath = Path.GetTempPath();
+
+            var search = vm.SearchCommand.ExecuteAsync(null);
+            pump.PumpUntil(() => search.IsCompleted, TimeSpan.FromSeconds(10));
+
+            var result = vm.Files.Single(file => file.FullPath == @"C:\results\a.cs");
+            vm.TogglePinResultCommand.Execute(result);
+            vm.ToggleFavoriteResultCommand.Execute(result);
+            vm.SelectedFile = result;
+
+            var delete = vm.DeleteResultCommand.ExecuteAsync(result);
+            pump.PumpUntil(() => delete.IsCompleted, TimeSpan.FromSeconds(10));
+
+            Assert.Equal(1, operations.DeleteCallCount);
+            Assert.Equal(@"C:\results\a.cs", operations.DeletePath);
+            Assert.DoesNotContain(vm.Files, file => file.FullPath == @"C:\results\a.cs");
+            Assert.Single(vm.Files);
+            Assert.Equal(1, vm.TotalHits);
+            Assert.Equal(1, vm.FilesMatched);
+            Assert.Null(vm.SelectedFile);
+            Assert.Empty(settings.Current.QuickSearchPinnedPaths);
+            Assert.Empty(history.FavoriteResults);
+            Assert.Equal("Moved file to Recycle Bin.", status.Text);
+        }, new ResultManagementSearcher(), fileOperationService: operations);
+    }
+
+    [Fact]
     public async Task FileResultOpenCommandRecordsUsage()
     {
         var recordedPaths = new List<string>();
@@ -441,7 +575,9 @@ public sealed class SearchViewModelTests
     private static void RunWithPump(
         Action<PumpingSynchronizationContext, SearchViewModel, HistoryViewModel, StatusBarViewModel, FakeSettingsService> body,
         ISearcher? searcher = null,
-        IFileSavePicker? fileSavePicker = null)
+        IFileSavePicker? fileSavePicker = null,
+        IFileOperationService? fileOperationService = null,
+        IFileLauncher? fileLauncher = null)
     {
         var previous = SynchronizationContext.Current;
         var pump = new PumpingSynchronizationContext();
@@ -457,13 +593,14 @@ public sealed class SearchViewModelTests
                 new ExtractorRegistry(Array.Empty<ITextExtractor>()),
                 new QueryFactory(),
                 new FakePreviewService(),
-                new FakeFileLauncher(),
+                fileLauncher ?? new FakeFileLauncher(),
                 settings,
                 new FakeFileTypeOptionsStore(),
                 new FakeFolderPicker(),
                 history,
                 status,
-                fileSavePicker: fileSavePicker);
+                fileSavePicker: fileSavePicker,
+                fileOperationService: fileOperationService);
 
             body(pump, vm, history, status, settings);
         }

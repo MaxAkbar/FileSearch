@@ -29,6 +29,7 @@ public sealed class BindingPathAuditTests
         typeof(IndexRootHealthInfo),
         typeof(IndexedLocationSettings),
         typeof(IndexFilterListSettings),
+        typeof(FavoriteResultSettings),
         typeof(RegexTestGroupViewModel),
         typeof(RegexTestMatchViewModel),
         typeof(SavedSearchSettings),

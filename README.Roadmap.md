@@ -26,7 +26,7 @@ Still missing or partial:
 - No benchmark/performance harness for live scan, index build, or indexed query latency.
 - CLI is interactive-first; it lacks first-class one-shot commands and JSON/CSV output.
 - Saved searches and custom scopes exist, but full workspace/profile bundles do not.
-- Results now have GUI facets, grouping, sort presets, direct CSV/JSON/JSON Lines/Markdown export, drag-and-drop, and shared pinned paths; safe result rename/delete and richer reporting remain missing.
+- Results now have GUI facets, grouping, sort presets, direct CSV/JSON/JSON Lines/Markdown export, drag-and-drop, persistent favorites, shared pinned paths, and safe result rename/delete; richer reporting remains missing.
 - Durable USN replay is NTFS-only. ReFS remains on snapshot validation until 128-bit file identifiers are supported and tested.
 - Hard-link-aware path identity is not fully implemented; ambiguous USN deletes fall back to root validation.
 - There is no true Windows Service yet. Background indexing is a per-user tray process that starts after user sign-in.

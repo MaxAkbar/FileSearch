@@ -55,6 +55,14 @@ public sealed class AppSettingsSerializationTests
                     AdditionalPlainTextExtensions = ".tmpl",
                 },
             ],
+            FavoriteResults =
+            [
+                new()
+                {
+                    Path = @"C:\Work\notes.md",
+                    AddedUtc = new DateTime(2026, 6, 19, 12, 0, 0, DateTimeKind.Utc),
+                },
+            ],
             IndexedLocations =
             [
                 new IndexedLocationSettings
@@ -118,6 +126,8 @@ public sealed class AppSettingsSerializationTests
         Assert.DoesNotContain(nameof(IndexFilterListSettings.Summary), json);
         Assert.DoesNotContain(nameof(SavedSearchSettings.DisplayName), json);
         Assert.DoesNotContain(nameof(SavedSearchSettings.Summary), json);
+        Assert.DoesNotContain(nameof(FavoriteResultSettings.DisplayName), json);
+        Assert.DoesNotContain($"\"{nameof(FavoriteResultSettings.Folder)}\"", json);
         Assert.NotNull(loaded);
         Assert.Equal("nord-dark.json", loaded.CustomThemeFileName);
         Assert.Equal(15, loaded.SidebarPageSize);
@@ -150,6 +160,10 @@ public sealed class AppSettingsSerializationTests
         Assert.True(savedSearch.ModifiedBeforeEnabled);
         Assert.Equal(new DateTime(2026, 2, 3), savedSearch.ModifiedBefore);
         Assert.Equal(".tmpl", savedSearch.AdditionalPlainTextExtensions);
+
+        var favorite = Assert.Single(loaded.FavoriteResults);
+        Assert.Equal(@"C:\Work\notes.md", favorite.Path);
+        Assert.Equal(new DateTime(2026, 6, 19, 12, 0, 0, DateTimeKind.Utc), favorite.AddedUtc);
 
         var location = Assert.Single(loaded.IndexedLocations);
         Assert.Equal(@"C:\Work", location.Root);

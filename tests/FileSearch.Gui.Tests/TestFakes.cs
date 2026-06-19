@@ -24,8 +24,11 @@ internal sealed class FakePreviewService : IFilePreviewService
 
 internal sealed class FakeFileLauncher : IFileLauncher
 {
+    public string? LastOpenedPath { get; private set; }
+
     public void Open(string path)
     {
+        LastOpenedPath = path;
     }
 
     public void RevealInExplorer(string path)
@@ -34,6 +37,35 @@ internal sealed class FakeFileLauncher : IFileLauncher
 
     public void CopyToClipboard(string text)
     {
+    }
+}
+
+internal sealed class FakeFileOperationService : IFileOperationService
+{
+    public FileOperationResult RenameResult { get; set; } = FileOperationResult.Cancelled();
+
+    public FileOperationResult DeleteResult { get; set; } = FileOperationResult.Cancelled();
+
+    public string? RenamePath { get; private set; }
+
+    public string? DeletePath { get; private set; }
+
+    public int RenameCallCount { get; private set; }
+
+    public int DeleteCallCount { get; private set; }
+
+    public Task<FileOperationResult> RenameFileAsync(string path, CancellationToken cancellationToken)
+    {
+        RenameCallCount++;
+        RenamePath = path;
+        return Task.FromResult(RenameResult);
+    }
+
+    public Task<FileOperationResult> MoveFileToRecycleBinAsync(string path, CancellationToken cancellationToken)
+    {
+        DeleteCallCount++;
+        DeletePath = path;
+        return Task.FromResult(DeleteResult);
     }
 }
 

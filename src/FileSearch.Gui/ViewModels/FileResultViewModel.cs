@@ -48,13 +48,13 @@ public sealed partial class FileResultViewModel : ObservableObject
         SearchRank = searchRank;
     }
 
-    public string FullPath { get; }
-    public string FileName { get; }
-    public string Directory { get; }
+    public string FullPath { get; private set; }
+    public string FileName { get; private set; }
+    public string Directory { get; private set; }
     public int SearchRank { get; }
 
     /// <summary>Lower-cased extension without the leading dot (e.g. "cs").</summary>
-    public string Extension { get; }
+    public string Extension { get; private set; }
 
     public string ExtensionPattern =>
         string.IsNullOrWhiteSpace(Extension) ? string.Empty : $"*.{Extension}";
@@ -67,6 +67,7 @@ public sealed partial class FileResultViewModel : ObservableObject
     [ObservableProperty] private int _hitCount;
     [ObservableProperty] private string _firstMatch = string.Empty;
     [ObservableProperty] private bool _isPinned;
+    [ObservableProperty] private bool _isFavorite;
     [ObservableProperty] private double _bestScore;
 
     /// <summary>
@@ -91,6 +92,10 @@ public sealed partial class FileResultViewModel : ObservableObject
     public string PinActionText => IsPinned ? "Unpin result" : "Pin result";
 
     public string PinGlyph => IsPinned ? "\uE77A" : "\uE718";
+
+    public string FavoriteActionText => IsFavorite ? "Remove favorite" : "Add favorite";
+
+    public string FavoriteGlyph => IsFavorite ? "\uE735" : "\uE734";
 
     /// <summary>Human-readable file size, loaded lazily on first access.</summary>
     public string SizeText => _sizeText ??= ComputeSizeText();
@@ -182,6 +187,41 @@ public sealed partial class FileResultViewModel : ObservableObject
         OnPropertyChanged(nameof(MoreText));
     }
 
+    public void UpdatePath(string fullPath)
+    {
+        FullPath = fullPath;
+        FileName = Path.GetFileName(fullPath);
+        Directory = Path.GetDirectoryName(fullPath) ?? string.Empty;
+        Extension = Path.GetExtension(fullPath).TrimStart('.').ToLowerInvariant();
+
+        for (var i = 0; i < _hits.Count; i++)
+            _hits[i] = _hits[i] with { Path = fullPath };
+
+        _metadataLoaded = false;
+        _sizeText = null;
+        _modifiedText = null;
+        _sizeBytes = null;
+        _modifiedUtc = null;
+
+        OnPropertyChanged(nameof(FullPath));
+        OnPropertyChanged(nameof(FileName));
+        OnPropertyChanged(nameof(Directory));
+        OnPropertyChanged(nameof(Extension));
+        OnPropertyChanged(nameof(ExtensionPattern));
+        OnPropertyChanged(nameof(ExcludeExtensionPatternMenuText));
+        OnPropertyChanged(nameof(VisibleHits));
+        OnPropertyChanged(nameof(SizeBytes));
+        OnPropertyChanged(nameof(SizeText));
+        OnPropertyChanged(nameof(SizeGroup));
+        OnPropertyChanged(nameof(SizeFacet));
+        OnPropertyChanged(nameof(ModifiedUtc));
+        OnPropertyChanged(nameof(ModifiedSortTicks));
+        OnPropertyChanged(nameof(ModifiedText));
+        OnPropertyChanged(nameof(ModifiedDateGroup));
+        OnPropertyChanged(nameof(ModifiedDateFacet));
+        OnPropertyChanged(nameof(FileTypeGroup));
+    }
+
     partial void OnIsExpandedChanged(bool value)
     {
         OnPropertyChanged(nameof(VisibleHits));
@@ -192,6 +232,12 @@ public sealed partial class FileResultViewModel : ObservableObject
     {
         OnPropertyChanged(nameof(PinActionText));
         OnPropertyChanged(nameof(PinGlyph));
+    }
+
+    partial void OnIsFavoriteChanged(bool value)
+    {
+        OnPropertyChanged(nameof(FavoriteActionText));
+        OnPropertyChanged(nameof(FavoriteGlyph));
     }
 
     // ----- row-level commands -----

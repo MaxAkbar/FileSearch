@@ -47,6 +47,7 @@ public sealed partial class SearchViewModel : ObservableObject, IDisposable
     private readonly FileTypeOptions _fileTypeOptions;
     private readonly IFolderPicker _folderPicker;
     private readonly IFileSavePicker? _fileSavePicker;
+    private readonly IFileOperationService? _fileOperationService;
     private readonly HistoryViewModel _history;
     private readonly StatusBarViewModel _status;
 
@@ -73,7 +74,8 @@ public sealed partial class SearchViewModel : ObservableObject, IDisposable
         HistoryViewModel history,
         StatusBarViewModel status,
         IIndexUsageStore? indexUsageStore = null,
-        IFileSavePicker? fileSavePicker = null)
+        IFileSavePicker? fileSavePicker = null,
+        IFileOperationService? fileOperationService = null)
     {
         _searcher = searcher;
         _extractorRegistry = extractorRegistry;
@@ -86,6 +88,7 @@ public sealed partial class SearchViewModel : ObservableObject, IDisposable
         _fileTypeOptions = _fileTypeOptionsStore.Load();
         _folderPicker = folderPicker;
         _fileSavePicker = fileSavePicker;
+        _fileOperationService = fileOperationService;
         _history = history;
         _status = status;
 
@@ -93,6 +96,7 @@ public sealed partial class SearchViewModel : ObservableObject, IDisposable
         FilesView = CollectionViewSource.GetDefaultView(Files);
         FilesView.Filter = FilterFiles;
         Files.CollectionChanged += OnFilesChanged;
+        _history.FavoriteResults.CollectionChanged += OnFavoriteResultsChanged;
 
         SelectedSortOption = ResultSortOptions[0];
         SelectedGroupOption = ResultGroupOptions[0];
@@ -267,6 +271,12 @@ public sealed partial class SearchViewModel : ObservableObject, IDisposable
             RebuildFacetOptions();
     }
 
+    private void OnFavoriteResultsChanged(object? sender, NotifyCollectionChangedEventArgs e)
+    {
+        foreach (var file in Files)
+            file.IsFavorite = _history.IsFavorite(file.FullPath);
+    }
+
     [RelayCommand]
     private void ClearRefinement() => RefinementQuery = string.Empty;
 
@@ -359,6 +369,8 @@ public sealed partial class SearchViewModel : ObservableObject, IDisposable
     {
         OnPropertyChanged(nameof(HasSelectedFile));
         CopyFileContentCommand.NotifyCanExecuteChanged();
+        RenameResultCommand.NotifyCanExecuteChanged();
+        DeleteResultCommand.NotifyCanExecuteChanged();
         if (value is not null)
             SelectedDetailsTabIndex = HitsTabIndex;
         _ = LoadPreviewAsync(value);
@@ -497,6 +509,105 @@ public sealed partial class SearchViewModel : ObservableObject, IDisposable
     }
 
     private bool CanTogglePinResult(FileResultViewModel? file) => file is not null;
+
+    [RelayCommand(CanExecute = nameof(CanToggleFavoriteResult))]
+    private void ToggleFavoriteResult(FileResultViewModel? file)
+    {
+        if (file is null)
+            return;
+
+        file.IsFavorite = _history.ToggleFavorite(file.FullPath);
+        _status.Text = file.IsFavorite ? "Added favorite." : "Removed favorite.";
+    }
+
+    private bool CanToggleFavoriteResult(FileResultViewModel? file) => file is not null;
+
+    [RelayCommand]
+    private async Task OpenFavoriteResultAsync(FavoriteResultSettings? favorite)
+    {
+        if (favorite is null || string.IsNullOrWhiteSpace(favorite.Path))
+            return;
+
+        _fileLauncher.Open(favorite.Path);
+        if (_indexUsageStore is null)
+            return;
+
+        try
+        {
+            await _indexUsageStore.RecordFileOpenedAsync(favorite.Path, CancellationToken.None).ConfigureAwait(false);
+        }
+        catch
+        {
+        }
+    }
+
+    [RelayCommand(CanExecute = nameof(CanRenameResult))]
+    private async Task RenameResultAsync(FileResultViewModel? file)
+    {
+        if (file is null || _fileOperationService is null)
+            return;
+
+        var oldPath = file.FullPath;
+        var result = await _fileOperationService
+            .RenameFileAsync(oldPath, CancellationToken.None)
+            .ConfigureAwait(true);
+
+        if (!result.Succeeded || string.IsNullOrWhiteSpace(result.NewPath))
+        {
+            _status.Text = result.Message;
+            return;
+        }
+
+        _filesByPath.Remove(oldPath);
+        file.UpdatePath(result.NewPath);
+        _filesByPath[result.NewPath] = file;
+        UpdatePinnedPath(oldPath, result.NewPath);
+        _history.UpdateFavoritePath(oldPath, result.NewPath);
+        file.IsFavorite = _history.IsFavorite(result.NewPath);
+        RebuildFacetOptions();
+        RefreshFilesView();
+        if (ReferenceEquals(SelectedFile, file))
+            _ = LoadPreviewAsync(file);
+        _status.Text = result.Message;
+    }
+
+    private bool CanRenameResult(FileResultViewModel? file) => _fileOperationService is not null && file is not null;
+
+    [RelayCommand(CanExecute = nameof(CanDeleteResult))]
+    private async Task DeleteResultAsync(FileResultViewModel? file)
+    {
+        if (file is null || _fileOperationService is null)
+            return;
+
+        var result = await _fileOperationService
+            .MoveFileToRecycleBinAsync(file.FullPath, CancellationToken.None)
+            .ConfigureAwait(true);
+
+        if (!result.Succeeded)
+        {
+            _status.Text = result.Message;
+            return;
+        }
+
+        _filesByPath.Remove(file.FullPath);
+        RemovePinnedPath(file.FullPath);
+        _history.RemoveFavoritePath(file.FullPath);
+        var removedHits = file.HitCount;
+        Files.Remove(file);
+        TotalHits = Math.Max(0, TotalHits - removedHits);
+        FilesMatched = Files.Count;
+        if (ReferenceEquals(SelectedFile, file))
+        {
+            SelectedFile = null;
+            PreviewContent = string.Empty;
+        }
+
+        RebuildFacetOptions();
+        RefreshFilesView();
+        _status.Text = result.Message;
+    }
+
+    private bool CanDeleteResult(FileResultViewModel? file) => _fileOperationService is not null && file is not null;
 
     [RelayCommand]
     private void Browse()
@@ -638,6 +749,7 @@ public sealed partial class SearchViewModel : ObservableObject, IDisposable
                     file = new FileResultViewModel(hit.Path, _fileLauncher, recordOpened, _nextResultRank++)
                     {
                         IsPinned = IsPinned(hit.Path),
+                        IsFavorite = _history.IsFavorite(hit.Path),
                     };
                     _filesByPath[hit.Path] = file;
                     Files.Add(file);
@@ -753,6 +865,7 @@ public sealed partial class SearchViewModel : ObservableObject, IDisposable
         _searchCts?.Dispose();
         _previewCts?.Dispose();
         _refinementDebounceCts?.Dispose();
+        _history.FavoriteResults.CollectionChanged -= OnFavoriteResultsChanged;
     }
 
     // ----- helpers -----
@@ -952,6 +1065,30 @@ public sealed partial class SearchViewModel : ObservableObject, IDisposable
     private bool IsPinned(string path) =>
         _settingsService.Current.QuickSearchPinnedPaths.Any(pinned =>
             string.Equals(pinned, path, StringComparison.OrdinalIgnoreCase));
+
+    private void UpdatePinnedPath(string oldPath, string newPath)
+    {
+        _settingsService.Update(settings =>
+        {
+            for (var i = 0; i < settings.QuickSearchPinnedPaths.Count; i++)
+            {
+                if (string.Equals(settings.QuickSearchPinnedPaths[i], oldPath, StringComparison.OrdinalIgnoreCase))
+                    settings.QuickSearchPinnedPaths[i] = newPath;
+            }
+        });
+    }
+
+    private void RemovePinnedPath(string path)
+    {
+        _settingsService.Update(settings =>
+        {
+            for (var i = settings.QuickSearchPinnedPaths.Count - 1; i >= 0; i--)
+            {
+                if (string.Equals(settings.QuickSearchPinnedPaths[i], path, StringComparison.OrdinalIgnoreCase))
+                    settings.QuickSearchPinnedPaths.RemoveAt(i);
+            }
+        });
+    }
 
     private static string NormalizeFacetValue(string? value) =>
         string.IsNullOrWhiteSpace(value) ? "__none" : value.Trim();

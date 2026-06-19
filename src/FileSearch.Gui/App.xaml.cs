@@ -60,6 +60,7 @@ public partial class App : System.Windows.Application
                 services.AddSingleton<IFilePreviewService, FilePreviewService>();
                 services.AddSingleton<IThemeService, ThemeService>();
                 services.AddSingleton<IFileLauncher, FileLauncher>();
+                services.AddSingleton<IFileOperationService, FileOperationService>();
                 services.AddSingleton<IFileSavePicker, FileSavePicker>();
                 services.AddSingleton<IShellIntegrationService, ShellIntegrationService>();
                 services.AddSingleton<IStartupRegistrationService, StartupRegistrationService>();

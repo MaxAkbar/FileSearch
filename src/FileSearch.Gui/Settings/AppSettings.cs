@@ -60,6 +60,8 @@ public sealed class AppSettings
 
     public List<string> QuickSearchPinnedPaths { get; set; } = new();
 
+    public List<FavoriteResultSettings> FavoriteResults { get; set; } = new();
+
     public List<IndexedLocationSettings> IndexedLocations { get; set; } = new();
 
     public List<IndexFilterListSettings> IndexInclusionLists { get; set; } = new();

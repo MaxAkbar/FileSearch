@@ -168,8 +168,8 @@ public partial class MainWindow : Window
     {
         // Expanded/Collapsed can fire mid-XAML-load (the style sets IsExpanded)
         // before every named element is wired up; wait until they all exist.
-        if (ScopesSection is null || RecentSection is null || IndexSection is null || SavedSection is null ||
-            ScopesRow is null || RecentRow is null || IndexRow is null || SavedRow is null)
+        if (ScopesSection is null || RecentSection is null || FavoritesSection is null || IndexSection is null || SavedSection is null ||
+            ScopesRow is null || RecentRow is null || FavoritesRow is null || IndexRow is null || SavedRow is null)
             return;
 
         // Only the LAST expanded section grows to fill the leftover space; the
@@ -180,6 +180,7 @@ public partial class MainWindow : Window
         {
             (Section: ScopesSection, Row: ScopesRow),
             (Section: RecentSection, Row: RecentRow),
+            (Section: FavoritesSection, Row: FavoritesRow),
             (Section: IndexSection, Row: IndexRow),
             (Section: SavedSection, Row: SavedRow),
         };
