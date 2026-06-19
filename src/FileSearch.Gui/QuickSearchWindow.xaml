@@ -1,0 +1,258 @@
+<Window x:Class="FileSearch.Gui.QuickSearchWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+        xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+        xmlns:ui="http://schemas.modernwpf.com/2019"
+        xmlns:vm="clr-namespace:FileSearch.Gui.ViewModels"
+        xmlns:conv="clr-namespace:FileSearch.Gui.Converters"
+        xmlns:hl="clr-namespace:FileSearch.Gui.Highlighting"
+        mc:Ignorable="d"
+        d:DataContext="{d:DesignInstance Type=vm:QuickSearchViewModel}"
+        ui:WindowHelper.UseModernWindowStyle="False"
+        Icon="Assets/FileSearch.ico"
+        Background="{DynamicResource Atlas.PaperBrush}"
+        Foreground="{DynamicResource Atlas.InkBrush}"
+        FontFamily="{DynamicResource Atlas.SansFont}"
+        TextOptions.TextFormattingMode="Display"
+        TextOptions.TextRenderingMode="ClearType"
+        Title="Quick Search"
+        Width="760"
+        Height="540"
+        MinWidth="640"
+        MinHeight="420"
+        ResizeMode="CanResize"
+        ShowInTaskbar="False"
+        Topmost="True"
+        WindowStartupLocation="Manual"
+        WindowStyle="None"
+        Deactivated="OnDeactivated"
+        PreviewKeyDown="OnWindowPreviewKeyDown">
+
+    <Window.Resources>
+        <BooleanToVisibilityConverter x:Key="BoolToVisibility"/>
+        <conv:FileTypeToBrushConverter x:Key="TypeBrush"/>
+        <conv:FileTypeToLabelConverter x:Key="TypeLabel"/>
+    </Window.Resources>
+
+    <Border Background="{DynamicResource Atlas.PaperBrush}"
+            BorderBrush="{DynamicResource Atlas.Line2Brush}"
+            BorderThickness="1"
+            CornerRadius="8"
+            Padding="12">
+        <Grid>
+            <Grid.RowDefinitions>
+                <RowDefinition Height="Auto"/>
+                <RowDefinition Height="Auto"/>
+                <RowDefinition Height="*"/>
+                <RowDefinition Height="Auto"/>
+            </Grid.RowDefinitions>
+
+            <Border Grid.Row="0" Style="{StaticResource OmniBarStyle}" Height="44">
+                <Grid>
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="Auto"/>
+                        <ColumnDefinition Width="*"/>
+                        <ColumnDefinition Width="Auto"/>
+                        <ColumnDefinition Width="Auto"/>
+                        <ColumnDefinition Width="220"/>
+                    </Grid.ColumnDefinitions>
+                    <ui:FontIcon Glyph="&#xE721;"
+                                 FontSize="17"
+                                 Foreground="{DynamicResource Atlas.Ink3Brush}"
+                                 VerticalAlignment="Center"
+                                 Margin="0,0,10,0"/>
+                    <TextBox x:Name="SearchBox"
+                             Grid.Column="1"
+                             Text="{Binding SearchText, UpdateSourceTrigger=PropertyChanged}"
+                             Style="{StaticResource OmniQueryBoxStyle}"
+                             ui:ControlHelper.PlaceholderText="Search files, paths, and indexed content"/>
+                    <CheckBox Grid.Column="2"
+                              Content="Content"
+                              IsChecked="{Binding IncludeContentMatches, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
+                              IsEnabled="{Binding CanSearchContent}"
+                              ToolTip="{Binding ContentSearchSummary}"
+                              VerticalAlignment="Center"
+                              Margin="12,0,8,0"/>
+                    <Border Grid.Column="3" Style="{StaticResource OmniDividerStyle}"/>
+                    <ComboBox Grid.Column="4"
+                              ItemsSource="{Binding ScopeOptions}"
+                              SelectedItem="{Binding SelectedScope, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
+                              DisplayMemberPath="DisplayName"
+                              VerticalAlignment="Center"
+                              MinHeight="30"/>
+                </Grid>
+            </Border>
+
+            <StackPanel Grid.Row="1" Margin="2,9,2,8">
+                <Border BorderBrush="{DynamicResource Atlas.LineBrush}"
+                        BorderThickness="1"
+                        CornerRadius="6"
+                        Background="{DynamicResource Atlas.Surface2Brush}"
+                        Padding="8"
+                        Margin="0,0,0,8"
+                        Visibility="{Binding IsFolderScope, Converter={StaticResource BoolToVisibility}}">
+                    <Grid>
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="Auto"/>
+                            <ColumnDefinition Width="*"/>
+                            <ColumnDefinition Width="Auto"/>
+                        </Grid.ColumnDefinitions>
+                        <TextBlock Text="Folder"
+                                   Style="{StaticResource StatusStrongStyle}"
+                                   VerticalAlignment="Center"
+                                   Margin="0,0,10,0"/>
+                        <TextBox Grid.Column="1"
+                                 Text="{Binding QuickFolderPath, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
+                                 Style="{StaticResource OmniPathBoxStyle}"
+                                 VerticalAlignment="Center"/>
+                        <Button Grid.Column="2"
+                                Command="{Binding ChooseQuickFolderCommand}"
+                                Style="{StaticResource IconButtonStyle}"
+                                Width="30"
+                                Height="30"
+                                Margin="8,0,0,0"
+                                ToolTip="Choose folder">
+                            <ui:FontIcon Glyph="&#xE838;" FontSize="13"/>
+                        </Button>
+                    </Grid>
+                </Border>
+
+                <Grid>
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="*"/>
+                        <ColumnDefinition Width="Auto"/>
+                    </Grid.ColumnDefinitions>
+                    <TextBlock Text="{Binding StageText}"
+                               Style="{StaticResource StatusStrongStyle}"/>
+                    <TextBlock Grid.Column="1"
+                               Text="{Binding StatusText}"
+                               Style="{StaticResource StatusTextStyle}"
+                               Margin="16,0,0,0"/>
+                </Grid>
+            </StackPanel>
+
+            <Grid Grid.Row="2">
+                <ListBox x:Name="ResultsList"
+                         ItemsSource="{Binding Results}"
+                         SelectedItem="{Binding SelectedResult, Mode=TwoWay}"
+                         Style="{StaticResource ResultsListStyle}"
+                         ItemContainerStyle="{StaticResource ResultCardContainerStyle}"
+                         MouseDoubleClick="OnResultDoubleClick"
+                         PreviewMouseMove="OnResultsPreviewMouseMove">
+                    <ListBox.ItemTemplate>
+                        <DataTemplate DataType="{x:Type vm:FileResultViewModel}">
+                            <Grid Margin="12,10">
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="Auto"/>
+                                    <ColumnDefinition Width="*"/>
+                                    <ColumnDefinition Width="Auto"/>
+                                </Grid.ColumnDefinitions>
+
+                                <Border Style="{StaticResource TypeBadgeStyle}"
+                                        Background="{Binding FileName, Converter={StaticResource TypeBrush}}">
+                                    <TextBlock Text="{Binding FileName, Converter={StaticResource TypeLabel}}"
+                                               Style="{StaticResource TypeBadgeTextStyle}"/>
+                                </Border>
+
+                                <StackPanel Grid.Column="1" Margin="12,0,14,0">
+                                    <TextBlock Text="{Binding FileName}" Style="{StaticResource ResultNameStyle}"/>
+                                    <TextBlock Text="{Binding Directory}" Style="{StaticResource ResultPathStyle}"/>
+                                    <ItemsControl ItemsSource="{Binding VisibleHits}" Margin="0,6,0,0">
+                                        <ItemsControl.ItemTemplate>
+                                            <DataTemplate>
+                                                <Grid>
+                                                    <Grid.ColumnDefinitions>
+                                                        <ColumnDefinition Width="Auto"/>
+                                                        <ColumnDefinition Width="*"/>
+                                                    </Grid.ColumnDefinitions>
+                                                    <TextBlock Text="{Binding LineNumber}" Style="{StaticResource LineNoStyle}" Width="34"/>
+                                                    <TextBlock Grid.Column="1"
+                                                               Style="{StaticResource LineTextStyle}"
+                                                               hl:HitHighlight.Hit="{Binding}"/>
+                                                </Grid>
+                                            </DataTemplate>
+                                        </ItemsControl.ItemTemplate>
+                                    </ItemsControl>
+                                </StackPanel>
+
+                                <StackPanel Grid.Column="2" VerticalAlignment="Center">
+                                    <Border Style="{StaticResource HitsPillStyle}" Margin="0,0,0,8">
+                                        <TextBlock Style="{StaticResource HitsPillTextStyle}">
+                                            <Run Text="{Binding HitCount, Mode=OneWay}"/><Run Text=" hits"/>
+                                        </TextBlock>
+                                    </Border>
+                                    <StackPanel Orientation="Horizontal" HorizontalAlignment="Right">
+                                        <Button Command="{Binding DataContext.OpenResultCommand, RelativeSource={RelativeSource AncestorType=ListBox}}"
+                                                CommandParameter="{Binding}"
+                                                Style="{StaticResource IconButtonStyle}"
+                                                Width="28" Height="28"
+                                                ToolTip="Open">
+                                            <ui:FontIcon Glyph="&#xE8E5;" FontSize="13"/>
+                                        </Button>
+                                        <Button Command="{Binding DataContext.RevealResultCommand, RelativeSource={RelativeSource AncestorType=ListBox}}"
+                                                CommandParameter="{Binding}"
+                                                Style="{StaticResource IconButtonStyle}"
+                                                Width="28" Height="28"
+                                                ToolTip="Reveal in Explorer">
+                                            <ui:FontIcon Glyph="&#xE838;" FontSize="13"/>
+                                        </Button>
+                                        <Button Command="{Binding DataContext.CopyResultPathCommand, RelativeSource={RelativeSource AncestorType=ListBox}}"
+                                                CommandParameter="{Binding}"
+                                                Style="{StaticResource IconButtonStyle}"
+                                                Width="28" Height="28"
+                                                ToolTip="Copy path">
+                                            <ui:FontIcon Glyph="&#xE8C8;" FontSize="13"/>
+                                        </Button>
+                                        <Button Command="{Binding DataContext.PinResultCommand, RelativeSource={RelativeSource AncestorType=ListBox}}"
+                                                CommandParameter="{Binding}"
+                                                Style="{StaticResource IconButtonStyle}"
+                                                Width="28" Height="28"
+                                                ToolTip="{Binding PinActionText}">
+                                            <ui:FontIcon Glyph="{Binding PinGlyph}" FontSize="13"/>
+                                        </Button>
+                                    </StackPanel>
+                                </StackPanel>
+                            </Grid>
+                        </DataTemplate>
+                    </ListBox.ItemTemplate>
+                </ListBox>
+
+                <StackPanel HorizontalAlignment="Center"
+                            VerticalAlignment="Center"
+                            MaxWidth="300">
+                    <StackPanel.Style>
+                        <Style TargetType="StackPanel">
+                            <Setter Property="Visibility" Value="Collapsed"/>
+                            <Style.Triggers>
+                                <DataTrigger Binding="{Binding Results.Count}" Value="0">
+                                    <Setter Property="Visibility" Value="Visible"/>
+                                </DataTrigger>
+                            </Style.Triggers>
+                        </Style>
+                    </StackPanel.Style>
+                    <ui:FontIcon Glyph="&#xE721;" FontSize="38" Opacity="0.22" HorizontalAlignment="Center" Margin="0,0,0,12"/>
+                    <TextBlock Text="No quick results" Style="{StaticResource EmptyTitleStyle}"/>
+                    <TextBlock Text="Start typing to stream filename, path, and indexed content matches."
+                               Style="{StaticResource EmptyBodyStyle}"/>
+                </StackPanel>
+            </Grid>
+
+            <Border Grid.Row="3"
+                    Visibility="{Binding IsPreviewVisible, Converter={StaticResource BoolToVisibility}}"
+                    Background="{DynamicResource Atlas.Surface2Brush}"
+                    BorderBrush="{DynamicResource Atlas.LineBrush}"
+                    BorderThickness="1"
+                    CornerRadius="8"
+                    Padding="10"
+                    Margin="0,10,0,0"
+                    MaxHeight="155">
+                <TextBox Text="{Binding PreviewContent, Mode=OneWay}"
+                         Style="{StaticResource PreviewCodeBoxStyle}"
+                         BorderThickness="0"
+                         Background="Transparent"
+                         Padding="0"/>
+            </Border>
+        </Grid>
+    </Border>
+</Window>

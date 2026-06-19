@@ -63,6 +63,7 @@ public partial class App : System.Windows.Application
                 services.AddSingleton<IFileSavePicker, FileSavePicker>();
                 services.AddSingleton<IShellIntegrationService, ShellIntegrationService>();
                 services.AddSingleton<IStartupRegistrationService, StartupRegistrationService>();
+                services.AddSingleton<IGlobalHotkeyService, GlobalHotkeyService>();
                 services.AddSingleton<IBackgroundIndexerProcessService, BackgroundIndexerProcessService>();
                 services.AddSingleton<IIndexingSearchCoordinator, BackgroundIndexerSearchCoordinator>();
                 services.AddSingleton<IFolderPicker, FolderPicker>();
@@ -73,8 +74,10 @@ public partial class App : System.Windows.Application
                 services.AddSingleton<SearchViewModel>();
                 services.AddSingleton<IndexViewModel>();
                 services.AddSingleton<WorkflowsViewModel>();
+                services.AddSingleton<QuickSearchViewModel>();
                 services.AddSingleton<MainViewModel>();
                 services.AddSingleton<MainWindow>();
+                services.AddSingleton<QuickSearchWindow>();
             })
             .Build();
 
@@ -95,22 +98,25 @@ public partial class App : System.Windows.Application
             viewModel.Search.SearchPath = startupOptions.StartupFolder;
 
         window.DataContext = viewModel;
+        var quickWindow = _host.Services.GetRequiredService<QuickSearchWindow>();
+        quickWindow.DataContext = _host.Services.GetRequiredService<QuickSearchViewModel>();
         window.Closing += (_, args) =>
         {
-            if (!AppWindowLifetime.ShouldStartBackgroundIndexerOnMainWindowClose(
+            if (!AppWindowLifetime.ShouldKeepResidentOnMainWindowClose(
                     viewModel.Settings.KeepIndexUpdatedAfterClose,
                     _explicitExitRequested))
                 return;
 
             args.Cancel = true;
-            _ = HandoffToBackgroundWorkerAndExitAsync(window, viewModel);
+            HideMainWindowForTray(window, viewModel);
         };
         window.Closed += (_, _) =>
         {
             if (!_explicitExitRequested)
                 RequestExit();
         };
-        CreateTrayIcon(window, viewModel);
+        CreateTrayIcon(window, viewModel, quickWindow);
+        RegisterQuickSearchHotkey(quickWindow, savedSettings);
         _singleInstance.StartServer(options => Dispatcher.Invoke(() => ActivateFromOptions(window, viewModel, options)));
 
         var backgroundIndexer = _host.Services.GetRequiredService<IBackgroundIndexerProcessService>();
@@ -120,8 +126,7 @@ public partial class App : System.Windows.Application
             return;
         }
 
-        if (!viewModel.Settings.KeepIndexUpdatedAfterClose &&
-            !viewModel.Settings.StartBackgroundIndexerAtSignIn)
+        if (!viewModel.Settings.StartBackgroundIndexerAtSignIn)
         {
             try
             {
@@ -138,11 +143,12 @@ public partial class App : System.Windows.Application
         _ = viewModel.StartBackgroundIndexingAsync();
     }
 
-    private void CreateTrayIcon(MainWindow window, MainViewModel viewModel)
+    private void CreateTrayIcon(MainWindow window, MainViewModel viewModel, QuickSearchWindow quickWindow)
     {
         _trayIconImage = LoadTrayIconImage();
 
         var menu = new Forms.ContextMenuStrip();
+        menu.Items.Add("Quick Search", null, (_, _) => Dispatcher.Invoke(quickWindow.ShowFromHotkey));
         menu.Items.Add("Show FileSearch", null, (_, _) => Dispatcher.Invoke(() => ShowMainWindow(window)));
         menu.Items.Add(new Forms.ToolStripSeparator());
         menu.Items.Add("Install Windows integration", null, (_, _) => Dispatcher.Invoke(() => viewModel.InstallWindowsIntegrationCommand.Execute(null)));
@@ -160,6 +166,21 @@ public partial class App : System.Windows.Application
         _trayIcon.DoubleClick += (_, _) => Dispatcher.Invoke(() => ShowMainWindow(window));
     }
 
+    private void RegisterQuickSearchHotkey(QuickSearchWindow quickWindow, AppSettings settings)
+    {
+        if (_host is null)
+            return;
+
+        var hotkeyService = _host.Services.GetRequiredService<IGlobalHotkeyService>();
+        hotkeyService.HotkeyPressed += (_, _) => Dispatcher.Invoke(quickWindow.ShowFromHotkey);
+        var registered = hotkeyService.Register(settings.QuickSearchHotkey);
+        if (!registered)
+        {
+            _host.Services.GetRequiredService<StatusBarViewModel>().Text =
+                $"Quick Search hotkey could not be registered: {hotkeyService.LastError}";
+        }
+    }
+
     internal void RequestExit()
     {
         _explicitExitRequested = true;
@@ -170,25 +191,6 @@ public partial class App : System.Windows.Application
     {
         await backgroundIndexer.EnsureRunningAsync(CancellationToken.None).ConfigureAwait(true);
         _backgroundWorkerHandoffRequested = true;
-        RequestExit();
-    }
-
-    private async Task HandoffToBackgroundWorkerAndExitAsync(MainWindow window, MainViewModel viewModel)
-    {
-        if (_backgroundWorkerHandoffRequested)
-            return;
-
-        _backgroundWorkerHandoffRequested = true;
-        var backgroundIndexer = _host?.Services.GetRequiredService<IBackgroundIndexerProcessService>();
-        if (backgroundIndexer is null ||
-            !await backgroundIndexer.EnsureRunningAsync(CancellationToken.None).ConfigureAwait(true))
-        {
-            _backgroundWorkerHandoffRequested = false;
-            window.Show();
-            viewModel.Status.Text = "Couldn't start the background indexer.";
-            return;
-        }
-
         RequestExit();
     }
 
@@ -213,6 +215,12 @@ public partial class App : System.Windows.Application
             window.WindowState = WindowState.Normal;
 
         window.Activate();
+    }
+
+    private static void HideMainWindowForTray(Window window, MainViewModel viewModel)
+    {
+        window.Hide();
+        viewModel.Status.Text = "FileSearch is still running in the tray. Quick Search remains available.";
     }
 
     private static Icon LoadTrayIconImage()

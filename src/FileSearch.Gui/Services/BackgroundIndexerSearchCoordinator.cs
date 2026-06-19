@@ -60,6 +60,5 @@ public sealed class BackgroundIndexerSearchCoordinator : IIndexingSearchCoordina
     }
 
     private bool UseBackgroundIndexer =>
-        _settingsService.Current.KeepIndexUpdatedAfterClose ||
         _settingsService.Current.StartBackgroundIndexerAtSignIn;
 }

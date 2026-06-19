@@ -69,31 +69,19 @@ public sealed class IndexedSearcher : ISearcher
                 yield break;
             }
 
-            if (HasQueuedWorkForRequestRoot(request, indexingStatus))
+            if (request.Roots.Count > 1)
             {
-                request.Status?.Invoke("Index has pending updates; using live scan");
-                await foreach (var hit in _liveSearcher.SearchAsync(request with { UseIndex = false }, cancellationToken).ConfigureAwait(false))
-                    yield return hit;
+                foreach (var root in request.Roots)
+                {
+                    var rootRequest = request with { Roots = new[] { root } };
+                    await foreach (var hit in SearchSingleRootAsync(rootRequest, indexingStatus, cancellationToken).ConfigureAwait(false))
+                        yield return hit;
+                }
+
                 yield break;
             }
 
-            var coverage = await _coverageService.GetCoverageAsync(request, cancellationToken).ConfigureAwait(false);
-            if (!coverage.IsCovered)
-            {
-                // One queued root refresh brings the index up to date; it
-                // re-walks the tree and diffs by size/mtime, so feeding it
-                // per-file candidates from the live scan would only duplicate
-                // that work (and hammer the database with per-file writes).
-                request.Status?.Invoke($"{coverage.Message}; using live scan; indexing scheduled");
-                QueueRootRefresh(request);
-
-                await foreach (var hit in _liveSearcher.SearchAsync(request with { UseIndex = false }, cancellationToken).ConfigureAwait(false))
-                    yield return hit;
-                yield break;
-            }
-
-            request.Status?.Invoke(coverage.Message);
-            await foreach (var hit in _index.SearchAsync(request, cancellationToken).ConfigureAwait(false))
+            await foreach (var hit in SearchSingleRootAsync(request, indexingStatus, cancellationToken).ConfigureAwait(false))
                 yield return hit;
         }
         finally
@@ -101,6 +89,46 @@ public sealed class IndexedSearcher : ISearcher
             if (_indexingCoordinator is not null)
                 await _indexingCoordinator.SetForegroundSearchActiveAsync(false, CancellationToken.None).ConfigureAwait(false);
         }
+    }
+
+    private async IAsyncEnumerable<Hit> SearchSingleRootAsync(
+        SearchRequest request,
+        IndexingStatus? indexingStatus,
+        [EnumeratorCancellation] CancellationToken cancellationToken)
+    {
+        if (request.Roots.Count != 1)
+        {
+            await foreach (var hit in _liveSearcher.SearchAsync(request with { UseIndex = false }, cancellationToken).ConfigureAwait(false))
+                yield return hit;
+            yield break;
+        }
+
+        if (HasQueuedWorkForRequestRoot(request, indexingStatus))
+        {
+            request.Status?.Invoke("Index has pending updates; using live scan");
+            await foreach (var hit in _liveSearcher.SearchAsync(request with { UseIndex = false }, cancellationToken).ConfigureAwait(false))
+                yield return hit;
+            yield break;
+        }
+
+        var coverage = await _coverageService.GetCoverageAsync(request, cancellationToken).ConfigureAwait(false);
+        if (!coverage.IsCovered)
+        {
+            // One queued root refresh brings the index up to date; it
+            // re-walks the tree and diffs by size/mtime, so feeding it
+            // per-file candidates from the live scan would only duplicate
+            // that work (and hammer the database with per-file writes).
+            request.Status?.Invoke($"{coverage.Message}; using live scan; indexing scheduled");
+            QueueRootRefresh(request);
+
+            await foreach (var hit in _liveSearcher.SearchAsync(request with { UseIndex = false }, cancellationToken).ConfigureAwait(false))
+                yield return hit;
+            yield break;
+        }
+
+        request.Status?.Invoke(coverage.Message);
+        await foreach (var hit in _index.SearchAsync(request, cancellationToken).ConfigureAwait(false))
+            yield return hit;
     }
 
     private bool HasQueuedWorkForRequestRoot(SearchRequest request, IndexingStatus? indexingStatus)

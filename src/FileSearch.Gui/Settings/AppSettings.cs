@@ -44,6 +44,22 @@ public sealed class AppSettings
 
     public bool UseIndex { get; set; }
 
+    public QuickSearchHotkey QuickSearchHotkey { get; set; } = QuickSearchHotkey.WinShiftF;
+
+    public QuickSearchScopeKind QuickSearchDefaultScope { get; set; } = QuickSearchScopeKind.AllIndexedLocations;
+
+    public QuickSearchScopeKind QuickSearchLastScope { get; set; } = QuickSearchScopeKind.AllIndexedLocations;
+
+    public bool QuickSearchRememberLastScope { get; set; } = true;
+
+    public bool QuickSearchIncludeContent { get; set; } = true;
+
+    public string QuickSearchFolderPath { get; set; } = string.Empty;
+
+    public List<string> QuickSearchSelectedIndexedRoots { get; set; } = new();
+
+    public List<string> QuickSearchPinnedPaths { get; set; } = new();
+
     public List<IndexedLocationSettings> IndexedLocations { get; set; } = new();
 
     public List<IndexFilterListSettings> IndexInclusionLists { get; set; } = new();

@@ -15,7 +15,7 @@ public sealed class BackgroundIndexerSearchCoordinatorTests
     public async Task IndexedSearcherUsesWorkerQueueStatusWhenBackgroundIndexerModeIsEnabled()
     {
         var settings = new FakeSettingsService();
-        settings.Current.KeepIndexUpdatedAfterClose = true;
+        settings.Current.StartBackgroundIndexerAtSignIn = true;
         var localIndexingService = new FakeIndexingService
         {
             CurrentStatus = new IndexingStatus(
@@ -59,7 +59,7 @@ public sealed class BackgroundIndexerSearchCoordinatorTests
     public async Task QueueRootRefreshUsesWorkerAndFallsBackToLocalWhenWorkerFails()
     {
         var settings = new FakeSettingsService();
-        settings.Current.KeepIndexUpdatedAfterClose = true;
+        settings.Current.StartBackgroundIndexerAtSignIn = true;
         var localIndexingService = new FakeIndexingService();
         var backgroundIndexer = new FakeBackgroundIndexerProcessService();
         var coordinator = new BackgroundIndexerSearchCoordinator(
@@ -83,6 +83,47 @@ public sealed class BackgroundIndexerSearchCoordinatorTests
             TestContext.Current.CancellationToken);
 
         Assert.Equal(2, backgroundIndexer.QueueRootRefreshCallCount);
+        Assert.Equal(1, localIndexingService.EnqueuedRootRefreshCount);
+    }
+
+    [Fact]
+    public async Task KeepResidentModeUsesLocalIndexer()
+    {
+        var settings = new FakeSettingsService();
+        settings.Current.KeepIndexUpdatedAfterClose = true;
+        var localIndexingService = new FakeIndexingService
+        {
+            CurrentStatus = new IndexingStatus(
+                IsRunning: true,
+                IsPaused: false,
+                IsProcessing: false,
+                QueueLength: 0,
+                Message: "local ready"),
+        };
+        var backgroundIndexer = new FakeBackgroundIndexerProcessService
+        {
+            Status = new IndexingStatus(
+                IsRunning: true,
+                IsPaused: false,
+                IsProcessing: false,
+                QueueLength: 0,
+                Message: "worker ready"),
+        };
+        var coordinator = new BackgroundIndexerSearchCoordinator(
+            localIndexingService,
+            backgroundIndexer,
+            settings);
+
+        var status = await coordinator.GetStatusAsync(TestContext.Current.CancellationToken);
+        await coordinator.EnqueueRootRefreshAsync(
+            s_root,
+            new WalkerOptions(),
+            IndexQueuePriority.Low,
+            TestContext.Current.CancellationToken);
+
+        Assert.Equal("local ready", status?.Message);
+        Assert.Equal(0, backgroundIndexer.GetStatusCallCount);
+        Assert.Equal(0, backgroundIndexer.QueueRootRefreshCallCount);
         Assert.Equal(1, localIndexingService.EnqueuedRootRefreshCount);
     }
 

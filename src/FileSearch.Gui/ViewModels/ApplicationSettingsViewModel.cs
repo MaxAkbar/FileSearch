@@ -23,10 +23,15 @@ public sealed partial class ApplicationSettingsViewModel : ObservableObject
     private readonly ISettingsService _settingsService;
     private readonly IStartupRegistrationService? _startupRegistration;
     private readonly IThemeService? _themeService;
+    private readonly IGlobalHotkeyService? _hotkeyService;
     private readonly StatusBarViewModel _status;
     private readonly bool _isInitialized;
     private int _sidebarPageSize;
     private IndexerResourceProfile _indexerResourceProfile;
+    private QuickSearchHotkeyOption _quickSearchHotkey;
+    private QuickSearchScopeOption _quickSearchDefaultScope;
+    private bool _quickSearchRememberLastScope;
+    private bool _quickSearchIncludeContent;
     private bool _keepIndexUpdatedAfterClose;
     private bool _startBackgroundIndexerAtSignIn;
     private bool _pauseIndexingOnBattery;
@@ -39,20 +44,29 @@ public sealed partial class ApplicationSettingsViewModel : ObservableObject
         ISettingsService settingsService,
         StatusBarViewModel status,
         IStartupRegistrationService? startupRegistration = null,
-        IThemeService? themeService = null)
+        IThemeService? themeService = null,
+        IGlobalHotkeyService? hotkeyService = null)
     {
         _settingsService = settingsService;
         _startupRegistration = startupRegistration;
         _themeService = themeService;
+        _hotkeyService = hotkeyService;
         _status = status;
         _sidebarPageSize = NormalizeSidebarPageSize(_settingsService.Current.SidebarPageSize);
         _indexerResourceProfile = NormalizeIndexerResourceProfile(_settingsService.Current.IndexerResourceProfile);
+        _quickSearchHotkey = QuickSearchHotkeyOptions.First(option =>
+            option.Value == NormalizeQuickSearchHotkey(_settingsService.Current.QuickSearchHotkey));
+        _quickSearchDefaultScope = QuickSearchScopeOptions.First(option =>
+            option.Value == NormalizeQuickSearchScope(_settingsService.Current.QuickSearchDefaultScope));
+        _quickSearchRememberLastScope = _settingsService.Current.QuickSearchRememberLastScope;
+        _quickSearchIncludeContent = _settingsService.Current.QuickSearchIncludeContent;
         _keepIndexUpdatedAfterClose = _settingsService.Current.KeepIndexUpdatedAfterClose;
         _startBackgroundIndexerAtSignIn = _settingsService.Current.StartBackgroundIndexerAtSignIn;
         _pauseIndexingOnBattery = _settingsService.Current.PauseIndexingOnBattery;
         _indexOnlyWhenIdle = _settingsService.Current.IndexOnlyWhenIdle;
         _indexerCpuLimitPercent = NormalizeCpuLimit(_settingsService.Current.IndexerCpuLimitPercent);
         _indexerDiskPauseMilliseconds = NormalizeDiskPause(_settingsService.Current.IndexerDiskPauseMilliseconds);
+        RefreshQuickIndexedLocationSelectionsCore();
         RefreshCustomThemesCore();
         _isInitialized = true;
     }
@@ -67,7 +81,24 @@ public sealed partial class ApplicationSettingsViewModel : ObservableObject
 
     public IReadOnlyList<int> IndexerDiskPauseOptions { get; } = [0, 5, 25, 100, 250];
 
+    public IReadOnlyList<QuickSearchHotkeyOption> QuickSearchHotkeyOptions { get; } =
+    [
+        new(FileSearch.Gui.Settings.QuickSearchHotkey.WinShiftF, "Win+Shift+F"),
+        new(FileSearch.Gui.Settings.QuickSearchHotkey.AltSpace, "Alt+Space"),
+        new(FileSearch.Gui.Settings.QuickSearchHotkey.CtrlSpace, "Ctrl+Space"),
+    ];
+
+    public IReadOnlyList<QuickSearchScopeOption> QuickSearchScopeOptions { get; } =
+    [
+        new(QuickSearchScopeKind.CurrentFolder, "Selected folder"),
+        new(QuickSearchScopeKind.SelectedIndexedLocations, "Selected indexed locations"),
+        new(QuickSearchScopeKind.AllIndexedLocations, "All indexed locations"),
+        new(QuickSearchScopeKind.EntireMachineMetadata, "Entire machine metadata"),
+    ];
+
     public ObservableCollection<CustomThemeInfo> CustomThemes { get; } = new();
+
+    public ObservableCollection<QuickIndexedLocationSelection> QuickIndexedLocationSelections { get; } = new();
 
     public string CustomThemeFolderPath => _themeService?.CustomThemeFolderPath ?? string.Empty;
 
@@ -128,6 +159,83 @@ public sealed partial class ApplicationSettingsViewModel : ObservableObject
 
     public string SidebarPageSizeSummary => $"{SidebarPageSize:n0} rows per sidebar section";
 
+    public QuickSearchHotkeyOption QuickSearchHotkey
+    {
+        get => _quickSearchHotkey;
+        set
+        {
+            if (value is null || !SetProperty(ref _quickSearchHotkey, value))
+                return;
+
+            OnPropertyChanged(nameof(QuickSearchHotkeySummary));
+
+            if (_isInitialized)
+            {
+                SaveSettings(updateStartupRegistration: false);
+                RegisterQuickSearchHotkey();
+            }
+        }
+    }
+
+    public string QuickSearchHotkeySummary => $"Opens Quick Search with {QuickSearchHotkey.DisplayName}";
+
+    public QuickSearchScopeOption QuickSearchDefaultScope
+    {
+        get => _quickSearchDefaultScope;
+        set
+        {
+            if (value is null || !SetProperty(ref _quickSearchDefaultScope, value))
+                return;
+
+            OnPropertyChanged(nameof(QuickSearchScopeSummary));
+
+            if (_isInitialized)
+                SaveSettings(updateStartupRegistration: false);
+        }
+    }
+
+    public bool QuickSearchRememberLastScope
+    {
+        get => _quickSearchRememberLastScope;
+        set
+        {
+            if (!SetProperty(ref _quickSearchRememberLastScope, value))
+                return;
+
+            OnPropertyChanged(nameof(QuickSearchScopeSummary));
+
+            if (_isInitialized)
+                SaveSettings(updateStartupRegistration: false);
+        }
+    }
+
+    public string QuickSearchScopeSummary =>
+        QuickSearchRememberLastScope
+            ? "Quick Search reopens with the last scope you used"
+            : $"Quick Search starts in {QuickSearchDefaultScope.DisplayName}";
+
+    public bool QuickSearchIncludeContent
+    {
+        get => _quickSearchIncludeContent;
+        set
+        {
+            if (!SetProperty(ref _quickSearchIncludeContent, value))
+                return;
+
+            OnPropertyChanged(nameof(QuickSearchContentSummary));
+
+            if (_isInitialized)
+                SaveSettings(updateStartupRegistration: false);
+        }
+    }
+
+    public string QuickSearchContentSummary =>
+        QuickSearchIncludeContent
+            ? "Quick Search includes indexed content matches after filename and path matches"
+            : "Quick Search only searches file names and paths";
+
+    public bool HasQuickIndexedLocations => QuickIndexedLocationSelections.Count > 0;
+
     public IndexerResourceProfile IndexerResourceProfile
     {
         get => _indexerResourceProfile;
@@ -169,7 +277,7 @@ public sealed partial class ApplicationSettingsViewModel : ObservableObject
 
     public string KeepIndexUpdatedAfterCloseSummary =>
         KeepIndexUpdatedAfterClose
-            ? "Closing the search window hands indexing to the background worker"
+            ? "Closing the search window keeps FileSearch running in the tray"
             : "Closing the search window stops background indexing";
 
     public bool StartBackgroundIndexerAtSignIn
@@ -282,6 +390,15 @@ public sealed partial class ApplicationSettingsViewModel : ObservableObject
     }
 
     [RelayCommand]
+    private void RefreshQuickIndexedLocations()
+    {
+        RefreshQuickIndexedLocationSelectionsCore();
+        _status.Text = HasQuickIndexedLocations
+            ? $"Loaded {QuickIndexedLocationSelections.Count:n0} indexed locations for Quick Search."
+            : "No indexed locations configured.";
+    }
+
+    [RelayCommand]
     private void RefreshCustomThemes()
     {
         RefreshCustomThemesCore();
@@ -307,6 +424,14 @@ public sealed partial class ApplicationSettingsViewModel : ObservableObject
         {
             settings.SidebarPageSize = SidebarPageSize;
             settings.IndexerResourceProfile = IndexerResourceProfile;
+            settings.QuickSearchHotkey = QuickSearchHotkey.Value;
+            settings.QuickSearchDefaultScope = QuickSearchDefaultScope.Value;
+            settings.QuickSearchRememberLastScope = QuickSearchRememberLastScope;
+            settings.QuickSearchIncludeContent = QuickSearchIncludeContent;
+            settings.QuickSearchSelectedIndexedRoots = QuickIndexedLocationSelections
+                .Where(location => location.IsSelected)
+                .Select(location => location.Root)
+                .ToList();
             settings.KeepIndexUpdatedAfterClose = KeepIndexUpdatedAfterClose;
             settings.StartBackgroundIndexerAtSignIn = StartBackgroundIndexerAtSignIn;
             settings.PauseIndexingOnBattery = PauseIndexingOnBattery;
@@ -346,6 +471,12 @@ public sealed partial class ApplicationSettingsViewModel : ObservableObject
     private static IndexerResourceProfile NormalizeIndexerResourceProfile(IndexerResourceProfile profile) =>
         Enum.IsDefined(profile) ? profile : IndexerResourceProfile.Balanced;
 
+    private static QuickSearchHotkey NormalizeQuickSearchHotkey(QuickSearchHotkey hotkey) =>
+        Enum.IsDefined(hotkey) ? hotkey : FileSearch.Gui.Settings.QuickSearchHotkey.WinShiftF;
+
+    private static QuickSearchScopeKind NormalizeQuickSearchScope(QuickSearchScopeKind scope) =>
+        Enum.IsDefined(scope) ? scope : QuickSearchScopeKind.AllIndexedLocations;
+
     private static int NormalizeCpuLimit(int value) =>
         value is <= 0 or >= 100 ? 0 : Math.Clamp(value, 1, 99);
 
@@ -369,5 +500,78 @@ public sealed partial class ApplicationSettingsViewModel : ObservableObject
         OnPropertyChanged(nameof(CustomThemeSummary));
         OnPropertyChanged(nameof(HasCustomThemes));
         OnPropertyChanged(nameof(CustomThemeFolderPath));
+    }
+
+    private void RefreshQuickIndexedLocationSelectionsCore()
+    {
+        var selected = _settingsService.Current.QuickSearchSelectedIndexedRoots
+            .ToHashSet(StringComparer.OrdinalIgnoreCase);
+        QuickIndexedLocationSelections.Clear();
+        foreach (var location in _settingsService.Current.IndexedLocations)
+        {
+            if (string.IsNullOrWhiteSpace(location.Root))
+                continue;
+
+            var row = new QuickIndexedLocationSelection(
+                location.DisplayName,
+                location.Root,
+                selected.Count == 0 || selected.Contains(location.Root),
+                SaveQuickIndexedLocationSelections);
+            QuickIndexedLocationSelections.Add(row);
+        }
+
+        OnPropertyChanged(nameof(HasQuickIndexedLocations));
+    }
+
+    private void SaveQuickIndexedLocationSelections()
+    {
+        if (_isInitialized)
+            SaveSettings(updateStartupRegistration: false);
+    }
+
+    private void RegisterQuickSearchHotkey()
+    {
+        if (_hotkeyService is null)
+            return;
+
+        if (_hotkeyService.Register(QuickSearchHotkey.Value))
+            _status.Text = $"Quick Search hotkey set to {QuickSearchHotkey.DisplayName}.";
+        else
+            _status.Text = $"Quick Search hotkey could not be registered: {_hotkeyService.LastError}";
+    }
+}
+
+public sealed record QuickSearchHotkeyOption(QuickSearchHotkey Value, string DisplayName)
+{
+    public override string ToString() => DisplayName;
+}
+
+public sealed class QuickIndexedLocationSelection : ObservableObject
+{
+    private readonly Action _changed;
+    private bool _isSelected;
+
+    public QuickIndexedLocationSelection(string displayName, string root, bool isSelected, Action changed)
+    {
+        DisplayName = displayName;
+        Root = root;
+        _isSelected = isSelected;
+        _changed = changed;
+    }
+
+    public string DisplayName { get; }
+
+    public string Root { get; }
+
+    public string Summary => Root;
+
+    public bool IsSelected
+    {
+        get => _isSelected;
+        set
+        {
+            if (SetProperty(ref _isSelected, value))
+                _changed();
+        }
     }
 }

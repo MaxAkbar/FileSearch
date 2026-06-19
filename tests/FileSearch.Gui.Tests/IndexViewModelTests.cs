@@ -307,7 +307,7 @@ public sealed class IndexViewModelTests
         var (_, index) = Build(
             indexingService: indexingService,
             backgroundIndexer: backgroundIndexer,
-            configureSettings: settings => settings.KeepIndexUpdatedAfterClose = true);
+            configureSettings: settings => settings.StartBackgroundIndexerAtSignIn = true);
 
         try
         {
@@ -509,7 +509,7 @@ public sealed class IndexViewModelTests
         var (_, index) = Build(
             fileIndex,
             backgroundIndexer: backgroundIndexer,
-            configureSettings: settings => settings.KeepIndexUpdatedAfterClose = true);
+            configureSettings: settings => settings.StartBackgroundIndexerAtSignIn = true);
 
         await index.StartBackgroundIndexingAsync();
         await index.CompactIndexDatabaseCommand.ExecuteAsync(null);
@@ -529,7 +529,7 @@ public sealed class IndexViewModelTests
             backgroundIndexer: backgroundIndexer,
             configureSettings: settings =>
             {
-                settings.KeepIndexUpdatedAfterClose = true;
+                settings.StartBackgroundIndexerAtSignIn = true;
                 settings.IndexedLocations.Add(new() { Root = root });
             });
         index.SelectedIndexedLocation = Assert.Single(index.IndexedLocations);

@@ -20,6 +20,7 @@
             <nav class="nav">
                 <a href="index.html">Overview</a>
                 <a href="search.html">Run a Search</a>
+                <a href="quick-search.html">Quick Search</a>
                 <a href="query-syntax.html">Query Syntax</a>
                 <a href="results.html">Results and Preview</a>
                 <a href="indexing.html">Indexed Search</a>
@@ -106,11 +107,20 @@
             <p>The <strong>Use index</strong> checkbox next to the search controls lets covered searches read from the local file index instead of rescanning files; live scan remains the fallback when a search is not covered. Indexed locations, background indexing, pause/resume, health, and status badges are described on the <a href="indexing.html">Indexed Search</a> page.</p>
 
             <h2>Background Indexer</h2>
-            <p>Use <strong>File &gt; Settings</strong> to control whether indexing continues after the search window closes and whether the tray indexer starts when Windows starts.</p>
+            <p>Use <strong>File &gt; Settings</strong> to control whether FileSearch stays resident after the search window closes and whether the tray indexer starts when Windows starts.</p>
             <ul class="plain-list">
-                <li><strong>Keep index updated after closing window</strong> hands indexing to the per-user tray indexer when the main window closes.</li>
+                <li><strong>Keep index updated after closing window</strong> hides the main window and keeps FileSearch running in the tray, so indexing and Quick Search stay available.</li>
                 <li><strong>Start background indexer when Windows starts</strong> starts the tray indexer after user sign-in. This is not a Windows Service.</li>
                 <li><strong>Pause indexing on battery</strong>, <strong>Indexer resource use</strong>, <strong>CPU limit</strong>, and <strong>Disk pause</strong> reduce background indexing impact.</li>
+            </ul>
+
+            <h2>Quick Search Settings</h2>
+            <p>Use <strong>File &gt; Settings &gt; Quick Search</strong> to choose the global hotkey, default scope, whether the last scope is remembered, and which indexed roots are included by the <strong>Selected indexed locations</strong> scope.</p>
+            <ul class="plain-list">
+                <li><strong>Global hotkey</strong> can be <kbd>Win</kbd>+<kbd>Shift</kbd>+<kbd>F</kbd>, <kbd>Alt</kbd>+<kbd>Space</kbd>, or <kbd>Ctrl</kbd>+<kbd>Space</kbd>.</li>
+                <li><strong>Default scope</strong> is used when remembering the last Quick Search scope is off.</li>
+                <li><strong>Include indexed content</strong> controls whether Quick Search adds indexed file-content matches after filename and path matches.</li>
+                <li><strong>Selected indexed locations</strong> controls which roots are searched by that quick scope.</li>
             </ul>
 
             <h2>Themes</h2>
@@ -120,6 +130,7 @@
             <p>Use <strong>File &gt; Install Windows integration</strong> to add FileSearch to the Windows folder context menu and Start menu. Use <strong>Remove Windows integration</strong> to remove those registrations.</p>
 
             <div class="next-links">
+                <a href="quick-search.html">Quick Search</a>
                 <a href="query-syntax.html">Query Syntax</a>
                 <a href="results.html">Results and Preview</a>
                 <a href="troubleshooting.html">Troubleshooting</a>

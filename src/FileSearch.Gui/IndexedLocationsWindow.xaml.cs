@@ -28,6 +28,17 @@ public partial class IndexedLocationsWindow : Window
             await viewModel.Index.AddFolderToIndexAsync(dialog.FolderName).ConfigureAwait(true);
     }
 
+    private void OnConfigureAddOptionsClick(object sender, RoutedEventArgs e)
+    {
+        var window = new IndexAddOptionsWindow
+        {
+            Owner = this,
+            DataContext = DataContext,
+        };
+
+        window.ShowDialog();
+    }
+
     private void OnCloseClick(object sender, RoutedEventArgs e)
     {
         Close();

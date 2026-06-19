@@ -1,0 +1,145 @@
+<!doctype html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Quick Search - FileSearch Help</title>
+    <link rel="stylesheet" href="css/help.css">
+</head>
+<body>
+    <div class="shell">
+        <aside class="sidebar">
+            <a class="brand" href="index.html" aria-label="FileSearch help home">
+                <img src="../Assets/FileSearch-256.png" alt="">
+                <span>
+                    <span class="brand-title">FileSearch</span>
+                    <span class="brand-subtitle">User help</span>
+                </span>
+            </a>
+            <div class="nav-heading">Using FileSearch</div>
+            <nav class="nav">
+                <a href="index.html">Overview</a>
+                <a href="search.html">Run a Search</a>
+                <a class="active" href="quick-search.html">Quick Search</a>
+                <a href="query-syntax.html">Query Syntax</a>
+                <a href="results.html">Results and Preview</a>
+                <a href="indexing.html">Indexed Search</a>
+                <a href="workflows.html">Workflows</a>
+                <a href="options.html">Options</a>
+                <a href="troubleshooting.html">Troubleshooting</a>
+            </nav>
+        </aside>
+
+        <main class="content">
+            <section class="hero">
+                <div class="eyebrow">Quick Search</div>
+                <h1>Search from anywhere.</h1>
+                <p class="lead">Quick Search is a small launcher-style window for everyday lookups. It opens over your current work, focuses the search box, streams results as you type, and closes after you act on a result.</p>
+            </section>
+
+            <h2>Open Quick Search</h2>
+            <p>FileSearch must be running for the global hotkey to work. If <strong>Keep index updated after closing window</strong> is enabled, closing the main window keeps FileSearch in the tray and the hotkey remains available. The default hotkey is <kbd>Win</kbd>+<kbd>Shift</kbd>+<kbd>F</kbd>.</p>
+            <div class="table-wrap">
+                <table>
+                    <thead>
+                        <tr>
+                            <th>Hotkey</th>
+                            <th>Notes</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <tr>
+                            <td><kbd>Win</kbd>+<kbd>Shift</kbd>+<kbd>F</kbd></td>
+                            <td>Default Quick Search shortcut.</td>
+                        </tr>
+                        <tr>
+                            <td><kbd>Alt</kbd>+<kbd>Space</kbd></td>
+                            <td>Optional shortcut. Windows or another app may already use it.</td>
+                        </tr>
+                        <tr>
+                            <td><kbd>Ctrl</kbd>+<kbd>Space</kbd></td>
+                            <td>Optional shortcut. Some editors and input tools may already use it.</td>
+                        </tr>
+                    </tbody>
+                </table>
+            </div>
+            <p>Change the hotkey in <strong>File &gt; Settings &gt; Quick Search</strong>. If a shortcut is already reserved by Windows or another app, FileSearch reports that it could not register the hotkey. You can also open Quick Search from the FileSearch tray menu.</p>
+
+            <h2>Search Names or Content</h2>
+            <p>Quick Search always starts with fast filename and path matches. Turn on <strong>Content</strong> in the quick window to add indexed file-content matches after those instant results.</p>
+            <ul class="plain-list">
+                <li><strong>Content on</strong> searches file names, paths, and indexed text for the selected scope.</li>
+                <li><strong>Content off</strong> searches only file names and paths, which is useful for launcher-style lookup.</li>
+                <li>The <strong>Entire machine metadata</strong> scope is metadata-only, so content search is available on indexed scopes.</li>
+            </ul>
+
+            <h2>Choose a Scope</h2>
+            <p>The scope dropdown controls where Quick Search looks. Use indexed scopes for the fastest daily-driver searches.</p>
+            <div class="table-wrap">
+                <table>
+                    <thead>
+                        <tr>
+                            <th>Scope</th>
+                            <th>What it searches</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <tr>
+                            <td><strong>Selected folder</strong></td>
+                            <td>The folder shown in the Quick Search folder field. Use the folder button to change it before searching.</td>
+                        </tr>
+                        <tr>
+                            <td><strong>Selected indexed locations</strong></td>
+                            <td>The indexed roots checked in <strong>File &gt; Settings &gt; Quick Search</strong>. If none are selected, all configured indexed locations are used.</td>
+                        </tr>
+                        <tr>
+                            <td><strong>All indexed locations</strong></td>
+                            <td>Every indexed root configured in <strong>Index &gt; Manage indexed locations</strong>.</td>
+                        </tr>
+                        <tr>
+                            <td><strong>Entire machine metadata</strong></td>
+                            <td>Filename and path matches across ready fixed drives. This is a bounded metadata search, not a full content scan.</td>
+                        </tr>
+                    </tbody>
+                </table>
+            </div>
+
+            <h2>Use the Results</h2>
+            <p>Results appear in stages. Filename and path matches are shown first; indexed content matches are added as the index query returns. The quick window keeps the list bounded so broad searches stay responsive.</p>
+            <ul class="plain-list">
+                <li><kbd>Down</kbd> moves from the search box into the results list.</li>
+                <li><kbd>Enter</kbd> opens the selected result.</li>
+                <li><kbd>Esc</kbd> closes the quick window.</li>
+                <li><kbd>Ctrl</kbd>+<kbd>R</kbd> reveals the selected result in Explorer.</li>
+                <li><kbd>Ctrl</kbd>+<kbd>C</kbd> copies the selected result path when the search box is not focused.</li>
+                <li><kbd>Ctrl</kbd>+<kbd>P</kbd> pins the selected result.</li>
+                <li><kbd>F4</kbd> or <kbd>Ctrl</kbd>+<kbd>I</kbd> loads an inline preview.</li>
+            </ul>
+
+            <h2>Actions</h2>
+            <p>Each result row has buttons for common actions:</p>
+            <ul class="plain-list">
+                <li><strong>Open</strong> opens the file in its default app and closes Quick Search.</li>
+                <li><strong>Reveal</strong> opens Explorer with the file selected and closes Quick Search.</li>
+                <li><strong>Copy path</strong> copies the full path and closes Quick Search.</li>
+                <li><strong>Pin</strong> saves the result to the top of the quick window's pinned list and closes Quick Search.</li>
+                <li>Dragging a result out of the window starts a standard Windows file drag-and-drop operation.</li>
+            </ul>
+
+            <h2>Pinned Results and Preview</h2>
+            <p>When the search box is empty, Quick Search shows pinned results. Pin frequently used files if you want them available before typing a query.</p>
+            <p>Preview is loaded on demand so opening the quick window stays fast. For content hits, preview shows matching lines with nearby context. For filename-only matches, preview may be empty if no content hit lines are available.</p>
+
+            <div class="callout">
+                Use the full FileSearch window for deep search setup, index management, detailed previews, workflows, and reports. Quick Search is optimized for fast lookup and action.
+            </div>
+
+            <div class="next-links">
+                <a href="indexing.html">Indexed Search</a>
+                <a href="results.html">Results and Preview</a>
+                <a href="options.html">Options</a>
+            </div>
+        </main>
+    </div>
+</body>
+</html>

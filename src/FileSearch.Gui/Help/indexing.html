@@ -20,6 +20,7 @@
             <nav class="nav">
                 <a href="index.html">Overview</a>
                 <a href="search.html">Run a Search</a>
+                <a href="quick-search.html">Quick Search</a>
                 <a href="query-syntax.html">Query Syntax</a>
                 <a href="results.html">Results and Preview</a>
                 <a class="active" href="indexing.html">Indexed Search</a>
@@ -39,7 +40,7 @@
             <h2>How It Works</h2>
             <ul class="plain-list">
                 <li>You choose folders to index, called <strong>indexed locations</strong>. FileSearch scans them in the background and stores their text in a local database.</li>
-                <li>The visible GUI owns indexing while it is open. If background mode is enabled, closing the window hands indexing to the per-user tray indexer.</li>
+                <li>When <strong>Keep index updated after closing window</strong> is enabled, closing the main window hides FileSearch to the tray so indexing and Quick Search remain available.</li>
                 <li>A file watcher batches changes inside indexed locations while either the GUI or tray indexer is running. Local NTFS roots can also catch up from USN journal checkpoints after FileSearch restarts.</li>
                 <li>A search uses the index only when it is <strong>covered</strong>: the <strong>Look in</strong> folder falls inside an indexed location and the current options match what was indexed. When a search is not covered, FileSearch automatically falls back to a normal live scan.</li>
             </ul>
@@ -89,7 +90,7 @@
                         </tr>
                         <tr>
                             <td><strong>Keep index updated after closing window</strong></td>
-                            <td>Starts or keeps the tray indexer running when the search window closes.</td>
+                            <td>Hides the main window and keeps FileSearch running in the tray when the search window closes.</td>
                         </tr>
                         <tr>
                             <td><strong>Start background indexer when Windows starts</strong></td>

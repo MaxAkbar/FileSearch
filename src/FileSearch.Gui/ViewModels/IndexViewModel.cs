@@ -727,8 +727,7 @@ public sealed partial class IndexViewModel : ObservableObject, IDisposable
 
     private bool UseBackgroundIndexerMode =>
         _backgroundIndexer is not null &&
-        (_applicationSettings.KeepIndexUpdatedAfterClose ||
-         _applicationSettings.StartBackgroundIndexerAtSignIn);
+        _applicationSettings.StartBackgroundIndexerAtSignIn;
 
     private bool UseActiveBackgroundIndexer =>
         _usingBackgroundIndexer && _backgroundIndexer is not null;

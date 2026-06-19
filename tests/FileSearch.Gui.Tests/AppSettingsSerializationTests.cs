@@ -30,6 +30,8 @@ public sealed class AppSettingsSerializationTests
             IndexOnlyWhenIdle = true,
             IndexerCpuLimitPercent = 25,
             IndexerDiskPauseMilliseconds = 100,
+            QuickSearchIncludeContent = false,
+            QuickSearchFolderPath = @"C:\Quick",
             SavedSearches =
             [
                 new()
@@ -126,6 +128,8 @@ public sealed class AppSettingsSerializationTests
         Assert.True(loaded.IndexOnlyWhenIdle);
         Assert.Equal(25, loaded.IndexerCpuLimitPercent);
         Assert.Equal(100, loaded.IndexerDiskPauseMilliseconds);
+        Assert.False(loaded.QuickSearchIncludeContent);
+        Assert.Equal(@"C:\Quick", loaded.QuickSearchFolderPath);
         Assert.Null(loaded.RunInBackground);
 
         var savedSearch = Assert.Single(loaded.SavedSearches);

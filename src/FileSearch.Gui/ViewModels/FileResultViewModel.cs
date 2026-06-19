@@ -58,6 +58,7 @@ public sealed partial class FileResultViewModel : ObservableObject
 
     [ObservableProperty] private int _hitCount;
     [ObservableProperty] private string _firstMatch = string.Empty;
+    [ObservableProperty] private bool _isPinned;
 
     /// <summary>
     /// Whether the card is showing every hit or just the first
@@ -77,6 +78,10 @@ public sealed partial class FileResultViewModel : ObservableObject
         IsExpanded
             ? "Show fewer"
             : $"+ {ExtraHitCount} more match{(ExtraHitCount == 1 ? string.Empty : "es")} in this file";
+
+    public string PinActionText => IsPinned ? "Unpin result" : "Pin result";
+
+    public string PinGlyph => IsPinned ? "\uE77A" : "\uE718";
 
     /// <summary>Human-readable file size, loaded lazily on first access.</summary>
     public string SizeText => _sizeText ??= ComputeSizeText();
@@ -104,6 +109,12 @@ public sealed partial class FileResultViewModel : ObservableObject
     {
         OnPropertyChanged(nameof(VisibleHits));
         OnPropertyChanged(nameof(MoreText));
+    }
+
+    partial void OnIsPinnedChanged(bool value)
+    {
+        OnPropertyChanged(nameof(PinActionText));
+        OnPropertyChanged(nameof(PinGlyph));
     }
 
     // ----- row-level commands -----

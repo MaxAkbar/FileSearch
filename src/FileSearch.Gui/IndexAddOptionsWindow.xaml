@@ -1,0 +1,171 @@
+<Window x:Class="FileSearch.Gui.IndexAddOptionsWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:ui="http://schemas.modernwpf.com/2019"
+        ui:WindowHelper.UseModernWindowStyle="True"
+        Icon="Assets/FileSearch.ico"
+        Background="{DynamicResource Atlas.PaperBrush}"
+        Foreground="{DynamicResource Atlas.InkBrush}"
+        FontFamily="{DynamicResource Atlas.SansFont}"
+        TextOptions.TextFormattingMode="Display"
+        TextOptions.TextRenderingMode="ClearType"
+        Title="Index Add Options"
+        Width="560"
+        Height="640"
+        MinWidth="520"
+        MinHeight="460"
+        ResizeMode="CanResize"
+        WindowStartupLocation="CenterOwner">
+
+    <DockPanel Style="{StaticResource AppRootStyle}">
+        <Border DockPanel.Dock="Top"
+                Background="{DynamicResource Atlas.PaperBrush}"
+                BorderBrush="{DynamicResource Atlas.LineBrush}"
+                BorderThickness="0,0,0,1"
+                Padding="18,11">
+            <StackPanel>
+                <TextBlock Text="Index add options" Style="{StaticResource CtxTitleStyle}"/>
+                <TextBlock Text="These settings apply when you add the current folder or choose a folder to index."
+                           Style="{StaticResource MutedValueStyle}"
+                           Margin="0,3,0,0"/>
+            </StackPanel>
+        </Border>
+
+        <Grid Margin="20">
+            <Grid.RowDefinitions>
+                <RowDefinition Height="*"/>
+                <RowDefinition Height="Auto"/>
+            </Grid.RowDefinitions>
+
+            <ScrollViewer VerticalScrollBarVisibility="Auto"
+                          HorizontalScrollBarVisibility="Disabled">
+                <Border Background="{DynamicResource Atlas.SurfaceBrush}"
+                        BorderBrush="{DynamicResource Atlas.LineBrush}"
+                        BorderThickness="1"
+                        CornerRadius="8"
+                        Padding="18"
+                        Margin="0,0,8,0">
+                    <StackPanel>
+                        <TextBlock Text="COVERAGE" Style="{StaticResource SectionHeaderStyle}"/>
+                        <UniformGrid Columns="2" Margin="0,0,0,18">
+                            <CheckBox Content="Subfolders"
+                                      IsChecked="{Binding Index.NewIndexRecursive}"
+                                      Margin="0,0,12,8"/>
+                            <CheckBox Content="Hidden files"
+                                      IsChecked="{Binding Index.NewIndexIncludeHidden}"
+                                      Margin="0,0,0,8"/>
+                            <CheckBox Content="Documents"
+                                      IsChecked="{Binding Index.NewIndexEnableDocumentExtraction}"
+                                      Margin="0,0,12,0"/>
+                            <CheckBox Content="Known types only"
+                                      IsChecked="{Binding Index.NewIndexSkipUnknownFileTypes}"
+                                      Margin="0"/>
+                        </UniformGrid>
+
+                        <Border Height="1"
+                                Background="{DynamicResource Atlas.LineBrush}"
+                                Margin="0,0,0,18"/>
+
+                        <TextBlock Text="INCLUDE LIST" Style="{StaticResource SectionHeaderStyle}"/>
+                        <ComboBox ItemsSource="{Binding Index.IndexInclusionLists}"
+                                  SelectedItem="{Binding Index.SelectedIndexInclusionList, Mode=TwoWay}"
+                                  DisplayMemberPath="Name"
+                                  Margin="0,0,0,8"/>
+                        <TextBox Text="{Binding Index.NewIndexInclusionListName, UpdateSourceTrigger=PropertyChanged}"
+                                 ui:ControlHelper.PlaceholderText="Include list name"
+                                 Margin="0,0,0,6"/>
+                        <TextBox Text="{Binding Index.NewIndexIncludedExtensions, UpdateSourceTrigger=PropertyChanged}"
+                                 ui:ControlHelper.PlaceholderText="Included extensions"
+                                 ToolTip="Example: .cs; .md"
+                                 Margin="0,0,0,6"/>
+                        <TextBox Text="{Binding Index.NewIndexIncludedFolders, UpdateSourceTrigger=PropertyChanged}"
+                                 ui:ControlHelper.PlaceholderText="Included folders"
+                                 ToolTip="Example: src; tests"
+                                 Margin="0,0,0,8"/>
+                        <WrapPanel Margin="0,0,0,18">
+                            <Button Command="{Binding Index.SaveNewIndexInclusionListCommand}"
+                                    Style="{StaticResource SecondaryButtonStyle}"
+                                    Height="32"
+                                    MinWidth="110"
+                                    Margin="0,0,8,0">
+                                <StackPanel Orientation="Horizontal">
+                                    <ui:FontIcon Glyph="&#xE74E;" FontSize="12" Margin="0,0,6,0"/>
+                                    <TextBlock Text="Save include"/>
+                                </StackPanel>
+                            </Button>
+                            <Button Command="{Binding Index.RemoveSelectedIndexInclusionListCommand}"
+                                    Style="{StaticResource SecondaryButtonStyle}"
+                                    Height="32"
+                                    MinWidth="86">
+                                <StackPanel Orientation="Horizontal">
+                                    <ui:FontIcon Glyph="&#xE74D;" FontSize="12" Margin="0,0,6,0"/>
+                                    <TextBlock Text="Remove"/>
+                                </StackPanel>
+                            </Button>
+                        </WrapPanel>
+
+                        <Border Height="1"
+                                Background="{DynamicResource Atlas.LineBrush}"
+                                Margin="0,0,0,18"/>
+
+                        <TextBlock Text="EXCLUDE LIST" Style="{StaticResource SectionHeaderStyle}"/>
+                        <ComboBox ItemsSource="{Binding Index.IndexExclusionLists}"
+                                  SelectedItem="{Binding Index.SelectedIndexExclusionList, Mode=TwoWay}"
+                                  DisplayMemberPath="Name"
+                                  Margin="0,0,0,8"/>
+                        <TextBox Text="{Binding Index.NewIndexExclusionListName, UpdateSourceTrigger=PropertyChanged}"
+                                 ui:ControlHelper.PlaceholderText="Exclude list name"
+                                 Margin="0,0,0,6"/>
+                        <TextBox Text="{Binding Index.NewIndexExcludedExtensions, UpdateSourceTrigger=PropertyChanged}"
+                                 ui:ControlHelper.PlaceholderText="Excluded extensions"
+                                 ToolTip="Example: .dll; .exe; .pdb"
+                                 Margin="0,0,0,6"/>
+                        <TextBox Text="{Binding Index.NewIndexExcludedFolders, UpdateSourceTrigger=PropertyChanged}"
+                                 ui:ControlHelper.PlaceholderText="Excluded folders"
+                                 ToolTip="Example: bin; obj"
+                                 Margin="0,0,0,8"/>
+                        <WrapPanel>
+                            <Button Command="{Binding Index.SaveNewIndexExclusionListCommand}"
+                                    Style="{StaticResource SecondaryButtonStyle}"
+                                    Height="32"
+                                    MinWidth="110"
+                                    Margin="0,0,8,0">
+                                <StackPanel Orientation="Horizontal">
+                                    <ui:FontIcon Glyph="&#xE74E;" FontSize="12" Margin="0,0,6,0"/>
+                                    <TextBlock Text="Save exclude"/>
+                                </StackPanel>
+                            </Button>
+                            <Button Command="{Binding Index.RemoveSelectedIndexExclusionListCommand}"
+                                    Style="{StaticResource SecondaryButtonStyle}"
+                                    Height="32"
+                                    MinWidth="86">
+                                <StackPanel Orientation="Horizontal">
+                                    <ui:FontIcon Glyph="&#xE74D;" FontSize="12" Margin="0,0,6,0"/>
+                                    <TextBlock Text="Remove"/>
+                                </StackPanel>
+                            </Button>
+                        </WrapPanel>
+                    </StackPanel>
+                </Border>
+            </ScrollViewer>
+
+            <StackPanel Grid.Row="1"
+                        Orientation="Horizontal"
+                        HorizontalAlignment="Right"
+                        Margin="0,16,0,0">
+                <Button Click="OnCloseClick"
+                        IsDefault="True"
+                        IsCancel="True"
+                        Style="{StaticResource PrimaryButtonStyle}"
+                        Height="34"
+                        MinWidth="92">
+                    <StackPanel Orientation="Horizontal">
+                        <ui:FontIcon Glyph="&#xE73E;" FontSize="13" Margin="0,0,7,0"/>
+                        <TextBlock Text="Done"/>
+                    </StackPanel>
+                </Button>
+            </StackPanel>
+        </Grid>
+    </DockPanel>
+</Window>
+

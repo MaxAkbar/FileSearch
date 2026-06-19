@@ -80,6 +80,27 @@ public sealed class IndexedSearcherTests
         Assert.False(index.SearchWasUsed);
     }
 
+    [Fact]
+    public async Task SplitsCoveredMultiRootRequestAcrossIndexedRoots()
+    {
+        var root1 = Path.Combine(Path.GetTempPath(), "filesearch-index-root-1");
+        var root2 = Path.Combine(Path.GetTempPath(), "filesearch-index-root-2");
+        var live = new StubSearcher("live.txt");
+        var index = new StubIndexSearch(covered: true, "indexed.txt");
+        var searcher = new IndexedSearcher(live, index, new IndexCoverageService(index));
+
+        var request = new SearchRequest(
+            new TermQuery("needle"),
+            new[] { root1, root2 },
+            new WalkerOptions(),
+            UseIndex: true);
+        var hits = await CollectAsync(searcher, request);
+
+        Assert.Equal(2, hits.Count);
+        Assert.False(live.WasUsed);
+        Assert.Equal(new[] { root1, root2 }, index.SearchRoots);
+    }
+
     private static SearchRequest BuildRequest(bool useIndex) =>
         new(new TermQuery("needle"), new[] { s_root }, new WalkerOptions(), UseIndex: useIndex);
 
@@ -122,11 +143,14 @@ public sealed class IndexedSearcherTests
 
         public bool SearchWasUsed { get; private set; }
 
+        public List<string> SearchRoots { get; } = new();
+
         public async IAsyncEnumerable<Hit> SearchAsync(
             SearchRequest request,
             [EnumeratorCancellation] CancellationToken cancellationToken)
         {
             SearchWasUsed = true;
+            SearchRoots.Add(request.Roots[0]);
             await Task.CompletedTask;
             yield return new Hit(_path, 1, "needle", Array.Empty<MatchSpan>());
         }

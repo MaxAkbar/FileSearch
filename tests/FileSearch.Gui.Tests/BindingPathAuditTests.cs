@@ -46,6 +46,7 @@ public sealed class BindingPathAuditTests
         typeof(StopStepViewModel),
         typeof(WorkflowConditionViewModel),
         typeof(WorkflowParameterSetViewModel),
+        typeof(QuickIndexedLocationSelection),
     };
 
     /// <summary>Window-scope (DataContext) type per file; default is the shell.</summary>
@@ -54,6 +55,7 @@ public sealed class BindingPathAuditTests
         ["AboutWindow.xaml"] = typeof(AboutWindow),
         ["RegexTesterWindow.xaml"] = typeof(RegexTesterViewModel),
         ["SettingsWindow.xaml"] = typeof(ApplicationSettingsViewModel),
+        ["QuickSearchWindow.xaml"] = typeof(QuickSearchViewModel),
     };
 
     // Matches a {Binding ...} expression with up to two nesting levels of

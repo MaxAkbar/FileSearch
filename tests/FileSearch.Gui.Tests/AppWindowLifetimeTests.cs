@@ -12,11 +12,11 @@ public sealed class AppWindowLifetimeTests
     }
 
     [Fact]
-    public void CloseStartsWorkerOnlyForBackgroundModeWithoutExplicitExit()
+    public void CloseKeepsGuiResidentOnlyForTrayModeWithoutExplicitExit()
     {
-        Assert.True(AppWindowLifetime.ShouldStartBackgroundIndexerOnMainWindowClose(keepIndexUpdatedAfterClose: true, explicitExitRequested: false));
-        Assert.False(AppWindowLifetime.ShouldStartBackgroundIndexerOnMainWindowClose(keepIndexUpdatedAfterClose: true, explicitExitRequested: true));
-        Assert.False(AppWindowLifetime.ShouldStartBackgroundIndexerOnMainWindowClose(keepIndexUpdatedAfterClose: false, explicitExitRequested: false));
+        Assert.True(AppWindowLifetime.ShouldKeepResidentOnMainWindowClose(keepIndexUpdatedAfterClose: true, explicitExitRequested: false));
+        Assert.False(AppWindowLifetime.ShouldKeepResidentOnMainWindowClose(keepIndexUpdatedAfterClose: true, explicitExitRequested: true));
+        Assert.False(AppWindowLifetime.ShouldKeepResidentOnMainWindowClose(keepIndexUpdatedAfterClose: false, explicitExitRequested: false));
     }
 
     [Fact]

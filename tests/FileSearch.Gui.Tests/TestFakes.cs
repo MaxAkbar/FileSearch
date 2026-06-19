@@ -48,7 +48,18 @@ internal sealed class FakeFileTypeOptionsStore : IFileTypeOptionsStore
 
 internal sealed class FakeFolderPicker : IFolderPicker
 {
-    public string? PickFolder(string title, string? initialDirectory) => null;
+    public string? PathToReturn { get; set; }
+
+    public string? LastTitle { get; private set; }
+
+    public string? LastInitialDirectory { get; private set; }
+
+    public string? PickFolder(string title, string? initialDirectory)
+    {
+        LastTitle = title;
+        LastInitialDirectory = initialDirectory;
+        return PathToReturn;
+    }
 }
 
 internal sealed class FakeFileSavePicker : IFileSavePicker
