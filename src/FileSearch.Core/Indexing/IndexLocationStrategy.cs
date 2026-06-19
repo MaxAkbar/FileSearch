@@ -87,12 +87,13 @@ internal static class IndexLocationStrategyResolver
                 WatcherRecommended: true);
         }
 
-        if (volume.UsnSupported)
+        if (volume.UsnSupported &&
+            volume.FileSystemName.Equals("NTFS", StringComparison.OrdinalIgnoreCase))
         {
             return new IndexLocationStrategy(
                 IndexLocationKind.LocalUsn,
                 IndexUpdateStrategy.UsnJournalAndWatcher,
-                "Local NTFS/ReFS: USN journal + watcher",
+                "Local NTFS: USN journal + watcher",
                 string.Empty,
                 UsnCatchUpEnabled: true,
                 WatcherRecommended: true);
@@ -102,7 +103,9 @@ internal static class IndexLocationStrategyResolver
             IndexLocationKind.LocalSnapshot,
             IndexUpdateStrategy.SnapshotScanAndWatcher,
             $"Local {volume.FileSystemName}: snapshot scan + watcher",
-            $"Filesystem {volume.FileSystemName} does not expose a supported local USN journal.",
+            volume.FileSystemName.Equals("ReFS", StringComparison.OrdinalIgnoreCase)
+                ? "ReFS uses 128-bit file identifiers; FileSearch uses snapshot scans until ReFS USN replay is supported."
+                : $"Filesystem {volume.FileSystemName} does not expose a supported local USN journal.",
             UsnCatchUpEnabled: false,
             WatcherRecommended: true);
     }
@@ -126,7 +129,7 @@ internal static class IndexLocationStrategyResolver
     private static string LabelFor(IndexLocationKind locationKind, IndexUpdateStrategy updateStrategy) =>
         locationKind switch
         {
-            IndexLocationKind.LocalUsn => "Local NTFS/ReFS: USN journal + watcher",
+            IndexLocationKind.LocalUsn => "Local NTFS: USN journal + watcher",
             IndexLocationKind.LocalSnapshot => "Local filesystem: snapshot scan + watcher",
             IndexLocationKind.NetworkShare => "Network share: scheduled snapshot scan",
             IndexLocationKind.CloudBacked => "Cloud folder: snapshot scan + watcher",

@@ -228,7 +228,7 @@ public sealed class IndexingServiceTests
             normalizedRoot,
             IndexLocationKind.LocalUsn,
             IndexUpdateStrategy.UsnJournalAndWatcher,
-            "Local NTFS/ReFS: USN journal + watcher",
+            "Local NTFS: USN journal + watcher",
             string.Empty,
             UsnCatchUpEnabled: true,
             WatcherRecommended: true);

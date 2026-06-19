@@ -112,8 +112,7 @@ internal sealed class WindowsIndexVolumeResolver : IIndexVolumeResolver
         var volumeDevicePath = ToVolumeDevicePath(volumeRoot, guidPath);
         var rootDirectoryPath = ToRootDirectoryPath(volumeRoot, guidPath);
         var usnSupported = ((flags & FileSupportsUsnJournal) != 0) &&
-            (filesystem.Equals("NTFS", StringComparison.OrdinalIgnoreCase) ||
-             filesystem.Equals("ReFS", StringComparison.OrdinalIgnoreCase));
+            filesystem.Equals("NTFS", StringComparison.OrdinalIgnoreCase);
 
         volume = new IndexVolumeInfo(
             volumeKey,
@@ -126,7 +125,9 @@ internal sealed class WindowsIndexVolumeResolver : IIndexVolumeResolver
             driveKind);
         fallbackReason = usnSupported
             ? string.Empty
-            : $"Filesystem {filesystem} does not expose a supported local USN journal.";
+            : filesystem.Equals("ReFS", StringComparison.OrdinalIgnoreCase)
+                ? "ReFS USN replay is disabled until 128-bit file identifiers are supported."
+                : $"Filesystem {filesystem} does not expose a supported local USN journal.";
         return true;
     }
 

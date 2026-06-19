@@ -49,7 +49,7 @@ internal sealed class SingleInstanceCoordinator : IDisposable
                 ".",
                 s_pipeName,
                 PipeDirection.Out,
-                PipeOptions.Asynchronous);
+                PipeOptions.Asynchronous | PipeOptions.CurrentUserOnly);
             await client.ConnectAsync(timeout.Token).ConfigureAwait(false);
 
             var payload = JsonSerializer.Serialize(options);
@@ -79,7 +79,7 @@ internal sealed class SingleInstanceCoordinator : IDisposable
                     PipeDirection.In,
                     maxNumberOfServerInstances: 1,
                     PipeTransmissionMode.Byte,
-                    PipeOptions.Asynchronous);
+                    PipeOptions.Asynchronous | PipeOptions.CurrentUserOnly);
                 await server.WaitForConnectionAsync(cancellationToken).ConfigureAwait(false);
 
                 using var reader = new StreamReader(server, Encoding.UTF8, leaveOpen: true);

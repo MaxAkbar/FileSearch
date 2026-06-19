@@ -119,7 +119,7 @@ internal sealed class IndexerApplicationContext : Forms.ApplicationContext
                     PipeDirection.InOut,
                     maxNumberOfServerInstances: MaxPipeServerInstances,
                     PipeTransmissionMode.Byte,
-                    PipeOptions.Asynchronous);
+                    PipeOptions.Asynchronous | PipeOptions.CurrentUserOnly);
                 await pipe.WaitForConnectionAsync(cancellationToken).ConfigureAwait(false);
                 var connectedPipe = pipe;
                 pipe = null;

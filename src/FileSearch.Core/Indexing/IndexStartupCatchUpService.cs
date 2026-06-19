@@ -128,16 +128,6 @@ internal sealed class IndexStartupCatchUpService : IIndexStartupCatchUpService
         var changesByFile = new Dictionary<string, List<IndexReplayChange>>(StringComparer.Ordinal);
         var recordsInBatch = 0;
         var batchCheckpointUsn = checkpoint.LastCommittedUsn;
-        void SetDelete(string fileReferenceNumber) =>
-            changesByFile[fileReferenceNumber] = new List<IndexReplayChange>
-            {
-                new(
-                    IndexReplayChangeKind.DeleteByIdentity,
-                    Root: null,
-                    Path: null,
-                    fileReferenceNumber),
-            };
-
         void SetUpserts(string fileReferenceNumber, IEnumerable<IndexedLocation> matchingRoots, string normalizedPath)
         {
             var changes = new List<IndexReplayChange>();
@@ -286,7 +276,13 @@ internal sealed class IndexStartupCatchUpService : IIndexStartupCatchUpService
             if (IsDelete(record))
             {
                 if (fileIsKnown)
-                    SetDelete(record.FileReferenceNumber);
+                {
+                    AddFallback(
+                        group,
+                        fallback,
+                        "File delete requires root validation scan in V1 because hard links are not tracked.");
+                    return false;
+                }
 
                 continue;
             }
@@ -311,7 +307,15 @@ internal sealed class IndexStartupCatchUpService : IIndexStartupCatchUpService
             var matchingFileRoots = MatchingRoots(group.Locations, normalizedPath).ToArray();
             if (matchingFileRoots.Length == 0)
             {
-                SetDelete(record.FileReferenceNumber);
+                if (fileIsKnown)
+                {
+                    AddFallback(
+                        group,
+                        fallback,
+                        "Changed file resolved outside indexed roots; root validation scan required.");
+                    return false;
+                }
+
                 continue;
             }
 

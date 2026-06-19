@@ -471,7 +471,7 @@ public sealed class IndexStartupCatchUpServiceTests : IDisposable
     }
 
     [Fact]
-    public async Task CatchUpAsyncAppliesDeleteByIdentity()
+    public async Task CatchUpAsyncFallsBackForKnownFileDelete()
     {
         var root = IndexPath.NormalizeRoot(_root);
         var volume = CreateVolume(usnSupported: true);
@@ -492,10 +492,12 @@ public sealed class IndexStartupCatchUpServiceTests : IDisposable
             new[] { new IndexedLocation(root, new WalkerOptions(), WatchEnabled: false) },
             TestContext.Current.CancellationToken);
 
-        Assert.Contains(root, result.HandledRoots);
-        Assert.Equal(new[] { "77" }, store.DeletedFileReferences);
+        Assert.Empty(result.HandledRoots);
+        Assert.Contains(root, result.FallbackReasons.Keys);
+        Assert.Contains("hard links", result.FallbackReasons[root], StringComparison.OrdinalIgnoreCase);
+        Assert.Empty(store.DeletedFileReferences);
         Assert.Empty(writer.Upserts);
-        Assert.Equal(20, store.LastCommittedUsn);
+        Assert.Equal(0, store.LastCommittedUsn);
     }
 
     [Fact]
@@ -565,7 +567,7 @@ public sealed class IndexStartupCatchUpServiceTests : IDisposable
     }
 
     [Fact]
-    public async Task CatchUpAsyncDeletesIdentityWhenResolvedPathIsOutsideIndexedRoots()
+    public async Task CatchUpAsyncFallsBackWhenResolvedKnownFilePathIsOutsideIndexedRoots()
     {
         var root = IndexPath.NormalizeRoot(_root);
         var outside = Path.Combine(Path.GetTempPath(), "filesearch-catchup-outside-" + Guid.NewGuid().ToString("N"), "moved.txt");
@@ -593,8 +595,10 @@ public sealed class IndexStartupCatchUpServiceTests : IDisposable
                 new[] { new IndexedLocation(root, new WalkerOptions(), WatchEnabled: false) },
                 TestContext.Current.CancellationToken);
 
-            Assert.Contains(root, result.HandledRoots);
-            Assert.Equal(new[] { "88" }, store.DeletedFileReferences);
+            Assert.Empty(result.HandledRoots);
+            Assert.Contains(root, result.FallbackReasons.Keys);
+            Assert.Contains("outside indexed roots", result.FallbackReasons[root], StringComparison.OrdinalIgnoreCase);
+            Assert.Empty(store.DeletedFileReferences);
             Assert.Empty(writer.Upserts);
         }
         finally

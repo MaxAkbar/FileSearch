@@ -119,7 +119,7 @@ public static class BackgroundIndexerClient
                 ".",
                 BackgroundIndexerEndpoint.PipeName,
                 PipeDirection.InOut,
-                PipeOptions.Asynchronous);
+                PipeOptions.Asynchronous | PipeOptions.CurrentUserOnly);
             await pipe.ConnectAsync(timeoutCts.Token).ConfigureAwait(false);
 
             await using var writer = new StreamWriter(pipe, Encoding.UTF8, leaveOpen: true)

@@ -39,7 +39,7 @@ public sealed class UsnStartupCatchUpBenchmarkTests
                 resolver.TryResolveVolume(root, out var volume, out var volumeReason),
                 $"Could not resolve volume: {volumeReason}");
             Assert.False(volume.IsRemote, "USN benchmark requires a local volume.");
-            Assert.True(volume.UsnSupported, $"USN benchmark requires NTFS/ReFS with journal support. Resolved filesystem: {volume.FileSystemName}");
+            Assert.True(volume.UsnSupported, $"USN benchmark requires NTFS with journal support. Resolved filesystem: {volume.FileSystemName}");
 
             var journal = new WindowsUsnJournalReader();
             _ = await journal.QueryAsync(volume, TestContext.Current.CancellationToken);

@@ -35,7 +35,7 @@ public sealed class UsnStartupCatchUpSmokeTests
                 resolver.TryResolveVolume(root, out var volume, out var volumeReason),
                 $"Could not resolve volume: {volumeReason}");
             Assert.False(volume.IsRemote, "USN smoke test requires a local volume.");
-            Assert.True(volume.UsnSupported, $"USN smoke test requires NTFS/ReFS with journal support. Resolved filesystem: {volume.FileSystemName}");
+            Assert.True(volume.UsnSupported, $"USN smoke test requires NTFS with journal support. Resolved filesystem: {volume.FileSystemName}");
             Assert.False(
                 volume.VolumeDevicePath.EndsWith('\\'),
                 $"USN journal handle path must name the volume, not the root directory: {volume.VolumeDevicePath}");

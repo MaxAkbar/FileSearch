@@ -15,6 +15,19 @@ public sealed class IndexLocationStrategyResolverTests
     }
 
     [Fact]
+    public void ClassifyUsesSnapshotForReFsUntil128BitFileIdsAreSupported()
+    {
+        var strategy = IndexLocationStrategyResolver.Classify(
+            @"R:\Code",
+            Volume(filesystem: "ReFS", usnSupported: true));
+
+        Assert.Equal(IndexLocationKind.LocalSnapshot, strategy.LocationKind);
+        Assert.Equal(IndexUpdateStrategy.SnapshotScanAndWatcher, strategy.UpdateStrategy);
+        Assert.False(strategy.UsnCatchUpEnabled);
+        Assert.Contains("128-bit", strategy.Warning, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
     public void ClassifyUsesSnapshotForUnsupportedLocalFilesystems()
     {
         var strategy = IndexLocationStrategyResolver.Classify(@"E:\Docs", Volume(filesystem: "exFAT"));
