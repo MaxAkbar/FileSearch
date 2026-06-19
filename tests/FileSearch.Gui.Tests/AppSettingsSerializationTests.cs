@@ -63,6 +63,33 @@ public sealed class AppSettingsSerializationTests
                     AddedUtc = new DateTime(2026, 6, 19, 12, 0, 0, DateTimeKind.Utc),
                 },
             ],
+            Workspaces =
+            [
+                new()
+                {
+                    Name = "Daily",
+                    UpdatedUtc = new DateTime(2026, 6, 19, 13, 0, 0, DateTimeKind.Utc),
+                    Search = new SavedSearchSettings
+                    {
+                        QueryText = "daily",
+                        SearchPath = @"C:\Daily",
+                        FileNamePattern = "*.md",
+                    },
+                    CustomScopes =
+                    [
+                        new SearchScope { Name = "Markdown", FileNamePattern = "*.md" },
+                    ],
+                    FavoriteResults =
+                    [
+                        new FavoriteResultSettings { Path = @"C:\Daily\plan.md" },
+                    ],
+                    PinnedPaths = [@"C:\Daily\pin.md"],
+                    QuickSearchSelectedIndexedRoots = [@"C:\Daily"],
+                    ResultSort = "HitCount",
+                    ResultGroup = "Folder",
+                    RefinementQuery = "open",
+                },
+            ],
             IndexedLocations =
             [
                 new IndexedLocationSettings
@@ -127,7 +154,9 @@ public sealed class AppSettingsSerializationTests
         Assert.DoesNotContain(nameof(SavedSearchSettings.DisplayName), json);
         Assert.DoesNotContain(nameof(SavedSearchSettings.Summary), json);
         Assert.DoesNotContain(nameof(FavoriteResultSettings.DisplayName), json);
-        Assert.DoesNotContain($"\"{nameof(FavoriteResultSettings.Folder)}\"", json);
+        Assert.DoesNotContain($"\"{nameof(FavoriteResultSettings.Folder)}\":", json);
+        Assert.DoesNotContain(nameof(WorkspaceSettings.DisplayName), json);
+        Assert.DoesNotContain(nameof(WorkspaceSettings.Summary), json);
         Assert.NotNull(loaded);
         Assert.Equal("nord-dark.json", loaded.CustomThemeFileName);
         Assert.Equal(15, loaded.SidebarPageSize);
@@ -164,6 +193,19 @@ public sealed class AppSettingsSerializationTests
         var favorite = Assert.Single(loaded.FavoriteResults);
         Assert.Equal(@"C:\Work\notes.md", favorite.Path);
         Assert.Equal(new DateTime(2026, 6, 19, 12, 0, 0, DateTimeKind.Utc), favorite.AddedUtc);
+
+        var workspace = Assert.Single(loaded.Workspaces);
+        Assert.Equal("Daily", workspace.Name);
+        Assert.Equal("daily", workspace.Search.QueryText);
+        Assert.Equal(@"C:\Daily", workspace.Search.SearchPath);
+        Assert.Equal("*.md", workspace.Search.FileNamePattern);
+        Assert.Equal("Markdown", Assert.Single(workspace.CustomScopes).Name);
+        Assert.Equal(@"C:\Daily\plan.md", Assert.Single(workspace.FavoriteResults).Path);
+        Assert.Equal(@"C:\Daily\pin.md", Assert.Single(workspace.PinnedPaths));
+        Assert.Equal(@"C:\Daily", Assert.Single(workspace.QuickSearchSelectedIndexedRoots));
+        Assert.Equal("HitCount", workspace.ResultSort);
+        Assert.Equal("Folder", workspace.ResultGroup);
+        Assert.Equal("open", workspace.RefinementQuery);
 
         var location = Assert.Single(loaded.IndexedLocations);
         Assert.Equal(@"C:\Work", location.Root);

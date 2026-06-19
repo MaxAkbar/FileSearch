@@ -323,6 +323,9 @@ public sealed partial class SearchViewModel : ObservableObject, IDisposable
     [ObservableProperty]
     private SavedSearchSettings? _selectedSavedSearch;
 
+    [ObservableProperty]
+    private WorkspaceSettings? _selectedWorkspace;
+
     public bool HasSelectedFile => SelectedFile is not null;
 
     public string PreviewPaneToggleText => "Preview";
@@ -378,6 +381,9 @@ public sealed partial class SearchViewModel : ObservableObject, IDisposable
 
     partial void OnSelectedSavedSearchChanged(SavedSearchSettings? value) =>
         ApplySavedSearch(value);
+
+    partial void OnSelectedWorkspaceChanged(WorkspaceSettings? value) =>
+        ApplyWorkspace(value);
 
     partial void OnPreviewContentChanged(string value) =>
         CopyPreviewCommand.NotifyCanExecuteChanged();
@@ -521,6 +527,38 @@ public sealed partial class SearchViewModel : ObservableObject, IDisposable
     }
 
     private bool CanToggleFavoriteResult(FileResultViewModel? file) => file is not null;
+
+    [RelayCommand]
+    private void SaveWorkspace()
+    {
+        var workspace = new WorkspaceSettings
+        {
+            Name = BuildWorkspaceName(),
+            UpdatedUtc = DateTime.UtcNow,
+            Search = CreateSavedSearch(),
+            CustomScopes = _history.CustomScopes
+                .Select(scope => new SearchScope
+                {
+                    Name = scope.Name,
+                    FileNamePattern = scope.FileNamePattern,
+                })
+                .ToList(),
+            FavoriteResults = _history.FavoriteResults
+                .Select(favorite => new FavoriteResultSettings
+                {
+                    Path = favorite.Path,
+                    AddedUtc = favorite.AddedUtc,
+                })
+                .ToList(),
+            PinnedPaths = _settingsService.Current.QuickSearchPinnedPaths.ToList(),
+            QuickSearchSelectedIndexedRoots = _settingsService.Current.QuickSearchSelectedIndexedRoots.ToList(),
+            ResultSort = (SelectedSortOption?.Value ?? ResultSortMode.Relevance).ToString(),
+            ResultGroup = (SelectedGroupOption?.Value ?? ResultGroupMode.File).ToString(),
+            RefinementQuery = RefinementQuery,
+        };
+
+        _history.SaveWorkspace(workspace);
+    }
 
     [RelayCommand]
     private async Task OpenFavoriteResultAsync(FavoriteResultSettings? favorite)
@@ -860,6 +898,42 @@ public sealed partial class SearchViewModel : ObservableObject, IDisposable
             _status.Text = "Saved search loaded.";
     }
 
+    private void ApplyWorkspace(WorkspaceSettings? workspace)
+    {
+        if (workspace is null)
+            return;
+
+        ApplySavedSearch(workspace.Search);
+        ApplyResultSort(workspace.ResultSort);
+        ApplyResultGroup(workspace.ResultGroup);
+        RefinementQuery = workspace.RefinementQuery?.Trim() ?? string.Empty;
+        _history.ReplaceCustomScopes(workspace.CustomScopes);
+        _history.ReplaceFavoriteResults(workspace.FavoriteResults);
+
+        _settingsService.Update(settings =>
+        {
+            settings.QuickSearchPinnedPaths = workspace.PinnedPaths
+                .Where(path => !string.IsNullOrWhiteSpace(path))
+                .Select(path => path.Trim())
+                .Distinct(StringComparer.OrdinalIgnoreCase)
+                .ToList();
+            settings.QuickSearchSelectedIndexedRoots = workspace.QuickSearchSelectedIndexedRoots
+                .Where(path => !string.IsNullOrWhiteSpace(path))
+                .Select(path => path.Trim())
+                .Distinct(StringComparer.OrdinalIgnoreCase)
+                .ToList();
+        });
+
+        foreach (var file in Files)
+        {
+            file.IsPinned = IsPinned(file.FullPath);
+            file.IsFavorite = _history.IsFavorite(file.FullPath);
+        }
+
+        RefreshFilesView();
+        _status.Text = $"Workspace loaded: {workspace.DisplayName}.";
+    }
+
     public void Dispose()
     {
         _searchCts?.Dispose();
@@ -913,6 +987,22 @@ public sealed partial class SearchViewModel : ObservableObject, IDisposable
 
         OnPropertyChanged(nameof(FilesVisible));
         ExportResultsCommand.NotifyCanExecuteChanged();
+    }
+
+    private void ApplyResultSort(string? value)
+    {
+        if (!Enum.TryParse<ResultSortMode>(value, ignoreCase: true, out var mode))
+            mode = ResultSortMode.Relevance;
+
+        SelectedSortOption = ResultSortOptions.FirstOrDefault(option => option.Value == mode) ?? ResultSortOptions[0];
+    }
+
+    private void ApplyResultGroup(string? value)
+    {
+        if (!Enum.TryParse<ResultGroupMode>(value, ignoreCase: true, out var mode))
+            mode = ResultGroupMode.File;
+
+        SelectedGroupOption = ResultGroupOptions.FirstOrDefault(option => option.Value == mode) ?? ResultGroupOptions[0];
     }
 
     private void OnFacetSelectionChanged()
@@ -1103,6 +1193,17 @@ public sealed partial class SearchViewModel : ObservableObject, IDisposable
             _ => "json",
         };
         return $"FileSearch-results.{extension}";
+    }
+
+    private string BuildWorkspaceName()
+    {
+        var baseName = string.IsNullOrWhiteSpace(QueryText)
+            ? "Workspace"
+            : QueryText.Trim();
+        if (baseName.Length > 42)
+            baseName = baseName[..42].Trim();
+
+        return $"{baseName} - {DateTime.Now:yyyy-MM-dd HHmm}";
     }
 
     private static SearchResultExportFormat ParseExportFormat(string? value) =>

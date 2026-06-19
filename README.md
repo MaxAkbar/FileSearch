@@ -15,7 +15,7 @@ FileSearch is a Windows desktop application for searching text across files and 
 - Optional case-sensitive matching.
 - Filter by file size and modified date range.
 - Preview matching lines and context for selected results.
-- Refine, facet, sort, group, favorite, pin, drag, and export visible results without rescanning files.
+- Refine, facet, sort, group, favorite, pin, drag, export, and save workspace bundles without rescanning files.
 - Optional CSharpDB-backed indexing for faster repeat searches across multiple locations, with GUI or tray-indexer background updates.
 - Open matched files, reveal them in Explorer, copy file or folder paths, rename files, or move files to the Recycle Bin.
 - Light, dark, system, and Visual Studio-inspired themes.
@@ -97,7 +97,7 @@ Interactive REPL front end for the core search library. It targets `net10.0` and
 - `Spectre.Console` for rich terminal prompts, status spinners, tables, panels, and highlighted match output.
 - `Microsoft.Extensions.DependencyInjection` for the same core service registration used by the GUI.
 
-The CLI supports live search, covered indexed search, query mode switching, file filters, CSharpDB index build/clear/stats commands, and direct query entry from the prompt.
+The CLI supports live search, covered indexed search, query mode switching, file filters, one-shot CSV/JSON/JSON Lines/Markdown search output, CSharpDB index build/clear/stats commands, and direct query entry from the prompt.
 
 ### `FileSearch.Core.Tests`
 
@@ -175,7 +175,7 @@ dotnet test .\FileSearch.slnx
 
 ## Using the CLI
 
-The CLI opens as a REPL. Type `help` to see available commands, or type a query directly to search the current folder.
+Run the CLI without arguments to open the REPL. Type `help` to see available commands, or type a query directly to search the current folder.
 
 Useful commands:
 
@@ -197,6 +197,17 @@ index stats
 index locations
 exit
 ```
+
+For automation, use the one-shot search command. Results stream to stdout unless `--output` is provided:
+
+```powershell
+dotnet run --project .\src\FileSearch.Cli\FileSearch.Cli.csproj -- search "connection string" --path C:\src --mode plain --json
+dotnet run --project .\src\FileSearch.Cli\FileSearch.Cli.csproj -- search needle --path C:\src --csv --output .\results.csv
+dotnet run --project .\src\FileSearch.Cli\FileSearch.Cli.csproj -- search needle --path C:\src --jsonl --limit 500
+dotnet run --project .\src\FileSearch.Cli\FileSearch.Cli.csproj -- search needle --path C:\src --markdown --index
+```
+
+One-shot search accepts the same common filters as the REPL, including `--include`, `--exclude`, `--ext`, `--exclude-ext`, `--exclude-dir`, `--min-size`, `--max-size`, `--after`, `--before`, `--recursive`, `--no-recursive`, `--hidden`, `--case`, `--index`, and `--no-index`.
 
 The CLI uses the same `FileSearch.Core` search pipeline and CSharpDB index database as the desktop app. Indexed search is opt-in with `index on`; when the current search is not covered by the index, the CLI falls back to live scan.
 
@@ -391,6 +402,13 @@ PowerShell can also drive the REPL non-interactively by piping commands:
 ) | dotnet run --project .\src\FileSearch.Cli\FileSearch.Cli.csproj
 ```
 
+For structured search automation, prefer one-shot output:
+
+```powershell
+dotnet run --project .\src\FileSearch.Cli\FileSearch.Cli.csproj -- search TODO --path C:\src\project --json |
+  ConvertFrom-Json
+```
+
 Index maintenance works the same way:
 
 ```powershell
@@ -403,7 +421,7 @@ Index maintenance works the same way:
 ) | dotnet run --project .\src\FileSearch.Cli\FileSearch.Cli.csproj
 ```
 
-Directly loading `FileSearch.Core` from PowerShell is possible, but it is not the recommended path because PowerShell has to resolve the full dependency graph and consume async streams. For automation, use the CLI. A future PowerShell module would mainly be useful if we want structured objects, JSON output, pipeline input, or native commands such as `Search-FileContent` and `Update-FileSearchIndex`.
+Directly loading `FileSearch.Core` from PowerShell is possible, but it is not the recommended path because PowerShell has to resolve the full dependency graph and consume async streams. For automation, use the CLI. A future PowerShell module would mainly be useful for pipeline-native commands such as `Search-FileContent` and `Update-FileSearchIndex`.
 
 ## Packaging for Microsoft Store
 

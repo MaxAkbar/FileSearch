@@ -1,5 +1,8 @@
+using System.Buffers;
 using System.Collections.Concurrent;
 using System.Globalization;
+using System.Text;
+using System.Text.Json;
 using FileSearch.Core.Engine;
 using FileSearch.Core.Indexing;
 using FileSearch.Core.Queries;
@@ -31,6 +34,21 @@ internal sealed class FileSearchRepl
 
     public async Task<int> RunAsync(string[] args)
     {
+        if (args.Length > 0 &&
+            args[0].Equals("search", StringComparison.OrdinalIgnoreCase))
+        {
+            try
+            {
+                return await RunOneShotSearchAsync(args.Skip(1).ToArray(), CancellationToken.None)
+                    .ConfigureAwait(false);
+            }
+            catch (Exception ex) when (ex is not OperationCanceledException)
+            {
+                Console.Error.WriteLine($"Error: {ex.Message}");
+                return 1;
+            }
+        }
+
         ApplyStartupArgs(args);
         RenderHeader();
         RenderQuickHelp();
@@ -249,6 +267,374 @@ internal sealed class FileSearchRepl
         RenderSearchSummary(queryText, totalHits, hits.Count, stopwatch.Elapsed, indexed, statusMessages);
         RenderHits(hits, totalHits);
     }
+
+    private async Task<int> RunOneShotSearchAsync(string[] args, CancellationToken cancellationToken)
+    {
+        if (args.Any(arg => arg is "--help" or "-h" or "/?"))
+        {
+            Console.Out.WriteLine(OneShotSearchUsage);
+            return 0;
+        }
+
+        var options = ParseOneShotSearchOptions(args);
+        if (!Directory.Exists(options.State.Root))
+        {
+            Console.Error.WriteLine($"Search root does not exist: {options.State.Root}");
+            return 2;
+        }
+
+        Query query;
+        try
+        {
+            query = _queryFactory.Build(options.QueryText, options.State.Mode, options.State.CaseSensitive);
+        }
+        catch (Exception ex)
+        {
+            Console.Error.WriteLine($"Invalid query: {ex.Message}");
+            return 2;
+        }
+
+        var hits = new List<Hit>();
+        var totalHits = 0;
+        var indexed = false;
+        var statusMessages = new ConcurrentQueue<string>();
+        var stopwatch = System.Diagnostics.Stopwatch.StartNew();
+        var request = new SearchRequest(
+            query,
+            [options.State.Root],
+            options.State.ToWalkerOptions(),
+            Progress: null,
+            UseIndex: options.State.UseIndex,
+            Status: message => statusMessages.Enqueue(message),
+            RawQuery: options.QueryText,
+            Mode: options.State.Mode);
+
+        IAsyncEnumerable<Hit> stream;
+        if (options.State.UseIndex)
+        {
+            var coverage = await _coverageService.GetCoverageAsync(request, cancellationToken).ConfigureAwait(false);
+            statusMessages.Enqueue(coverage.IsCovered ? coverage.Message : $"{coverage.Message}; using live scan");
+            indexed = coverage.IsCovered;
+            stream = coverage.IsCovered
+                ? _index.SearchAsync(request, cancellationToken)
+                : _liveSearcher.SearchAsync(request with { UseIndex = false }, cancellationToken);
+        }
+        else
+        {
+            stream = _liveSearcher.SearchAsync(request with { UseIndex = false }, cancellationToken);
+        }
+
+        await foreach (var hit in stream.WithCancellation(cancellationToken).ConfigureAwait(false))
+        {
+            totalHits++;
+            if (hits.Count < options.State.ResultLimit)
+                hits.Add(hit);
+        }
+
+        stopwatch.Stop();
+        var rendered = RenderOneShotSearch(options, hits, totalHits, indexed, stopwatch.Elapsed, statusMessages);
+        if (string.IsNullOrWhiteSpace(options.OutputPath))
+        {
+            Console.Out.Write(rendered);
+        }
+        else
+        {
+            var fullPath = Path.GetFullPath(options.OutputPath);
+            var directory = Path.GetDirectoryName(fullPath);
+            if (!string.IsNullOrWhiteSpace(directory))
+                Directory.CreateDirectory(directory);
+            await File.WriteAllTextAsync(fullPath, rendered, cancellationToken).ConfigureAwait(false);
+        }
+
+        return 0;
+    }
+
+    private static OneShotSearchOptions ParseOneShotSearchOptions(string[] args)
+    {
+        if (args.Length == 0)
+            throw new ArgumentException(OneShotSearchUsage);
+
+        var state = new CliState();
+        var queryParts = new List<string>();
+        var format = OneShotSearchOutputFormat.Json;
+        string? outputPath = null;
+
+        for (var i = 0; i < args.Length; i++)
+        {
+            var arg = args[i];
+            switch (arg.ToLowerInvariant())
+            {
+                case "--path":
+                case "--root":
+                case "-p":
+                    state.Root = Path.GetFullPath(NextValue(args, ref i, arg));
+                    break;
+                case "--mode":
+                case "-m":
+                    state.Mode = ParseMode(NextValue(args, ref i, arg));
+                    break;
+                case "--limit":
+                case "-n":
+                    if (!int.TryParse(NextValue(args, ref i, arg), NumberStyles.Integer, CultureInfo.InvariantCulture, out var limit) ||
+                        limit < 1)
+                        throw new ArgumentException("Limit must be a positive integer.");
+                    state.ResultLimit = limit;
+                    break;
+                case "--format":
+                case "-f":
+                    format = ParseOutputFormat(NextValue(args, ref i, arg));
+                    break;
+                case "--output":
+                case "-o":
+                    outputPath = NextValue(args, ref i, arg);
+                    break;
+                case "--json":
+                    format = OneShotSearchOutputFormat.Json;
+                    break;
+                case "--jsonl":
+                case "--json-lines":
+                    format = OneShotSearchOutputFormat.JsonLines;
+                    break;
+                case "--csv":
+                    format = OneShotSearchOutputFormat.Csv;
+                    break;
+                case "--markdown":
+                case "--md":
+                    format = OneShotSearchOutputFormat.Markdown;
+                    break;
+                case "--case":
+                case "--case-sensitive":
+                    state.CaseSensitive = true;
+                    break;
+                case "--ignore-case":
+                    state.CaseSensitive = false;
+                    break;
+                case "--recursive":
+                    state.Recursive = true;
+                    break;
+                case "--no-recursive":
+                    state.Recursive = false;
+                    break;
+                case "--hidden":
+                case "--include-hidden":
+                    state.IncludeHidden = true;
+                    break;
+                case "--index":
+                    state.UseIndex = true;
+                    break;
+                case "--no-index":
+                    state.UseIndex = false;
+                    break;
+                case "--include":
+                    state.IncludeGlobs.Clear();
+                    state.IncludeGlobs.AddRange(CliState.SplitList(NextValue(args, ref i, arg)));
+                    break;
+                case "--exclude":
+                    state.ExcludeGlobs.Clear();
+                    state.ExcludeGlobs.AddRange(CliState.SplitList(NextValue(args, ref i, arg)));
+                    break;
+                case "--ext":
+                case "--include-ext":
+                    state.IncludeExtensions.Clear();
+                    foreach (var extension in CliState.SplitList(NextValue(args, ref i, arg)).Select(CliState.NormalizeExtension))
+                        state.IncludeExtensions.Add(extension);
+                    break;
+                case "--exclude-ext":
+                    state.ExcludeExtensions.Clear();
+                    foreach (var extension in CliState.SplitList(NextValue(args, ref i, arg)).Select(CliState.NormalizeExtension))
+                        state.ExcludeExtensions.Add(extension);
+                    break;
+                case "--exclude-dir":
+                case "--exclude-dirs":
+                    state.ExcludeDirectories.Clear();
+                    state.ExcludeDirectories.UnionWith(CliState.SplitList(NextValue(args, ref i, arg)));
+                    break;
+                case "--min-size":
+                    if (!CliState.TryParseSize(NextValue(args, ref i, arg), out var minSize))
+                        throw new ArgumentException("Minimum size must be a number with an optional kb, mb, or gb suffix.");
+                    state.MinFileSizeBytes = minSize;
+                    break;
+                case "--max-size":
+                    if (!CliState.TryParseSize(NextValue(args, ref i, arg), out var maxSize))
+                        throw new ArgumentException("Maximum size must be a number with an optional kb, mb, or gb suffix.");
+                    state.MaxFileSizeBytes = maxSize;
+                    break;
+                case "--after":
+                    state.ModifiedAfterUtc = ParseOneShotDate(NextValue(args, ref i, arg));
+                    break;
+                case "--before":
+                    state.ModifiedBeforeUtc = ParseOneShotDate(NextValue(args, ref i, arg));
+                    break;
+                default:
+                    if (arg.StartsWith('-'))
+                        throw new ArgumentException($"Unknown option: {arg}");
+                    queryParts.Add(arg);
+                    break;
+            }
+        }
+
+        var queryText = string.Join(' ', queryParts).Trim();
+        if (string.IsNullOrWhiteSpace(queryText))
+            throw new ArgumentException(OneShotSearchUsage);
+
+        return new OneShotSearchOptions(queryText, state, format, outputPath);
+    }
+
+    private static string NextValue(string[] args, ref int index, string option)
+    {
+        if (index + 1 >= args.Length)
+            throw new ArgumentException($"{option} requires a value.");
+
+        return args[++index];
+    }
+
+    private static QueryMode ParseMode(string value) =>
+        value.ToLowerInvariant() switch
+        {
+            "plain" or "text" or "literal" => QueryMode.PlainText,
+            "regex" or "regexp" => QueryMode.Regex,
+            "bool" or "boolean" => QueryMode.Boolean,
+            _ => throw new ArgumentException("Mode must be plain, regex, or boolean."),
+        };
+
+    private static OneShotSearchOutputFormat ParseOutputFormat(string value) =>
+        value.ToLowerInvariant() switch
+        {
+            "json" => OneShotSearchOutputFormat.Json,
+            "jsonl" or "json-lines" or "jsonlines" => OneShotSearchOutputFormat.JsonLines,
+            "csv" => OneShotSearchOutputFormat.Csv,
+            "markdown" or "md" => OneShotSearchOutputFormat.Markdown,
+            _ => throw new ArgumentException("Format must be json, jsonl, csv, or markdown."),
+        };
+
+    private static DateTime ParseOneShotDate(string value)
+    {
+        if (!DateTime.TryParse(value, CultureInfo.CurrentCulture, DateTimeStyles.AssumeLocal, out var date))
+            throw new ArgumentException("Date must be parseable, for example 2026-06-09.");
+
+        return date.ToUniversalTime();
+    }
+
+    private static string RenderOneShotSearch(
+        OneShotSearchOptions options,
+        IReadOnlyList<Hit> hits,
+        int totalHits,
+        bool indexed,
+        TimeSpan elapsed,
+        ConcurrentQueue<string> statusMessages) =>
+        options.Format switch
+        {
+            OneShotSearchOutputFormat.Csv => RenderOneShotCsv(hits),
+            OneShotSearchOutputFormat.JsonLines => RenderOneShotJsonLines(hits),
+            OneShotSearchOutputFormat.Markdown => RenderOneShotMarkdown(options, hits, totalHits, indexed, elapsed, statusMessages),
+            _ => RenderOneShotJson(options, hits, totalHits, indexed, elapsed, statusMessages),
+        };
+
+    private static string RenderOneShotJson(
+        OneShotSearchOptions options,
+        IReadOnlyList<Hit> hits,
+        int totalHits,
+        bool indexed,
+        TimeSpan elapsed,
+        ConcurrentQueue<string> statusMessages)
+    {
+        var document = new OneShotSearchDocument(
+            options.QueryText,
+            options.State.Root,
+            options.State.Mode.ToString(),
+            indexed ? "indexed" : "live",
+            totalHits,
+            hits.Count,
+            elapsed.TotalSeconds,
+            statusMessages.Distinct().ToArray(),
+            hits.Select(ToOneShotHit).ToArray());
+        return JsonSerializer.Serialize(document, s_oneShotJsonOptions) + Environment.NewLine;
+    }
+
+    private static string RenderOneShotJsonLines(IReadOnlyList<Hit> hits)
+    {
+        var sb = new StringBuilder();
+        foreach (var hit in hits)
+            sb.AppendLine(JsonSerializer.Serialize(ToOneShotHit(hit), s_oneShotJsonLineOptions));
+        return sb.ToString();
+    }
+
+    private static string RenderOneShotCsv(IReadOnlyList<Hit> hits)
+    {
+        var sb = new StringBuilder();
+        sb.AppendLine("path,lineNumber,kind,score,sizeBytes,modifiedUtc,line");
+        foreach (var hit in hits)
+        {
+            sb.Append(CsvField(hit.Path)).Append(',');
+            sb.Append(hit.LineNumber.ToString(CultureInfo.InvariantCulture)).Append(',');
+            sb.Append(CsvField(hit.Kind.ToString())).Append(',');
+            sb.Append(hit.Score.ToString(CultureInfo.InvariantCulture)).Append(',');
+            sb.Append(hit.SizeBytes?.ToString(CultureInfo.InvariantCulture) ?? string.Empty).Append(',');
+            sb.Append(CsvField(hit.ModifiedUtc?.ToString("O", CultureInfo.InvariantCulture) ?? string.Empty)).Append(',');
+            sb.AppendLine(CsvField(hit.LineContent));
+        }
+
+        return sb.ToString();
+    }
+
+    private static string RenderOneShotMarkdown(
+        OneShotSearchOptions options,
+        IReadOnlyList<Hit> hits,
+        int totalHits,
+        bool indexed,
+        TimeSpan elapsed,
+        ConcurrentQueue<string> statusMessages)
+    {
+        var sb = new StringBuilder();
+        sb.AppendLine("# FileSearch Results");
+        sb.AppendLine();
+        sb.AppendLine(CultureInfo.InvariantCulture, $"- Query: {options.QueryText}");
+        sb.AppendLine(CultureInfo.InvariantCulture, $"- Root: {options.State.Root}");
+        sb.AppendLine(CultureInfo.InvariantCulture, $"- Mode: {options.State.Mode}");
+        sb.AppendLine(CultureInfo.InvariantCulture, $"- Search: {(indexed ? "indexed" : "live")}");
+        sb.AppendLine(CultureInfo.InvariantCulture, $"- Hits: {totalHits:n0}");
+        sb.AppendLine(CultureInfo.InvariantCulture, $"- Displayed: {hits.Count:n0}");
+        sb.AppendLine(CultureInfo.InvariantCulture, $"- Elapsed: {elapsed.TotalSeconds:0.###}s");
+        foreach (var message in statusMessages.Distinct())
+            sb.AppendLine(CultureInfo.InvariantCulture, $"- Status: {message}");
+
+        foreach (var group in hits.GroupBy(hit => hit.Path, StringComparer.OrdinalIgnoreCase))
+        {
+            sb.AppendLine();
+            sb.AppendLine(CultureInfo.InvariantCulture, $"## {group.Key}");
+            sb.AppendLine();
+            foreach (var hit in group)
+                sb.AppendLine(CultureInfo.InvariantCulture, $"- L{hit.LineNumber}: {hit.LineContent.Trim()}");
+        }
+
+        return sb.ToString();
+    }
+
+    private static readonly SearchValues<char> s_csvSpecialChars = SearchValues.Create(",\"\n\r");
+
+    private static readonly JsonSerializerOptions s_oneShotJsonOptions = new()
+    {
+        WriteIndented = true,
+    };
+
+    private static readonly JsonSerializerOptions s_oneShotJsonLineOptions = new();
+
+    private static string CsvField(string value)
+    {
+        if (!value.AsSpan().ContainsAny(s_csvSpecialChars))
+            return value;
+        return "\"" + value.Replace("\"", "\"\"", StringComparison.Ordinal) + "\"";
+    }
+
+    private static OneShotSearchHit ToOneShotHit(Hit hit) =>
+        new(
+            hit.Path,
+            hit.LineNumber,
+            hit.Kind.ToString(),
+            hit.Score,
+            hit.SizeBytes,
+            hit.ModifiedUtc,
+            hit.LineContent);
 
     private async Task ExecuteIndexCommandAsync(IReadOnlyList<string> tokens, CancellationToken cancellationToken)
     {
@@ -934,6 +1320,44 @@ internal sealed class FileSearchRepl
 
         return Environment.ExpandEnvironmentVariables(path);
     }
+
+    private const string OneShotSearchUsage =
+        "Usage: filesearch search QUERY [--path FOLDER] [--mode plain|regex|boolean] " +
+        "[--json|--jsonl|--csv|--markdown] [--output PATH] [--limit N]";
+
+    private enum OneShotSearchOutputFormat
+    {
+        Json,
+        JsonLines,
+        Csv,
+        Markdown,
+    }
+
+    private sealed record OneShotSearchOptions(
+        string QueryText,
+        CliState State,
+        OneShotSearchOutputFormat Format,
+        string? OutputPath);
+
+    private sealed record OneShotSearchDocument(
+        string Query,
+        string Root,
+        string Mode,
+        string Search,
+        int TotalHits,
+        int DisplayedHits,
+        double ElapsedSeconds,
+        IReadOnlyList<string> Status,
+        IReadOnlyList<OneShotSearchHit> Hits);
+
+    private sealed record OneShotSearchHit(
+        string Path,
+        int LineNumber,
+        string Kind,
+        double Score,
+        long? SizeBytes,
+        DateTime? ModifiedUtc,
+        string Line);
 
     private void OnCancelKeyPress(object? sender, ConsoleCancelEventArgs e)
     {

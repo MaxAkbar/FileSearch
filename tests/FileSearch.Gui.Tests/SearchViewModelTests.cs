@@ -484,6 +484,75 @@ public sealed class SearchViewModelTests
     }
 
     [Fact]
+    public void SaveAndApplyWorkspaceRestoresSearchViewAndSharedLists()
+    {
+        RunWithPump((pump, vm, history, status, settings) =>
+        {
+            vm.QueryText = "needle";
+            vm.SearchPath = Path.GetTempPath();
+            vm.FileNamePattern = "*.cs";
+            vm.ExcludeFileNamePattern = "*.g.cs";
+            vm.SearchMode = QueryMode.Regex;
+            vm.MatchCase = true;
+            vm.SelectedSortOption = vm.ResultSortOptions.Single(option => option.Value == ResultSortMode.HitCount);
+            vm.SelectedGroupOption = vm.ResultGroupOptions.Single(option => option.Value == ResultGroupMode.Folder);
+            history.SaveCustomScope("Source", "*.cs");
+            settings.Current.QuickSearchSelectedIndexedRoots.Add(@"C:\Indexed");
+
+            var search = vm.SearchCommand.ExecuteAsync(null);
+            pump.PumpUntil(() => search.IsCompleted, TimeSpan.FromSeconds(10));
+            vm.RefinementQuery = "code";
+            var result = vm.Files.Single(file => file.FullPath == @"C:\results\a.cs");
+            vm.ToggleFavoriteResultCommand.Execute(result);
+            vm.TogglePinResultCommand.Execute(result);
+
+            vm.SaveWorkspaceCommand.Execute(null);
+
+            var workspace = Assert.Single(history.Workspaces);
+            Assert.Contains("needle", workspace.Name);
+            Assert.Equal("HitCount", workspace.ResultSort);
+            Assert.Equal("Folder", workspace.ResultGroup);
+            Assert.Equal("code", workspace.RefinementQuery);
+            Assert.Equal(@"C:\Indexed", Assert.Single(workspace.QuickSearchSelectedIndexedRoots));
+            Assert.Equal(@"C:\results\a.cs", Assert.Single(workspace.PinnedPaths));
+            Assert.Equal(@"C:\results\a.cs", Assert.Single(workspace.FavoriteResults).Path);
+
+            vm.QueryText = "other";
+            vm.SearchPath = @"C:\Other";
+            vm.FileNamePattern = "*.md";
+            vm.ExcludeFileNamePattern = string.Empty;
+            vm.SearchMode = QueryMode.Boolean;
+            vm.MatchCase = false;
+            vm.RefinementQuery = string.Empty;
+            vm.SelectedSortOption = vm.ResultSortOptions.Single(option => option.Value == ResultSortMode.Relevance);
+            vm.SelectedGroupOption = vm.ResultGroupOptions.Single(option => option.Value == ResultGroupMode.File);
+            history.ReplaceCustomScopes(Array.Empty<SearchScope>());
+            history.ReplaceFavoriteResults(Array.Empty<FavoriteResultSettings>());
+            settings.Current.QuickSearchPinnedPaths.Clear();
+            settings.Current.QuickSearchSelectedIndexedRoots.Clear();
+
+            vm.SelectedWorkspace = workspace;
+
+            Assert.Equal("needle", vm.QueryText);
+            Assert.Equal(Path.GetTempPath(), vm.SearchPath);
+            Assert.Equal("*.cs", vm.FileNamePattern);
+            Assert.Equal("*.g.cs", vm.ExcludeFileNamePattern);
+            Assert.Equal(QueryMode.Regex, vm.SearchMode);
+            Assert.True(vm.MatchCase);
+            Assert.Equal("code", vm.RefinementQuery);
+            Assert.Equal(ResultSortMode.HitCount, vm.SelectedSortOption?.Value);
+            Assert.Equal(ResultGroupMode.Folder, vm.SelectedGroupOption?.Value);
+            Assert.Equal("Source", Assert.Single(history.CustomScopes).Name);
+            Assert.Equal(@"C:\results\a.cs", Assert.Single(history.FavoriteResults).Path);
+            Assert.Equal(@"C:\results\a.cs", Assert.Single(settings.Current.QuickSearchPinnedPaths));
+            Assert.Equal(@"C:\Indexed", Assert.Single(settings.Current.QuickSearchSelectedIndexedRoots));
+            Assert.True(result.IsFavorite);
+            Assert.True(result.IsPinned);
+            Assert.StartsWith("Workspace loaded", status.Text);
+        }, new ResultManagementSearcher());
+    }
+
+    [Fact]
     public void RenameResultUpdatesResultPathHitsAndPinnedPath()
     {
         var operations = new FakeFileOperationService

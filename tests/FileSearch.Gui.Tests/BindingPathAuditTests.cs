@@ -30,6 +30,7 @@ public sealed class BindingPathAuditTests
         typeof(IndexedLocationSettings),
         typeof(IndexFilterListSettings),
         typeof(FavoriteResultSettings),
+        typeof(WorkspaceSettings),
         typeof(RegexTestGroupViewModel),
         typeof(RegexTestMatchViewModel),
         typeof(SavedSearchSettings),

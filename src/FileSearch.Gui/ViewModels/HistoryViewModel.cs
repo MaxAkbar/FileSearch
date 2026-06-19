@@ -49,6 +49,11 @@ public sealed partial class HistoryViewModel : ObservableObject
             MatchesFavorite,
             "favorites",
             _applicationSettings.SidebarPageSize);
+        WorkspaceList = new PagedSidebarList<WorkspaceSettings>(
+            Workspaces,
+            MatchesWorkspace,
+            "workspaces",
+            _applicationSettings.SidebarPageSize);
 
         var saved = _settingsService.Current;
         foreach (var search in saved.SavedSearches.Select(NormalizeSavedSearch).Where(IsUsableSavedSearch))
@@ -61,6 +66,8 @@ public sealed partial class HistoryViewModel : ObservableObject
         foreach (var path in saved.RecentPaths) RecentPaths.Add(path);
         foreach (var favorite in saved.FavoriteResults.Select(NormalizeFavorite).Where(IsUsableFavorite))
             FavoriteResults.Add(favorite);
+        foreach (var workspace in saved.Workspaces.Select(NormalizeWorkspace).Where(IsUsableWorkspace))
+            Workspaces.Add(workspace);
         foreach (var scope in saved.CustomScopes.Where(scope => !string.IsNullOrWhiteSpace(scope.Name)))
         {
             CustomScopes.Add(new SearchScope
@@ -72,6 +79,7 @@ public sealed partial class HistoryViewModel : ObservableObject
 
         SavedSearches.CollectionChanged += (_, _) => ClearSavedSearchesCommand.NotifyCanExecuteChanged();
         FavoriteResults.CollectionChanged += (_, _) => ClearFavoriteResultsCommand.NotifyCanExecuteChanged();
+        Workspaces.CollectionChanged += (_, _) => ClearWorkspacesCommand.NotifyCanExecuteChanged();
         RecentQueries.CollectionChanged += (_, _) => ClearRecentQueriesCommand.NotifyCanExecuteChanged();
         RecentPaths.CollectionChanged += (_, _) => ClearRecentPathsCommand.NotifyCanExecuteChanged();
         CustomScopes.CollectionChanged += (_, _) =>
@@ -91,6 +99,8 @@ public sealed partial class HistoryViewModel : ObservableObject
 
     public PagedSidebarList<FavoriteResultSettings> FavoriteResultList { get; }
 
+    public PagedSidebarList<WorkspaceSettings> WorkspaceList { get; }
+
     public ObservableCollection<SavedSearchSettings> SavedSearches { get; } = new();
 
     /// <summary>Dropdown for the "Containing text" field (most-recent first).</summary>
@@ -102,6 +112,8 @@ public sealed partial class HistoryViewModel : ObservableObject
     public ObservableCollection<SearchScope> CustomScopes { get; } = new();
 
     public ObservableCollection<FavoriteResultSettings> FavoriteResults { get; } = new();
+
+    public ObservableCollection<WorkspaceSettings> Workspaces { get; } = new();
 
     /// <summary>Promotes the attempt into saved searches, both legacy lists, and persists.</summary>
     public void RecordSearch(SavedSearchSettings search)
@@ -147,6 +159,44 @@ public sealed partial class HistoryViewModel : ObservableObject
 
         SaveHistory();
         _status.Text = $"Saved scope {trimmedName}.";
+    }
+
+    public void SaveWorkspace(WorkspaceSettings workspace)
+    {
+        var normalized = NormalizeWorkspace(workspace);
+        if (!IsUsableWorkspace(normalized))
+            return;
+
+        for (var i = Workspaces.Count - 1; i >= 0; i--)
+        {
+            if (string.Equals(Workspaces[i].Name, normalized.Name, StringComparison.OrdinalIgnoreCase))
+                Workspaces.RemoveAt(i);
+        }
+
+        Workspaces.Insert(0, normalized);
+        while (Workspaces.Count > MaxWorkspaceEntries)
+            Workspaces.RemoveAt(Workspaces.Count - 1);
+
+        SaveHistory();
+        _status.Text = $"Saved workspace {normalized.DisplayName}.";
+    }
+
+    public void ReplaceCustomScopes(IEnumerable<SearchScope> scopes)
+    {
+        CustomScopes.Clear();
+        foreach (var scope in scopes.Select(NormalizeScope).Where(IsUsableScope))
+            CustomScopes.Add(scope);
+
+        SaveHistory();
+    }
+
+    public void ReplaceFavoriteResults(IEnumerable<FavoriteResultSettings> favorites)
+    {
+        FavoriteResults.Clear();
+        foreach (var favorite in favorites.Select(NormalizeFavorite).Where(IsUsableFavorite))
+            FavoriteResults.Add(favorite);
+
+        SaveHistory();
     }
 
     public bool IsFavorite(string path) =>
@@ -234,6 +284,30 @@ public sealed partial class HistoryViewModel : ObservableObject
     }
 
     private bool CanClearFavoriteResults() => FavoriteResults.Count > 0;
+
+    [RelayCommand]
+    private void RemoveWorkspace(WorkspaceSettings? workspace)
+    {
+        if (workspace is null)
+            return;
+
+        for (var i = Workspaces.Count - 1; i >= 0; i--)
+        {
+            if (string.Equals(Workspaces[i].Name, workspace.Name, StringComparison.OrdinalIgnoreCase))
+                Workspaces.RemoveAt(i);
+        }
+
+        SaveHistory();
+    }
+
+    [RelayCommand(CanExecute = nameof(CanClearWorkspaces))]
+    private void ClearWorkspaces()
+    {
+        Workspaces.Clear();
+        SaveHistory();
+    }
+
+    private bool CanClearWorkspaces() => Workspaces.Count > 0;
 
     [RelayCommand]
     private void RemoveCustomScope(SearchScope? scope)
@@ -336,6 +410,10 @@ public sealed partial class HistoryViewModel : ObservableObject
             settings.FavoriteResults = FavoriteResults
                 .Select(NormalizeFavorite)
                 .Where(IsUsableFavorite)
+                .ToList();
+            settings.Workspaces = Workspaces
+                .Select(NormalizeWorkspace)
+                .Where(IsUsableWorkspace)
                 .ToList();
             settings.CustomScopes = CustomScopes
                 .Where(scope => !string.IsNullOrWhiteSpace(scope.Name))
@@ -466,6 +544,13 @@ public sealed partial class HistoryViewModel : ObservableObject
         Contains(item.DisplayName, needle) ||
         Contains(item.Folder, needle);
 
+    private static bool MatchesWorkspace(WorkspaceSettings item, string needle) =>
+        Contains(item.Name, needle) ||
+        Contains(item.Search.QueryText, needle) ||
+        Contains(item.Search.SearchPath, needle) ||
+        Contains(item.ResultSort, needle) ||
+        Contains(item.ResultGroup, needle);
+
     private static bool MatchesText(string item, string needle) => Contains(item, needle);
 
     private static bool Contains(string? value, string needle) =>
@@ -481,6 +566,7 @@ public sealed partial class HistoryViewModel : ObservableObject
         RecentPathList.PageSize = _applicationSettings.SidebarPageSize;
         SavedSearchList.PageSize = _applicationSettings.SidebarPageSize;
         FavoriteResultList.PageSize = _applicationSettings.SidebarPageSize;
+        WorkspaceList.PageSize = _applicationSettings.SidebarPageSize;
     }
 
     private static SavedSearchSettings NormalizeSavedSearch(SavedSearchSettings search) =>
@@ -507,6 +593,8 @@ public sealed partial class HistoryViewModel : ObservableObject
 
     private const int MaxFavoriteEntries = 100;
 
+    private const int MaxWorkspaceEntries = 30;
+
     private static FavoriteResultSettings NormalizeFavorite(FavoriteResultSettings favorite) =>
         new()
         {
@@ -516,4 +604,46 @@ public sealed partial class HistoryViewModel : ObservableObject
 
     private static bool IsUsableFavorite(FavoriteResultSettings favorite) =>
         !string.IsNullOrWhiteSpace(favorite.Path);
+
+    private static WorkspaceSettings NormalizeWorkspace(WorkspaceSettings workspace) =>
+        new()
+        {
+            Name = workspace.Name?.Trim() ?? string.Empty,
+            UpdatedUtc = workspace.UpdatedUtc == default ? DateTime.UtcNow : workspace.UpdatedUtc,
+            Search = NormalizeSavedSearch(workspace.Search ?? new SavedSearchSettings()),
+            CustomScopes = workspace.CustomScopes
+                .Select(NormalizeScope)
+                .Where(IsUsableScope)
+                .ToList(),
+            FavoriteResults = workspace.FavoriteResults
+                .Select(NormalizeFavorite)
+                .Where(IsUsableFavorite)
+                .ToList(),
+            PinnedPaths = workspace.PinnedPaths
+                .Where(path => !string.IsNullOrWhiteSpace(path))
+                .Select(path => path.Trim())
+                .Distinct(StringComparer.OrdinalIgnoreCase)
+                .ToList(),
+            QuickSearchSelectedIndexedRoots = workspace.QuickSearchSelectedIndexedRoots
+                .Where(path => !string.IsNullOrWhiteSpace(path))
+                .Select(path => path.Trim())
+                .Distinct(StringComparer.OrdinalIgnoreCase)
+                .ToList(),
+            ResultSort = workspace.ResultSort?.Trim() ?? string.Empty,
+            ResultGroup = workspace.ResultGroup?.Trim() ?? string.Empty,
+            RefinementQuery = workspace.RefinementQuery?.Trim() ?? string.Empty,
+        };
+
+    private static bool IsUsableWorkspace(WorkspaceSettings workspace) =>
+        !string.IsNullOrWhiteSpace(workspace.Name);
+
+    private static SearchScope NormalizeScope(SearchScope scope) =>
+        new()
+        {
+            Name = scope.Name?.Trim() ?? string.Empty,
+            FileNamePattern = scope.FileNamePattern?.Trim() ?? string.Empty,
+        };
+
+    private static bool IsUsableScope(SearchScope scope) =>
+        !string.IsNullOrWhiteSpace(scope.Name);
 }

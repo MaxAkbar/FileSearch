@@ -187,6 +187,7 @@
                           Margin="0,0,16,0">
                         <Grid.RowDefinitions>
                             <RowDefinition x:Name="ScopesRow" Height="Auto"/>
+                            <RowDefinition x:Name="WorkspacesRow" Height="Auto"/>
                             <RowDefinition x:Name="RecentRow" Height="Auto"/>
                             <RowDefinition x:Name="FavoritesRow" Height="Auto"/>
                             <RowDefinition x:Name="IndexRow" Height="Auto"/>
@@ -298,7 +299,107 @@
                                 </DockPanel>
                             </Expander>
 
-                            <Expander x:Name="RecentSection" Grid.Row="1"
+                            <Expander x:Name="WorkspacesSection" Grid.Row="1"
+                                      Header="WORKSPACES" Style="{StaticResource NavSectionExpanderStyle}"
+                                      Expanded="OnNavSectionToggled" Collapsed="OnNavSectionToggled">
+                                <DockPanel>
+                                    <StackPanel DockPanel.Dock="Bottom">
+                                        <Button Command="{Binding Search.SaveWorkspaceCommand}"
+                                                Style="{StaticResource NavItemButtonStyle}">
+                                            <StackPanel Orientation="Horizontal">
+                                                <ui:FontIcon Glyph="&#xE74E;" FontSize="14" Margin="0,0,11,0"/>
+                                                <TextBlock Text="Save current workspace" VerticalAlignment="Center"/>
+                                            </StackPanel>
+                                        </Button>
+                                        <Button Command="{Binding History.ClearWorkspacesCommand}"
+                                                Style="{StaticResource NavItemButtonStyle}">
+                                            <StackPanel Orientation="Horizontal">
+                                                <ui:FontIcon Glyph="&#xE74D;" FontSize="14" Margin="0,0,11,0"/>
+                                                <TextBlock Text="Clear workspaces" VerticalAlignment="Center"/>
+                                            </StackPanel>
+                                        </Button>
+                                    </StackPanel>
+
+                                    <Grid DockPanel.Dock="Bottom"
+                                          Margin="0,4,0,2"
+                                          Visibility="{Binding History.WorkspaceList.IsFooterVisible, Converter={StaticResource BoolToVisibility}}">
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="Auto"/>
+                                            <ColumnDefinition Width="*"/>
+                                            <ColumnDefinition Width="Auto"/>
+                                        </Grid.ColumnDefinitions>
+                                        <Button Command="{Binding History.WorkspaceList.PreviousPageCommand}"
+                                                Style="{StaticResource IconButtonStyle}"
+                                                Width="24" Height="24"
+                                                ToolTip="Previous page"
+                                                Visibility="{Binding History.WorkspaceList.IsPagerVisible, Converter={StaticResource BoolToVisibility}}">
+                                            <ui:FontIcon Glyph="&#xE72B;" FontSize="11"/>
+                                        </Button>
+                                        <TextBlock Grid.Column="1"
+                                                   Text="{Binding History.WorkspaceList.PageSummaryText}"
+                                                   Style="{StaticResource SidebarPagerTextStyle}"/>
+                                        <Button Grid.Column="2"
+                                                Command="{Binding History.WorkspaceList.NextPageCommand}"
+                                                Style="{StaticResource IconButtonStyle}"
+                                                Width="24" Height="24"
+                                                ToolTip="Next page"
+                                                Visibility="{Binding History.WorkspaceList.IsPagerVisible, Converter={StaticResource BoolToVisibility}}">
+                                            <ui:FontIcon Glyph="&#xE72A;" FontSize="11"/>
+                                        </Button>
+                                    </Grid>
+
+                                    <Grid DockPanel.Dock="Top">
+                                        <TextBox Text="{Binding History.WorkspaceList.SearchText, UpdateSourceTrigger=PropertyChanged}"
+                                                 Style="{StaticResource SidebarSearchBoxStyle}"
+                                                 ui:ControlHelper.PlaceholderText="Search workspaces"/>
+                                        <Button Command="{Binding History.WorkspaceList.ClearSearchCommand}"
+                                                Style="{StaticResource IconButtonStyle}"
+                                                Width="22" Height="22"
+                                                HorizontalAlignment="Right"
+                                                VerticalAlignment="Center"
+                                                Margin="0,0,4,2"
+                                                ToolTip="Clear search"
+                                                Visibility="{Binding History.WorkspaceList.HasSearchText, Converter={StaticResource BoolToVisibility}}">
+                                            <ui:FontIcon Glyph="&#xE711;" FontSize="10"/>
+                                        </Button>
+                                    </Grid>
+
+                                    <ListBox ItemsSource="{Binding History.WorkspaceList.Items}"
+                                             SelectedItem="{Binding Search.SelectedWorkspace, Mode=TwoWay}"
+                                             Style="{StaticResource NavListBoxStyle}"
+                                             ItemContainerStyle="{StaticResource NavListBoxItemStyle}">
+                                        <ListBox.ItemTemplate>
+                                            <DataTemplate>
+                                                <Grid ToolTip="{Binding Summary}">
+                                                    <Grid.ColumnDefinitions>
+                                                        <ColumnDefinition Width="Auto"/>
+                                                        <ColumnDefinition Width="*"/>
+                                                        <ColumnDefinition Width="Auto"/>
+                                                    </Grid.ColumnDefinitions>
+                                                    <ui:FontIcon Glyph="&#xE8F1;" FontSize="13" Margin="0,0,10,0"
+                                                                 Foreground="{DynamicResource Atlas.AccentBrush}"
+                                                                 VerticalAlignment="Center"/>
+                                                    <StackPanel Grid.Column="1" VerticalAlignment="Center">
+                                                        <TextBlock Text="{Binding DisplayName}" TextTrimming="CharacterEllipsis"/>
+                                                        <TextBlock Text="{Binding Summary}" Style="{StaticResource MutedValueStyle}" TextTrimming="CharacterEllipsis"/>
+                                                    </StackPanel>
+                                                    <Button Grid.Column="2"
+                                                            Command="{Binding DataContext.History.RemoveWorkspaceCommand, RelativeSource={RelativeSource AncestorType=ListBox}}"
+                                                            CommandParameter="{Binding}"
+                                                            Style="{StaticResource IconButtonStyle}"
+                                                            Width="24" Height="24"
+                                                            Margin="4,0,0,0"
+                                                            ToolTip="Remove workspace">
+                                                        <ui:FontIcon Glyph="&#xE74D;" FontSize="11"/>
+                                                    </Button>
+                                                </Grid>
+                                            </DataTemplate>
+                                        </ListBox.ItemTemplate>
+                                    </ListBox>
+                                </DockPanel>
+                            </Expander>
+
+                            <Expander x:Name="RecentSection" Grid.Row="2"
                                       Header="RECENT FOLDERS" Style="{StaticResource NavSectionExpanderStyle}"
                                       Expanded="OnNavSectionToggled" Collapsed="OnNavSectionToggled">
                                 <DockPanel>
@@ -386,7 +487,7 @@
                                 </DockPanel>
                             </Expander>
 
-                            <Expander x:Name="FavoritesSection" Grid.Row="2"
+                            <Expander x:Name="FavoritesSection" Grid.Row="3"
                                       Header="FAVORITES" Style="{StaticResource NavSectionExpanderStyle}"
                                       Expanded="OnNavSectionToggled" Collapsed="OnNavSectionToggled">
                                 <DockPanel>
@@ -488,7 +589,7 @@
                                 </DockPanel>
                             </Expander>
 
-                            <Expander x:Name="IndexSection" Grid.Row="3"
+                            <Expander x:Name="IndexSection" Grid.Row="4"
                                       Header="INDEXED LOCATIONS" Style="{StaticResource NavSectionExpanderStyle}"
                                       Expanded="OnNavSectionToggled" Collapsed="OnNavSectionToggled">
                                 <DockPanel>
@@ -579,7 +680,7 @@
                                 </DockPanel>
                             </Expander>
 
-                            <Expander x:Name="SavedSection" Grid.Row="4"
+                            <Expander x:Name="SavedSection" Grid.Row="5"
                                       Header="SAVED SEARCHES" Style="{StaticResource NavSectionExpanderStyle}"
                                       Expanded="OnNavSectionToggled" Collapsed="OnNavSectionToggled">
                                 <DockPanel>

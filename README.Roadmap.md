@@ -16,7 +16,7 @@ Completed since the older roadmap:
 - Index management UI with status badges, health diagnostics, validation, compaction, and pause/resume controls.
 - Resource controls for battery, CPU profile, and disk pauses.
 - Out-of-process extractor host, reusable extractor host pool, extractor versioning, IFilter fallback, archive limits, and failed-file export.
-- Spectre.Console CLI REPL with live search, indexed search, index maintenance, and filter commands.
+- Spectre.Console CLI REPL with live search, indexed search, index maintenance, filter commands, and one-shot search export to CSV/JSON/JSON Lines/Markdown.
 - Programmatic Core API examples and PowerShell CLI automation docs.
 - GitHub Actions CI foundation for build, test, formatting, CLI smoke, published sidecar smoke, dependency review, and manual Store packaging.
 - Security, privacy, and release checklist documentation.
@@ -24,8 +24,8 @@ Completed since the older roadmap:
 Still missing or partial:
 
 - No benchmark/performance harness for live scan, index build, or indexed query latency.
-- CLI is interactive-first; it lacks first-class one-shot commands and JSON/CSV output.
-- Saved searches and custom scopes exist, but full workspace/profile bundles do not.
+- CLI search now has first-class one-shot CSV/JSON/JSON Lines/Markdown output; structured one-shot index maintenance output is still partial.
+- Saved searches, custom scopes, and workspace bundles exist; richer profile sharing/import-export remains future work.
 - Results now have GUI facets, grouping, sort presets, direct CSV/JSON/JSON Lines/Markdown export, drag-and-drop, persistent favorites, shared pinned paths, and safe result rename/delete; richer reporting remains missing.
 - Durable USN replay is NTFS-only. ReFS remains on snapshot validation until 128-bit file identifiers are supported and tested.
 - Hard-link-aware path identity is not fully implemented; ambiguous USN deletes fall back to root validation.
@@ -57,24 +57,23 @@ Still missing or partial:
 
 ### 3. Search Workflow and Result UX
 
-- Promote saved searches and custom scopes into full workspace/profile bundles.
-- Workspace bundles should store name, root or indexed-location set, query text, query mode, case sensitivity, recursion, glob filters, extension filters, size/date filters, index preference, result view state, and pinned/favorite result sets.
+- Extend workspace bundles with import/export, explicit profile sharing, and optional auto-run-on-load behavior.
+- Workspace bundles now store name, search settings, custom scopes, result view state, selected Quick Search indexed roots, and pinned/favorite result sets.
 - Extend result facets from the current extension, folder, modified date, hit source, and file size facets toward indexed/live source when per-hit route metadata is available.
 - Extend sort/group presets beyond the current relevance, recency, filename, hit count, folder, file type, and modified date controls when users need more advanced path and size views.
-- Add CLI export commands and richer GUI reports beyond the current GUI CSV, JSON, JSON Lines, and Markdown result export.
+- Add richer GUI reports and more structured CLI maintenance output beyond the current GUI and CLI search CSV, JSON, JSON Lines, and Markdown result export.
 - Add richer preview controls for context size and copy/export of selected result snippets.
 
 ### 4. CLI, PowerShell, and API Surface
 
-- Add one-shot CLI commands alongside the REPL:
-  - `filesearch search "query" --path C:\src --mode boolean --json`
+- Extend one-shot CLI commands beyond search:
   - `filesearch index build C:\src`
   - `filesearch index locations --json`
   - `filesearch index stats C:\src --json`
-- Add table, JSON, JSON Lines, and CSV output formats.
+- Search one-shot output supports JSON, JSON Lines, CSV, and Markdown; add structured output for index locations, stats, and failures.
 - Add stable DTOs for automation output: search hit, search summary, index location, index stats, and index error.
 - Keep PowerShell usage CLI-driven for now.
-- Defer a dedicated PowerShell module until JSON/CSV one-shot CLI support exists.
+- Defer a dedicated PowerShell module until structured CLI output covers index maintenance as well as search.
 - If a PowerShell module is added later, it should wrap the CLI/API with cmdlets such as `Search-FileContent`, `Update-FileSearchIndex`, `Get-FileSearchIndexLocation`, and `Clear-FileSearchIndex`.
 
 ### 5. Product Maturity

@@ -62,6 +62,8 @@ public sealed class AppSettings
 
     public List<FavoriteResultSettings> FavoriteResults { get; set; } = new();
 
+    public List<WorkspaceSettings> Workspaces { get; set; } = new();
+
     public List<IndexedLocationSettings> IndexedLocations { get; set; } = new();
 
     public List<IndexFilterListSettings> IndexInclusionLists { get; set; } = new();
