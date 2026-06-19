@@ -349,20 +349,59 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          $files = Get-ChildItem -LiteralPath .\release-artifacts -File -Recurse | Where-Object {
+          $sourceFiles = @(Get-ChildItem -LiteralPath .\release-artifacts -File -Recurse | Where-Object {
             $_.Name -like "*.zip" -or
             $_.Name -like "*.msi" -or
             $_.Name -like "*.msix" -or
             $_.Name -like "*.appxsym" -or
             $_.Name -like "*.msixupload" -or
             $_.Name -like "SHA256SUMS*.txt"
-          } | Sort-Object Name | ForEach-Object { $_.FullName }
+          } | Sort-Object FullName)
 
-          if ($files.Count -eq 0) {
+          if ($sourceFiles.Count -eq 0) {
             throw "No release files were downloaded."
           }
 
-          gh release create "${{ github.ref_name }}" $files `
+          $uploadDirectory = Join-Path $PWD "release-upload"
+          New-Item -ItemType Directory -Force -Path $uploadDirectory | Out-Null
+
+          $usedNames = @{}
+          $uploadFiles = New-Object System.Collections.Generic.List[string]
+          foreach ($file in $sourceFiles) {
+            $assetName = $file.Name
+            if ($usedNames.ContainsKey($assetName)) {
+              $parentName = Split-Path -Leaf (Split-Path -Parent $file.FullName)
+              $assetName = "{0}-{1}{2}" -f [IO.Path]::GetFileNameWithoutExtension($file.Name), $parentName, [IO.Path]::GetExtension($file.Name)
+            }
+
+            $candidateName = $assetName
+            $duplicateIndex = 2
+            while ($usedNames.ContainsKey($candidateName)) {
+              $candidateName = "{0}-{1}{2}" -f [IO.Path]::GetFileNameWithoutExtension($assetName), $duplicateIndex, [IO.Path]::GetExtension($assetName)
+              $duplicateIndex++
+            }
+
+            $usedNames[$candidateName] = $true
+            $destination = Join-Path $uploadDirectory $candidateName
+            Copy-Item -LiteralPath $file.FullName -Destination $destination
+            $uploadFiles.Add($destination) | Out-Null
+          }
+
+          $existingRelease = gh release view "${{ github.ref_name }}" --json isDraft 2>$null
+          if ($LASTEXITCODE -eq 0) {
+            $existingRelease = $existingRelease | ConvertFrom-Json
+            if (-not $existingRelease.isDraft) {
+              throw "Release ${{ github.ref_name }} already exists and is not a draft."
+            }
+
+            gh release delete "${{ github.ref_name }}" --yes
+            if ($LASTEXITCODE -ne 0) {
+              throw "Failed to delete existing draft release ${{ github.ref_name }}."
+            }
+          }
+
+          $uploadFileArguments = $uploadFiles.ToArray()
+          gh release create "${{ github.ref_name }}" $uploadFileArguments `
             --draft `
             --verify-tag `
             --title "FileSearch ${{ needs.prepare.outputs.version }}" `
