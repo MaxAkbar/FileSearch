@@ -2,6 +2,7 @@ using System.Runtime.CompilerServices;
 using FileSearch.Core.Engine;
 using FileSearch.Core.Extractors;
 using FileSearch.Core.Queries;
+using FileSearch.Gui.Services;
 using FileSearch.Gui.Settings;
 using FileSearch.Gui.ViewModels;
 
@@ -334,6 +335,92 @@ public sealed class SearchViewModelTests
     }
 
     [Fact]
+    public void ResultSortAndFacetsFilterCurrentResults()
+    {
+        RunWithPump((pump, vm, history, status, settings) =>
+        {
+            vm.QueryText = "needle";
+            vm.SearchPath = Path.GetTempPath();
+
+            var task = vm.SearchCommand.ExecuteAsync(null);
+            pump.PumpUntil(() => task.IsCompleted, TimeSpan.FromSeconds(10));
+
+            vm.SelectedSortOption = vm.ResultSortOptions.Single(option => option.Value == ResultSortMode.HitCount);
+
+            var visible = vm.FilesView.Cast<FileResultViewModel>().ToList();
+            Assert.Equal(@"C:\results\a.cs", visible[0].FullPath);
+            Assert.Equal(@"C:\results\b.md", visible[1].FullPath);
+
+            vm.SelectedFileTypeFacet = vm.FileTypeFacetOptions.Single(option => option.Value == "md");
+
+            visible = vm.FilesView.Cast<FileResultViewModel>().ToList();
+            var result = Assert.Single(visible);
+            Assert.Equal(@"C:\results\b.md", result.FullPath);
+            Assert.Equal(1, vm.FilesVisible);
+        }, new ResultManagementSearcher());
+    }
+
+    [Fact]
+    public void ExportResultsWritesJsonLinesForVisibleHits()
+    {
+        var exportPath = Path.Combine(Path.GetTempPath(), $"{Guid.NewGuid():N}.jsonl");
+        var savePicker = new FakeFileSavePicker { PathToReturn = exportPath };
+        try
+        {
+            RunWithPump((pump, vm, history, status, settings) =>
+            {
+                vm.QueryText = "needle";
+                vm.SearchPath = Path.GetTempPath();
+
+                var search = vm.SearchCommand.ExecuteAsync(null);
+                pump.PumpUntil(() => search.IsCompleted, TimeSpan.FromSeconds(10));
+
+                var export = vm.ExportResultsCommand.ExecuteAsync("jsonl");
+                pump.PumpUntil(() => export.IsCompleted, TimeSpan.FromSeconds(10));
+
+                Assert.Equal("Export search results", savePicker.LastTitle);
+                Assert.EndsWith(".jsonl", savePicker.LastDefaultFileName);
+                Assert.True(File.Exists(exportPath));
+                var lines = File.ReadAllLines(exportPath);
+                Assert.Equal(3, lines.Length);
+                Assert.Contains("\"LineNumber\":1", lines[0]);
+                Assert.Contains(@"C:\\results\\b.md", lines[0]);
+                Assert.StartsWith("Exported", status.Text);
+            }, new ResultManagementSearcher(), savePicker);
+        }
+        finally
+        {
+            if (File.Exists(exportPath))
+                File.Delete(exportPath);
+        }
+    }
+
+    [Fact]
+    public void TogglePinResultPersistsSharedPinnedPath()
+    {
+        RunWithPump((pump, vm, history, status, settings) =>
+        {
+            vm.QueryText = "needle";
+            vm.SearchPath = Path.GetTempPath();
+
+            var task = vm.SearchCommand.ExecuteAsync(null);
+            pump.PumpUntil(() => task.IsCompleted, TimeSpan.FromSeconds(10));
+
+            var result = vm.Files.Single(file => file.FullPath == @"C:\results\a.cs");
+
+            vm.TogglePinResultCommand.Execute(result);
+
+            Assert.True(result.IsPinned);
+            Assert.Equal(result.FullPath, Assert.Single(settings.Current.QuickSearchPinnedPaths));
+
+            vm.TogglePinResultCommand.Execute(result);
+
+            Assert.False(result.IsPinned);
+            Assert.Empty(settings.Current.QuickSearchPinnedPaths);
+        }, new ResultManagementSearcher());
+    }
+
+    [Fact]
     public async Task FileResultOpenCommandRecordsUsage()
     {
         var recordedPaths = new List<string>();
@@ -353,7 +440,8 @@ public sealed class SearchViewModelTests
 
     private static void RunWithPump(
         Action<PumpingSynchronizationContext, SearchViewModel, HistoryViewModel, StatusBarViewModel, FakeSettingsService> body,
-        ISearcher? searcher = null)
+        ISearcher? searcher = null,
+        IFileSavePicker? fileSavePicker = null)
     {
         var previous = SynchronizationContext.Current;
         var pump = new PumpingSynchronizationContext();
@@ -374,7 +462,8 @@ public sealed class SearchViewModelTests
                 new FakeFileTypeOptionsStore(),
                 new FakeFolderPicker(),
                 history,
-                status);
+                status,
+                fileSavePicker: fileSavePicker);
 
             body(pump, vm, history, status, settings);
         }
@@ -441,6 +530,43 @@ public sealed class SearchViewModelTests
             RequestCount++;
             await Task.Yield();
             yield break;
+        }
+    }
+
+    private sealed class ResultManagementSearcher : ISearcher
+    {
+        public async IAsyncEnumerable<Hit> SearchAsync(
+            SearchRequest request,
+            [EnumeratorCancellation] CancellationToken cancellationToken)
+        {
+            await Task.Yield();
+            yield return new Hit(
+                @"C:\results\b.md",
+                1,
+                "needle markdown",
+                Array.Empty<MatchSpan>(),
+                HitKind.Metadata,
+                Score: 0.5,
+                SizeBytes: 200 * 1024,
+                ModifiedUtc: DateTime.UtcNow.AddDays(-2));
+            yield return new Hit(
+                @"C:\results\a.cs",
+                1,
+                "needle code one",
+                Array.Empty<MatchSpan>(),
+                HitKind.Content,
+                Score: 0.4,
+                SizeBytes: 20 * 1024,
+                ModifiedUtc: DateTime.UtcNow);
+            yield return new Hit(
+                @"C:\results\a.cs",
+                2,
+                "needle code two",
+                Array.Empty<MatchSpan>(),
+                HitKind.Content,
+                Score: 0.3,
+                SizeBytes: 20 * 1024,
+                ModifiedUtc: DateTime.UtcNow);
         }
     }
 

@@ -1,9 +1,15 @@
 using System;
+using System.Buffers;
 using System.Collections.Generic;
+using System.Collections.Specialized;
 using System.Collections.ObjectModel;
 using System.ComponentModel;
 using System.Diagnostics;
+using System.Globalization;
+using System.IO;
 using System.Linq;
+using System.Text;
+using System.Text.Json;
 using System.Threading;
 using System.Threading.Tasks;
 using System.Windows.Data;
@@ -40,6 +46,7 @@ public sealed partial class SearchViewModel : ObservableObject, IDisposable
     private readonly IFileTypeOptionsStore _fileTypeOptionsStore;
     private readonly FileTypeOptions _fileTypeOptions;
     private readonly IFolderPicker _folderPicker;
+    private readonly IFileSavePicker? _fileSavePicker;
     private readonly HistoryViewModel _history;
     private readonly StatusBarViewModel _status;
 
@@ -50,6 +57,9 @@ public sealed partial class SearchViewModel : ObservableObject, IDisposable
     private CancellationTokenSource? _previewCts;
     private CancellationTokenSource? _refinementDebounceCts;
     private readonly bool _isInitialized;
+    private bool _isRebuildingFacetOptions;
+    private bool _suppressResultViewMaintenance;
+    private int _nextResultRank;
 
     public SearchViewModel(
         ISearcher searcher,
@@ -62,7 +72,8 @@ public sealed partial class SearchViewModel : ObservableObject, IDisposable
         IFolderPicker folderPicker,
         HistoryViewModel history,
         StatusBarViewModel status,
-        IIndexUsageStore? indexUsageStore = null)
+        IIndexUsageStore? indexUsageStore = null,
+        IFileSavePicker? fileSavePicker = null)
     {
         _searcher = searcher;
         _extractorRegistry = extractorRegistry;
@@ -74,13 +85,19 @@ public sealed partial class SearchViewModel : ObservableObject, IDisposable
         _fileTypeOptionsStore = fileTypeOptionsStore;
         _fileTypeOptions = _fileTypeOptionsStore.Load();
         _folderPicker = folderPicker;
+        _fileSavePicker = fileSavePicker;
         _history = history;
         _status = status;
 
         // Set up the filtered view used by the "Filter" tab.
         FilesView = CollectionViewSource.GetDefaultView(Files);
         FilesView.Filter = FilterFiles;
-        Files.CollectionChanged += (_, _) => OnPropertyChanged(nameof(FilesVisible));
+        Files.CollectionChanged += OnFilesChanged;
+
+        SelectedSortOption = ResultSortOptions[0];
+        SelectedGroupOption = ResultGroupOptions[0];
+        RebuildFacetOptions();
+        ApplyResultViewShape();
 
         var saved = _settingsService.Current;
         SkipUnknownFileTypes = saved.SkipUnknownFileTypes;
@@ -108,6 +125,34 @@ public sealed partial class SearchViewModel : ObservableObject, IDisposable
     }
 
     public ObservableCollection<FileResultViewModel> Files { get; } = new();
+
+    public ObservableCollection<ResultFacetOption> FileTypeFacetOptions { get; } = new();
+
+    public ObservableCollection<ResultFacetOption> FolderFacetOptions { get; } = new();
+
+    public ObservableCollection<ResultFacetOption> ModifiedFacetOptions { get; } = new();
+
+    public ObservableCollection<ResultFacetOption> SourceFacetOptions { get; } = new();
+
+    public ObservableCollection<ResultFacetOption> SizeFacetOptions { get; } = new();
+
+    public IReadOnlyList<ResultSortOption> ResultSortOptions { get; } =
+        new[]
+        {
+            new ResultSortOption(ResultSortMode.Relevance, "Relevance"),
+            new ResultSortOption(ResultSortMode.Recency, "Recency"),
+            new ResultSortOption(ResultSortMode.Filename, "Filename"),
+            new ResultSortOption(ResultSortMode.HitCount, "Hit count"),
+        };
+
+    public IReadOnlyList<ResultGroupOption> ResultGroupOptions { get; } =
+        new[]
+        {
+            new ResultGroupOption(ResultGroupMode.File, "File"),
+            new ResultGroupOption(ResultGroupMode.Folder, "Folder"),
+            new ResultGroupOption(ResultGroupMode.FileType, "File type"),
+            new ResultGroupOption(ResultGroupMode.ModifiedDate, "Modified date"),
+        };
 
     /// <summary>
     /// Filtered view of <see cref="Files"/>. The results list binds to
@@ -163,6 +208,13 @@ public sealed partial class SearchViewModel : ObservableObject, IDisposable
     [ObservableProperty] private bool _isPreviewPaneVisible = true;
     [ObservableProperty] private double _previewPaneWidth = 360;
     [ObservableProperty] private int _selectedDetailsTabIndex;
+    [ObservableProperty] private ResultSortOption? _selectedSortOption;
+    [ObservableProperty] private ResultGroupOption? _selectedGroupOption;
+    [ObservableProperty] private ResultFacetOption? _selectedFileTypeFacet;
+    [ObservableProperty] private ResultFacetOption? _selectedFolderFacet;
+    [ObservableProperty] private ResultFacetOption? _selectedModifiedFacet;
+    [ObservableProperty] private ResultFacetOption? _selectedSourceFacet;
+    [ObservableProperty] private ResultFacetOption? _selectedSizeFacet;
 
     // --- in-memory filter over the results ("search the search") ---
     [ObservableProperty] private string _refinementQuery = string.Empty;
@@ -204,14 +256,40 @@ public sealed partial class SearchViewModel : ObservableObject, IDisposable
     {
         FilesView.Refresh();
         OnPropertyChanged(nameof(FilesVisible));
+        ExportResultsCommand.NotifyCanExecuteChanged();
+    }
+
+    private void OnFilesChanged(object? sender, NotifyCollectionChangedEventArgs e)
+    {
+        OnPropertyChanged(nameof(FilesVisible));
+        ExportResultsCommand.NotifyCanExecuteChanged();
+        if (!_suppressResultViewMaintenance)
+            RebuildFacetOptions();
     }
 
     [RelayCommand]
     private void ClearRefinement() => RefinementQuery = string.Empty;
 
+    [RelayCommand]
+    private void ClearResultFacets()
+    {
+        SelectFacetValue(FileTypeFacetOptions, option => SelectedFileTypeFacet = option, ResultFacetOption.AllValue);
+        SelectFacetValue(FolderFacetOptions, option => SelectedFolderFacet = option, ResultFacetOption.AllValue);
+        SelectFacetValue(ModifiedFacetOptions, option => SelectedModifiedFacet = option, ResultFacetOption.AllValue);
+        SelectFacetValue(SourceFacetOptions, option => SelectedSourceFacet = option, ResultFacetOption.AllValue);
+        SelectFacetValue(SizeFacetOptions, option => SelectedSizeFacet = option, ResultFacetOption.AllValue);
+    }
+
     private bool FilterFiles(object obj)
     {
         if (obj is not FileResultViewModel file) return true;
+
+        if (!FacetAllows(SelectedFileTypeFacet, file.Extension)) return false;
+        if (!FacetAllows(SelectedFolderFacet, file.Directory)) return false;
+        if (!FacetAllows(SelectedModifiedFacet, file.ModifiedDateFacet)) return false;
+        if (!FacetAllows(SelectedSourceFacet, file.SourceGroup)) return false;
+        if (!FacetAllows(SelectedSizeFacet, file.SizeFacet)) return false;
+
         if (string.IsNullOrWhiteSpace(RefinementQuery)) return true;
 
         var needle = RefinementQuery;
@@ -223,6 +301,11 @@ public sealed partial class SearchViewModel : ObservableObject, IDisposable
                 return true;
         return false;
     }
+
+    private static bool FacetAllows(ResultFacetOption? facet, string value) =>
+        facet is null ||
+        string.Equals(facet.Value, ResultFacetOption.AllValue, StringComparison.Ordinal) ||
+        string.Equals(facet.Value, NormalizeFacetValue(value), StringComparison.OrdinalIgnoreCase);
 
     [ObservableProperty]
     private FileResultViewModel? _selectedFile;
@@ -301,6 +384,20 @@ public sealed partial class SearchViewModel : ObservableObject, IDisposable
         }
     }
 
+    partial void OnSelectedSortOptionChanged(ResultSortOption? value) => ApplyResultViewShape();
+
+    partial void OnSelectedGroupOptionChanged(ResultGroupOption? value) => ApplyResultViewShape();
+
+    partial void OnSelectedFileTypeFacetChanged(ResultFacetOption? value) => OnFacetSelectionChanged();
+
+    partial void OnSelectedFolderFacetChanged(ResultFacetOption? value) => OnFacetSelectionChanged();
+
+    partial void OnSelectedModifiedFacetChanged(ResultFacetOption? value) => OnFacetSelectionChanged();
+
+    partial void OnSelectedSourceFacetChanged(ResultFacetOption? value) => OnFacetSelectionChanged();
+
+    partial void OnSelectedSizeFacetChanged(ResultFacetOption? value) => OnFacetSelectionChanged();
+
     // ----- commands -----
 
     [RelayCommand]
@@ -345,6 +442,62 @@ public sealed partial class SearchViewModel : ObservableObject, IDisposable
 
     private bool CanCopyFileContent() => HasSelectedFile;
 
+    [RelayCommand(CanExecute = nameof(CanExportResults))]
+    private async Task ExportResultsAsync(string? formatName)
+    {
+        if (_fileSavePicker is null)
+            return;
+
+        var format = ParseExportFormat(formatName);
+        var visibleFiles = VisibleResultFiles().ToList();
+        if (visibleFiles.Count == 0)
+            return;
+
+        var path = _fileSavePicker.PickSaveFile(
+            "Export search results",
+            "CSV (*.csv)|*.csv|JSON (*.json)|*.json|JSON Lines (*.jsonl)|*.jsonl|Markdown (*.md)|*.md",
+            BuildDefaultExportFileName(format));
+        if (string.IsNullOrWhiteSpace(path))
+            return;
+
+        try
+        {
+            var text = RenderExport(format, visibleFiles);
+            await File.WriteAllTextAsync(path, text).ConfigureAwait(true);
+            _status.Text = $"Exported {visibleFiles.Count:n0} result files to {path}.";
+        }
+        catch (Exception ex)
+        {
+            _status.Text = $"Couldn't export results: {ex.Message}";
+        }
+    }
+
+    private bool CanExportResults(string? formatName) => _fileSavePicker is not null && FilesVisible > 0;
+
+    [RelayCommand(CanExecute = nameof(CanTogglePinResult))]
+    private void TogglePinResult(FileResultViewModel? file)
+    {
+        if (file is null)
+            return;
+
+        _settingsService.Update(settings =>
+        {
+            for (var i = settings.QuickSearchPinnedPaths.Count - 1; i >= 0; i--)
+            {
+                if (string.Equals(settings.QuickSearchPinnedPaths[i], file.FullPath, StringComparison.OrdinalIgnoreCase))
+                    settings.QuickSearchPinnedPaths.RemoveAt(i);
+            }
+
+            if (!file.IsPinned)
+                settings.QuickSearchPinnedPaths.Insert(0, file.FullPath);
+        });
+
+        file.IsPinned = !file.IsPinned;
+        _status.Text = file.IsPinned ? "Pinned result." : "Unpinned result.";
+    }
+
+    private bool CanTogglePinResult(FileResultViewModel? file) => file is not null;
+
     [RelayCommand]
     private void Browse()
     {
@@ -375,6 +528,8 @@ public sealed partial class SearchViewModel : ObservableObject, IDisposable
         TotalHits = 0;
         FilesMatched = 0;
         ElapsedText = "—";
+        _nextResultRank = 0;
+        RebuildFacetOptions();
 
         Query query;
         try
@@ -470,21 +625,32 @@ public sealed partial class SearchViewModel : ObservableObject, IDisposable
         var total = TotalHits;
         var drained = 0;
 
-        while (drained < maxPerDrain && pendingHits.TryDequeue(out var hit))
+        _suppressResultViewMaintenance = true;
+        try
         {
-            if (!_filesByPath.TryGetValue(hit.Path, out var file))
+            while (drained < maxPerDrain && pendingHits.TryDequeue(out var hit))
             {
-                var recordOpened = _indexUsageStore is null
-                    ? null
-                    : new Func<string, CancellationToken, Task>(_indexUsageStore.RecordFileOpenedAsync);
-                file = new FileResultViewModel(hit.Path, _fileLauncher, recordOpened);
-                _filesByPath[hit.Path] = file;
-                Files.Add(file);
-            }
+                if (!_filesByPath.TryGetValue(hit.Path, out var file))
+                {
+                    var recordOpened = _indexUsageStore is null
+                        ? null
+                        : new Func<string, CancellationToken, Task>(_indexUsageStore.RecordFileOpenedAsync);
+                    file = new FileResultViewModel(hit.Path, _fileLauncher, recordOpened, _nextResultRank++)
+                    {
+                        IsPinned = IsPinned(hit.Path),
+                    };
+                    _filesByPath[hit.Path] = file;
+                    Files.Add(file);
+                }
 
-            file.AddHit(hit);
-            total++;
-            drained++;
+                file.AddHit(hit);
+                total++;
+                drained++;
+            }
+        }
+        finally
+        {
+            _suppressResultViewMaintenance = false;
         }
 
         if (drained == 0)
@@ -492,6 +658,8 @@ public sealed partial class SearchViewModel : ObservableObject, IDisposable
 
         TotalHits = total;
         FilesMatched = Files.Count;
+        RebuildFacetOptions();
+        RefreshFilesView();
         _status.Text = $"Searching... {TotalHits:n0} hits in {FilesMatched:n0} files";
     }
 
@@ -588,6 +756,345 @@ public sealed partial class SearchViewModel : ObservableObject, IDisposable
     }
 
     // ----- helpers -----
+
+    private void ApplyResultViewShape()
+    {
+        using (FilesView.DeferRefresh())
+        {
+            FilesView.SortDescriptions.Clear();
+            FilesView.GroupDescriptions.Clear();
+
+            switch (SelectedGroupOption?.Value ?? ResultGroupMode.File)
+            {
+                case ResultGroupMode.Folder:
+                    FilesView.GroupDescriptions.Add(new PropertyGroupDescription(nameof(FileResultViewModel.Directory)));
+                    break;
+                case ResultGroupMode.FileType:
+                    FilesView.GroupDescriptions.Add(new PropertyGroupDescription(nameof(FileResultViewModel.FileTypeGroup)));
+                    break;
+                case ResultGroupMode.ModifiedDate:
+                    FilesView.GroupDescriptions.Add(new PropertyGroupDescription(nameof(FileResultViewModel.ModifiedDateGroup)));
+                    break;
+            }
+
+            switch (SelectedSortOption?.Value ?? ResultSortMode.Relevance)
+            {
+                case ResultSortMode.Recency:
+                    FilesView.SortDescriptions.Add(new SortDescription(nameof(FileResultViewModel.ModifiedSortTicks), ListSortDirection.Descending));
+                    FilesView.SortDescriptions.Add(new SortDescription(nameof(FileResultViewModel.SearchRank), ListSortDirection.Ascending));
+                    break;
+                case ResultSortMode.Filename:
+                    FilesView.SortDescriptions.Add(new SortDescription(nameof(FileResultViewModel.FileName), ListSortDirection.Ascending));
+                    FilesView.SortDescriptions.Add(new SortDescription(nameof(FileResultViewModel.Directory), ListSortDirection.Ascending));
+                    break;
+                case ResultSortMode.HitCount:
+                    FilesView.SortDescriptions.Add(new SortDescription(nameof(FileResultViewModel.HitCount), ListSortDirection.Descending));
+                    FilesView.SortDescriptions.Add(new SortDescription(nameof(FileResultViewModel.SearchRank), ListSortDirection.Ascending));
+                    break;
+                default:
+                    FilesView.SortDescriptions.Add(new SortDescription(nameof(FileResultViewModel.BestScore), ListSortDirection.Descending));
+                    FilesView.SortDescriptions.Add(new SortDescription(nameof(FileResultViewModel.SearchRank), ListSortDirection.Ascending));
+                    break;
+            }
+        }
+
+        OnPropertyChanged(nameof(FilesVisible));
+        ExportResultsCommand.NotifyCanExecuteChanged();
+    }
+
+    private void OnFacetSelectionChanged()
+    {
+        if (_isRebuildingFacetOptions)
+            return;
+
+        RefreshFilesView();
+    }
+
+    private void RebuildFacetOptions()
+    {
+        _isRebuildingFacetOptions = true;
+        try
+        {
+            var fileTypeValue = SelectedFileTypeFacet?.Value ?? ResultFacetOption.AllValue;
+            var folderValue = SelectedFolderFacet?.Value ?? ResultFacetOption.AllValue;
+            var modifiedValue = SelectedModifiedFacet?.Value ?? ResultFacetOption.AllValue;
+            var sourceValue = SelectedSourceFacet?.Value ?? ResultFacetOption.AllValue;
+            var sizeValue = SelectedSizeFacet?.Value ?? ResultFacetOption.AllValue;
+
+            ReplaceFacetOptions(
+                FileTypeFacetOptions,
+                BuildFacetOptions(
+                    Files,
+                    file => NormalizeFacetValue(file.Extension),
+                    file => string.IsNullOrWhiteSpace(file.Extension) ? "No extension" : $".{file.Extension}",
+                    "All types"));
+            ReplaceFacetOptions(
+                FolderFacetOptions,
+                BuildFacetOptions(
+                    Files,
+                    file => NormalizeFacetValue(file.Directory),
+                    file => string.IsNullOrWhiteSpace(file.Directory) ? "No folder" : file.Directory,
+                    "All folders",
+                    maxValues: 50));
+            ReplaceFacetOptions(
+                ModifiedFacetOptions,
+                BuildFixedFacetOptions(
+                    Files,
+                    file => file.ModifiedDateFacet,
+                    "Any date",
+                    new[]
+                    {
+                        ("today", "Today"),
+                        ("last7", "Last 7 days"),
+                        ("last30", "Last 30 days"),
+                        ("older", "Older"),
+                        ("unknown", "Unknown"),
+                    }));
+            ReplaceFacetOptions(
+                SourceFacetOptions,
+                BuildFacetOptions(
+                    Files,
+                    file => NormalizeFacetValue(file.SourceGroup),
+                    file => file.SourceGroup,
+                    "All sources"));
+            ReplaceFacetOptions(
+                SizeFacetOptions,
+                BuildFixedFacetOptions(
+                    Files,
+                    file => file.SizeFacet,
+                    "Any size",
+                    new[]
+                    {
+                        ("small", "Under 100 KB"),
+                        ("medium", "100 KB to 10 MB"),
+                        ("large", "10 MB and larger"),
+                        ("unknown", "Unknown"),
+                    }));
+
+            SelectFacetValue(FileTypeFacetOptions, option => SelectedFileTypeFacet = option, fileTypeValue);
+            SelectFacetValue(FolderFacetOptions, option => SelectedFolderFacet = option, folderValue);
+            SelectFacetValue(ModifiedFacetOptions, option => SelectedModifiedFacet = option, modifiedValue);
+            SelectFacetValue(SourceFacetOptions, option => SelectedSourceFacet = option, sourceValue);
+            SelectFacetValue(SizeFacetOptions, option => SelectedSizeFacet = option, sizeValue);
+        }
+        finally
+        {
+            _isRebuildingFacetOptions = false;
+        }
+    }
+
+    private static IEnumerable<ResultFacetOption> BuildFacetOptions(
+        IEnumerable<FileResultViewModel> files,
+        Func<FileResultViewModel, string> valueSelector,
+        Func<FileResultViewModel, string> labelSelector,
+        string allLabel,
+        int maxValues = 25)
+    {
+        var list = files.ToList();
+        yield return new ResultFacetOption(ResultFacetOption.AllValue, allLabel, list.Count);
+
+        foreach (var group in list
+                     .GroupBy(valueSelector, StringComparer.OrdinalIgnoreCase)
+                     .Select(group => new
+                     {
+                         Value = group.Key,
+                         Label = group.Select(labelSelector).FirstOrDefault(label => !string.IsNullOrWhiteSpace(label)) ?? group.Key,
+                         Count = group.Count(),
+                     })
+                     .OrderByDescending(group => group.Count)
+                     .ThenBy(group => group.Label, StringComparer.CurrentCultureIgnoreCase)
+                     .Take(maxValues))
+        {
+            yield return new ResultFacetOption(group.Value, group.Label, group.Count);
+        }
+    }
+
+    private static IEnumerable<ResultFacetOption> BuildFixedFacetOptions(
+        IEnumerable<FileResultViewModel> files,
+        Func<FileResultViewModel, string> valueSelector,
+        string allLabel,
+        IEnumerable<(string Value, string Label)> values)
+    {
+        var list = files.ToList();
+        var counts = list
+            .GroupBy(valueSelector, StringComparer.OrdinalIgnoreCase)
+            .ToDictionary(group => group.Key, group => group.Count(), StringComparer.OrdinalIgnoreCase);
+
+        yield return new ResultFacetOption(ResultFacetOption.AllValue, allLabel, list.Count);
+        foreach (var value in values)
+        {
+            if (counts.TryGetValue(value.Value, out var count) && count > 0)
+                yield return new ResultFacetOption(value.Value, value.Label, count);
+        }
+    }
+
+    private static void ReplaceFacetOptions(
+        ObservableCollection<ResultFacetOption> target,
+        IEnumerable<ResultFacetOption> source)
+    {
+        target.Clear();
+        foreach (var option in source)
+            target.Add(option);
+    }
+
+    private static void SelectFacetValue(
+        ObservableCollection<ResultFacetOption> options,
+        Action<ResultFacetOption?> select,
+        string value)
+    {
+        select(options.FirstOrDefault(option =>
+            string.Equals(option.Value, value, StringComparison.OrdinalIgnoreCase)) ?? options.FirstOrDefault());
+    }
+
+    private IEnumerable<FileResultViewModel> VisibleResultFiles() =>
+        FilesView.Cast<FileResultViewModel>();
+
+    private bool IsPinned(string path) =>
+        _settingsService.Current.QuickSearchPinnedPaths.Any(pinned =>
+            string.Equals(pinned, path, StringComparison.OrdinalIgnoreCase));
+
+    private static string NormalizeFacetValue(string? value) =>
+        string.IsNullOrWhiteSpace(value) ? "__none" : value.Trim();
+
+    private static string BuildDefaultExportFileName(SearchResultExportFormat format)
+    {
+        var extension = format switch
+        {
+            SearchResultExportFormat.Csv => "csv",
+            SearchResultExportFormat.JsonLines => "jsonl",
+            SearchResultExportFormat.Markdown => "md",
+            _ => "json",
+        };
+        return $"FileSearch-results.{extension}";
+    }
+
+    private static SearchResultExportFormat ParseExportFormat(string? value) =>
+        value?.Trim().ToLowerInvariant() switch
+        {
+            "csv" => SearchResultExportFormat.Csv,
+            "jsonl" or "jsonlines" or "json-lines" => SearchResultExportFormat.JsonLines,
+            "markdown" or "md" => SearchResultExportFormat.Markdown,
+            _ => SearchResultExportFormat.Json,
+        };
+
+    private string RenderExport(SearchResultExportFormat format, IReadOnlyList<FileResultViewModel> files) =>
+        format switch
+        {
+            SearchResultExportFormat.Csv => RenderExportCsv(files),
+            SearchResultExportFormat.JsonLines => RenderExportJsonLines(files),
+            SearchResultExportFormat.Markdown => RenderExportMarkdown(files),
+            _ => RenderExportJson(files),
+        };
+
+    private string RenderExportJson(IReadOnlyList<FileResultViewModel> files)
+    {
+        var document = new SearchResultsExportDocument(
+            QueryText.Trim(),
+            SearchPath,
+            DateTime.UtcNow,
+            files.Count,
+            files.Sum(file => file.HitCount),
+            files.Select(ToExportFile).ToArray());
+        return JsonSerializer.Serialize(document, s_exportJsonOptions);
+    }
+
+    private string RenderExportJsonLines(IReadOnlyList<FileResultViewModel> files)
+    {
+        var sb = new StringBuilder();
+        foreach (var hit in files.SelectMany(file => file.Hits.Select(hit => ToExportHit(file, hit))))
+            sb.AppendLine(JsonSerializer.Serialize(hit, s_exportJsonLinesOptions));
+        return sb.ToString();
+    }
+
+    private string RenderExportCsv(IReadOnlyList<FileResultViewModel> files)
+    {
+        var sb = new StringBuilder();
+        sb.AppendLine("path,fileName,folder,extension,sizeBytes,modifiedUtc,source,hitCount,lineNumber,kind,line");
+        foreach (var file in files)
+        {
+            foreach (var hit in file.Hits)
+            {
+                sb.Append(CsvField(file.FullPath)).Append(',');
+                sb.Append(CsvField(file.FileName)).Append(',');
+                sb.Append(CsvField(file.Directory)).Append(',');
+                sb.Append(CsvField(file.Extension)).Append(',');
+                sb.Append(file.SizeBytes?.ToString(CultureInfo.InvariantCulture) ?? string.Empty).Append(',');
+                sb.Append(CsvField(file.ModifiedUtc?.ToString("O", CultureInfo.InvariantCulture) ?? string.Empty)).Append(',');
+                sb.Append(CsvField(file.SourceGroup)).Append(',');
+                sb.Append(file.HitCount.ToString(CultureInfo.InvariantCulture)).Append(',');
+                sb.Append(hit.LineNumber.ToString(CultureInfo.InvariantCulture)).Append(',');
+                sb.Append(CsvField(hit.Kind.ToString())).Append(',');
+                sb.AppendLine(CsvField(hit.LineContent));
+            }
+        }
+
+        return sb.ToString();
+    }
+
+    private string RenderExportMarkdown(IReadOnlyList<FileResultViewModel> files)
+    {
+        var sb = new StringBuilder();
+        sb.AppendLine("# FileSearch Results");
+        sb.AppendLine();
+        sb.AppendLine(CultureInfo.InvariantCulture, $"- Query: {QueryText.Trim()}");
+        sb.AppendLine(CultureInfo.InvariantCulture, $"- Folder: {SearchPath}");
+        sb.AppendLine(CultureInfo.InvariantCulture, $"- Exported: {DateTime.UtcNow:yyyy-MM-dd HH:mm:ss}Z");
+        sb.AppendLine(CultureInfo.InvariantCulture, $"- Files: {files.Count:n0}");
+        sb.AppendLine(CultureInfo.InvariantCulture, $"- Hits: {files.Sum(file => file.HitCount):n0}");
+
+        foreach (var file in files)
+        {
+            sb.AppendLine();
+            sb.AppendLine(CultureInfo.InvariantCulture, $"## {file.FullPath}");
+            sb.AppendLine();
+            foreach (var hit in file.Hits)
+                sb.AppendLine(CultureInfo.InvariantCulture, $"- L{hit.LineNumber}: {hit.LineContent.Trim()}");
+        }
+
+        return sb.ToString();
+    }
+
+    private static readonly SearchValues<char> s_csvSpecialChars = SearchValues.Create(",\"\n\r");
+
+    private static readonly JsonSerializerOptions s_exportJsonOptions = new()
+    {
+        WriteIndented = true,
+    };
+
+    private static readonly JsonSerializerOptions s_exportJsonLinesOptions = new();
+
+    private static string CsvField(string value)
+    {
+        if (!value.AsSpan().ContainsAny(s_csvSpecialChars))
+            return value;
+        return "\"" + value.Replace("\"", "\"\"", StringComparison.Ordinal) + "\"";
+    }
+
+    private static ExportFile ToExportFile(FileResultViewModel file) =>
+        new(
+            file.FullPath,
+            file.FileName,
+            file.Directory,
+            file.Extension,
+            file.SizeBytes,
+            file.ModifiedUtc,
+            file.SourceGroup,
+            file.HitCount,
+            file.Hits.Select(hit => ToExportHit(file, hit)).ToArray());
+
+    private static ExportHit ToExportHit(FileResultViewModel file, Hit hit) =>
+        new(
+            file.FullPath,
+            file.FileName,
+            file.Directory,
+            file.Extension,
+            file.SizeBytes,
+            file.ModifiedUtc,
+            file.SourceGroup,
+            file.HitCount,
+            hit.LineNumber,
+            hit.Kind.ToString(),
+            hit.LineContent);
 
     private WalkerOptions BuildWalkerOptions()
     {

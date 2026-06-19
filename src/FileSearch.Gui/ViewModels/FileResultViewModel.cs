@@ -27,11 +27,17 @@ public sealed partial class FileResultViewModel : ObservableObject
 
     private string? _sizeText;
     private string? _modifiedText;
+    private bool _metadataLoaded;
+    private long? _sizeBytes;
+    private DateTime? _modifiedUtc;
+    private bool _hasContentHits;
+    private bool _hasMetadataHits;
 
     public FileResultViewModel(
         string fullPath,
         IFileLauncher launcher,
-        Func<string, CancellationToken, Task>? recordOpenedAsync = null)
+        Func<string, CancellationToken, Task>? recordOpenedAsync = null,
+        int searchRank = 0)
     {
         FullPath = fullPath;
         FileName = Path.GetFileName(fullPath);
@@ -39,11 +45,13 @@ public sealed partial class FileResultViewModel : ObservableObject
         Extension = Path.GetExtension(fullPath).TrimStart('.').ToLowerInvariant();
         _launcher = launcher;
         _recordOpenedAsync = recordOpenedAsync;
+        SearchRank = searchRank;
     }
 
     public string FullPath { get; }
     public string FileName { get; }
     public string Directory { get; }
+    public int SearchRank { get; }
 
     /// <summary>Lower-cased extension without the leading dot (e.g. "cs").</summary>
     public string Extension { get; }
@@ -59,6 +67,7 @@ public sealed partial class FileResultViewModel : ObservableObject
     [ObservableProperty] private int _hitCount;
     [ObservableProperty] private string _firstMatch = string.Empty;
     [ObservableProperty] private bool _isPinned;
+    [ObservableProperty] private double _bestScore;
 
     /// <summary>
     /// Whether the card is showing every hit or just the first
@@ -89,12 +98,80 @@ public sealed partial class FileResultViewModel : ObservableObject
     /// <summary>Last-modified timestamp, loaded lazily on first access.</summary>
     public string ModifiedText => _modifiedText ??= ComputeModifiedText();
 
+    public long? SizeBytes
+    {
+        get
+        {
+            EnsureMetadataLoaded();
+            return _sizeBytes;
+        }
+    }
+
+    public DateTime? ModifiedUtc
+    {
+        get
+        {
+            EnsureMetadataLoaded();
+            return _modifiedUtc;
+        }
+    }
+
+    public long ModifiedSortTicks => ModifiedUtc?.Ticks ?? 0;
+
+    public string FileTypeGroup =>
+        string.IsNullOrWhiteSpace(Extension) ? "No extension" : $".{Extension}";
+
+    public string ModifiedDateGroup => ToModifiedDateGroup(ModifiedUtc);
+
+    public string ModifiedDateFacet => ToModifiedDateFacet(ModifiedUtc);
+
+    public string SizeGroup => ToSizeGroup(SizeBytes);
+
+    public string SizeFacet => ToSizeFacet(SizeBytes);
+
+    public string SourceGroup
+    {
+        get
+        {
+            if (_hasContentHits && _hasMetadataHits)
+                return "Content + metadata";
+            return _hasMetadataHits ? "Metadata" : "Content";
+        }
+    }
+
     public void AddHit(Hit hit)
     {
         _hits.Add(hit);
         HitCount = _hits.Count;
         if (_hits.Count == 1)
             FirstMatch = hit.LineContent.Trim();
+        if (hit.Score > BestScore)
+            BestScore = hit.Score;
+        if (hit.SizeBytes is { } size)
+        {
+            _sizeBytes = size;
+            _sizeText = null;
+            OnPropertyChanged(nameof(SizeBytes));
+            OnPropertyChanged(nameof(SizeText));
+            OnPropertyChanged(nameof(SizeGroup));
+            OnPropertyChanged(nameof(SizeFacet));
+        }
+        if (hit.ModifiedUtc is { } modified)
+        {
+            _modifiedUtc = modified;
+            _modifiedText = null;
+            OnPropertyChanged(nameof(ModifiedUtc));
+            OnPropertyChanged(nameof(ModifiedSortTicks));
+            OnPropertyChanged(nameof(ModifiedText));
+            OnPropertyChanged(nameof(ModifiedDateGroup));
+            OnPropertyChanged(nameof(ModifiedDateFacet));
+        }
+
+        var oldSource = SourceGroup;
+        _hasContentHits |= hit.Kind == HitKind.Content;
+        _hasMetadataHits |= hit.Kind == HitKind.Metadata;
+        if (!string.Equals(oldSource, SourceGroup, StringComparison.Ordinal))
+            OnPropertyChanged(nameof(SourceGroup));
 
         // Refresh the rendered lines only while they can still change:
         // collapsed cards freeze at the first few, expanded cards keep growing.
@@ -146,7 +223,7 @@ public sealed partial class FileResultViewModel : ObservableObject
     {
         try
         {
-            return FormatSize(new FileInfo(FullPath).Length);
+            return SizeBytes is { } size ? FormatSize(size) : "—";
         }
         catch
         {
@@ -158,11 +235,33 @@ public sealed partial class FileResultViewModel : ObservableObject
     {
         try
         {
-            return File.GetLastWriteTime(FullPath).ToString("yyyy-MM-dd HH:mm", System.Globalization.CultureInfo.CurrentCulture);
+            return ModifiedUtc is { } modified
+                ? modified.ToLocalTime().ToString("yyyy-MM-dd HH:mm", System.Globalization.CultureInfo.CurrentCulture)
+                : "—";
         }
         catch
         {
             return "—";
+        }
+    }
+
+    private void EnsureMetadataLoaded()
+    {
+        if (_metadataLoaded)
+            return;
+
+        _metadataLoaded = true;
+        try
+        {
+            var info = new FileInfo(FullPath);
+            if (info.Exists)
+            {
+                _sizeBytes ??= info.Length;
+                _modifiedUtc ??= info.LastWriteTimeUtc;
+            }
+        }
+        catch
+        {
         }
     }
 
@@ -173,5 +272,59 @@ public sealed partial class FileResultViewModel : ObservableObject
         if (bytes < 1024 * 1024) return $"{bytes / 1024.0:0} KB";
         if (bytes < 1024L * 1024 * 1024) return $"{bytes / (1024.0 * 1024):0.0} MB";
         return $"{bytes / (1024.0 * 1024 * 1024):0.00} GB";
+    }
+
+    private static string ToModifiedDateGroup(DateTime? modifiedUtc)
+    {
+        if (modifiedUtc is null)
+            return "Modified date unknown";
+
+        var modified = modifiedUtc.Value.ToLocalTime().Date;
+        var today = DateTime.Today;
+        if (modified == today)
+            return "Modified today";
+        if (modified >= today.AddDays(-7))
+            return "Modified in last 7 days";
+        if (modified >= today.AddDays(-30))
+            return "Modified in last 30 days";
+        return "Modified earlier";
+    }
+
+    private static string ToModifiedDateFacet(DateTime? modifiedUtc)
+    {
+        if (modifiedUtc is null)
+            return "unknown";
+
+        var modified = modifiedUtc.Value.ToLocalTime().Date;
+        var today = DateTime.Today;
+        if (modified == today)
+            return "today";
+        if (modified >= today.AddDays(-7))
+            return "last7";
+        if (modified >= today.AddDays(-30))
+            return "last30";
+        return "older";
+    }
+
+    private static string ToSizeGroup(long? sizeBytes)
+    {
+        if (sizeBytes is null)
+            return "Size unknown";
+        if (sizeBytes < 100 * 1024)
+            return "Under 100 KB";
+        if (sizeBytes < 10 * 1024 * 1024)
+            return "100 KB to 10 MB";
+        return "10 MB and larger";
+    }
+
+    private static string ToSizeFacet(long? sizeBytes)
+    {
+        if (sizeBytes is null)
+            return "unknown";
+        if (sizeBytes < 100 * 1024)
+            return "small";
+        if (sizeBytes < 10 * 1024 * 1024)
+            return "medium";
+        return "large";
     }
 }

@@ -761,34 +761,148 @@
                         </Grid.RowDefinitions>
 
                         <!-- Context header -->
-                        <Grid Grid.Row="0" Margin="2,0,2,10">
-                            <Grid.ColumnDefinitions>
-                                <ColumnDefinition Width="Auto"/>
-                                <ColumnDefinition Width="Auto"/>
-                                <ColumnDefinition Width="*"/>
-                                <ColumnDefinition Width="Auto"/>
-                            </Grid.ColumnDefinitions>
-                            <TextBlock Text="{Binding Search.ResultsContextText}" Style="{StaticResource CtxTitleStyle}"/>
-                            <TextBlock Grid.Column="1" Text="{Binding Search.ResultsSummaryText}"
-                                       Style="{StaticResource MutedValueStyle}" Margin="12,3,0,0"/>
-                            <Grid Grid.Column="3" Width="210">
-                                <TextBox Text="{Binding Search.RefinementQuery, UpdateSourceTrigger=PropertyChanged, Delay=120}"
-                                         ui:ControlHelper.PlaceholderText="Filter results"
-                                         Padding="8,4,28,4"/>
-                                <Button Command="{Binding Search.ClearRefinementCommand}"
-                                        Style="{StaticResource IconButtonStyle}"
-                                        Width="24" Height="24" HorizontalAlignment="Right" Margin="0,0,3,0"
-                                        ToolTip="Clear filter">
-                                    <ui:FontIcon Glyph="&#xE711;" FontSize="11"/>
+                        <StackPanel Grid.Row="0" Margin="2,0,2,10">
+                            <Grid>
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="Auto"/>
+                                    <ColumnDefinition Width="Auto"/>
+                                    <ColumnDefinition Width="*"/>
+                                    <ColumnDefinition Width="Auto"/>
+                                    <ColumnDefinition Width="Auto"/>
+                                </Grid.ColumnDefinitions>
+                                <TextBlock Text="{Binding Search.ResultsContextText}" Style="{StaticResource CtxTitleStyle}"/>
+                                <TextBlock Grid.Column="1" Text="{Binding Search.ResultsSummaryText}"
+                                           Style="{StaticResource MutedValueStyle}" Margin="12,3,0,0"/>
+                                <Button Grid.Column="3"
+                                        Style="{StaticResource SecondaryButtonStyle}"
+                                        Padding="10,5"
+                                        Margin="0,0,8,0"
+                                        Click="OnExportMenuButtonClick"
+                                        ToolTip="Export visible results">
+                                    <Button.ContextMenu>
+                                        <ContextMenu Placement="Bottom"
+                                                     DataContext="{Binding Path=PlacementTarget.DataContext, RelativeSource={RelativeSource Self}}">
+                                            <MenuItem Header="CSV" Command="{Binding Search.ExportResultsCommand}" CommandParameter="csv"/>
+                                            <MenuItem Header="JSON" Command="{Binding Search.ExportResultsCommand}" CommandParameter="json"/>
+                                            <MenuItem Header="JSON Lines" Command="{Binding Search.ExportResultsCommand}" CommandParameter="jsonl"/>
+                                            <MenuItem Header="Markdown" Command="{Binding Search.ExportResultsCommand}" CommandParameter="markdown"/>
+                                        </ContextMenu>
+                                    </Button.ContextMenu>
+                                    <StackPanel Orientation="Horizontal">
+                                        <ui:FontIcon Glyph="&#xEDE1;" FontSize="12" Margin="0,0,6,0"/>
+                                        <TextBlock Text="Export"/>
+                                        <ui:FontIcon Glyph="&#xE70D;" FontSize="9" Margin="6,2,0,0"/>
+                                    </StackPanel>
                                 </Button>
+                                <Grid Grid.Column="4" Width="210">
+                                    <TextBox Text="{Binding Search.RefinementQuery, UpdateSourceTrigger=PropertyChanged, Delay=120}"
+                                             ui:ControlHelper.PlaceholderText="Filter results"
+                                             Padding="8,4,28,4"/>
+                                    <Button Command="{Binding Search.ClearRefinementCommand}"
+                                            Style="{StaticResource IconButtonStyle}"
+                                            Width="24" Height="24" HorizontalAlignment="Right" Margin="0,0,3,0"
+                                            ToolTip="Clear filter">
+                                        <ui:FontIcon Glyph="&#xE711;" FontSize="11"/>
+                                    </Button>
+                                </Grid>
                             </Grid>
-                        </Grid>
+
+                            <WrapPanel Margin="0,8,0,0">
+                                <Border Style="{StaticResource FilterChipStyle}">
+                                    <StackPanel Orientation="Horizontal">
+                                        <TextBlock Text="Sort" Style="{StaticResource ChipLabelStyle}"/>
+                                        <ComboBox ItemsSource="{Binding Search.ResultSortOptions}"
+                                                  SelectedItem="{Binding Search.SelectedSortOption}"
+                                                  DisplayMemberPath="Label"
+                                                  MinWidth="120" BorderThickness="0" Background="Transparent"/>
+                                    </StackPanel>
+                                </Border>
+                                <Border Style="{StaticResource FilterChipStyle}">
+                                    <StackPanel Orientation="Horizontal">
+                                        <TextBlock Text="Group" Style="{StaticResource ChipLabelStyle}"/>
+                                        <ComboBox ItemsSource="{Binding Search.ResultGroupOptions}"
+                                                  SelectedItem="{Binding Search.SelectedGroupOption}"
+                                                  DisplayMemberPath="Label"
+                                                  MinWidth="120" BorderThickness="0" Background="Transparent"/>
+                                    </StackPanel>
+                                </Border>
+                                <Border Style="{StaticResource FilterChipStyle}">
+                                    <StackPanel Orientation="Horizontal">
+                                        <TextBlock Text="Type" Style="{StaticResource ChipLabelStyle}"/>
+                                        <ComboBox ItemsSource="{Binding Search.FileTypeFacetOptions}"
+                                                  SelectedItem="{Binding Search.SelectedFileTypeFacet}"
+                                                  DisplayMemberPath="DisplayText"
+                                                  MinWidth="130" MaxWidth="180" BorderThickness="0" Background="Transparent"/>
+                                    </StackPanel>
+                                </Border>
+                                <Border Style="{StaticResource FilterChipStyle}">
+                                    <StackPanel Orientation="Horizontal">
+                                        <TextBlock Text="Folder" Style="{StaticResource ChipLabelStyle}"/>
+                                        <ComboBox ItemsSource="{Binding Search.FolderFacetOptions}"
+                                                  SelectedItem="{Binding Search.SelectedFolderFacet}"
+                                                  DisplayMemberPath="DisplayText"
+                                                  MinWidth="150" MaxWidth="260" BorderThickness="0" Background="Transparent"/>
+                                    </StackPanel>
+                                </Border>
+                                <Border Style="{StaticResource FilterChipStyle}">
+                                    <StackPanel Orientation="Horizontal">
+                                        <TextBlock Text="Date" Style="{StaticResource ChipLabelStyle}"/>
+                                        <ComboBox ItemsSource="{Binding Search.ModifiedFacetOptions}"
+                                                  SelectedItem="{Binding Search.SelectedModifiedFacet}"
+                                                  DisplayMemberPath="DisplayText"
+                                                  MinWidth="130" BorderThickness="0" Background="Transparent"/>
+                                    </StackPanel>
+                                </Border>
+                                <Border Style="{StaticResource FilterChipStyle}">
+                                    <StackPanel Orientation="Horizontal">
+                                        <TextBlock Text="Source" Style="{StaticResource ChipLabelStyle}"/>
+                                        <ComboBox ItemsSource="{Binding Search.SourceFacetOptions}"
+                                                  SelectedItem="{Binding Search.SelectedSourceFacet}"
+                                                  DisplayMemberPath="DisplayText"
+                                                  MinWidth="130" BorderThickness="0" Background="Transparent"/>
+                                    </StackPanel>
+                                </Border>
+                                <Border Style="{StaticResource FilterChipStyle}">
+                                    <StackPanel Orientation="Horizontal">
+                                        <TextBlock Text="Size" Style="{StaticResource ChipLabelStyle}"/>
+                                        <ComboBox ItemsSource="{Binding Search.SizeFacetOptions}"
+                                                  SelectedItem="{Binding Search.SelectedSizeFacet}"
+                                                  DisplayMemberPath="DisplayText"
+                                                  MinWidth="150" BorderThickness="0" Background="Transparent"/>
+                                    </StackPanel>
+                                </Border>
+                                <Button Command="{Binding Search.ClearResultFacetsCommand}"
+                                        Style="{StaticResource IconButtonStyle}"
+                                        Width="28" Height="28"
+                                        ToolTip="Clear result facets">
+                                    <ui:FontIcon Glyph="&#xE711;" FontSize="12"/>
+                                </Button>
+                            </WrapPanel>
+                        </StackPanel>
 
                         <!-- Result cards + empty state -->
                         <Grid Grid.Row="1">
-                            <ListBox ItemsSource="{Binding Search.FilesView}"
+                            <ListBox x:Name="ResultsList"
+                                     ItemsSource="{Binding Search.FilesView}"
                                      SelectedItem="{Binding Search.SelectedFile}"
-                                     Style="{StaticResource ResultsListStyle}">
+                                     Style="{StaticResource ResultsListStyle}"
+                                     PreviewMouseMove="OnResultsPreviewMouseMove">
+                                <ListBox.GroupStyle>
+                                    <GroupStyle>
+                                        <GroupStyle.HeaderTemplate>
+                                            <DataTemplate>
+                                                <Border Padding="8,6" Margin="0,6,0,2"
+                                                        Background="{DynamicResource Atlas.SurfaceBrush}"
+                                                        BorderBrush="{DynamicResource Atlas.LineBrush}"
+                                                        BorderThickness="0,0,0,1">
+                                                    <TextBlock Style="{StaticResource SectionHeaderStyle}">
+                                                        <Run Text="{Binding Name}"/>
+                                                    </TextBlock>
+                                                </Border>
+                                            </DataTemplate>
+                                        </GroupStyle.HeaderTemplate>
+                                    </GroupStyle>
+                                </ListBox.GroupStyle>
                                 <ListBox.ItemContainerStyle>
                                     <Style TargetType="ListBoxItem" BasedOn="{StaticResource ResultCardContainerStyle}">
                                         <EventSetter Event="MouseDoubleClick" Handler="OnResultCardDoubleClick"/>
@@ -810,6 +924,11 @@
                                                         <MenuItem.Icon><ui:FontIcon Glyph="&#xE8C8;" FontSize="14"/></MenuItem.Icon>
                                                     </MenuItem>
                                                     <Separator/>
+                                                    <MenuItem Header="{Binding PinActionText}"
+                                                              Command="{Binding PlacementTarget.Tag.TogglePinResultCommand, RelativeSource={RelativeSource AncestorType=ContextMenu}}"
+                                                              CommandParameter="{Binding}">
+                                                        <MenuItem.Icon><ui:FontIcon Glyph="{Binding PinGlyph}" FontSize="14"/></MenuItem.Icon>
+                                                    </MenuItem>
                                                     <MenuItem Header="{Binding ExcludeExtensionPatternMenuText}"
                                                               Command="{Binding PlacementTarget.Tag.ExcludeFileExtensionPatternCommand, RelativeSource={RelativeSource AncestorType=ContextMenu}}"
                                                               CommandParameter="{Binding}">
@@ -829,6 +948,7 @@
                                                     <ColumnDefinition Width="Auto"/>
                                                     <ColumnDefinition Width="*"/>
                                                     <ColumnDefinition Width="Auto"/>
+                                                    <ColumnDefinition Width="Auto"/>
                                                 </Grid.ColumnDefinitions>
                                                 <Border Style="{StaticResource TypeBadgeStyle}"
                                                         Background="{Binding FileName, Converter={StaticResource TypeBrush}}">
@@ -839,7 +959,16 @@
                                                     <TextBlock Text="{Binding FileName}" Style="{StaticResource ResultNameStyle}"/>
                                                     <TextBlock Text="{Binding Directory}" Style="{StaticResource ResultPathStyle}"/>
                                                 </StackPanel>
-                                                <Border Grid.Column="2" Style="{StaticResource HitsPillStyle}">
+                                                <Button Grid.Column="2"
+                                                        Command="{Binding DataContext.Search.TogglePinResultCommand, RelativeSource={RelativeSource AncestorType=ListBox}}"
+                                                        CommandParameter="{Binding}"
+                                                        Style="{StaticResource IconButtonStyle}"
+                                                        Width="28" Height="28"
+                                                        Margin="0,0,8,0"
+                                                        ToolTip="{Binding PinActionText}">
+                                                    <ui:FontIcon Glyph="{Binding PinGlyph}" FontSize="13"/>
+                                                </Button>
+                                                <Border Grid.Column="3" Style="{StaticResource HitsPillStyle}">
                                                     <TextBlock Style="{StaticResource HitsPillTextStyle}">
                                                         <Run Text="{Binding HitCount, Mode=OneWay}"/><Run Text=" hits"/>
                                                     </TextBlock>

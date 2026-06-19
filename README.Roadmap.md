@@ -25,8 +25,8 @@ Still missing or partial:
 
 - No benchmark/performance harness for live scan, index build, or indexed query latency.
 - CLI is interactive-first; it lacks first-class one-shot commands and JSON/CSV output.
-- Saved scopes exist, but full saved searches/profiles do not.
-- Results lack facets, grouping, advanced sort presets, and export/reporting.
+- Saved searches and custom scopes exist, but full workspace/profile bundles do not.
+- Results now have GUI facets, grouping, sort presets, direct CSV/JSON/JSON Lines/Markdown export, drag-and-drop, and shared pinned paths; safe result rename/delete and richer reporting remain missing.
 - Durable USN replay is NTFS-only. ReFS remains on snapshot validation until 128-bit file identifiers are supported and tested.
 - Hard-link-aware path identity is not fully implemented; ambiguous USN deletes fall back to root validation.
 - There is no true Windows Service yet. Background indexing is a per-user tray process that starts after user sign-in.
@@ -57,11 +57,11 @@ Still missing or partial:
 
 ### 3. Search Workflow and Result UX
 
-- Promote current custom scopes into full saved searches.
-- Saved searches should store name, root or indexed-location set, query text, query mode, case sensitivity, recursion, glob filters, extension filters, size/date filters, and index preference.
-- Add result facets for extension, folder, modified date bucket, file size bucket, and indexed/live source.
-- Add sort/group presets for relevance, path, modified date, extension, file size, and line count/hit count.
-- Add export commands from GUI and CLI for CSV, JSON, and Markdown reports.
+- Promote saved searches and custom scopes into full workspace/profile bundles.
+- Workspace bundles should store name, root or indexed-location set, query text, query mode, case sensitivity, recursion, glob filters, extension filters, size/date filters, index preference, result view state, and pinned/favorite result sets.
+- Extend result facets from the current extension, folder, modified date, hit source, and file size facets toward indexed/live source when per-hit route metadata is available.
+- Extend sort/group presets beyond the current relevance, recency, filename, hit count, folder, file type, and modified date controls when users need more advanced path and size views.
+- Add CLI export commands and richer GUI reports beyond the current GUI CSV, JSON, JSON Lines, and Markdown result export.
 - Add richer preview controls for context size and copy/export of selected result snippets.
 
 ### 4. CLI, PowerShell, and API Surface

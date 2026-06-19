@@ -11,6 +11,8 @@ namespace FileSearch.Gui;
 
 public partial class MainWindow : Window
 {
+    private System.Windows.Point _resultsDragStartPoint;
+
     public MainWindow()
     {
         InitializeComponent();
@@ -91,6 +93,16 @@ public partial class MainWindow : Window
         {
             menu.PlacementTarget = button;
             menu.IsOpen = true;
+        }
+    }
+
+    private void OnExportMenuButtonClick(object sender, RoutedEventArgs e)
+    {
+        if (sender is System.Windows.Controls.Button { ContextMenu: { } menu } button)
+        {
+            menu.PlacementTarget = button;
+            menu.IsOpen = true;
+            e.Handled = true;
         }
     }
 
@@ -190,6 +202,28 @@ public partial class MainWindow : Window
             file.OpenCommand.Execute(null);
             e.Handled = true;
         }
+    }
+
+    private void OnResultsPreviewMouseMove(object sender, System.Windows.Input.MouseEventArgs e)
+    {
+        if (e.LeftButton != MouseButtonState.Pressed)
+        {
+            _resultsDragStartPoint = e.GetPosition(ResultsList);
+            return;
+        }
+
+        var current = e.GetPosition(ResultsList);
+        if (Math.Abs(current.X - _resultsDragStartPoint.X) < SystemParameters.MinimumHorizontalDragDistance &&
+            Math.Abs(current.Y - _resultsDragStartPoint.Y) < SystemParameters.MinimumVerticalDragDistance)
+        {
+            return;
+        }
+
+        if (ResultsList.SelectedItem is not FileResultViewModel file)
+            return;
+
+        var data = new System.Windows.DataObject(System.Windows.DataFormats.FileDrop, new[] { file.FullPath });
+        System.Windows.DragDrop.DoDragDrop(ResultsList, data, System.Windows.DragDropEffects.Copy);
     }
 
     private void OnPreviewSplitterDragDelta(object sender, DragDeltaEventArgs e)

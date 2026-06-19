@@ -15,7 +15,7 @@ FileSearch is a Windows desktop application for searching text across files and 
 - Optional case-sensitive matching.
 - Filter by file size and modified date range.
 - Preview matching lines and context for selected results.
-- Refine/filter results in memory without rescanning files.
+- Refine, facet, sort, group, pin, drag, and export visible results without rescanning files.
 - Optional CSharpDB-backed indexing for faster repeat searches across multiple locations, with GUI or tray-indexer background updates.
 - Open matched files, reveal them in Explorer, and copy file or folder paths.
 - Light, dark, system, and Visual Studio-inspired themes.
