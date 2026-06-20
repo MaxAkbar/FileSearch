@@ -305,6 +305,35 @@ public sealed partial class HistoryViewModel : ObservableObject
         SaveHistory();
     }
 
+    [RelayCommand]
+    private void ToggleWorkspaceRunOnLoad(WorkspaceSettings? workspace)
+    {
+        if (workspace is null)
+            return;
+
+        var normalized = NormalizeWorkspace(workspace);
+        if (!IsUsableWorkspace(normalized))
+            return;
+
+        normalized.RunOnLoad = !normalized.RunOnLoad;
+
+        for (var i = 0; i < Workspaces.Count; i++)
+        {
+            if (!string.Equals(Workspaces[i].Name, normalized.Name, StringComparison.OrdinalIgnoreCase))
+                continue;
+
+            Workspaces[i] = normalized;
+            SaveHistory();
+            _status.Text = normalized.RunOnLoad
+                ? $"Workspace {normalized.DisplayName} will run when loaded."
+                : $"Workspace {normalized.DisplayName} will load without running.";
+            return;
+        }
+
+        UpsertWorkspace(normalized);
+        SaveHistory();
+    }
+
     [RelayCommand(CanExecute = nameof(CanClearWorkspaces))]
     private void ClearWorkspaces()
     {
@@ -767,6 +796,7 @@ public sealed partial class HistoryViewModel : ObservableObject
             ResultSort = workspace.ResultSort?.Trim() ?? string.Empty,
             ResultGroup = workspace.ResultGroup?.Trim() ?? string.Empty,
             RefinementQuery = workspace.RefinementQuery?.Trim() ?? string.Empty,
+            RunOnLoad = workspace.RunOnLoad,
         };
 
     private static bool IsUsableWorkspace(WorkspaceSettings workspace) =>

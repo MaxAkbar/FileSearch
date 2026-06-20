@@ -93,6 +93,7 @@ public sealed class AppSettingsSerializationTests
                     ResultSort = "HitCount",
                     ResultGroup = "Folder",
                     RefinementQuery = "open",
+                    RunOnLoad = true,
                 },
             ],
             IndexedLocations =
@@ -213,6 +214,7 @@ public sealed class AppSettingsSerializationTests
         Assert.Equal("HitCount", workspace.ResultSort);
         Assert.Equal("Folder", workspace.ResultGroup);
         Assert.Equal("open", workspace.RefinementQuery);
+        Assert.True(workspace.RunOnLoad);
 
         var location = Assert.Single(loaded.IndexedLocations);
         Assert.Equal(@"C:\Work", location.Root);

@@ -88,6 +88,31 @@ public sealed class HistoryViewModelWorkspaceTests
         }
     }
 
+    [Fact]
+    public void ToggleWorkspaceRunOnLoadPersists()
+    {
+        var history = CreateHistory(fileOpenPicker: null, out var status, out var settings);
+        history.SaveWorkspace(new WorkspaceSettings
+        {
+            Name = "Daily Source",
+            Search = new SavedSearchSettings { QueryText = "needle", SearchPath = @"C:\src" },
+        });
+
+        var workspace = Assert.Single(history.Workspaces);
+        history.ToggleWorkspaceRunOnLoadCommand.Execute(workspace);
+
+        var updated = Assert.Single(history.Workspaces);
+        Assert.True(updated.RunOnLoad);
+        Assert.True(Assert.Single(settings.Current.Workspaces).RunOnLoad);
+        Assert.Contains("will run when loaded", status.Text);
+
+        history.ToggleWorkspaceRunOnLoadCommand.Execute(updated);
+
+        Assert.False(Assert.Single(history.Workspaces).RunOnLoad);
+        Assert.False(Assert.Single(settings.Current.Workspaces).RunOnLoad);
+        Assert.Contains("will load without running", status.Text);
+    }
+
     private static HistoryViewModel CreateHistory(
         IFileOpenPicker? fileOpenPicker,
         out StatusBarViewModel status,

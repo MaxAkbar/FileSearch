@@ -383,7 +383,7 @@ public sealed partial class SearchViewModel : ObservableObject, IDisposable
         ApplySavedSearch(value);
 
     partial void OnSelectedWorkspaceChanged(WorkspaceSettings? value) =>
-        ApplyWorkspace(value);
+        _ = ApplyWorkspaceAsync(value);
 
     partial void OnPreviewContentChanged(string value) =>
         CopyPreviewCommand.NotifyCanExecuteChanged();
@@ -898,7 +898,7 @@ public sealed partial class SearchViewModel : ObservableObject, IDisposable
             _status.Text = "Saved search loaded.";
     }
 
-    private void ApplyWorkspace(WorkspaceSettings? workspace)
+    private async Task ApplyWorkspaceAsync(WorkspaceSettings? workspace)
     {
         if (workspace is null)
             return;
@@ -931,7 +931,26 @@ public sealed partial class SearchViewModel : ObservableObject, IDisposable
         }
 
         RefreshFilesView();
-        _status.Text = $"Workspace loaded: {workspace.DisplayName}.";
+        if (!workspace.RunOnLoad)
+        {
+            _status.Text = $"Workspace loaded: {workspace.DisplayName}.";
+            return;
+        }
+
+        if (string.IsNullOrWhiteSpace(QueryText) || string.IsNullOrWhiteSpace(SearchPath))
+        {
+            _status.Text = $"Workspace loaded: {workspace.DisplayName}, but it needs search text and a folder before it can run.";
+            return;
+        }
+
+        if (!SearchCommand.CanExecute(null))
+        {
+            _status.Text = $"Workspace loaded: {workspace.DisplayName}, but a search is already running.";
+            return;
+        }
+
+        _status.Text = $"Workspace loaded: {workspace.DisplayName}; running search.";
+        await SearchCommand.ExecuteAsync(null).ConfigureAwait(true);
     }
 
     public void Dispose()

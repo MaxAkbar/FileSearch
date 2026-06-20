@@ -24,8 +24,16 @@ public sealed class WorkspaceSettings
 
     public string RefinementQuery { get; set; } = string.Empty;
 
+    public bool RunOnLoad { get; set; }
+
     [JsonIgnore]
     public string DisplayName => string.IsNullOrWhiteSpace(Name) ? "(unnamed workspace)" : Name.Trim();
+
+    [JsonIgnore]
+    public string RunOnLoadActionText => RunOnLoad ? "Disable run on load" : "Run search when loaded";
+
+    [JsonIgnore]
+    public string RunOnLoadGlyph => RunOnLoad ? "\uE73E" : "\uE768";
 
     [JsonIgnore]
     public string Summary
@@ -34,7 +42,8 @@ public sealed class WorkspaceSettings
         {
             var query = string.IsNullOrWhiteSpace(Search.QueryText) ? "empty query" : Search.QueryText.Trim();
             var path = string.IsNullOrWhiteSpace(Search.SearchPath) ? "no folder" : Search.SearchPath.Trim();
-            return $"{query} | {path}";
+            var run = RunOnLoad ? "runs on load" : "manual run";
+            return $"{run} | {query} | {path}";
         }
     }
 }

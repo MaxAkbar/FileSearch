@@ -575,6 +575,37 @@ public sealed class SearchViewModelTests
     }
 
     [Fact]
+    public void WorkspaceRunOnLoadStartsSearchAfterRestore()
+    {
+        var searcher = new RecordingSearcher();
+
+        RunWithPump((pump, vm, history, status, settings) =>
+        {
+            history.SaveWorkspace(new WorkspaceSettings
+            {
+                Name = "Daily Source",
+                RunOnLoad = true,
+                Search = new SavedSearchSettings
+                {
+                    QueryText = "needle",
+                    SearchPath = Path.GetTempPath(),
+                    FileNamePattern = "*.cs",
+                },
+            });
+
+            vm.SelectedWorkspace = Assert.Single(history.Workspaces);
+
+            pump.PumpUntil(() => searcher.RequestCount == 1 && !vm.IsSearching, TimeSpan.FromSeconds(10));
+
+            Assert.Equal(1, searcher.RequestCount);
+            Assert.Equal("needle", vm.QueryText);
+            Assert.Equal(Path.GetTempPath(), vm.SearchPath);
+            Assert.Equal("*.cs", vm.FileNamePattern);
+            Assert.StartsWith("Done", status.Text);
+        }, searcher);
+    }
+
+    [Fact]
     public void RenameResultUpdatesResultPathHitsAndPinnedPath()
     {
         var operations = new FakeFileOperationService
