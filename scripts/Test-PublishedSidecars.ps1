@@ -89,19 +89,31 @@ function Invoke-IndexerCommand(
         }
     }
     catch [System.OperationCanceledException] {
-        if ($AllowUnavailable) { return $null }
+        if ($AllowUnavailable) {
+            Write-SmokeLog "$Command unavailable: timed out or canceled."
+            return $null
+        }
         throw "Timed out waiting for $Command response from $PipeName."
     }
     catch [System.TimeoutException] {
-        if ($AllowUnavailable) { return $null }
+        if ($AllowUnavailable) {
+            Write-SmokeLog "$Command unavailable: timed out."
+            return $null
+        }
         throw
     }
     catch [System.IO.IOException] {
-        if ($AllowUnavailable) { return $null }
+        if ($AllowUnavailable) {
+            Write-SmokeLog "$Command unavailable: $($_.Exception.Message)"
+            return $null
+        }
         throw
     }
     catch [System.UnauthorizedAccessException] {
-        if ($AllowUnavailable) { return $null }
+        if ($AllowUnavailable) {
+            Write-SmokeLog "$Command unavailable: $($_.Exception.Message)"
+            return $null
+        }
         throw
     }
     finally {
@@ -110,6 +122,47 @@ function Invoke-IndexerCommand(
         }
 
         try { $pipe.Dispose() } catch {}
+    }
+}
+
+function Write-SmokeDiagnostics(
+    [System.Diagnostics.Process]$Process,
+    [string]$TracePath,
+    [string]$LocalAppDataPath
+) {
+    Write-SmokeLog "Collecting sidecar smoke diagnostics..."
+    if ($null -ne $Process) {
+        Write-SmokeLog "Indexer process id: $($Process.Id)"
+        Write-SmokeLog "Indexer process exited: $($Process.HasExited)"
+        if ($Process.HasExited) {
+            Write-SmokeLog "Indexer exit code: $($Process.ExitCode)"
+        }
+    }
+
+    if (Test-Path -LiteralPath $TracePath -PathType Leaf) {
+        Write-SmokeLog "Indexer IPC trace:"
+        foreach ($line in Get-Content -LiteralPath $TracePath) {
+            Write-SmokeLog "  $line"
+        }
+    }
+    else {
+        Write-SmokeLog "Indexer IPC trace was not created: $TracePath"
+    }
+
+    $logRoot = Join-Path $LocalAppDataPath "FileSearch\logs"
+    if (Test-Path -LiteralPath $logRoot -PathType Container) {
+        $logs = Get-ChildItem -LiteralPath $logRoot -Filter "filesearch-indexer*.log" -File -ErrorAction SilentlyContinue |
+            Sort-Object LastWriteTime -Descending |
+            Select-Object -First 3
+        foreach ($log in $logs) {
+            Write-SmokeLog "Indexer log tail: $($log.FullName)"
+            foreach ($line in Get-Content -LiteralPath $log.FullName -Tail 80) {
+                Write-SmokeLog "  $line"
+            }
+        }
+    }
+    else {
+        Write-SmokeLog "Indexer log directory was not created: $logRoot"
     }
 }
 
@@ -164,6 +217,7 @@ try {
     $startInfo.WorkingDirectory = $publishPath
     $startInfo.UseShellExecute = $false
     $startInfo.CreateNoWindow = $true
+    $startInfo.ArgumentList.Add("--headless")
     $startInfo.EnvironmentVariables["APPDATA"] = $appData
     $startInfo.EnvironmentVariables["LOCALAPPDATA"] = $localAppData
     $startInfo.EnvironmentVariables["FILESEARCH_WORKER_SETTINGS_PATH"] = $settingsPath
@@ -200,6 +254,10 @@ try {
     }
 
     Write-SmokeLog "Published sidecar smoke test passed."
+}
+catch {
+    Write-SmokeDiagnostics $process $workerTracePath $localAppData
+    throw
 }
 finally {
     if ($null -ne $process -and -not $process.HasExited) {

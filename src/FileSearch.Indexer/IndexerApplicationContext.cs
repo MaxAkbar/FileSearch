@@ -31,10 +31,11 @@ internal sealed class IndexerApplicationContext : Forms.ApplicationContext
     private readonly IHost _host;
     private readonly IIndexingService _indexingService;
     private readonly IFileIndex _fileIndex;
-    private readonly Forms.NotifyIcon _notifyIcon;
-    private readonly Icon _icon;
-    private readonly Forms.ToolStripMenuItem _pauseMenuItem;
-    private readonly Forms.ToolStripMenuItem _resumeMenuItem;
+    private readonly bool _showTrayIcon;
+    private Forms.NotifyIcon? _notifyIcon;
+    private Icon? _icon;
+    private Forms.ToolStripMenuItem? _pauseMenuItem;
+    private Forms.ToolStripMenuItem? _resumeMenuItem;
     private readonly Task _startupTask;
     private readonly SemaphoreSlim _maintenanceGate = new(1, 1);
     private readonly string? _ipcTracePath;
@@ -44,11 +45,41 @@ internal sealed class IndexerApplicationContext : Forms.ApplicationContext
     {
         _uiContext = SynchronizationContext.Current ?? new SynchronizationContext();
         _ipcTracePath = Environment.GetEnvironmentVariable("FILESEARCH_INDEXER_IPC_TRACE_PATH");
-        _host = BuildHost();
-        _indexingService = _host.Services.GetRequiredService<IIndexingService>();
-        _fileIndex = _host.Services.GetRequiredService<IFileIndex>();
-        _indexingService.StatusChanged += OnIndexingStatusChanged;
+        _showTrayIcon = !IsHeadless(args);
+        TraceIpc("application context starting");
 
+        _host = BuildHost();
+        TraceIpc("resolving file index");
+        _fileIndex = _host.Services.GetRequiredService<IFileIndex>();
+        TraceIpc("file index resolved");
+        TraceIpc("resolving indexing service");
+        _indexingService = _host.Services.GetRequiredService<IIndexingService>();
+        TraceIpc("indexing service resolved");
+        _indexingService.StatusChanged += OnIndexingStatusChanged;
+        TraceIpc("host built");
+
+        if (_showTrayIcon)
+        {
+            InitializeTrayIcon();
+            TraceIpc("tray initialized");
+        }
+        else
+        {
+            TraceIpc("headless mode enabled");
+        }
+
+        _startupTask = StartIndexingAsync(_cts.Token);
+        _ = RunPipeServerAsync(_cts.Token);
+        TraceIpc("application context started");
+    }
+
+    private static bool IsHeadless(IReadOnlyList<string> args) =>
+        args.Any(arg =>
+            string.Equals(arg, "--headless", StringComparison.OrdinalIgnoreCase) ||
+            string.Equals(arg, "--no-tray", StringComparison.OrdinalIgnoreCase));
+
+    private void InitializeTrayIcon()
+    {
         _icon = LoadTrayIconImage();
         var menu = new Forms.ContextMenuStrip();
         menu.Items.Add("Show FileSearch", null, (_, _) => ShowFileSearch());
@@ -71,31 +102,44 @@ internal sealed class IndexerApplicationContext : Forms.ApplicationContext
             Visible = true,
         };
         _notifyIcon.DoubleClick += (_, _) => ShowFileSearch();
-
-        _startupTask = StartIndexingAsync(_cts.Token);
-        _ = RunPipeServerAsync(_cts.Token);
-        TraceIpc("application context started");
     }
 
-    private static IHost BuildHost() =>
-        Host.CreateDefaultBuilder()
-            .ConfigureLogging(logging => logging.AddProvider(new FileLoggerProvider(
-                Path.Combine(
-                    Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
-                    "FileSearch", "logs"),
-                "filesearch-indexer")))
+    private IHost BuildHost()
+    {
+        TraceIpc("host builder creating");
+        var builder = new HostBuilder()
+            .ConfigureLogging(logging =>
+            {
+                TraceIpc("host logging configuring");
+                logging.ClearProviders();
+                logging.AddProvider(new FileLoggerProvider(
+                    Path.Combine(
+                        Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
+                        "FileSearch", "logs"),
+                    "filesearch-indexer"));
+                TraceIpc("host logging configured");
+            })
             .ConfigureServices(services =>
             {
+                TraceIpc("host services configuring");
                 services.AddFileSearchCore();
+                TraceIpc("host core services configured");
                 services.AddSingleton<WorkerSettingsLoader>();
+                TraceIpc("host worker settings configured");
                 services.AddWindowsImageOcr(configure: (sp, options) =>
                 {
-                    var loader = sp.GetRequiredService<WorkerSettingsLoader>();
-                    options.OcrLanguageTagProvider = () => loader.LoadOcrSettings().LanguageTag;
-                    options.MaxPdfPagesProvider = () => loader.LoadOcrSettings().MaxPdfPages;
+                    options.OcrLanguageTagProvider = () =>
+                        sp.GetRequiredService<WorkerSettingsLoader>().LoadOcrSettings().LanguageTag;
+                    options.MaxPdfPagesProvider = () =>
+                        sp.GetRequiredService<WorkerSettingsLoader>().LoadOcrSettings().MaxPdfPages;
                 });
-            })
-            .Build();
+                TraceIpc("host OCR services configured");
+            });
+        TraceIpc("host build invoking");
+        var host = builder.Build();
+        TraceIpc("host build completed");
+        return host;
+    }
 
     private async Task StartIndexingAsync(CancellationToken cancellationToken)
     {
@@ -406,10 +450,15 @@ internal sealed class IndexerApplicationContext : Forms.ApplicationContext
 
     private void OnIndexingStatusChanged(object? sender, IndexingStatus status)
     {
+        if (!_showTrayIcon)
+            return;
+
         _uiContext.Post(_ =>
         {
-            _pauseMenuItem.Enabled = !status.IsPaused;
-            _resumeMenuItem.Enabled = status.IsPaused;
+            if (_pauseMenuItem is not null)
+                _pauseMenuItem.Enabled = !status.IsPaused;
+            if (_resumeMenuItem is not null)
+                _resumeMenuItem.Enabled = status.IsPaused;
             SetTrayText(status.Message);
         }, null);
     }
@@ -471,6 +520,9 @@ internal sealed class IndexerApplicationContext : Forms.ApplicationContext
 
     private void SetTrayText(string text)
     {
+        if (_notifyIcon is null)
+            return;
+
         var normalized = string.IsNullOrWhiteSpace(text) ? "FileSearch indexer" : text.Trim();
         _notifyIcon.Text = normalized.Length <= 63 ? normalized : normalized[..60] + "...";
     }
@@ -492,8 +544,8 @@ internal sealed class IndexerApplicationContext : Forms.ApplicationContext
         if (disposing)
         {
             _indexingService.StatusChanged -= OnIndexingStatusChanged;
-            _notifyIcon.Dispose();
-            _icon.Dispose();
+            _notifyIcon?.Dispose();
+            _icon?.Dispose();
             _maintenanceGate.Dispose();
             _cts.Dispose();
             _host.Dispose();
