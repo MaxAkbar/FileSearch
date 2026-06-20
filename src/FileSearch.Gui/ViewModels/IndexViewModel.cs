@@ -75,6 +75,7 @@ public sealed partial class IndexViewModel : ObservableObject, IDisposable
         _indexingService.SetRuntimeOptions(BuildRuntimeOptions());
         _newIndexRecursive = _search.IncludeSubfolders;
         _newIndexEnableDocumentExtraction = _search.EnableDocumentExtraction;
+        _newIndexEnableImageOcr = _search.EnableImageOcr;
         _newIndexSkipUnknownFileTypes = _search.SkipUnknownFileTypes;
         IndexedLocationList = new PagedSidebarList<IndexedLocationSettings>(
             IndexedLocations,
@@ -133,6 +134,7 @@ public sealed partial class IndexViewModel : ObservableObject, IDisposable
     [ObservableProperty] private bool _newIndexRecursive = true;
     [ObservableProperty] private bool _newIndexIncludeHidden;
     [ObservableProperty] private bool _newIndexEnableDocumentExtraction = true;
+    [ObservableProperty] private bool _newIndexEnableImageOcr;
     [ObservableProperty] private bool _newIndexSkipUnknownFileTypes;
     [ObservableProperty] private IndexFilterListSettings? _selectedIndexInclusionList;
     [ObservableProperty] private string _newIndexInclusionListName = string.Empty;
@@ -658,6 +660,7 @@ public sealed partial class IndexViewModel : ObservableObject, IDisposable
                     Recursive = location.Recursive,
                     IncludeHidden = location.IncludeHidden,
                     EnableDocumentExtraction = location.EnableDocumentExtraction,
+                    EnableImageOcr = location.EnableImageOcr,
                     SkipUnknownFileTypes = location.SkipUnknownFileTypes,
                     IncludedExtensions = NormalizeExtensionList(location.IncludedExtensions),
                     IncludedFolders = NormalizeFolderList(location.IncludedFolders),
@@ -867,6 +870,7 @@ public sealed partial class IndexViewModel : ObservableObject, IDisposable
             Recursive = NewIndexRecursive,
             IncludeHidden = NewIndexIncludeHidden,
             EnableDocumentExtraction = NewIndexEnableDocumentExtraction,
+            EnableImageOcr = NewIndexEnableImageOcr,
             SkipUnknownFileTypes = NewIndexSkipUnknownFileTypes,
             IncludedExtensions = NormalizeExtensionList(NewIndexIncludedExtensions),
             IncludedFolders = NormalizeFolderList(NewIndexIncludedFolders),

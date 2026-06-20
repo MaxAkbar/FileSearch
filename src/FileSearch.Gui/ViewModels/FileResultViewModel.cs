@@ -1,7 +1,9 @@
 using System;
 using System.Collections.Generic;
+using System.Globalization;
 using System.IO;
 using System.Linq;
+using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
 using CommunityToolkit.Mvvm.ComponentModel;
@@ -40,9 +42,10 @@ public sealed partial class FileResultViewModel : ObservableObject
         int searchRank = 0)
     {
         FullPath = fullPath;
-        FileName = Path.GetFileName(fullPath);
+        IsDirectory = System.IO.Directory.Exists(fullPath) && !File.Exists(fullPath);
+        FileName = GetDisplayName(fullPath, IsDirectory);
         Directory = Path.GetDirectoryName(fullPath) ?? string.Empty;
-        Extension = Path.GetExtension(fullPath).TrimStart('.').ToLowerInvariant();
+        Extension = IsDirectory ? string.Empty : Path.GetExtension(fullPath).TrimStart('.').ToLowerInvariant();
         _launcher = launcher;
         _recordOpenedAsync = recordOpenedAsync;
         SearchRank = searchRank;
@@ -51,6 +54,7 @@ public sealed partial class FileResultViewModel : ObservableObject
     public string FullPath { get; private set; }
     public string FileName { get; private set; }
     public string Directory { get; private set; }
+    public bool IsDirectory { get; private set; }
     public int SearchRank { get; }
 
     /// <summary>Lower-cased extension without the leading dot (e.g. "cs").</summary>
@@ -63,6 +67,8 @@ public sealed partial class FileResultViewModel : ObservableObject
         string.IsNullOrWhiteSpace(ExtensionPattern) ? "Exclude extension" : $"Exclude {ExtensionPattern}";
 
     public IReadOnlyList<Hit> Hits => _hits;
+
+    public bool HasImageOcrPreview => ImageOcrPreviewViewModel.HasPreviewAnchor(_hits);
 
     [ObservableProperty] private int _hitCount;
     [ObservableProperty] private string _firstMatch = string.Empty;
@@ -88,6 +94,42 @@ public sealed partial class FileResultViewModel : ObservableObject
         IsExpanded
             ? "Show fewer"
             : $"+ {ExtraHitCount} more match{(ExtraHitCount == 1 ? string.Empty : "es")} in this file";
+
+    public string BuildStoredHitPreview()
+    {
+        var contentHits = _hits
+            .Where(hit => hit.Kind == HitKind.Content && hit.LineNumber > 0)
+            .OrderBy(hit => hit.LineNumber)
+            .ToList();
+        if (contentHits.Count == 0)
+        {
+            var metadataHits = _hits.Where(hit => hit.Kind == HitKind.Metadata).ToList();
+            if (metadataHits.Count == 0)
+                return string.Empty;
+
+            var metadataBuilder = new StringBuilder();
+            foreach (var hit in metadataHits)
+                metadataBuilder.Append('\u25ba').Append(' ').Append(hit.LineContent).AppendLine();
+            return metadataBuilder.ToString();
+        }
+
+        var sb = new StringBuilder();
+        foreach (var hit in contentHits)
+        {
+            sb.Append('\u25ba')
+              .Append(' ')
+              .Append(hit.LineNumber.ToString(CultureInfo.InvariantCulture).PadLeft(6))
+              .Append("  ")
+              .Append(hit.LineContent);
+
+            if (!string.IsNullOrWhiteSpace(hit.Anchor?.DisplayText))
+                sb.Append("  [").Append(hit.Anchor.DisplayText).Append(']');
+
+            sb.AppendLine();
+        }
+
+        return sb.ToString();
+    }
 
     public string PinActionText => IsPinned ? "Unpin result" : "Pin result";
 
@@ -124,7 +166,7 @@ public sealed partial class FileResultViewModel : ObservableObject
     public long ModifiedSortTicks => ModifiedUtc?.Ticks ?? 0;
 
     public string FileTypeGroup =>
-        string.IsNullOrWhiteSpace(Extension) ? "No extension" : $".{Extension}";
+        IsDirectory ? "Folder" : string.IsNullOrWhiteSpace(Extension) ? "No extension" : $".{Extension}";
 
     public string ModifiedDateGroup => ToModifiedDateGroup(ModifiedUtc);
 
@@ -150,6 +192,7 @@ public sealed partial class FileResultViewModel : ObservableObject
 
     public void AddHit(Hit hit)
     {
+        var hadImageOcrPreview = HasImageOcrPreview;
         _hits.Add(hit);
         HitCount = _hits.Count;
         if (_hits.Count == 1)
@@ -186,6 +229,12 @@ public sealed partial class FileResultViewModel : ObservableObject
         // collapsed cards freeze at the first few, expanded cards keep growing.
         if (IsExpanded || _hits.Count <= CollapsedHitLimit)
             OnPropertyChanged(nameof(VisibleHits));
+        if (!hadImageOcrPreview && HasImageOcrPreview)
+        {
+            OnPropertyChanged(nameof(HasImageOcrPreview));
+            OpenImageOcrPreviewCommand.NotifyCanExecuteChanged();
+        }
+
         OnPropertyChanged(nameof(HasMoreHits));
         OnPropertyChanged(nameof(ExtraHitCount));
         OnPropertyChanged(nameof(MoreText));
@@ -194,9 +243,10 @@ public sealed partial class FileResultViewModel : ObservableObject
     public void UpdatePath(string fullPath)
     {
         FullPath = fullPath;
-        FileName = Path.GetFileName(fullPath);
+        IsDirectory = System.IO.Directory.Exists(fullPath) && !File.Exists(fullPath);
+        FileName = GetDisplayName(fullPath, IsDirectory);
         Directory = Path.GetDirectoryName(fullPath) ?? string.Empty;
-        Extension = Path.GetExtension(fullPath).TrimStart('.').ToLowerInvariant();
+        Extension = IsDirectory ? string.Empty : Path.GetExtension(fullPath).TrimStart('.').ToLowerInvariant();
 
         for (var i = 0; i < _hits.Count; i++)
             _hits[i] = _hits[i] with { Path = fullPath };
@@ -210,6 +260,7 @@ public sealed partial class FileResultViewModel : ObservableObject
         OnPropertyChanged(nameof(FullPath));
         OnPropertyChanged(nameof(FileName));
         OnPropertyChanged(nameof(Directory));
+        OnPropertyChanged(nameof(IsDirectory));
         OnPropertyChanged(nameof(Extension));
         OnPropertyChanged(nameof(ExtensionPattern));
         OnPropertyChanged(nameof(ExcludeExtensionPatternMenuText));
@@ -224,6 +275,8 @@ public sealed partial class FileResultViewModel : ObservableObject
         OnPropertyChanged(nameof(ModifiedDateGroup));
         OnPropertyChanged(nameof(ModifiedDateFacet));
         OnPropertyChanged(nameof(FileTypeGroup));
+        OnPropertyChanged(nameof(HasImageOcrPreview));
+        OpenImageOcrPreviewCommand.NotifyCanExecuteChanged();
     }
 
     partial void OnIsExpandedChanged(bool value)
@@ -263,6 +316,19 @@ public sealed partial class FileResultViewModel : ObservableObject
             // Usage tracking should never block opening a result.
         }
     }
+
+    [RelayCommand(CanExecute = nameof(CanOpenImageOcrPreview))]
+    private async Task OpenImageOcrPreviewAsync()
+    {
+        var preview = await ImageOcrPreviewViewModel
+            .TryCreateAsync(FullPath, _hits, CancellationToken.None)
+            .ConfigureAwait(true);
+        if (preview is not null)
+            _launcher.OpenImageOcrPreview(preview);
+    }
+
+    private bool CanOpenImageOcrPreview() => HasImageOcrPreview;
+
     [RelayCommand] private void RevealInExplorer() => _launcher.RevealInExplorer(FullPath);
     [RelayCommand] private void CopyPath() => _launcher.CopyToClipboard(FullPath);
     [RelayCommand] private void CopyFolderPath() => _launcher.CopyToClipboard(Directory);
@@ -303,6 +369,14 @@ public sealed partial class FileResultViewModel : ObservableObject
         _metadataLoaded = true;
         try
         {
+            if (IsDirectory)
+            {
+                var directory = new DirectoryInfo(FullPath);
+                if (directory.Exists)
+                    _modifiedUtc ??= directory.LastWriteTimeUtc;
+                return;
+            }
+
             var info = new FileInfo(FullPath);
             if (info.Exists)
             {
@@ -313,6 +387,15 @@ public sealed partial class FileResultViewModel : ObservableObject
         catch
         {
         }
+    }
+
+    private static string GetDisplayName(string path, bool isDirectory)
+    {
+        var trimmed = isDirectory
+            ? path.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar)
+            : path;
+        var name = Path.GetFileName(trimmed);
+        return string.IsNullOrWhiteSpace(name) ? path : name;
     }
 
     private static string FormatSize(long bytes)

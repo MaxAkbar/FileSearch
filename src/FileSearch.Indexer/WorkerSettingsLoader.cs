@@ -4,6 +4,7 @@ using FileSearch.Core;
 using FileSearch.Core.Extractors;
 using FileSearch.Core.Indexing;
 using FileSearch.Core.Walker;
+using FileSearch.WindowsOcr;
 
 namespace FileSearch.Indexer;
 
@@ -36,8 +37,7 @@ internal sealed class WorkerSettingsLoader
         if (!File.Exists(_settingsPath))
             return WorkerIndexingSettings.Empty;
 
-        var json = File.ReadAllText(_settingsPath);
-        var settings = JsonSerializer.Deserialize<WorkerAppSettings>(json, s_jsonOptions) ?? new WorkerAppSettings();
+        var settings = LoadAppSettings(_settingsPath);
         var locations = LoadLocations(settings).ToList();
         return new WorkerIndexingSettings(
             NormalizeResourceProfile(settings.IndexerResourceProfile),
@@ -47,6 +47,17 @@ internal sealed class WorkerSettingsLoader
                 settings.IndexerCpuLimitPercent,
                 settings.IndexerDiskPauseMilliseconds).Normalize(),
             locations);
+    }
+
+    public WorkerOcrSettings LoadOcrSettings()
+    {
+        if (!File.Exists(_settingsPath))
+            return WorkerOcrSettings.Default;
+
+        var settings = LoadAppSettings(_settingsPath);
+        return new WorkerOcrSettings(
+            settings.OcrLanguageTag ?? string.Empty,
+            Math.Max(0, settings.OcrMaxPdfPages));
     }
 
     private IEnumerable<IndexedLocation> LoadLocations(WorkerAppSettings settings)
@@ -90,6 +101,7 @@ internal sealed class WorkerSettingsLoader
             MaxFileSizeBytes = 0,
             ModifiedAfterUtc = null,
             ModifiedBeforeUtc = null,
+            EnableOcr = location.EnableImageOcr,
         };
 
     private HashSet<string> BuildIncludedExtensions(WorkerIndexedLocation location, string additionalPlainTextExtensions)
@@ -102,6 +114,12 @@ internal sealed class WorkerSettingsLoader
             return new HashSet<string>(StringComparer.OrdinalIgnoreCase);
 
         var extensions = _extractorRegistry.SupportedExtensions.ToHashSet(StringComparer.OrdinalIgnoreCase);
+        if (!location.EnableImageOcr)
+        {
+            foreach (var extension in ImageOcrFileTypes.SupportedExtensions)
+                extensions.Remove(extension);
+        }
+
         foreach (var extension in ExtensionList.Parse(additionalPlainTextExtensions))
             extensions.Add(extension);
         return extensions;
@@ -112,6 +130,10 @@ internal sealed class WorkerSettingsLoader
         var extensions = ExtensionList.Parse(location.ExcludedExtensions).ToHashSet(StringComparer.OrdinalIgnoreCase);
         if (!location.EnableDocumentExtraction)
             foreach (var extension in s_documentExtensions)
+                extensions.Add(extension);
+
+        if (!location.EnableImageOcr)
+            foreach (var extension in ImageOcrFileTypes.SupportedExtensions)
                 extensions.Add(extension);
 
         return extensions;
@@ -142,6 +164,12 @@ internal sealed class WorkerSettingsLoader
         return Path.Combine(folder, "settings.json");
     }
 
+    private static WorkerAppSettings LoadAppSettings(string settingsPath)
+    {
+        var json = File.ReadAllText(settingsPath);
+        return JsonSerializer.Deserialize<WorkerAppSettings>(json, s_jsonOptions) ?? new WorkerAppSettings();
+    }
+
     private static IndexerResourceProfile NormalizeResourceProfile(IndexerResourceProfile profile) =>
         Enum.IsDefined(profile) ? profile : IndexerResourceProfile.Balanced;
 
@@ -162,6 +190,10 @@ internal sealed class WorkerSettingsLoader
         public int IndexerCpuLimitPercent { get; set; }
 
         public int IndexerDiskPauseMilliseconds { get; set; }
+
+        public string OcrLanguageTag { get; set; } = string.Empty;
+
+        public int OcrMaxPdfPages { get; set; } = 50;
     }
 
     private sealed class WorkerIndexedLocation
@@ -173,6 +205,8 @@ internal sealed class WorkerSettingsLoader
         public bool IncludeHidden { get; set; }
 
         public bool EnableDocumentExtraction { get; set; } = true;
+
+        public bool EnableImageOcr { get; set; }
 
         public bool SkipUnknownFileTypes { get; set; }
 
@@ -196,4 +230,9 @@ internal sealed record WorkerIndexingSettings(
 {
     public static WorkerIndexingSettings Empty { get; } =
         new(IndexerResourceProfile.Balanced, IndexerRuntimeOptions.Default, Array.Empty<IndexedLocation>());
+}
+
+internal sealed record WorkerOcrSettings(string LanguageTag, int MaxPdfPages)
+{
+    public static WorkerOcrSettings Default { get; } = new(string.Empty, 50);
 }

@@ -1,0 +1,121 @@
+<Window x:Class="FileSearch.Gui.ImageOcrPreviewWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:ui="http://schemas.modernwpf.com/2019"
+        ui:WindowHelper.UseModernWindowStyle="True"
+        Icon="Assets/FileSearch.ico"
+        Background="{DynamicResource Atlas.PaperBrush}"
+        Foreground="{DynamicResource Atlas.InkBrush}"
+        FontFamily="{DynamicResource Atlas.SansFont}"
+        TextOptions.TextFormattingMode="Display"
+        TextOptions.TextRenderingMode="ClearType"
+        Title="OCR Preview"
+        Width="920"
+        Height="680"
+        MinWidth="560"
+        MinHeight="420"
+        WindowStartupLocation="CenterScreen">
+    <Grid Margin="16">
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="*"/>
+            <RowDefinition Height="Auto"/>
+        </Grid.RowDefinitions>
+
+        <DockPanel Grid.Row="0" Margin="0,0,0,12">
+            <ui:FontIcon DockPanel.Dock="Left"
+                         Glyph="&#xE8A5;"
+                         FontSize="18"
+                         Foreground="{DynamicResource Atlas.AccentBrush}"
+                         Margin="0,1,10,0"/>
+            <StackPanel>
+                <TextBlock Text="OCR Preview"
+                           FontFamily="{DynamicResource Atlas.SerifFont}"
+                           FontSize="18"
+                           FontWeight="SemiBold"
+                           Foreground="{DynamicResource Atlas.InkBrush}"/>
+                <TextBlock Text="{Binding Label}"
+                           Margin="0,3,0,0"
+                           Foreground="{DynamicResource Atlas.Ink2Brush}"
+                           TextWrapping="Wrap"
+                           TextTrimming="CharacterEllipsis"/>
+            </StackPanel>
+        </DockPanel>
+
+        <Border Grid.Row="1"
+                BorderBrush="{DynamicResource Atlas.LineBrush}"
+                BorderThickness="1"
+                Background="{DynamicResource Atlas.Surface2Brush}"
+                ClipToBounds="True">
+            <Viewbox Stretch="Uniform">
+                <Canvas Width="{Binding SourceWidth}"
+                        Height="{Binding SourceHeight}">
+                    <Image Source="{Binding ImagePath}"
+                           Width="{Binding SourceWidth}"
+                           Height="{Binding SourceHeight}"
+                           Stretch="Fill"/>
+                    <Rectangle Canvas.Left="{Binding X}"
+                               Canvas.Top="{Binding Y}"
+                               Width="{Binding Width}"
+                               Height="{Binding Height}"
+                               Stroke="#FFFFCE54"
+                               StrokeThickness="6"
+                               Fill="#33FFCE54"/>
+                </Canvas>
+            </Viewbox>
+        </Border>
+
+        <Grid Grid.Row="2" Margin="0,12,0,0">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="*"/>
+                <ColumnDefinition Width="Auto"/>
+                <ColumnDefinition Width="8"/>
+                <ColumnDefinition Width="Auto"/>
+                <ColumnDefinition Width="8"/>
+                <ColumnDefinition Width="Auto"/>
+                <ColumnDefinition Width="8"/>
+                <ColumnDefinition Width="Auto"/>
+            </Grid.ColumnDefinitions>
+
+            <TextBlock Text="{Binding ImagePath}"
+                       VerticalAlignment="Center"
+                       Foreground="{DynamicResource Atlas.Ink3Brush}"
+                       TextTrimming="CharacterEllipsis"
+                       Margin="0,0,16,0"/>
+
+            <Button Grid.Column="1"
+                    Style="{StaticResource SecondaryButtonStyle}"
+                    Click="OnOpenImageClick">
+                <StackPanel Orientation="Horizontal">
+                    <ui:FontIcon Glyph="&#xE8E5;" FontSize="13" Margin="0,0,7,0"/>
+                    <TextBlock Text="Open image"/>
+                </StackPanel>
+            </Button>
+            <Button Grid.Column="3"
+                    Style="{StaticResource SecondaryButtonStyle}"
+                    Click="OnRevealImageClick">
+                <StackPanel Orientation="Horizontal">
+                    <ui:FontIcon Glyph="&#xE838;" FontSize="13" Margin="0,0,7,0"/>
+                    <TextBlock Text="Reveal"/>
+                </StackPanel>
+            </Button>
+            <Button Grid.Column="5"
+                    Style="{StaticResource SecondaryButtonStyle}"
+                    Click="OnCopyImagePathClick">
+                <StackPanel Orientation="Horizontal">
+                    <ui:FontIcon Glyph="&#xE8C8;" FontSize="13" Margin="0,0,7,0"/>
+                    <TextBlock Text="Copy path"/>
+                </StackPanel>
+            </Button>
+            <Button Grid.Column="7"
+                    Style="{StaticResource PrimaryButtonStyle}"
+                    IsCancel="True"
+                    Click="OnCloseClick">
+                <StackPanel Orientation="Horizontal">
+                    <ui:FontIcon Glyph="&#xE711;" FontSize="13" Margin="0,0,7,0"/>
+                    <TextBlock Text="Close"/>
+                </StackPanel>
+            </Button>
+        </Grid>
+    </Grid>
+</Window>

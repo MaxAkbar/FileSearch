@@ -60,6 +60,7 @@ public sealed class BindingPathAuditTests
         ["RegexTesterWindow.xaml"] = typeof(RegexTesterViewModel),
         ["SettingsWindow.xaml"] = typeof(ApplicationSettingsViewModel),
         ["QuickSearchWindow.xaml"] = typeof(QuickSearchViewModel),
+        ["ImageOcrPreviewWindow.xaml"] = typeof(ImageOcrPreviewViewModel),
     };
 
     // Matches a {Binding ...} expression with up to two nesting levels of

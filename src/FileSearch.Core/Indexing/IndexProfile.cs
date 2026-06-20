@@ -11,7 +11,8 @@ internal sealed record IndexProfile(
     IReadOnlySet<string> IncludeExtensions,
     IReadOnlySet<string> ExcludeExtensions,
     IReadOnlySet<string> IncludeDirectories,
-    IReadOnlySet<string> ExcludeDirectories)
+    IReadOnlySet<string> ExcludeDirectories,
+    bool EnableOcr)
 {
     public const string Prefix = "v1";
 
@@ -22,7 +23,8 @@ internal sealed record IndexProfile(
             Normalize(options.IncludeExtensions),
             Normalize(options.ExcludeExtensions),
             NormalizeNames(options.IncludeDirectories),
-            NormalizeNames(options.ExcludeDirectories));
+            NormalizeNames(options.ExcludeDirectories),
+            options.EnableOcr);
 
     public string ToStorageString()
     {
@@ -30,7 +32,7 @@ internal sealed record IndexProfile(
         var exclude = string.Join(",", ExcludeExtensions.OrderBy(x => x, StringComparer.OrdinalIgnoreCase));
         var includeDirs = string.Join(",", IncludeDirectories.OrderBy(x => x, StringComparer.OrdinalIgnoreCase));
         var excludeDirs = string.Join(",", ExcludeDirectories.OrderBy(x => x, StringComparer.OrdinalIgnoreCase));
-        return $"{Prefix}|recursive={(Recursive ? 1 : 0)}|hidden={(IncludeHidden ? 1 : 0)}|include={include}|exclude={exclude}|includeDirs={includeDirs}|excludeDirs={excludeDirs}";
+        return $"{Prefix}|recursive={(Recursive ? 1 : 0)}|hidden={(IncludeHidden ? 1 : 0)}|include={include}|exclude={exclude}|includeDirs={includeDirs}|excludeDirs={excludeDirs}|ocr={(EnableOcr ? 1 : 0)}";
     }
 
     public bool Covers(WalkerOptions request)
@@ -39,6 +41,9 @@ internal sealed record IndexProfile(
             return false;
 
         if (!IncludeHidden && request.IncludeHidden)
+            return false;
+
+        if (!EnableOcr && request.EnableOcr)
             return false;
 
         var requestedIncludes = Normalize(request.IncludeExtensions);
@@ -83,7 +88,7 @@ internal sealed record IndexProfile(
     public static bool TryParse(string raw, out IndexProfile profile)
     {
         var empty = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-        profile = new IndexProfile(false, false, empty, empty, empty, empty);
+        profile = new IndexProfile(false, false, empty, empty, empty, empty, EnableOcr: false);
 
         if (string.IsNullOrWhiteSpace(raw))
             return false;
@@ -98,6 +103,7 @@ internal sealed record IndexProfile(
         IReadOnlySet<string> exclude = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         IReadOnlySet<string> includeDirs = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         IReadOnlySet<string> excludeDirs = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        bool enableOcr = false;
 
         foreach (var part in parts.Skip(1))
         {
@@ -127,10 +133,13 @@ internal sealed record IndexProfile(
                     // nothing, which the empty default already expresses.
                     excludeDirs = ParseNames(split[1]);
                     break;
+                case "ocr":
+                    enableOcr = split[1] == "1";
+                    break;
             }
         }
 
-        profile = new IndexProfile(recursive, hidden, include, exclude, includeDirs, excludeDirs);
+        profile = new IndexProfile(recursive, hidden, include, exclude, includeDirs, excludeDirs, enableOcr);
         return true;
     }
 

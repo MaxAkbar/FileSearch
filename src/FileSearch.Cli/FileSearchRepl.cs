@@ -384,33 +384,33 @@ internal sealed class FileSearchRepl
                 return await RunOneShotIndexClearAsync(args[1..], cancellationToken).ConfigureAwait(false);
             case "locations":
             case "roots":
-            {
-                var options = ParseOneShotIndexOptions(args[1..], allowTargetPath: false);
-                var locations = await _index.GetLocationsAsync(cancellationToken).ConfigureAwait(false);
-                var rendered = RenderOneShotIndexLocations(locations, options.Format);
-                await WriteOneShotOutputAsync(rendered, options.OutputPath, cancellationToken).ConfigureAwait(false);
-                return 0;
-            }
+                {
+                    var options = ParseOneShotIndexOptions(args[1..], allowTargetPath: false);
+                    var locations = await _index.GetLocationsAsync(cancellationToken).ConfigureAwait(false);
+                    var rendered = RenderOneShotIndexLocations(locations, options.Format);
+                    await WriteOneShotOutputAsync(rendered, options.OutputPath, cancellationToken).ConfigureAwait(false);
+                    return 0;
+                }
             case "stats":
-            {
-                var options = ParseOneShotIndexOptions(args[1..], allowTargetPath: true);
-                var root = string.IsNullOrWhiteSpace(options.TargetPath)
-                    ? Path.GetFullPath(Directory.GetCurrentDirectory())
-                    : Path.GetFullPath(ExpandHome(options.TargetPath));
-                var stats = await _index.GetStatsAsync(root, cancellationToken).ConfigureAwait(false);
-                var rendered = RenderOneShotIndexStats(stats, options.Format);
-                await WriteOneShotOutputAsync(rendered, options.OutputPath, cancellationToken).ConfigureAwait(false);
-                return 0;
-            }
+                {
+                    var options = ParseOneShotIndexOptions(args[1..], allowTargetPath: true);
+                    var root = string.IsNullOrWhiteSpace(options.TargetPath)
+                        ? Path.GetFullPath(Directory.GetCurrentDirectory())
+                        : Path.GetFullPath(ExpandHome(options.TargetPath));
+                    var stats = await _index.GetStatsAsync(root, cancellationToken).ConfigureAwait(false);
+                    var rendered = RenderOneShotIndexStats(stats, options.Format);
+                    await WriteOneShotOutputAsync(rendered, options.OutputPath, cancellationToken).ConfigureAwait(false);
+                    return 0;
+                }
             case "failures":
             case "failed":
-            {
-                var options = ParseOneShotIndexOptions(args[1..], allowTargetPath: false);
-                var failures = await _index.GetFailedFilesAsync(cancellationToken).ConfigureAwait(false);
-                var rendered = RenderOneShotIndexFailures(failures, options.Format);
-                await WriteOneShotOutputAsync(rendered, options.OutputPath, cancellationToken).ConfigureAwait(false);
-                return 0;
-            }
+                {
+                    var options = ParseOneShotIndexOptions(args[1..], allowTargetPath: false);
+                    var failures = await _index.GetFailedFilesAsync(cancellationToken).ConfigureAwait(false);
+                    var rendered = RenderOneShotIndexFailures(failures, options.Format);
+                    await WriteOneShotOutputAsync(rendered, options.OutputPath, cancellationToken).ConfigureAwait(false);
+                    return 0;
+                }
             default:
                 Console.Error.WriteLine($"Unknown index command: {args[0]}");
                 Console.Error.WriteLine(OneShotIndexUsage);

@@ -7,6 +7,7 @@ using System.Text.Json.Serialization;
 using FileSearch.Core;
 using FileSearch.Core.Indexing;
 using FileSearch.Core.Logging;
+using FileSearch.WindowsOcr;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
@@ -87,6 +88,12 @@ internal sealed class IndexerApplicationContext : Forms.ApplicationContext
             {
                 services.AddFileSearchCore();
                 services.AddSingleton<WorkerSettingsLoader>();
+                services.AddWindowsImageOcr(configure: (sp, options) =>
+                {
+                    var loader = sp.GetRequiredService<WorkerSettingsLoader>();
+                    options.OcrLanguageTagProvider = () => loader.LoadOcrSettings().LanguageTag;
+                    options.MaxPdfPagesProvider = () => loader.LoadOcrSettings().MaxPdfPages;
+                });
             })
             .Build();
 

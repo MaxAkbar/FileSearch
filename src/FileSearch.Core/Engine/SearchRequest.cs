@@ -5,6 +5,14 @@ using FileSearch.Core.Walker;
 
 namespace FileSearch.Core.Engine;
 
+public enum SearchTarget
+{
+    Content,
+    FileNames,
+    FolderNames,
+    FileAndFolderNames,
+}
+
 public sealed record SearchRequest(
     Query Expression,
     IReadOnlyList<string> Roots,
@@ -13,4 +21,5 @@ public sealed record SearchRequest(
     bool UseIndex = false,
     Action<string>? Status = null,
     string? RawQuery = null,
-    QueryMode? Mode = null);
+    QueryMode? Mode = null,
+    SearchTarget SearchTarget = SearchTarget.Content);

@@ -1,4 +1,5 @@
 using System.Collections.Generic;
+using FileSearch.Core.Extractors;
 using FileSearch.Core.Queries;
 
 namespace FileSearch.Core.Engine;
@@ -27,4 +28,5 @@ public sealed record Hit(
     double Score = 0,
     long? SizeBytes = null,
     DateTime? ModifiedUtc = null,
-    HitRoute Route = HitRoute.Live);
+    HitRoute Route = HitRoute.Live,
+    SourceAnchor? Anchor = null);

@@ -34,7 +34,7 @@
             <section class="hero">
                 <div class="eyebrow">Search Workflow</div>
                 <h1>Run a focused search.</h1>
-                <p class="lead">Use the Main tab to define the text, file names, folder, and recursion scope. Use Options and Dates only when you need tighter control.</p>
+                <p class="lead">Use the Main tab to choose whether you are searching contents, file names, folder names, or both, then set the folder and recursion scope. Use Options and Dates only when you need tighter control.</p>
             </section>
 
             <h2>Main Tab</h2>
@@ -50,12 +50,17 @@
                     <tbody>
                         <tr>
                             <td><strong>Containing text</strong></td>
-                            <td>The text, regex, or Boolean expression to find. Recent searches are saved in the dropdown.</td>
+                            <td>The text, name fragment, regex, or Boolean expression to find. Recent searches are saved in the dropdown.</td>
                             <td><code>error AND timeout</code></td>
                         </tr>
                         <tr>
+                            <td><strong>Search</strong></td>
+                            <td>Chooses the target: file contents, file names, folder names, or file and folder names.</td>
+                            <td><code>File and folder names</code></td>
+                        </tr>
+                        <tr>
                             <td><strong>File name pattern</strong></td>
-                            <td>Optional semicolon- or comma-separated glob patterns. Blank means all supported files.</td>
+                            <td>Optional semicolon- or comma-separated glob filter for files. Blank means all files for name searches or all supported files for content searches.</td>
                             <td><code>*.cs;*.xaml;*.md</code></td>
                         </tr>
                         <tr>
@@ -80,14 +85,24 @@
             </ul>
 
             <h2>File Name Patterns</h2>
-            <p>Patterns are matched against file names, not the full folder path. Use semicolons or commas to separate multiple patterns.</p>
+            <p>Patterns are filters, not the search text. They are matched against file names, not the full folder path. Use semicolons or commas to separate multiple patterns.</p>
             <pre><code>*.cs
 *.cs;*.xaml;*.json
 *.md,*.txt</code></pre>
 
             <div class="callout">
-                If a search returns too many files, narrow the file name pattern first. It reduces the number of files FileSearch has to open and scan.
+                To search for a file or folder by name, change <strong>Search</strong> to <strong>File names</strong>, <strong>Folder names</strong>, or <strong>File and folder names</strong>. To limit which files are considered, use <strong>File name pattern</strong>.
             </div>
+
+            <h2>Scanned or Image PDF Search</h2>
+            <p>Searching <code>*.pdf</code> only limits the search to PDF files. It does not turn on OCR by itself. For scanned or image-only PDFs, use these settings:</p>
+            <ul class="plain-list">
+                <li>Set <strong>Search</strong> to <strong>Contents</strong>.</li>
+                <li>Set <strong>File name pattern</strong> to <code>*.pdf</code>.</li>
+                <li>Keep <strong>Office/PDF</strong> enabled.</li>
+                <li>Enable <strong>Image OCR</strong>.</li>
+                <li>If <strong>Use index</strong> is enabled, make sure the indexed location was built with Image OCR enabled; otherwise use <strong>Index &gt; Manage indexed locations... &gt; Rebuild selected</strong>.</li>
+            </ul>
 
             <h2>The Sidebar</h2>
             <p>The sidebar on the left keeps frequently used scopes, folders, and searches one click away. Each section has its own search box, shows page controls when there are many matches, collapses independently, and the panel scrolls as a whole when the expanded sections are taller than the window.</p>

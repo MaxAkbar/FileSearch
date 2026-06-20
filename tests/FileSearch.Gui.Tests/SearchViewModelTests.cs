@@ -180,8 +180,10 @@ public sealed class SearchViewModelTests
             vm.ExcludeFileNamePattern = "*.g.cs";
             vm.IncludeSubfolders = false;
             vm.SearchMode = QueryMode.Regex;
+            vm.SelectedSearchTargetOption = vm.SearchTargetOptions.Single(option => option.Value == SearchTarget.FileNames);
             vm.MatchCase = true;
             vm.EnableDocumentExtraction = false;
+            vm.EnableImageOcr = true;
             vm.SkipUnknownFileTypes = true;
             vm.UseIndex = true;
             vm.MinSizeKB = 4;
@@ -198,9 +200,11 @@ public sealed class SearchViewModelTests
             var saved = Assert.Single(history.SavedSearches);
             Assert.Equal(path, saved.SearchPath);
             Assert.Equal(QueryMode.Regex, saved.SearchMode);
+            Assert.Equal(SearchTarget.FileNames, saved.SearchTarget);
             Assert.False(saved.IncludeSubfolders);
             Assert.True(saved.MatchCase);
             Assert.False(saved.EnableDocumentExtraction);
+            Assert.True(saved.EnableImageOcr);
             Assert.True(saved.SkipUnknownFileTypes);
             Assert.True(saved.UseIndex);
             Assert.Equal(4, saved.MinSizeKB);
@@ -217,8 +221,10 @@ public sealed class SearchViewModelTests
             vm.ExcludeFileNamePattern = string.Empty;
             vm.IncludeSubfolders = true;
             vm.SearchMode = QueryMode.Boolean;
+            vm.SelectedSearchTargetOption = vm.SearchTargetOptions.Single(option => option.Value == SearchTarget.Content);
             vm.MatchCase = false;
             vm.EnableDocumentExtraction = true;
+            vm.EnableImageOcr = false;
             vm.SkipUnknownFileTypes = false;
             vm.UseIndex = false;
             vm.MinSizeKB = 0;
@@ -235,8 +241,10 @@ public sealed class SearchViewModelTests
             Assert.Equal("*.g.cs", vm.ExcludeFileNamePattern);
             Assert.False(vm.IncludeSubfolders);
             Assert.Equal(QueryMode.Regex, vm.SearchMode);
+            Assert.Equal(SearchTarget.FileNames, vm.CurrentSearchTarget);
             Assert.True(vm.MatchCase);
             Assert.False(vm.EnableDocumentExtraction);
+            Assert.True(vm.EnableImageOcr);
             Assert.True(vm.SkipUnknownFileTypes);
             Assert.True(vm.UseIndex);
             Assert.Equal(4, vm.MinSizeKB);
@@ -296,6 +304,7 @@ public sealed class SearchViewModelTests
             vm.SearchPath = Path.GetTempPath();
             vm.FileNamePattern = "*.cs; *.md";
             vm.ExcludeFileNamePattern = "*.g.cs, *.tmp";
+            vm.EnableImageOcr = true;
 
             var task = vm.SearchCommand.ExecuteAsync(null);
             pump.PumpUntil(() => task.IsCompleted, TimeSpan.FromSeconds(10));
@@ -303,6 +312,34 @@ public sealed class SearchViewModelTests
             Assert.NotNull(searcher.Request);
             Assert.Equal(new[] { "*.cs", "*.md" }, searcher.Request.WalkerOptions.IncludeGlobs);
             Assert.Equal(new[] { "*.g.cs", "*.tmp" }, searcher.Request.WalkerOptions.ExcludeGlobs);
+            Assert.True(searcher.Request.WalkerOptions.EnableOcr);
+        }, searcher);
+    }
+
+    [Fact]
+    public void NameSearchPassesTargetAndIgnoresContentExtractionTypeFilters()
+    {
+        var searcher = new RecordingSearcher();
+        RunWithPump((pump, vm, history, status, settings) =>
+        {
+            vm.QueryText = "needle";
+            vm.SearchPath = Path.GetTempPath();
+            vm.FileNamePattern = "*.cs";
+            vm.ExcludeFileNamePattern = "*.tmp";
+            vm.SkipUnknownFileTypes = true;
+            vm.EnableDocumentExtraction = false;
+            vm.EnableImageOcr = false;
+            vm.SelectedSearchTargetOption = vm.SearchTargetOptions.Single(option => option.Value == SearchTarget.FileAndFolderNames);
+
+            var task = vm.SearchCommand.ExecuteAsync(null);
+            pump.PumpUntil(() => task.IsCompleted, TimeSpan.FromSeconds(10));
+
+            Assert.NotNull(searcher.Request);
+            Assert.Equal(SearchTarget.FileAndFolderNames, searcher.Request.SearchTarget);
+            Assert.Equal(new[] { "*.cs" }, searcher.Request.WalkerOptions.IncludeGlobs);
+            Assert.Equal(new[] { "*.tmp" }, searcher.Request.WalkerOptions.ExcludeGlobs);
+            Assert.Empty(searcher.Request.WalkerOptions.IncludeExtensions);
+            Assert.Empty(searcher.Request.WalkerOptions.ExcludeExtensions);
         }, searcher);
     }
 

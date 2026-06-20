@@ -16,17 +16,19 @@ The Core project uses `CSharpDB.Engine` directly. The requested `CSharpDB` 3.9.0
 
 ## What Gets Indexed
 
-Each indexed location stores the root folder plus the recursive, hidden-file, document-extraction, unknown-file-type, watcher, and basic stats settings used for that location. A build intentionally ignores transient search filters such as file name pattern, size, and modified date so later searches can narrow against the same folder index.
+Each indexed location stores the root folder plus the recursive, hidden-file, document-extraction, image-OCR, unknown-file-type, watcher, and basic stats settings used for that location. A build intentionally ignores transient search filters such as file name pattern, size, and modified date so later searches can narrow against the same folder index.
 
 The database stores:
 
 - indexed roots and the index coverage profile,
 - per-volume strategy and journal checkpoint metadata,
 - file path, name, extension, size, modified timestamp, file identity, last observed USN, extractor metadata, status, and error text,
-- extracted line number and content,
+- extracted line number, content, and optional source-anchor metadata,
 - pending filesystem changes that need recovery after app restart,
 - failed/skipped extraction records and archive member skip reasons,
 - a CSharpDB full-text index over line content.
+
+When Image OCR is enabled for an indexed location, FileSearch uses Windows OCR to extract searchable lines from PNG, JPEG, BMP, and TIFF images, PDF pages that do not expose native PDF text, and embedded images in Office, OpenDocument, EPUB, email, and ZIP/archive files. OCR output is stored as text lines in the same local index, with the OCR line's image, PDF page, or embedded-member bounding region stored as source-anchor metadata. Result rows and exports can show the region label, and preview panes can render standalone image files or PDF pages with the OCR region highlighted. Opening the result still opens the original file in the default app.
 
 ## Using Indexed Search
 

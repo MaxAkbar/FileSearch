@@ -183,6 +183,14 @@
                                         </TextBlock>
                                     </Border>
                                     <StackPanel Orientation="Horizontal" HorizontalAlignment="Right">
+                                        <Button Command="{Binding DataContext.OpenOcrPreviewCommand, RelativeSource={RelativeSource AncestorType=ListBox}}"
+                                                CommandParameter="{Binding}"
+                                                Visibility="{Binding HasImageOcrPreview, Converter={StaticResource BoolToVisibility}}"
+                                                Style="{StaticResource IconButtonStyle}"
+                                                Width="28" Height="28"
+                                                ToolTip="Open OCR preview">
+                                            <ui:FontIcon Glyph="&#xE8A5;" FontSize="13"/>
+                                        </Button>
                                         <Button Command="{Binding DataContext.OpenResultCommand, RelativeSource={RelativeSource AncestorType=ListBox}}"
                                                 CommandParameter="{Binding}"
                                                 Style="{StaticResource IconButtonStyle}"
@@ -247,11 +255,39 @@
                     Padding="10"
                     Margin="0,10,0,0"
                     MaxHeight="155">
-                <TextBox Text="{Binding PreviewContent, Mode=OneWay}"
-                         Style="{StaticResource PreviewCodeBoxStyle}"
-                         BorderThickness="0"
-                         Background="Transparent"
-                         Padding="0"/>
+                <DockPanel LastChildFill="True">
+                    <Border DockPanel.Dock="Left"
+                            Visibility="{Binding HasImageOcrPreview, Converter={StaticResource BoolToVisibility}}"
+                            Width="150"
+                            Margin="0,0,10,0"
+                            BorderBrush="{DynamicResource Atlas.LineBrush}"
+                            BorderThickness="1"
+                            Background="{DynamicResource Atlas.PaperBrush}"
+                            ToolTip="{Binding ImageOcrPreview.Label}"
+                            ClipToBounds="True">
+                        <Viewbox Stretch="Uniform">
+                            <Canvas Width="{Binding ImageOcrPreview.SourceWidth}"
+                                    Height="{Binding ImageOcrPreview.SourceHeight}">
+                                <Image Source="{Binding ImageOcrPreview.ImagePath}"
+                                       Width="{Binding ImageOcrPreview.SourceWidth}"
+                                       Height="{Binding ImageOcrPreview.SourceHeight}"
+                                       Stretch="Fill"/>
+                                <Rectangle Canvas.Left="{Binding ImageOcrPreview.X}"
+                                           Canvas.Top="{Binding ImageOcrPreview.Y}"
+                                           Width="{Binding ImageOcrPreview.Width}"
+                                           Height="{Binding ImageOcrPreview.Height}"
+                                           Stroke="#FFFFCE54"
+                                           StrokeThickness="6"
+                                           Fill="#33FFCE54"/>
+                            </Canvas>
+                        </Viewbox>
+                    </Border>
+                    <TextBox Text="{Binding PreviewContent, Mode=OneWay}"
+                             Style="{StaticResource PreviewCodeBoxStyle}"
+                             BorderThickness="0"
+                             Background="Transparent"
+                             Padding="0"/>
+                </DockPanel>
             </Border>
         </Grid>
     </Border>

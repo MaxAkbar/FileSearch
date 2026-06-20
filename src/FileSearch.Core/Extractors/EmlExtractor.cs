@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Linq;
 using System.Runtime.CompilerServices;
 using System.Text;
 using System.Text.RegularExpressions;
@@ -11,11 +12,18 @@ namespace FileSearch.Core.Extractors;
 /// <summary>
 /// Extracts common headers and body text from .eml email messages.
 /// </summary>
-public sealed class EmlExtractor : ITextExtractor
+public sealed class EmlExtractor : IContextualTextExtractor
 {
+    private readonly IEmbeddedImageOcrService _embeddedImageOcr;
+
+    public EmlExtractor(IEmbeddedImageOcrService? embeddedImageOcr = null)
+    {
+        _embeddedImageOcr = embeddedImageOcr ?? new NullEmbeddedImageOcrService();
+    }
+
     public string ExtractorId => "filesearch.eml";
 
-    public string ExtractorVersion => "1";
+    public string ExtractorVersion => "2";
 
     /// <summary>Cap on how much of a message is read; the rest isn't searched.</summary>
     private const int MaxContentChars = 10 * 1024 * 1024;
@@ -27,11 +35,21 @@ public sealed class EmlExtractor : ITextExtractor
     private static readonly Regex s_headerFoldRegex = new("\n[\t ]+", RegexOptions.CultureInvariant, s_regexTimeout);
     private static readonly Regex s_encodedWordRegex = new(@"=\?([^?]+)\?([bqBQ])\?([^?]+)\?=", RegexOptions.CultureInvariant, s_regexTimeout);
     private static readonly Regex s_charsetRegex = new(@"charset=""?([^"";\s]+)""?", RegexOptions.IgnoreCase | RegexOptions.CultureInvariant, s_regexTimeout);
+    private static readonly Regex s_filenameRegex = new(@"(?:filename|name)=""?([^"";\r\n]+)""?", RegexOptions.IgnoreCase | RegexOptions.CultureInvariant, s_regexTimeout);
 
     public IReadOnlyCollection<string> SupportedExtensions { get; } = new[] { ".eml" };
 
     public async IAsyncEnumerable<TextLine> ExtractAsync(
         string path,
+        [EnumeratorCancellation] CancellationToken cancellationToken)
+    {
+        await foreach (var line in ExtractAsync(path, new TextExtractionContext(), cancellationToken).ConfigureAwait(false))
+            yield return line;
+    }
+
+    public async IAsyncEnumerable<TextLine> ExtractAsync(
+        string path,
+        TextExtractionContext context,
         [EnumeratorCancellation] CancellationToken cancellationToken)
     {
         var content = await BoundedFileReader.ReadTextAsync(path, MaxContentChars, cancellationToken).ConfigureAwait(false);
@@ -50,6 +68,21 @@ public sealed class EmlExtractor : ITextExtractor
                 lineNumber++;
                 yield return new TextLine(lineNumber, normalized);
             }
+        }
+
+        if (!context.EnableOcr)
+            yield break;
+
+        foreach (var imagePart in ExtractImageParts(content))
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            var request = new EmbeddedImageOcrRequest(
+                SourceAnchorKind.Email,
+                imagePart.MemberPath,
+                $"email image {imagePart.MemberPath}",
+                Section: imagePart.MemberPath);
+            await foreach (var line in _embeddedImageOcr.ExtractAsync(imagePart.Bytes, request, cancellationToken).ConfigureAwait(false))
+                yield return line with { Number = ++lineNumber };
         }
     }
 
@@ -76,7 +109,9 @@ public sealed class EmlExtractor : ITextExtractor
 
     private static (string Headers, string Body) SplitHeadersAndBody(string content)
     {
-        var normalized = content.Replace("\r\n", "\n", StringComparison.Ordinal);
+        var normalized = content
+            .Replace("\r\n", "\n", StringComparison.Ordinal)
+            .TrimStart('\uFEFF', '\r', '\n');
         var separator = normalized.IndexOf("\n\n", StringComparison.Ordinal);
         return separator < 0
             ? (normalized, string.Empty)
@@ -111,6 +146,83 @@ public sealed class EmlExtractor : ITextExtractor
 
             yield return DecodeBody(partBody, headers);
         }
+    }
+
+    private static IEnumerable<EmailImagePart> ExtractImageParts(string content)
+    {
+        var (headers, body) = SplitHeadersAndBody(content);
+        var boundary = s_boundaryRegex.Match(headers);
+        if (!boundary.Success)
+            yield break;
+
+        var boundaryValue = boundary.Groups[1].Success
+            ? boundary.Groups[1].Value.Trim('"')
+            : boundary.Groups[2].Value.Trim();
+        var delimiter = "--" + boundaryValue;
+        int unnamedIndex = 0;
+        foreach (var section in body.Split(delimiter, StringSplitOptions.RemoveEmptyEntries))
+        {
+            if (section.StartsWith("--", StringComparison.Ordinal))
+                continue;
+
+            var (partHeaders, partBody) = SplitHeadersAndBody(section.TrimStart('\r', '\n'));
+            if (!IsImagePart(partHeaders))
+                continue;
+
+            var memberPath = GetImagePartName(partHeaders, ++unnamedIndex);
+            byte[] bytes;
+            try
+            {
+                bytes = DecodePartBytes(partBody, partHeaders);
+            }
+            catch
+            {
+                continue;
+            }
+
+            if (bytes.Length > 0)
+                yield return new EmailImagePart(memberPath, bytes);
+        }
+    }
+
+    private static bool IsImagePart(string headers) =>
+        headers.Contains("Content-Type: image/", StringComparison.OrdinalIgnoreCase) ||
+        (headers.Contains("Content-Disposition: attachment", StringComparison.OrdinalIgnoreCase) &&
+         IsImageName(GetImagePartName(headers, 0)));
+
+    private static string GetImagePartName(string headers, int fallbackIndex)
+    {
+        var match = s_filenameRegex.Match(headers);
+        if (match.Success && !string.IsNullOrWhiteSpace(match.Groups[1].Value))
+            return DecodeHeader(match.Groups[1].Value.Trim());
+
+        return fallbackIndex > 0
+            ? $"image-{fallbackIndex}.bin"
+            : string.Empty;
+    }
+
+    private static bool IsImageName(string name)
+    {
+        var extension = Path.GetExtension(name);
+        return extension.Equals(".png", StringComparison.OrdinalIgnoreCase) ||
+            extension.Equals(".jpg", StringComparison.OrdinalIgnoreCase) ||
+            extension.Equals(".jpeg", StringComparison.OrdinalIgnoreCase) ||
+            extension.Equals(".bmp", StringComparison.OrdinalIgnoreCase) ||
+            extension.Equals(".tif", StringComparison.OrdinalIgnoreCase) ||
+            extension.Equals(".tiff", StringComparison.OrdinalIgnoreCase);
+    }
+
+    private static byte[] DecodePartBytes(string body, string headers)
+    {
+        if (headers.Contains("Content-Transfer-Encoding: base64", StringComparison.OrdinalIgnoreCase))
+        {
+            var compact = new string(body.Where(ch => !char.IsWhiteSpace(ch)).ToArray());
+            return Convert.FromBase64String(compact);
+        }
+
+        return headers.Contains("Content-Transfer-Encoding: quoted-printable", StringComparison.OrdinalIgnoreCase)
+            ? DecodeQuotedPrintableBytes(body)
+            : Encoding.ASCII.GetBytes(body);
     }
 
     private static string DecodeBody(string body, string headers)
@@ -192,4 +304,6 @@ public sealed class EmlExtractor : ITextExtractor
 
         return bytes.ToArray();
     }
+
+    private sealed record EmailImagePart(string MemberPath, byte[] Bytes);
 }

@@ -34,7 +34,7 @@
             <section class="hero">
                 <div class="eyebrow">Results</div>
                 <h1>Review, refine, and open matching files.</h1>
-                <p class="lead">Search results are grouped by file. Select a file to see matching lines, use the Filter tab to narrow the current result set, or open files directly from the grid.</p>
+                <p class="lead">Search results are grouped by matched file or folder. Select a result to see matching lines or name-match details, use the Filter tab to narrow the current result set, or open items directly from the grid.</p>
             </section>
 
             <h2>Results Grid</h2>
@@ -49,11 +49,11 @@
                     <tbody>
                         <tr>
                             <td><strong>Name</strong></td>
-                            <td>The matched file name.</td>
+                            <td>The matched file or folder name.</td>
                         </tr>
                         <tr>
                             <td><strong>Hits</strong></td>
-                            <td>The number of matching lines or spans found in that file.</td>
+                            <td>The number of matching lines, spans, or name matches found for that result.</td>
                         </tr>
                         <tr>
                             <td><strong>First match</strong></td>
@@ -68,7 +68,8 @@
             </div>
 
             <h2>Hits Tab</h2>
-            <p>Selecting a file automatically opens the Hits tab. The preview shows matching line numbers and nearby context. For large or binary-backed document formats, the preview may be simplified depending on the extractor.</p>
+            <p>Selecting a result automatically opens the Hits tab. Content searches show matching line numbers and nearby context. File-name and folder-name searches show stored name-match details. For large or binary-backed document formats, the preview may be simplified depending on the extractor. OCR image hits include the recognized line's image-region label and can show standalone images with the OCR region highlighted. OCR PDF hits include the page and region label and can render the page with the OCR region highlighted. Embedded-image OCR hits from documents, emails, EPUBs, and archives include the member path and OCR-region label; when the embedded image can be read from the parent file, preview extracts it and highlights the OCR region.</p>
+            <p>Use <strong>Open OCR preview</strong> on OCR-backed results to open a dedicated FileSearch preview window at the exact highlighted region. The normal <strong>Open</strong> action still opens the parent file in its default app.</p>
 
             <h2>Summary Tab</h2>
             <p>The Summary tab shows search statistics: files matched, total hits, and elapsed time. The status bar gives additional live progress while a scan is running.</p>
@@ -91,14 +92,15 @@
             </ul>
 
             <h2>Opening and Copying</h2>
-            <p>Double-click a result row to open the file. Right-click a row for more actions:</p>
+            <p>Double-click a result row to open the file or folder. Right-click a row for more actions:</p>
             <ul class="plain-list">
-                <li><strong>Open</strong> opens the file with the default Windows application.</li>
-                <li><strong>Reveal in Explorer</strong> opens the containing folder and selects the file.</li>
-                <li><strong>Rename</strong> changes the file name in the same folder. Existing files are not overwritten.</li>
-                <li><strong>Move to Recycle Bin</strong> asks for confirmation before deleting and uses the Windows Recycle Bin.</li>
-                <li><strong>Copy file path</strong> copies the full path to the clipboard.</li>
-                <li><strong>Copy folder path</strong> copies only the containing folder path.</li>
+                <li><strong>Open</strong> opens the file with the default Windows application or opens the folder in Explorer.</li>
+                <li><strong>Open OCR preview</strong> opens FileSearch's exact highlighted OCR preview when the result has an image, scanned-PDF-page, or embedded-image OCR region.</li>
+                <li><strong>Reveal in Explorer</strong> opens the containing folder and selects the file, or opens the folder itself.</li>
+                <li><strong>Rename</strong> changes a file name in the same folder. Folder rename is not enabled from search results.</li>
+                <li><strong>Move to Recycle Bin</strong> asks for confirmation before deleting a file and uses the Windows Recycle Bin.</li>
+                <li><strong>Copy file path</strong> copies the full result path to the clipboard.</li>
+                <li><strong>Copy folder path</strong> copies the containing folder path.</li>
                 <li><strong>Add favorite</strong> saves the file in the Favorites sidebar section.</li>
                 <li><strong>Pin result</strong> keeps the file available in Quick Search when no query is typed.</li>
                 <li>Drag a result card to another app or folder to start a Windows file drag-and-drop operation.</li>

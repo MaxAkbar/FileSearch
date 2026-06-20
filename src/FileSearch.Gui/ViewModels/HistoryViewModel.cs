@@ -7,6 +7,7 @@ using System.Text.Json;
 using System.Text.Json.Serialization;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
+using FileSearch.Core.Engine;
 using FileSearch.Gui.Services;
 using FileSearch.Gui.Settings;
 
@@ -629,7 +630,8 @@ public sealed partial class HistoryViewModel : ObservableObject
 
     private static bool HasSameSavedSearchIdentity(SavedSearchSettings left, SavedSearchSettings right) =>
         string.Equals(left.QueryText?.Trim(), right.QueryText?.Trim(), StringComparison.OrdinalIgnoreCase) &&
-        string.Equals(left.SearchPath?.Trim(), right.SearchPath?.Trim(), StringComparison.OrdinalIgnoreCase);
+        string.Equals(left.SearchPath?.Trim(), right.SearchPath?.Trim(), StringComparison.OrdinalIgnoreCase) &&
+        left.SearchTarget == right.SearchTarget;
 
     private void LoadLegacySavedSearches(AppSettings saved)
     {
@@ -640,6 +642,7 @@ public sealed partial class HistoryViewModel : ObservableObject
             {
                 QueryText = query,
                 SearchPath = path,
+                EnableImageOcr = saved.EnableImageOcr,
                 SkipUnknownFileTypes = saved.SkipUnknownFileTypes,
                 UseIndex = saved.UseIndex,
             });
@@ -701,7 +704,8 @@ public sealed partial class HistoryViewModel : ObservableObject
         Contains(item.SearchPath, needle) ||
         Contains(item.FileNamePattern, needle) ||
         Contains(item.ExcludeFileNamePattern, needle) ||
-        Contains(item.SearchMode.ToString(), needle);
+        Contains(item.SearchMode.ToString(), needle) ||
+        Contains(item.SearchTarget.ToString(), needle);
 
     private static bool MatchesFavorite(FavoriteResultSettings item, string needle) =>
         Contains(item.Path, needle) ||
@@ -742,8 +746,10 @@ public sealed partial class HistoryViewModel : ObservableObject
             ExcludeFileNamePattern = search.ExcludeFileNamePattern?.Trim() ?? string.Empty,
             IncludeSubfolders = search.IncludeSubfolders,
             SearchMode = search.SearchMode,
+            SearchTarget = Enum.IsDefined(search.SearchTarget) ? search.SearchTarget : SearchTarget.Content,
             MatchCase = search.MatchCase,
             EnableDocumentExtraction = search.EnableDocumentExtraction,
+            EnableImageOcr = search.EnableImageOcr,
             SkipUnknownFileTypes = search.SkipUnknownFileTypes,
             UseIndex = search.UseIndex,
             MinSizeKB = Math.Max(0, search.MinSizeKB),

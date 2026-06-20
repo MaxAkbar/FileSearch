@@ -83,6 +83,7 @@ public sealed class JsonSettingsStore : ISettingsStore
                 {
                     QueryText = query.Trim(),
                     SearchPath = path,
+                    EnableImageOcr = s.EnableImageOcr,
                     SkipUnknownFileTypes = s.SkipUnknownFileTypes,
                     UseIndex = s.UseIndex,
                 });

@@ -76,7 +76,10 @@ public sealed class FilePreviewService : IFilePreviewService
             sb.Append(marker).Append(' ')
               .Append(line.Number.ToString(CultureInfo.InvariantCulture).PadLeft(6))
               .Append("  ")
-              .AppendLine(line.Content);
+              .Append(line.Content);
+            if (!string.IsNullOrWhiteSpace(line.Anchor?.DisplayText))
+                sb.Append("  [").Append(line.Anchor.DisplayText).Append(']');
+            sb.AppendLine();
         }
 
         return sb.ToString();

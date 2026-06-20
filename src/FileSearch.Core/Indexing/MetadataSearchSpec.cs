@@ -10,7 +10,8 @@ namespace FileSearch.Core.Indexing;
 internal sealed record MetadataSearchSpec(
     IReadOnlyList<string> Terms,
     bool RequireAllTerms,
-    bool MetadataDominant)
+    bool MetadataDominant,
+    SearchTarget SearchTarget)
 {
     public static bool TryCreate(SearchRequest request, out MetadataSearchSpec spec)
     {
@@ -19,7 +20,8 @@ internal sealed record MetadataSearchSpec(
         if (request.Mode == QueryMode.Regex || request.Expression is RegexQuery)
             return false;
 
-        if (!TryCollectTerms(request.Expression, out var terms, out var requireAllTerms))
+        var metadataTarget = request.SearchTarget != SearchTarget.Content;
+        if (!TryCollectTerms(request.Expression, metadataTarget, out var terms, out var requireAllTerms))
             return false;
 
         var normalized = terms
@@ -32,6 +34,7 @@ internal sealed record MetadataSearchSpec(
 
         var singleTerm = normalized.Length == 1 && request.Expression is TermQuery;
         var metadataDominant =
+            metadataTarget ||
             singleTerm ||
             normalized.Any(LooksLikePathOrFileName) ||
             request.Mode == QueryMode.PlainText;
@@ -39,7 +42,7 @@ internal sealed record MetadataSearchSpec(
         if (!metadataDominant && !normalized.Any(LooksLikePathOrFileName))
             return false;
 
-        spec = new MetadataSearchSpec(normalized, requireAllTerms, metadataDominant);
+        spec = new MetadataSearchSpec(normalized, requireAllTerms, metadataDominant, request.SearchTarget);
         return true;
     }
 
@@ -47,11 +50,13 @@ internal sealed record MetadataSearchSpec(
     {
         displayText = file.FileName;
 
-        var rootRelative = GetRelativePath(root, file.Path);
+        var rootRelative = SearchTarget == SearchTarget.FileNames
+            ? file.FileName
+            : GetRelativePath(root, file.Path);
         var fileName = file.FileName;
         var fileNameWithoutExtension = Path.GetFileNameWithoutExtension(fileName);
-        var path = file.Path;
-        var directory = file.DirectoryPath;
+        var path = SearchTarget == SearchTarget.FileNames ? string.Empty : file.Path;
+        var directory = SearchTarget == SearchTarget.FileNames ? string.Empty : file.DirectoryPath;
         var extension = file.Extension.TrimStart('.');
 
         var score = 0d;
@@ -113,6 +118,7 @@ internal sealed record MetadataSearchSpec(
 
     private static bool TryCollectTerms(
         Query query,
+        bool metadataTarget,
         out IReadOnlyList<string> terms,
         out bool requireAllTerms)
     {
@@ -157,7 +163,7 @@ internal sealed record MetadataSearchSpec(
 
                 terms = orTerms;
                 requireAllTerms = false;
-                return orTerms.Count > 0 && orTerms.Any(LooksLikePathOrFileName);
+                return orTerms.Count > 0 && (metadataTarget || orTerms.Any(LooksLikePathOrFileName));
 
             default:
                 terms = Array.Empty<string>();

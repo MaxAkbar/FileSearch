@@ -19,6 +19,8 @@ public sealed partial class ApplicationSettingsViewModel : ObservableObject
     public const int DefaultSidebarPageSize = 7;
     public const int MinimumSidebarPageSize = 3;
     public const int MaximumSidebarPageSize = 50;
+    public const int DefaultOcrMaxPdfPages = 50;
+    public const int MaximumOcrMaxPdfPages = 1_000;
 
     private readonly ISettingsService _settingsService;
     private readonly IStartupRegistrationService? _startupRegistration;
@@ -38,6 +40,8 @@ public sealed partial class ApplicationSettingsViewModel : ObservableObject
     private bool _indexOnlyWhenIdle;
     private int _indexerCpuLimitPercent;
     private int _indexerDiskPauseMilliseconds;
+    private string _ocrLanguageTag = string.Empty;
+    private int _ocrMaxPdfPages;
     private CustomThemeInfo? _selectedCustomTheme;
     private bool _isUpdatingShortcuts;
 
@@ -67,6 +71,8 @@ public sealed partial class ApplicationSettingsViewModel : ObservableObject
         _indexOnlyWhenIdle = _settingsService.Current.IndexOnlyWhenIdle;
         _indexerCpuLimitPercent = NormalizeCpuLimit(_settingsService.Current.IndexerCpuLimitPercent);
         _indexerDiskPauseMilliseconds = NormalizeDiskPause(_settingsService.Current.IndexerDiskPauseMilliseconds);
+        _ocrLanguageTag = NormalizeOcrLanguageTag(_settingsService.Current.OcrLanguageTag);
+        _ocrMaxPdfPages = NormalizeOcrMaxPdfPages(_settingsService.Current.OcrMaxPdfPages);
         ApplyShortcutSettings(NormalizeShortcutSettings(_settingsService.Current.Shortcuts));
         ApplyQuickSearchShortcutSettings(NormalizeQuickSearchShortcutSettings(_settingsService.Current.QuickSearchShortcuts));
         RefreshQuickIndexedLocationSelectionsCore();
@@ -83,6 +89,8 @@ public sealed partial class ApplicationSettingsViewModel : ObservableObject
     public IReadOnlyList<int> IndexerCpuLimitOptions { get; } = [0, 25, 50, 75];
 
     public IReadOnlyList<int> IndexerDiskPauseOptions { get; } = [0, 5, 25, 100, 250];
+
+    public IReadOnlyList<int> OcrMaxPdfPageOptions { get; } = [0, 10, 25, 50, 100, 250];
 
     public IReadOnlyList<QuickSearchHotkeyOption> QuickSearchHotkeyOptions { get; } =
     [
@@ -276,6 +284,48 @@ public sealed partial class ApplicationSettingsViewModel : ObservableObject
             : "Quick Search only searches file names and paths";
 
     public bool HasQuickIndexedLocations => QuickIndexedLocationSelections.Count > 0;
+
+    public string OcrLanguageTag
+    {
+        get => _ocrLanguageTag;
+        set
+        {
+            var normalized = NormalizeOcrLanguageTag(value);
+            if (!SetProperty(ref _ocrLanguageTag, normalized))
+                return;
+
+            OnPropertyChanged(nameof(OcrLanguageSummary));
+
+            if (_isInitialized)
+                SaveSettings(updateStartupRegistration: false);
+        }
+    }
+
+    public string OcrLanguageSummary =>
+        string.IsNullOrWhiteSpace(OcrLanguageTag)
+            ? "Uses the Windows user-profile OCR language"
+            : $"Uses OCR language {OcrLanguageTag}";
+
+    public int OcrMaxPdfPages
+    {
+        get => _ocrMaxPdfPages;
+        set
+        {
+            var normalized = NormalizeOcrMaxPdfPages(value);
+            if (!SetProperty(ref _ocrMaxPdfPages, normalized))
+                return;
+
+            OnPropertyChanged(nameof(OcrMaxPdfPagesSummary));
+
+            if (_isInitialized)
+                SaveSettings(updateStartupRegistration: false);
+        }
+    }
+
+    public string OcrMaxPdfPagesSummary =>
+        OcrMaxPdfPages <= 0
+            ? "Scanned PDF OCR has no page limit"
+            : $"Scanned PDF OCR checks up to {OcrMaxPdfPages:n0} pages without native text";
 
     public IndexerResourceProfile IndexerResourceProfile
     {
@@ -495,6 +545,8 @@ public sealed partial class ApplicationSettingsViewModel : ObservableObject
             settings.IndexOnlyWhenIdle = IndexOnlyWhenIdle;
             settings.IndexerCpuLimitPercent = IndexerCpuLimitPercent;
             settings.IndexerDiskPauseMilliseconds = IndexerDiskPauseMilliseconds;
+            settings.OcrLanguageTag = OcrLanguageTag;
+            settings.OcrMaxPdfPages = OcrMaxPdfPages;
             settings.Shortcuts = BuildShortcutSettings();
             settings.QuickSearchShortcuts = BuildQuickSearchShortcutSettings();
             settings.RunInBackground = null;
@@ -535,6 +587,12 @@ public sealed partial class ApplicationSettingsViewModel : ObservableObject
 
     private static QuickSearchScopeKind NormalizeQuickSearchScope(QuickSearchScopeKind scope) =>
         Enum.IsDefined(scope) ? scope : QuickSearchScopeKind.AllIndexedLocations;
+
+    private static string NormalizeOcrLanguageTag(string? languageTag) =>
+        (languageTag ?? string.Empty).Trim();
+
+    private static int NormalizeOcrMaxPdfPages(int value) =>
+        Math.Clamp(value, 0, MaximumOcrMaxPdfPages);
 
     private static int NormalizeCpuLimit(int value) =>
         value is <= 0 or >= 100 ? 0 : Math.Clamp(value, 1, 99);

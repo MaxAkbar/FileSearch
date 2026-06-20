@@ -20,29 +20,36 @@ namespace FileSearch.Core.Extractors;
 /// small archive that expands enormously (zip bomb) cannot stall a worker or
 /// balloon memory; excess content is best-effort and reported as an issue.
 /// </summary>
-public sealed class ZipExtractor : IDiagnosticTextExtractor
+public sealed class ZipExtractor : IContextualDiagnosticTextExtractor
 {
     public string ExtractorId => "filesearch.zip";
 
-    public string ExtractorVersion => "2";
+    public string ExtractorVersion => "3";
 
     private readonly ZipArchivePolicy _policy;
+    private readonly IEmbeddedImageOcrService _embeddedImageOcr;
 
     public ZipExtractor()
-        : this(ZipArchivePolicy.Default)
+        : this(ZipArchivePolicy.Default, null)
+    {
+    }
+
+    public ZipExtractor(IEmbeddedImageOcrService? embeddedImageOcr)
+        : this(ZipArchivePolicy.Default, embeddedImageOcr)
     {
     }
 
     /// <summary>Test hook: shrinks the caps so bomb behavior is testable
     /// without generating huge fixtures.</summary>
     internal ZipExtractor(long maxEntryBytes, long maxTotalBytes, int maxEntries)
-        : this(new ZipArchivePolicy(maxEntryBytes, maxTotalBytes, maxEntries))
+        : this(new ZipArchivePolicy(maxEntryBytes, maxTotalBytes, maxEntries), null)
     {
     }
 
-    internal ZipExtractor(ZipArchivePolicy policy)
+    internal ZipExtractor(ZipArchivePolicy policy, IEmbeddedImageOcrService? embeddedImageOcr = null)
     {
         _policy = policy;
+        _embeddedImageOcr = embeddedImageOcr ?? new NullEmbeddedImageOcrService();
     }
 
     public IReadOnlyCollection<string> SupportedExtensions { get; } = new[] { ".zip" };
@@ -57,6 +64,25 @@ public sealed class ZipExtractor : IDiagnosticTextExtractor
 
     public async IAsyncEnumerable<TextLine> ExtractAsync(
         string path,
+        IExtractionIssueSink issues,
+        [EnumeratorCancellation] CancellationToken cancellationToken)
+    {
+        await foreach (var line in ExtractAsync(path, new TextExtractionContext(), issues, cancellationToken).ConfigureAwait(false))
+            yield return line;
+    }
+
+    public async IAsyncEnumerable<TextLine> ExtractAsync(
+        string path,
+        TextExtractionContext context,
+        [EnumeratorCancellation] CancellationToken cancellationToken)
+    {
+        await foreach (var line in ExtractAsync(path, context, NullExtractionIssueSink.Instance, cancellationToken).ConfigureAwait(false))
+            yield return line;
+    }
+
+    public async IAsyncEnumerable<TextLine> ExtractAsync(
+        string path,
+        TextExtractionContext context,
         IExtractionIssueSink issues,
         [EnumeratorCancellation] CancellationToken cancellationToken)
     {
@@ -103,7 +129,8 @@ public sealed class ZipExtractor : IDiagnosticTextExtractor
                 continue;
             }
 
-            if (!IsTextEntry(entry.Name))
+            var isImageEntry = IsImageEntry(entry.Name);
+            if (!IsTextEntry(entry.Name) && (!context.EnableOcr || !isImageEntry))
             {
                 ReportIssue(issues, entry, "archive_member_unsupported_type", "Archive member skipped because its file type is not indexed inside archives.");
                 continue;
@@ -117,29 +144,57 @@ public sealed class ZipExtractor : IDiagnosticTextExtractor
 
             var entryBudget = Math.Min(_policy.MaxEntryBytes, remainingBudget);
             var likelyTruncated = entry.Length > entryBudget;
-            EntryReadResult entryResult;
-            try
+            if (context.EnableOcr && isImageEntry)
             {
-                entryResult = await ReadTextEntryAsync(entry, entryBudget, cancellationToken).ConfigureAwait(false);
+                BinaryEntryReadResult imageResult;
+                try
+                {
+                    imageResult = await ReadBinaryEntryAsync(entry, entryBudget, cancellationToken).ConfigureAwait(false);
+                }
+                catch (Exception ex) when (ex is IOException or InvalidDataException or UnauthorizedAccessException)
+                {
+                    ReportIssue(issues, entry, "archive_member_unreadable", $"Archive member skipped because it could not be read: {ex.Message}");
+                    continue;
+                }
+
+                remainingBudget -= imageResult.BytesRead;
+                if (likelyTruncated || imageResult.Truncated)
+                    ReportIssue(issues, entry, "archive_member_truncated", "Archive member content was truncated because the archive byte budget was exhausted.");
+
+                var request = new EmbeddedImageOcrRequest(
+                    SourceAnchorKind.Archive,
+                    entry.FullName,
+                    $"archive member {entry.FullName}",
+                    Section: entry.FullName);
+                await foreach (var line in _embeddedImageOcr.ExtractAsync(imageResult.Bytes, request, cancellationToken).ConfigureAwait(false))
+                    yield return line with { Number = ++lineNumber };
             }
-            catch (Exception ex) when (ex is IOException or InvalidDataException or UnauthorizedAccessException)
+            else
             {
-                ReportIssue(issues, entry, "archive_member_unreadable", $"Archive member skipped because it could not be read: {ex.Message}");
-                continue;
-            }
+                EntryReadResult entryResult;
+                try
+                {
+                    entryResult = await ReadTextEntryAsync(entry, entryBudget, cancellationToken).ConfigureAwait(false);
+                }
+                catch (Exception ex) when (ex is IOException or InvalidDataException or UnauthorizedAccessException)
+                {
+                    ReportIssue(issues, entry, "archive_member_unreadable", $"Archive member skipped because it could not be read: {ex.Message}");
+                    continue;
+                }
 
-            remainingBudget -= entryResult.BytesRead;
-            if (likelyTruncated || entryResult.Truncated)
-                ReportIssue(issues, entry, "archive_member_truncated", "Archive member content was truncated because the archive byte budget was exhausted.");
+                remainingBudget -= entryResult.BytesRead;
+                if (likelyTruncated || entryResult.Truncated)
+                    ReportIssue(issues, entry, "archive_member_truncated", "Archive member content was truncated because the archive byte budget was exhausted.");
 
-            lineNumber++;
-            yield return new TextLine(lineNumber, $"=== {entry.FullName} ===");
-
-            foreach (var line in entryResult.Lines)
-            {
-                cancellationToken.ThrowIfCancellationRequested();
                 lineNumber++;
-                yield return new TextLine(lineNumber, line);
+                yield return new TextLine(lineNumber, $"=== {entry.FullName} ===");
+
+                foreach (var line in entryResult.Lines)
+                {
+                    cancellationToken.ThrowIfCancellationRequested();
+                    lineNumber++;
+                    yield return new TextLine(lineNumber, line);
+                }
             }
         }
     }
@@ -163,6 +218,22 @@ public sealed class ZipExtractor : IDiagnosticTextExtractor
 
     private sealed record EntryReadResult(IReadOnlyList<string> Lines, long BytesRead, bool Truncated);
 
+    private static async Task<BinaryEntryReadResult> ReadBinaryEntryAsync(
+        ZipArchiveEntry entry,
+        long byteBudget,
+        CancellationToken cancellationToken)
+    {
+        var capped = new CappedStream(entry.Open(), byteBudget);
+        using (capped)
+        using (var memory = new MemoryStream())
+        {
+            await capped.CopyToAsync(memory, cancellationToken).ConfigureAwait(false);
+            return new BinaryEntryReadResult(memory.ToArray(), capped.BytesRead, capped.LimitReached);
+        }
+    }
+
+    private sealed record BinaryEntryReadResult(byte[] Bytes, long BytesRead, bool Truncated);
+
     private static void ReportIssue(
         IExtractionIssueSink issues,
         ZipArchiveEntry entry,
@@ -182,6 +253,12 @@ public sealed class ZipExtractor : IDiagnosticTextExtractor
     {
         var ext = Path.GetExtension(entryName);
         return !string.IsNullOrEmpty(ext) && ArchiveExtensions.Contains(ext);
+    }
+
+    private static bool IsImageEntry(string entryName)
+    {
+        var ext = Path.GetExtension(entryName);
+        return !string.IsNullOrEmpty(ext) && ImageExtensions.Contains(ext);
     }
 
     private static bool IsSupportedCompressionMethod(ushort compressionMethod) =>
@@ -204,6 +281,11 @@ public sealed class ZipExtractor : IDiagnosticTextExtractor
     {
         ".zip", ".zipx", ".jar", ".war", ".ear", ".nupkg", ".vsix",
         ".7z", ".rar", ".tar", ".tgz", ".gz", ".bz2", ".xz",
+    };
+
+    private static readonly HashSet<string> ImageExtensions = new(StringComparer.OrdinalIgnoreCase)
+    {
+        ".png", ".jpg", ".jpeg", ".bmp", ".tif", ".tiff",
     };
 
     /// <summary>Truncates reads at a byte budget and reports EOF past it.</summary>

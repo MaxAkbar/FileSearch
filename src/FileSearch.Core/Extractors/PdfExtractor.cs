@@ -40,7 +40,7 @@ public sealed class PdfExtractor : ITextExtractor
                 foreach (var line in text.Split('\n'))
                 {
                     lineNumber++;
-                    yield return new TextLine(lineNumber, line.TrimEnd('\r'));
+                    yield return new TextLine(lineNumber, line.TrimEnd('\r'), SourceAnchor.PdfPage(page.Number));
                 }
             }
         }

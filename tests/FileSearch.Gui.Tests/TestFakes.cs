@@ -3,6 +3,7 @@ using FileSearch.Core.Indexing;
 using FileSearch.Core.Walker;
 using FileSearch.Gui.Services;
 using FileSearch.Gui.Settings;
+using FileSearch.Gui.ViewModels;
 
 namespace FileSearch.Gui.Tests;
 
@@ -26,9 +27,16 @@ internal sealed class FakeFileLauncher : IFileLauncher
 {
     public string? LastOpenedPath { get; private set; }
 
+    public ImageOcrPreviewViewModel? LastImageOcrPreview { get; private set; }
+
     public void Open(string path)
     {
         LastOpenedPath = path;
+    }
+
+    public void OpenImageOcrPreview(ImageOcrPreviewViewModel preview)
+    {
+        LastImageOcrPreview = preview;
     }
 
     public void RevealInExplorer(string path)

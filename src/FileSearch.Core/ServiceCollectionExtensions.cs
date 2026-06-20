@@ -25,6 +25,7 @@ public static class ServiceCollectionExtensions
         services.TryAddSingleton<IFileWalker, FileWalker>();
         services.TryAddSingleton<IQueryParser>(_ => new QueryParser());
         services.TryAddSingleton<IQueryFactory, QueryFactory>();
+        services.TryAddSingleton<IEmbeddedImageOcrService, NullEmbeddedImageOcrService>();
 
         services.AddSingleton<ITextExtractor, PlainTextExtractor>();
         services.AddSingleton<ITextExtractor, PdfExtractor>();

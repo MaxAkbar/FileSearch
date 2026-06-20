@@ -5,6 +5,7 @@
     <Project Path="src/FileSearch.ExtractorHost/FileSearch.ExtractorHost.csproj" />
     <Project Path="src/FileSearch.Gui/FileSearch.Gui.csproj" />
     <Project Path="src/FileSearch.Indexer/FileSearch.Indexer.csproj" />
+    <Project Path="src/FileSearch.WindowsOcr/FileSearch.WindowsOcr.csproj" />
   </Folder>
   <Folder Name="/tests/">
     <Project Path="tests/FileSearch.Core.Tests/FileSearch.Core.Tests.csproj" />

@@ -45,6 +45,27 @@ public sealed class FilePreviewServiceTests : IDisposable
     }
 
     [Fact]
+    public async Task LoadHitsPreviewAsync_IncludesSourceAnchorWhenPresent()
+    {
+        var extractor = new StubExtractor(new[]
+        {
+            new TextLine(1, "Screenshot title."),
+            new TextLine(2, "Screenshot needle.", SourceAnchor.ImageOcrRegion(10, 20, 30, 40, 100, 200)),
+        });
+        var registry = new ExtractorRegistry(new[] { extractor });
+        var service = new FilePreviewService(registry);
+
+        var preview = await service.LoadHitsPreviewAsync(
+            _path,
+            new[] { 2 },
+            contextLines: 0,
+            CancellationToken.None);
+
+        Assert.Contains("►      2  Screenshot needle.", preview);
+        Assert.Contains("OCR region x10 y20 30x40 of 100x200", preview);
+    }
+
+    [Fact]
     public async Task ExtractionNeverRunsOnCallerSynchronizationContext()
     {
         // Simulates the WPF dispatcher: if any part of the extraction loop

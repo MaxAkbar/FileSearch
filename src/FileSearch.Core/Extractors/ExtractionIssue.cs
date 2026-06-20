@@ -22,6 +22,15 @@ public interface IDiagnosticTextExtractor : ITextExtractor
         CancellationToken cancellationToken);
 }
 
+public interface IContextualDiagnosticTextExtractor : IDiagnosticTextExtractor, IContextualTextExtractor
+{
+    IAsyncEnumerable<TextLine> ExtractAsync(
+        string path,
+        TextExtractionContext context,
+        IExtractionIssueSink issues,
+        CancellationToken cancellationToken);
+}
+
 public sealed class NullExtractionIssueSink : IExtractionIssueSink
 {
     public static NullExtractionIssueSink Instance { get; } = new();

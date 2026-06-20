@@ -1,3 +1,5 @@
+using FileSearch.Gui.ViewModels;
+
 namespace FileSearch.Gui.Services;
 
 /// <summary>
@@ -8,6 +10,7 @@ namespace FileSearch.Gui.Services;
 public interface IFileLauncher
 {
     void Open(string path);
+    void OpenImageOcrPreview(ImageOcrPreviewViewModel preview);
     void RevealInExplorer(string path);
     void CopyToClipboard(string text);
 }

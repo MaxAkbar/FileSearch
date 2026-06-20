@@ -96,12 +96,15 @@ public sealed partial class QuickSearchViewModel : ObservableObject, IDisposable
     [ObservableProperty] private bool _includeContentMatches;
     [ObservableProperty] private string _quickFolderPath = string.Empty;
     [ObservableProperty] private string _previewContent = string.Empty;
+    [ObservableProperty] private ImageOcrPreviewViewModel? _imageOcrPreview;
     [ObservableProperty] private string _statusText = string.Empty;
     [ObservableProperty] private string _stageText = string.Empty;
 
     public bool HasSelectedResult => SelectedResult is not null;
 
     public bool HasResults => Results.Count > 0;
+
+    public bool HasImageOcrPreview => ImageOcrPreview is not null;
 
     public string ResultCountText => Results.Count == 1 ? "1 result" : $"{Results.Count:n0} results";
 
@@ -118,6 +121,7 @@ public sealed partial class QuickSearchViewModel : ObservableObject, IDisposable
             SearchText = string.Empty;
             IsPreviewVisible = false;
             PreviewContent = string.Empty;
+            ImageOcrPreview = null;
             LoadPinnedResults();
         }
         finally
@@ -142,6 +146,7 @@ public sealed partial class QuickSearchViewModel : ObservableObject, IDisposable
         _previewCts?.Cancel();
         IsPreviewVisible = false;
         PreviewContent = string.Empty;
+        ImageOcrPreview = null;
 
         if (string.IsNullOrWhiteSpace(value))
         {
@@ -199,6 +204,7 @@ public sealed partial class QuickSearchViewModel : ObservableObject, IDisposable
         CopyResultPathCommand.NotifyCanExecuteChanged();
         PinResultCommand.NotifyCanExecuteChanged();
         PreviewResultCommand.NotifyCanExecuteChanged();
+        OpenOcrPreviewCommand.NotifyCanExecuteChanged();
     }
 
     [RelayCommand(CanExecute = nameof(CanUseResult))]
@@ -285,6 +291,9 @@ public sealed partial class QuickSearchViewModel : ObservableObject, IDisposable
         PreviewContent = "Loading preview...";
         try
         {
+            ImageOcrPreview = await ImageOcrPreviewViewModel
+                .TryCreateAsync(result.FullPath, result.Hits, token)
+                .ConfigureAwait(true);
             var lines = result.Hits
                 .Where(hit => hit.Kind == HitKind.Content && hit.LineNumber > 0)
                 .Select(hit => hit.LineNumber)
@@ -293,7 +302,14 @@ public sealed partial class QuickSearchViewModel : ObservableObject, IDisposable
                 .LoadHitsPreviewAsync(result.FullPath, lines, contextLines: 2, token)
                 .ConfigureAwait(true);
             if (!token.IsCancellationRequested)
-                PreviewContent = string.IsNullOrWhiteSpace(preview) ? "(no extractable preview)" : preview;
+            {
+                var storedPreview = string.IsNullOrWhiteSpace(preview)
+                    ? result.BuildStoredHitPreview()
+                    : preview;
+                PreviewContent = string.IsNullOrWhiteSpace(storedPreview)
+                    ? "(no extractable preview)"
+                    : storedPreview;
+            }
         }
         catch (OperationCanceledException)
         {
@@ -304,16 +320,41 @@ public sealed partial class QuickSearchViewModel : ObservableObject, IDisposable
         }
     }
 
+    [RelayCommand(CanExecute = nameof(CanOpenOcrPreview))]
+    private async Task OpenOcrPreviewAsync(FileResultViewModel? result)
+    {
+        result ??= SelectedResult;
+        if (result is null)
+            return;
+
+        await result.OpenImageOcrPreviewCommand.ExecuteAsync(null).ConfigureAwait(true);
+        RequestHide?.Invoke(this, EventArgs.Empty);
+    }
+
     private bool CanUseResult(FileResultViewModel? result) => result is not null || SelectedResult is not null;
+
+    private bool CanOpenOcrPreview(FileResultViewModel? result) =>
+        (result ?? SelectedResult)?.HasImageOcrPreview == true;
+
+    partial void OnImageOcrPreviewChanged(ImageOcrPreviewViewModel? value) =>
+        OnPropertyChanged(nameof(HasImageOcrPreview));
 
     public bool CanSearchContent => SelectedScope?.Value != QuickSearchScopeKind.EntireMachineMetadata;
 
     public bool IsFolderScope => SelectedScope?.Value == QuickSearchScopeKind.CurrentFolder;
 
-    public string ContentSearchSummary =>
-        CanSearchContent
-            ? "Include indexed content matches"
-            : "Content search requires an indexed scope";
+    public string ContentSearchSummary
+    {
+        get
+        {
+            if (!CanSearchContent)
+                return "Content search requires an indexed scope";
+
+            return _mainSearch.EnableImageOcr
+                ? "Include indexed content matches, including image OCR when indexed"
+                : "Include indexed content matches";
+        }
+    }
 
     public AppShortcutGesture GetShortcut(QuickSearchShortcutAction action)
     {
@@ -376,6 +417,7 @@ public sealed partial class QuickSearchViewModel : ObservableObject, IDisposable
     {
         ResetResults();
         IsSearching = true;
+        ImageOcrPreview = null;
         StageText = "Filename and path matches";
         StatusText = "Searching...";
 
@@ -424,7 +466,7 @@ public sealed partial class QuickSearchViewModel : ObservableObject, IDisposable
                 var request = new SearchRequest(
                     query,
                     roots,
-                    BuildWalkerOptions(),
+                    _mainSearch.BuildQuickSearchWalkerOptions(),
                     Progress: null,
                     UseIndex: true,
                     Status: null,
@@ -589,6 +631,7 @@ public sealed partial class QuickSearchViewModel : ObservableObject, IDisposable
         Results.Clear();
         SelectedResult = null;
         PreviewContent = string.Empty;
+        ImageOcrPreview = null;
         OnPropertyChanged(nameof(ResultCountText));
     }
 
@@ -598,7 +641,7 @@ public sealed partial class QuickSearchViewModel : ObservableObject, IDisposable
         StageText = "Pinned results";
 
         foreach (var path in _settingsService.Current.QuickSearchPinnedPaths
-                     .Where(File.Exists)
+                     .Where(path => File.Exists(path) || Directory.Exists(path))
                      .Distinct(StringComparer.OrdinalIgnoreCase)
                      .Take(MaxPinnedResults))
         {
@@ -677,14 +720,6 @@ public sealed partial class QuickSearchViewModel : ObservableObject, IDisposable
             return Array.Empty<string>();
         }
     }
-
-    private static WalkerOptions BuildWalkerOptions() =>
-        new()
-        {
-            Recursive = true,
-            IncludeHidden = false,
-            MaxFileSizeBytes = WalkerOptions.DefaultMaxFileSizeBytes,
-        };
 
     private static void EnqueueFilesystemMetadataMatches(
         IReadOnlyList<string> roots,

@@ -42,7 +42,9 @@
                 <li>Confirm the <strong>Look in</strong> folder exists and contains the files you expect.</li>
                 <li>Turn on <strong>Include subfolders</strong> if the files are below the selected folder.</li>
                 <li>Clear <strong>File name pattern</strong> or broaden it to include the target file types.</li>
-                <li>Check whether <strong>Skip unknown file types</strong> or <strong>Office &amp; PDF documents</strong> is excluding files.</li>
+                <li>Check whether <strong>Skip unknown file types</strong>, <strong>Office &amp; PDF documents</strong>, or <strong>Image OCR</strong> is excluding files.</li>
+                <li>For scanned or image-only PDFs, <code>*.pdf</code> only selects PDF files. Keep <strong>Office &amp; PDF documents</strong> enabled and turn on <strong>Image OCR</strong> to search recognized text inside those pages.</li>
+                <li>For indexed image, scanned-PDF-page, or embedded document image text, enable <strong>Image OCR</strong> before indexing the location, then use <strong>Rebuild selected</strong> after changing that option.</li>
                 <li>Switch to Plain text mode if Boolean operators or regex syntax are not intended.</li>
             </ul>
 
@@ -57,7 +59,8 @@
             <h2>Search Is Slow</h2>
             <ul class="plain-list">
                 <li>Add a file name pattern, such as <code>*.cs;*.xaml</code>, to avoid scanning unrelated files.</li>
-                <li>Disable Office and PDF extraction if you only need text/source files.</li>
+                <li>Disable Office/PDF extraction and Image OCR if you only need text/source files.</li>
+                <li>Lower the scanned-PDF page limit in <strong>File &gt; Settings</strong> if OCR is spending too long on large scanned PDFs. Disable Image OCR for indexed locations that contain many image-heavy documents when you only need native text.</li>
                 <li>Enable Skip unknown file types when scanning folders with many binaries.</li>
                 <li>Add date or size filters to avoid very old, very small, or very large files.</li>
                 <li>Cancel the current search if the scope is too broad, then start again with tighter filters.</li>

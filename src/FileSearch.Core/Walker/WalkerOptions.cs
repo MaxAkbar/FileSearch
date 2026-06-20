@@ -44,4 +44,10 @@ public sealed record WalkerOptions
 
     /// <summary>Only include files modified at or before this UTC time.</summary>
     public DateTime? ModifiedBeforeUtc { get; init; }
+
+    /// <summary>
+    /// Allows extractors to run OCR fallbacks for formats that can also have
+    /// native text, such as scanned PDFs.
+    /// </summary>
+    public bool EnableOcr { get; init; }
 }

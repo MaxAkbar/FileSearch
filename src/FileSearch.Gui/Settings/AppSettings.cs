@@ -42,6 +42,12 @@ public sealed class AppSettings
 
     public bool SkipUnknownFileTypes { get; set; }
 
+    public bool EnableImageOcr { get; set; }
+
+    public string OcrLanguageTag { get; set; } = string.Empty;
+
+    public int OcrMaxPdfPages { get; set; } = 50;
+
     public bool UseIndex { get; set; }
 
     public QuickSearchHotkey QuickSearchHotkey { get; set; } = QuickSearchHotkey.WinShiftF;

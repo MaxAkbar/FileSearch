@@ -12,8 +12,15 @@ namespace FileSearch.Core.Extractors;
 /// <summary>
 /// Extracts visible slide and notes text from PowerPoint .pptx decks using OpenXml.
 /// </summary>
-public sealed class PowerPointExtractor : ITextExtractor
+public sealed class PowerPointExtractor : IContextualTextExtractor
 {
+    private readonly IEmbeddedImageOcrService _embeddedImageOcr;
+
+    public PowerPointExtractor(IEmbeddedImageOcrService? embeddedImageOcr = null)
+    {
+        _embeddedImageOcr = embeddedImageOcr ?? new NullEmbeddedImageOcrService();
+    }
+
     public string ExtractorId => "filesearch.powerpoint-openxml";
 
     public string ExtractorVersion => "1";
@@ -22,6 +29,15 @@ public sealed class PowerPointExtractor : ITextExtractor
 
     public async IAsyncEnumerable<TextLine> ExtractAsync(
         string path,
+        [EnumeratorCancellation] CancellationToken cancellationToken)
+    {
+        await foreach (var line in ExtractAsync(path, new TextExtractionContext(), cancellationToken).ConfigureAwait(false))
+            yield return line;
+    }
+
+    public async IAsyncEnumerable<TextLine> ExtractAsync(
+        string path,
+        TextExtractionContext context,
         [EnumeratorCancellation] CancellationToken cancellationToken)
     {
         await Task.Yield();
@@ -54,6 +70,24 @@ public sealed class PowerPointExtractor : ITextExtractor
                 lineNumber++;
                 yield return new TextLine(lineNumber, $"[Slide {slideNumber} Notes] {text}");
             }
+
+            if (!context.EnableOcr)
+                continue;
+
+            foreach (var imagePart in slidePart.ImageParts)
+            {
+                cancellationToken.ThrowIfCancellationRequested();
+                var memberPath = GetPackageMemberPath(slidePart, imagePart);
+                var imageBytes = ReadPartBytes(imagePart);
+                var request = new EmbeddedImageOcrRequest(
+                    SourceAnchorKind.PowerPoint,
+                    memberPath,
+                    $"slide {slideNumber} image {memberPath}",
+                    Page: slideNumber,
+                    Section: $"Slide {slideNumber}");
+                await foreach (var line in _embeddedImageOcr.ExtractAsync(imageBytes, request, cancellationToken).ConfigureAwait(false))
+                    yield return line with { Number = ++lineNumber };
+            }
         }
     }
 
@@ -66,5 +100,26 @@ public sealed class PowerPointExtractor : ITextExtractor
             if (!string.IsNullOrEmpty(text))
                 yield return text;
         }
+    }
+
+    private static byte[] ReadPartBytes(OpenXmlPart part)
+    {
+        using var stream = part.GetStream(FileMode.Open, FileAccess.Read);
+        using var memory = new MemoryStream();
+        stream.CopyTo(memory);
+        return memory.ToArray();
+    }
+
+    private static string GetPackageMemberPath(OpenXmlPart ownerPart, OpenXmlPart part)
+    {
+        var partUri = part.Uri.ToString();
+        if (partUri.StartsWith('/'))
+            return partUri.TrimStart('/');
+
+        var ownerUri = ownerPart.Uri.ToString().TrimStart('/');
+        var slash = ownerUri.LastIndexOf('/');
+        return slash >= 0
+            ? $"{ownerUri[..slash]}/{partUri}".TrimStart('/')
+            : partUri;
     }
 }

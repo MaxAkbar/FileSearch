@@ -108,6 +108,29 @@ public sealed class FileIndexTests : IDisposable
     }
 
     [Fact]
+    public async Task IndexedSearchPreservesSourceAnchors()
+    {
+        var file = Path.Combine(_root, "scan.anchor");
+        File.WriteAllText(file, "placeholder\n");
+        var extractor = new AnchoredTestExtractor(".anchor");
+        using var index = new CSharpDbFileIndex(
+            new FileIndexOptions { DatabasePath = Path.Combine(Path.GetDirectoryName(_dbPath)!, "anchored.db") },
+            new FileWalker(),
+            new ExtractorRegistry(new ITextExtractor[] { extractor }));
+
+        await index.BuildOrRefreshAsync(new IndexRequest(_root, new WalkerOptions()), TestContext.Current.CancellationToken);
+
+        var hit = Assert.Single(await RawIndexedSearchAsync(index, new TermQuery("needle")));
+        Assert.NotNull(hit.Anchor);
+        Assert.Equal(SourceAnchorKind.ImageOcr, hit.Anchor.Kind);
+        Assert.Equal(10, hit.Anchor.X);
+        Assert.Equal(20, hit.Anchor.Y);
+        Assert.Equal(30, hit.Anchor.Width);
+        Assert.Equal(40, hit.Anchor.Height);
+        Assert.Equal("OCR region x10 y20 30x40 of 100x200", hit.Anchor.DisplayText);
+    }
+
+    [Fact]
     public async Task RefreshReindexesUnchangedFileWhenExtractorVersionChanges()
     {
         var file = Path.Combine(_root, "document.vtxt");
@@ -154,6 +177,29 @@ public sealed class FileIndexTests : IDisposable
 
         Assert.Equal(IndexCoverageStatus.Incompatible, stale.Status);
         Assert.Contains("extractor versions", stale.Message, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public async Task CoverageRejectsIndexWhenOcrRequestedButBuildDisabled()
+    {
+        File.WriteAllText(Path.Combine(_root, "scan.pdf"), "placeholder\n");
+
+        await BuildAsync(new WalkerOptions { EnableOcr = false });
+
+        var covered = await _index.GetCoverageAsync(
+            new SearchRequest(new TermQuery("placeholder"), new[] { _root }, new WalkerOptions(), UseIndex: true),
+            TestContext.Current.CancellationToken);
+        Assert.Equal(IndexCoverageStatus.Covered, covered.Status);
+
+        var ocrRequest = await _index.GetCoverageAsync(
+            new SearchRequest(
+                new TermQuery("placeholder"),
+                new[] { _root },
+                new WalkerOptions { EnableOcr = true },
+                UseIndex: true),
+            TestContext.Current.CancellationToken);
+
+        Assert.Equal(IndexCoverageStatus.Incompatible, ocrRequest.Status);
     }
 
     [Fact]
@@ -1662,6 +1708,29 @@ public sealed class FileIndexTests : IDisposable
             await Task.Yield();
             cancellationToken.ThrowIfCancellationRequested();
             yield return new TextLine(1, $"extractor-version-{ExtractorVersion}");
+        }
+    }
+
+    private sealed class AnchoredTestExtractor : ITextExtractor
+    {
+        public AnchoredTestExtractor(string extension) => SupportedExtensions = new[] { extension };
+
+        public string ExtractorId => "test.anchored";
+
+        public string ExtractorVersion => "1";
+
+        public IReadOnlyCollection<string> SupportedExtensions { get; }
+
+        public async IAsyncEnumerable<TextLine> ExtractAsync(
+            string path,
+            [System.Runtime.CompilerServices.EnumeratorCancellation] CancellationToken cancellationToken)
+        {
+            await Task.Yield();
+            cancellationToken.ThrowIfCancellationRequested();
+            yield return new TextLine(
+                3,
+                "anchored needle",
+                SourceAnchor.ImageOcrRegion(10, 20, 30, 40, 100, 200));
         }
     }
 

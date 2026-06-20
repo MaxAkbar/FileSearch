@@ -162,6 +162,38 @@ public sealed class ZipExtractorTests : IDisposable
     }
 
     [Fact]
+    public async Task ExtractsImageEntryOcrWhenContextEnabled()
+    {
+        using (var archive = ZipFile.Open(_path, ZipArchiveMode.Create))
+        {
+            AddEntry(archive, "readme.txt", "hello world\n");
+            AddEntryBytes(archive, "screens/shot.png", [1, 2, 3, 4]);
+        }
+
+        var ocr = new FakeEmbeddedImageOcrService();
+        var extractor = new ZipExtractor(ZipArchivePolicy.Default, ocr);
+        var lines = new List<TextLine>();
+        var issues = new ListExtractionIssueSink();
+        await foreach (var line in extractor.ExtractAsync(
+            _path,
+            new TextExtractionContext(EnableOcr: true),
+            issues,
+            CancellationToken.None))
+        {
+            lines.Add(line);
+        }
+
+        var hit = Assert.Single(lines, line => line.Content == "archive image ocr needle");
+        Assert.NotNull(hit.Anchor);
+        Assert.Equal(SourceAnchorKind.Archive, hit.Anchor.Kind);
+        Assert.Equal("screens/shot.png", hit.Anchor.MemberPath);
+        Assert.DoesNotContain(issues.Issues, issue =>
+            issue.MemberPath == "screens/shot.png" &&
+            issue.Code == "archive_member_unsupported_type");
+        Assert.True(ocr.SawImageBytes);
+    }
+
+    [Fact]
     public void ArchivePolicyKeepsNestedArchiveDepthAtZero()
     {
         var policy = new ZipArchivePolicy();
@@ -192,6 +224,13 @@ public sealed class ZipExtractorTests : IDisposable
         var entry = archive.CreateEntry(name);
         using var writer = new StreamWriter(entry.Open());
         writer.Write(content);
+    }
+
+    private static void AddEntryBytes(ZipArchive archive, string name, byte[] bytes)
+    {
+        var entry = archive.CreateEntry(name);
+        using var stream = entry.Open();
+        stream.Write(bytes);
     }
 
     private static void WriteSingleEntryZip(
@@ -263,5 +302,36 @@ public sealed class ZipExtractorTests : IDisposable
         Span<byte> bytes = stackalloc byte[4];
         BinaryPrimitives.WriteUInt32LittleEndian(bytes, value);
         stream.Write(bytes);
+    }
+
+    private sealed class FakeEmbeddedImageOcrService : IEmbeddedImageOcrService
+    {
+        public bool SawImageBytes { get; private set; }
+
+        public async IAsyncEnumerable<TextLine> ExtractAsync(
+            byte[] imageBytes,
+            EmbeddedImageOcrRequest request,
+            [System.Runtime.CompilerServices.EnumeratorCancellation] CancellationToken cancellationToken)
+        {
+            await Task.Yield();
+            cancellationToken.ThrowIfCancellationRequested();
+            SawImageBytes = imageBytes.Length > 0;
+            yield return new TextLine(
+                1,
+                "archive image ocr needle",
+                SourceAnchor.EmbeddedOcrRegion(
+                    request.AnchorKind,
+                    request.Label,
+                    request.MemberPath,
+                    1,
+                    2,
+                    3,
+                    4,
+                    10,
+                    20,
+                    request.Page,
+                    request.Section,
+                    request.Sheet));
+        }
     }
 }

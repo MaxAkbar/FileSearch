@@ -40,6 +40,19 @@ public sealed class SearcherTests : IDisposable
         return hits;
     }
 
+    private async Task<IReadOnlyList<Hit>> SearchNamesAsync(Query query, SearchTarget target, WalkerOptions? options = null)
+    {
+        var request = new SearchRequest(
+            query,
+            new[] { _root },
+            options ?? new WalkerOptions(),
+            SearchTarget: target);
+        var hits = new List<Hit>();
+        await foreach (var hit in _searcher.SearchAsync(request, CancellationToken.None))
+            hits.Add(hit);
+        return hits;
+    }
+
     [Fact]
     public async Task FindsMatchingLine_InSingleFile()
     {
@@ -112,6 +125,51 @@ public sealed class SearcherTests : IDisposable
 
         Assert.Equal(2, hits.Count);
         Assert.All(hits, h => Assert.Contains("public class", h.LineContent));
+    }
+
+    [Fact]
+    public async Task FileNameSearchFindsMatchingFileNamesWithoutContentMatch()
+    {
+        File.WriteAllText(Path.Combine(_root, "QuarterlyReport.txt"), "body has no query text\n");
+        File.WriteAllText(Path.Combine(_root, "notes.txt"), "QuarterlyReport appears only in content\n");
+
+        var hits = await SearchNamesAsync(new TermQuery("report"), SearchTarget.FileNames);
+
+        var hit = Assert.Single(hits);
+        Assert.EndsWith("QuarterlyReport.txt", hit.Path);
+        Assert.Equal(HitKind.Metadata, hit.Kind);
+        Assert.Equal(0, hit.LineNumber);
+        Assert.Contains("File name match", hit.LineContent);
+    }
+
+    [Fact]
+    public async Task FolderNameSearchFindsFolders()
+    {
+        var folder = Path.Combine(_root, "Invoices");
+        Directory.CreateDirectory(folder);
+        File.WriteAllText(Path.Combine(folder, "readme.txt"), "nothing\n");
+
+        var hits = await SearchNamesAsync(new TermQuery("invoice"), SearchTarget.FolderNames);
+
+        var hit = Assert.Single(hits);
+        Assert.Equal(folder, hit.Path);
+        Assert.Equal(HitKind.Metadata, hit.Kind);
+        Assert.Contains("Folder name match", hit.LineContent);
+    }
+
+    [Fact]
+    public async Task FolderNameSearchHonorsNonRecursiveScope()
+    {
+        var top = Path.Combine(_root, "Top");
+        var nested = Path.Combine(top, "NestedNeedle");
+        Directory.CreateDirectory(nested);
+
+        var hits = await SearchNamesAsync(
+            new TermQuery("needle"),
+            SearchTarget.FolderNames,
+            new WalkerOptions { Recursive = false });
+
+        Assert.Empty(hits);
     }
 
     [Fact]
@@ -194,6 +252,49 @@ public sealed class SearcherTests : IDisposable
 #pragma warning disable CS0162
             yield break;
 #pragma warning restore CS0162
+        }
+    }
+
+    [Fact]
+    public async Task PassesOcrContextToContextualExtractors()
+    {
+        File.WriteAllText(Path.Combine(_root, "scan.ctx"), "placeholder\n");
+
+        var extractor = new ContextualExtractor();
+        var registry = new ExtractorRegistry(new ITextExtractor[] { extractor });
+        var searcher = new Searcher(new FileWalker(), registry);
+        var request = new SearchRequest(
+            new TermQuery("ocr-enabled"),
+            new[] { _root },
+            new WalkerOptions { EnableOcr = true });
+
+        var hits = new List<Hit>();
+        await foreach (var h in searcher.SearchAsync(request, CancellationToken.None))
+            hits.Add(h);
+
+        var hit = Assert.Single(hits);
+        Assert.Equal("ocr-enabled", hit.LineContent);
+        Assert.True(extractor.ObservedEnableOcr);
+    }
+
+    private sealed class ContextualExtractor : IContextualTextExtractor
+    {
+        public bool? ObservedEnableOcr { get; private set; }
+
+        public IReadOnlyCollection<string> SupportedExtensions { get; } = new[] { ".ctx" };
+
+        public IAsyncEnumerable<TextLine> ExtractAsync(string path, CancellationToken cancellationToken) =>
+            ExtractAsync(path, new TextExtractionContext(), cancellationToken);
+
+        public async IAsyncEnumerable<TextLine> ExtractAsync(
+            string path,
+            TextExtractionContext context,
+            [EnumeratorCancellation] CancellationToken cancellationToken)
+        {
+            await Task.Yield();
+            cancellationToken.ThrowIfCancellationRequested();
+            ObservedEnableOcr = context.EnableOcr;
+            yield return new TextLine(1, context.EnableOcr ? "ocr-enabled" : "ocr-disabled");
         }
     }
 

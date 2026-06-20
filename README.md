@@ -4,7 +4,7 @@ FileSearch is a Windows desktop application for searching text across files and 
 
 ## Features
 
-- Search for text in files from a selected folder.
+- Search for text, file names, folder names, or file and folder names from a selected folder.
 - Use either the WPF desktop app or the Spectre.Console-powered interactive CLI.
 - Include or exclude subfolders.
 - Filter by file name glob patterns such as `*.cs;*.txt`.
@@ -38,8 +38,9 @@ The core project includes extractors for many common text and document formats, 
 - HTML/XML-style text files.
 - Email/calendar/contact-style files.
 - ZIP-based formats.
+- Optional Windows OCR for PNG, JPEG, BMP, TIFF, scanned/image-only PDF files, and embedded images in Office, OpenDocument, EPUB, email, and ZIP/archive files.
 
-Document extraction can be disabled in the UI for Office and PDF documents when you only want to scan simpler text files.
+Document extraction can be disabled in the UI for Office and PDF documents when you only want to scan simpler text files. Image OCR is a separate opt-in because OCR can be slower on large image folders, scanned PDFs, and image-heavy documents; OCR hits include image, PDF page, or embedded-member region labels. Previews can highlight the recognized region for standalone image files and rendered PDF pages.
 
 ## Repository layout
 
@@ -155,24 +156,26 @@ dotnet test .\FileSearch.slnx
 
 ## Using the app
 
-1. Enter the text or expression to find in **Containing text**.
-2. Optionally enter one or more file name patterns in **File name pattern**. Separate multiple globs with semicolons, for example:
+1. Choose what to search in the **Search** selector: contents, file names, folder names, or file and folder names.
+2. Enter the text, name fragment, regex, or Boolean expression to find in the main search box.
+3. Optionally enter one or more file name patterns in **File name pattern**. Separate multiple globs with semicolons, for example:
 
    ```text
    *.cs;*.xaml;*.md
    ```
 
-3. Choose a folder in **Look in**.
-4. Decide whether to include subfolders.
-5. Adjust options:
+4. Choose a folder in **Look in**.
+5. Decide whether to include subfolders.
+6. Adjust options:
    - Search mode: plain text, regex, or Boolean.
    - Match case.
    - Enable or disable Office/PDF document extraction.
+   - Enable Image OCR when PNG, JPEG, BMP, TIFF, scanned PDF pages, or embedded document/archive images should be searched for recognized text.
    - Minimum and maximum file size.
    - Modified date filters.
-6. Click **Start** or press Enter.
-7. Select a result to preview matching lines.
-8. Use the **Filter** tab to narrow the result set without rescanning.
+7. Click **Start** or press Enter.
+8. Select a result to preview matching lines or stored name-match details.
+9. Use the **Filter** tab to narrow the result set without rescanning.
 
 ## Using the CLI
 

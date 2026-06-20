@@ -258,6 +258,7 @@ public sealed class IndexViewModelTests
         index.NewIndexRecursive = false;
         index.NewIndexIncludeHidden = true;
         index.NewIndexEnableDocumentExtraction = false;
+        index.NewIndexEnableImageOcr = true;
         index.NewIndexSkipUnknownFileTypes = true;
         index.NewIndexIncludedExtensions = ".cs; md";
         index.NewIndexIncludedFolders = "src; tests";
@@ -272,6 +273,7 @@ public sealed class IndexViewModelTests
             Assert.False(location.Recursive);
             Assert.True(location.IncludeHidden);
             Assert.False(location.EnableDocumentExtraction);
+            Assert.True(location.EnableImageOcr);
             Assert.True(location.SkipUnknownFileTypes);
             Assert.Equal(".cs; .md", location.IncludedExtensions);
             Assert.Equal("src; tests", location.IncludedFolders);
@@ -290,6 +292,7 @@ public sealed class IndexViewModelTests
             Assert.Contains("tests", indexed.WalkerOptions.IncludeDirectories);
             Assert.Contains("bin", indexed.WalkerOptions.ExcludeDirectories);
             Assert.Contains("obj", indexed.WalkerOptions.ExcludeDirectories);
+            Assert.True(indexed.WalkerOptions.EnableOcr);
         }
         finally
         {

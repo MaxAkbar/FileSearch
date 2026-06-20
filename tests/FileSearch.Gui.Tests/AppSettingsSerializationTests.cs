@@ -1,5 +1,6 @@
 using System.Text.Json;
 using System.Text.Json.Serialization;
+using FileSearch.Core.Engine;
 using FileSearch.Core.Indexing;
 using FileSearch.Core.Queries;
 using FileSearch.Gui.Settings;
@@ -30,6 +31,9 @@ public sealed class AppSettingsSerializationTests
             IndexOnlyWhenIdle = true,
             IndexerCpuLimitPercent = 25,
             IndexerDiskPauseMilliseconds = 100,
+            EnableImageOcr = true,
+            OcrLanguageTag = "en-US",
+            OcrMaxPdfPages = 100,
             QuickSearchIncludeContent = false,
             QuickSearchFolderPath = @"C:\Quick",
             Shortcuts = new AppShortcutSettings
@@ -52,8 +56,10 @@ public sealed class AppSettingsSerializationTests
                     ExcludeFileNamePattern = "*.g.cs",
                     IncludeSubfolders = false,
                     SearchMode = QueryMode.Regex,
+                    SearchTarget = SearchTarget.FileNames,
                     MatchCase = true,
                     EnableDocumentExtraction = false,
+                    EnableImageOcr = true,
                     SkipUnknownFileTypes = true,
                     UseIndex = true,
                     MinSizeKB = 4,
@@ -84,6 +90,7 @@ public sealed class AppSettingsSerializationTests
                         QueryText = "daily",
                         SearchPath = @"C:\Daily",
                         FileNamePattern = "*.md",
+                        SearchTarget = SearchTarget.FolderNames,
                     },
                     CustomScopes =
                     [
@@ -109,6 +116,7 @@ public sealed class AppSettingsSerializationTests
                     Recursive = false,
                     IncludeHidden = true,
                     EnableDocumentExtraction = false,
+                    EnableImageOcr = true,
                     SkipUnknownFileTypes = true,
                     IncludedExtensions = ".cs; md",
                     IncludedFolders = "src; tests",
@@ -178,6 +186,9 @@ public sealed class AppSettingsSerializationTests
         Assert.True(loaded.IndexOnlyWhenIdle);
         Assert.Equal(25, loaded.IndexerCpuLimitPercent);
         Assert.Equal(100, loaded.IndexerDiskPauseMilliseconds);
+        Assert.True(loaded.EnableImageOcr);
+        Assert.Equal("en-US", loaded.OcrLanguageTag);
+        Assert.Equal(100, loaded.OcrMaxPdfPages);
         Assert.False(loaded.QuickSearchIncludeContent);
         Assert.Equal(@"C:\Quick", loaded.QuickSearchFolderPath);
         Assert.Equal(AppShortcutGesture.CtrlL, loaded.Shortcuts.FocusQuery);
@@ -193,8 +204,10 @@ public sealed class AppSettingsSerializationTests
         Assert.Equal("*.g.cs", savedSearch.ExcludeFileNamePattern);
         Assert.False(savedSearch.IncludeSubfolders);
         Assert.Equal(QueryMode.Regex, savedSearch.SearchMode);
+        Assert.Equal(SearchTarget.FileNames, savedSearch.SearchTarget);
         Assert.True(savedSearch.MatchCase);
         Assert.False(savedSearch.EnableDocumentExtraction);
+        Assert.True(savedSearch.EnableImageOcr);
         Assert.True(savedSearch.SkipUnknownFileTypes);
         Assert.True(savedSearch.UseIndex);
         Assert.Equal(4, savedSearch.MinSizeKB);
@@ -214,6 +227,7 @@ public sealed class AppSettingsSerializationTests
         Assert.Equal("daily", workspace.Search.QueryText);
         Assert.Equal(@"C:\Daily", workspace.Search.SearchPath);
         Assert.Equal("*.md", workspace.Search.FileNamePattern);
+        Assert.Equal(SearchTarget.FolderNames, workspace.Search.SearchTarget);
         Assert.Equal("Markdown", Assert.Single(workspace.CustomScopes).Name);
         Assert.Equal(@"C:\Daily\plan.md", Assert.Single(workspace.FavoriteResults).Path);
         Assert.Equal(@"C:\Daily\pin.md", Assert.Single(workspace.PinnedPaths));
@@ -228,6 +242,7 @@ public sealed class AppSettingsSerializationTests
         Assert.False(location.Recursive);
         Assert.True(location.IncludeHidden);
         Assert.False(location.EnableDocumentExtraction);
+        Assert.True(location.EnableImageOcr);
         Assert.True(location.SkipUnknownFileTypes);
         Assert.Equal(".cs; md", location.IncludedExtensions);
         Assert.Equal("src; tests", location.IncludedFolders);

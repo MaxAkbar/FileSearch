@@ -57,9 +57,13 @@
                             <CheckBox Content="Documents"
                                       IsChecked="{Binding Index.NewIndexEnableDocumentExtraction}"
                                       Margin="0,0,12,0"/>
+                            <CheckBox Content="Image OCR"
+                                      IsChecked="{Binding Index.NewIndexEnableImageOcr}"
+                                      ToolTip="Extract searchable text from PNG, JPEG, BMP, and TIFF images."
+                                      Margin="0,0,0,0"/>
                             <CheckBox Content="Known types only"
                                       IsChecked="{Binding Index.NewIndexSkipUnknownFileTypes}"
-                                      Margin="0"/>
+                                      Margin="0,8,12,0"/>
                         </UniformGrid>
 
                         <Border Height="1"
@@ -168,4 +172,3 @@
         </Grid>
     </DockPanel>
 </Window>
-

@@ -76,6 +76,11 @@
                             <td>Disable it for faster source-code-only searches.</td>
                         </tr>
                         <tr>
+                            <td><strong>Image OCR</strong></td>
+                            <td>When enabled, FileSearch uses Windows OCR to search recognized text in PNG, JPEG, BMP, TIFF, scanned PDF pages, and embedded images in Office, OpenDocument, EPUB, email, and ZIP/archive files.</td>
+                            <td>Enable it for screenshots, scanned image files, scanned PDFs, image-heavy reference folders, and documents that contain screenshots or scanned attachments. Leave it off for faster searches through photo or asset folders. OCR language and scanned-PDF page limits are configured in <strong>File &gt; Settings</strong>.</td>
+                        </tr>
+                        <tr>
                             <td><strong>Skip unknown file types</strong></td>
                             <td>When enabled, FileSearch only scans known text/document extensions and any additional extensions you provide.</td>
                             <td>Enable it when a folder contains many binary or generated files.</td>
@@ -87,6 +92,9 @@
                         </tr>
                     </tbody>
                 </table>
+            </div>
+            <div class="callout">
+                For scanned or image-only PDFs, <strong>Office &amp; PDF documents</strong> and <strong>Image OCR</strong> both need to be enabled. A file name pattern such as <code>*.pdf</code> only limits the files being searched; it does not enable OCR.
             </div>
 
             <h2>File Size Filters</h2>

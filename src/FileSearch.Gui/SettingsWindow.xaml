@@ -260,6 +260,55 @@
                             Background="{DynamicResource Atlas.LineBrush}"
                             Margin="0,18"/>
 
+                    <TextBlock Text="OCR" Style="{StaticResource SectionHeaderStyle}"/>
+                    <Grid Margin="0,8,0,0">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="*"/>
+                            <ColumnDefinition Width="Auto"/>
+                        </Grid.ColumnDefinitions>
+
+                        <StackPanel Grid.Column="0" Margin="0,0,20,0">
+                            <TextBlock Text="OCR language"
+                                       Style="{StaticResource FieldLabelStyle}"/>
+                            <TextBlock Text="{Binding OcrLanguageSummary}"
+                                       Style="{StaticResource MutedValueStyle}"
+                                       TextWrapping="Wrap"
+                                       Margin="0,4,0,0"/>
+                        </StackPanel>
+
+                        <TextBox Grid.Column="1"
+                                 Text="{Binding OcrLanguageTag, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
+                                 MinWidth="130"
+                                 VerticalAlignment="Center"
+                                 ui:ControlHelper.PlaceholderText="Windows default"/>
+                    </Grid>
+
+                    <Grid Margin="0,14,0,0">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="*"/>
+                            <ColumnDefinition Width="Auto"/>
+                        </Grid.ColumnDefinitions>
+
+                        <StackPanel Grid.Column="0" Margin="0,0,20,0">
+                            <TextBlock Text="Scanned PDF page limit"
+                                       Style="{StaticResource FieldLabelStyle}"/>
+                            <TextBlock Text="{Binding OcrMaxPdfPagesSummary}"
+                                       Style="{StaticResource MutedValueStyle}"
+                                       TextWrapping="Wrap"
+                                       Margin="0,4,0,0"/>
+                        </StackPanel>
+
+                        <ComboBox Grid.Column="1"
+                                  ItemsSource="{Binding OcrMaxPdfPageOptions}"
+                                  SelectedItem="{Binding OcrMaxPdfPages, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
+                                  MinWidth="110"
+                                  VerticalAlignment="Center"/>
+                    </Grid>
+
+                    <Border Height="1"
+                            Background="{DynamicResource Atlas.LineBrush}"
+                            Margin="0,18"/>
+
                     <TextBlock Text="MAIN WINDOW SHORTCUTS" Style="{StaticResource SectionHeaderStyle}"/>
                     <ItemsControl ItemsSource="{Binding ShortcutBindings}"
                                   Margin="0,8,0,0">

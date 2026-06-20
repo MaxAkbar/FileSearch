@@ -1,8 +1,8 @@
 using System;
 using System.Buffers;
 using System.Collections.Generic;
-using System.Collections.Specialized;
 using System.Collections.ObjectModel;
+using System.Collections.Specialized;
 using System.ComponentModel;
 using System.Diagnostics;
 using System.Globalization;
@@ -10,6 +10,7 @@ using System.IO;
 using System.Linq;
 using System.Text;
 using System.Text.Json;
+using System.Text.Json.Serialization;
 using System.Threading;
 using System.Threading.Tasks;
 using System.Windows.Data;
@@ -23,8 +24,14 @@ using FileSearch.Core.Queries;
 using FileSearch.Core.Walker;
 using FileSearch.Gui.Services;
 using FileSearch.Gui.Settings;
+using FileSearch.WindowsOcr;
 
 namespace FileSearch.Gui.ViewModels;
+
+public sealed record SearchTargetOption(SearchTarget Value, string DisplayName)
+{
+    public override string ToString() => DisplayName;
+}
 
 /// <summary>
 /// Search inputs, options, execution, results, and the preview pane.
@@ -100,11 +107,13 @@ public sealed partial class SearchViewModel : ObservableObject, IDisposable
 
         SelectedSortOption = ResultSortOptions[0];
         SelectedGroupOption = ResultGroupOptions[0];
+        SelectedSearchTargetOption = SearchTargetOptions[0];
         RebuildFacetOptions();
         ApplyResultViewShape();
 
         var saved = _settingsService.Current;
         SkipUnknownFileTypes = saved.SkipUnknownFileTypes;
+        EnableImageOcr = saved.EnableImageOcr;
         UseIndex = saved.UseIndex;
         if (_fileTypeOptions.AdditionalPlainTextExtensions.Count == 0 && !string.IsNullOrWhiteSpace(saved.AdditionalPlainTextExtensions))
         {
@@ -173,6 +182,15 @@ public sealed partial class SearchViewModel : ObservableObject, IDisposable
     public IReadOnlyList<QueryMode> AvailableModes { get; } =
         new[] { QueryMode.Boolean, QueryMode.Regex, QueryMode.PlainText };
 
+    public IReadOnlyList<SearchTargetOption> SearchTargetOptions { get; } =
+        new[]
+        {
+            new SearchTargetOption(SearchTarget.Content, "Contents"),
+            new SearchTargetOption(SearchTarget.FileNames, "File names"),
+            new SearchTargetOption(SearchTarget.FolderNames, "Folder names"),
+            new SearchTargetOption(SearchTarget.FileAndFolderNames, "File and folder names"),
+        };
+
     // --- search inputs (Main tab) ---
     [ObservableProperty] private string _searchPath = Environment.CurrentDirectory;
     [ObservableProperty] private string _queryText = string.Empty;
@@ -185,8 +203,10 @@ public sealed partial class SearchViewModel : ObservableObject, IDisposable
     [ObservableProperty] private QueryMode _searchMode = QueryMode.Boolean;
     [ObservableProperty] private bool _matchCase;
     [ObservableProperty] private bool _enableDocumentExtraction = true;
+    [ObservableProperty] private bool _enableImageOcr;
     [ObservableProperty] private bool _skipUnknownFileTypes;
     [ObservableProperty] private bool _useIndex;
+    [ObservableProperty] private SearchTargetOption? _selectedSearchTargetOption;
     [ObservableProperty] private int _minSizeKB;
     [ObservableProperty] private int _maxSizeKB;
     private string _additionalPlainTextExtensions = string.Empty;
@@ -209,6 +229,7 @@ public sealed partial class SearchViewModel : ObservableObject, IDisposable
     [ObservableProperty] private int _filesMatched;
     [ObservableProperty] private string _elapsedText = "—";
     [ObservableProperty] private string _previewContent = string.Empty;
+    [ObservableProperty] private ImageOcrPreviewViewModel? _imageOcrPreview;
     [ObservableProperty] private bool _isPreviewPaneVisible = true;
     [ObservableProperty] private double _previewPaneWidth = 360;
     [ObservableProperty] private int _selectedDetailsTabIndex;
@@ -330,11 +351,29 @@ public sealed partial class SearchViewModel : ObservableObject, IDisposable
 
     public string PreviewPaneToggleText => "Preview";
 
-    public string ResultsSummaryText => $"{FilesMatched:n0} files · {TotalHits:n0} hits";
+    public bool HasImageOcrPreview => ImageOcrPreview is not null;
+
+    public SearchTarget CurrentSearchTarget => SelectedSearchTargetOption?.Value ?? SearchTarget.Content;
+
+    public bool IsContentSearch => CurrentSearchTarget == SearchTarget.Content;
+
+    public string ResultsSummaryText => $"{FilesMatched:n0} {ResultItemNounPlural} · {TotalHits:n0} hits";
 
     /// <summary>Heading above the results list ("Find …" once a query is set).</summary>
     public string ResultsContextText =>
-        string.IsNullOrWhiteSpace(QueryText) ? "Results" : $"Find “{QueryText.Trim()}”";
+        string.IsNullOrWhiteSpace(QueryText)
+            ? "Results"
+            : CurrentSearchTarget == SearchTarget.Content
+                ? $"Find “{QueryText.Trim()}”"
+                : $"Find names matching “{QueryText.Trim()}”";
+
+    public string SearchTargetSummary => SelectedSearchTargetOption?.DisplayName ?? "Contents";
+
+    public string QueryPlaceholderText => CurrentSearchTarget == SearchTarget.Content
+        ? "Search text, regex, or Boolean query"
+        : "Search file or folder names";
+
+    private string ResultItemNounPlural => CurrentSearchTarget == SearchTarget.Content ? "files" : "items";
 
     public string FilePatternSummary =>
         string.IsNullOrWhiteSpace(FileNamePattern) ? "All files" : FileNamePattern;
@@ -348,6 +387,9 @@ public sealed partial class SearchViewModel : ObservableObject, IDisposable
 
     public string DocumentExtractionSummary =>
         EnableDocumentExtraction ? "Office/PDF on" : "Office/PDF off";
+
+    public string ImageOcrSummary =>
+        EnableImageOcr ? "Image OCR on" : "Image OCR off";
 
     public string UnknownFileTypesSummary =>
         SkipUnknownFileTypes ? "Known types only" : "Unknown text allowed";
@@ -388,6 +430,9 @@ public sealed partial class SearchViewModel : ObservableObject, IDisposable
     partial void OnPreviewContentChanged(string value) =>
         CopyPreviewCommand.NotifyCanExecuteChanged();
 
+    partial void OnImageOcrPreviewChanged(ImageOcrPreviewViewModel? value) =>
+        OnPropertyChanged(nameof(HasImageOcrPreview));
+
     partial void OnIsPreviewPaneVisibleChanged(bool value)
     {
         OnPropertyChanged(nameof(PreviewPaneToggleText));
@@ -415,6 +460,16 @@ public sealed partial class SearchViewModel : ObservableObject, IDisposable
     partial void OnSelectedSourceFacetChanged(ResultFacetOption? value) => OnFacetSelectionChanged();
 
     partial void OnSelectedSizeFacetChanged(ResultFacetOption? value) => OnFacetSelectionChanged();
+
+    partial void OnSelectedSearchTargetOptionChanged(SearchTargetOption? value)
+    {
+        OnPropertyChanged(nameof(CurrentSearchTarget));
+        OnPropertyChanged(nameof(IsContentSearch));
+        OnPropertyChanged(nameof(SearchTargetSummary));
+        OnPropertyChanged(nameof(QueryPlaceholderText));
+        OnPropertyChanged(nameof(ResultsSummaryText));
+        OnPropertyChanged(nameof(ResultsContextText));
+    }
 
     // ----- commands -----
 
@@ -458,7 +513,7 @@ public sealed partial class SearchViewModel : ObservableObject, IDisposable
         }
     }
 
-    private bool CanCopyFileContent() => HasSelectedFile;
+    private bool CanCopyFileContent() => HasSelectedFile && SelectedFile?.IsDirectory != true;
 
     [RelayCommand(CanExecute = nameof(CanExportResults))]
     private async Task ExportResultsAsync(string? formatName)
@@ -609,7 +664,8 @@ public sealed partial class SearchViewModel : ObservableObject, IDisposable
         _status.Text = result.Message;
     }
 
-    private bool CanRenameResult(FileResultViewModel? file) => _fileOperationService is not null && file is not null;
+    private bool CanRenameResult(FileResultViewModel? file) =>
+        _fileOperationService is not null && file is not null && !file.IsDirectory;
 
     [RelayCommand(CanExecute = nameof(CanDeleteResult))]
     private async Task DeleteResultAsync(FileResultViewModel? file)
@@ -638,6 +694,7 @@ public sealed partial class SearchViewModel : ObservableObject, IDisposable
         {
             SelectedFile = null;
             PreviewContent = string.Empty;
+            ImageOcrPreview = null;
         }
 
         RebuildFacetOptions();
@@ -645,7 +702,8 @@ public sealed partial class SearchViewModel : ObservableObject, IDisposable
         _status.Text = result.Message;
     }
 
-    private bool CanDeleteResult(FileResultViewModel? file) => _fileOperationService is not null && file is not null;
+    private bool CanDeleteResult(FileResultViewModel? file) =>
+        _fileOperationService is not null && file is not null && !file.IsDirectory;
 
     [RelayCommand]
     private void Browse()
@@ -674,6 +732,7 @@ public sealed partial class SearchViewModel : ObservableObject, IDisposable
         Files.Clear();
         SelectedFile = null;
         PreviewContent = string.Empty;
+        ImageOcrPreview = null;
         TotalHits = 0;
         FilesMatched = 0;
         ElapsedText = "—";
@@ -705,7 +764,7 @@ public sealed partial class SearchViewModel : ObservableObject, IDisposable
             var request = new SearchRequest(
                 query,
                 new[] { SearchPath },
-                BuildWalkerOptions(),
+                BuildWalkerOptions(CurrentSearchTarget),
                 progress.Report,
                 UseIndex,
                 message =>
@@ -714,7 +773,8 @@ public sealed partial class SearchViewModel : ObservableObject, IDisposable
                     _status.Text = message;
                 },
                 QueryText,
-                SearchMode);
+                SearchMode,
+                CurrentSearchTarget);
 
             // Consume the hit stream on the thread pool and flush to the UI
             // in timed batches — applying hits one at a time marshalled every
@@ -739,14 +799,14 @@ public sealed partial class SearchViewModel : ObservableObject, IDisposable
             stopwatch.Stop();
             ElapsedText = $"{stopwatch.Elapsed.TotalSeconds:0.00}s";
             _status.Text = string.IsNullOrEmpty(routeStatus)
-                ? $"Done — {TotalHits} hits in {FilesMatched} files"
-                : $"{routeStatus}; done — {TotalHits} hits in {FilesMatched} files";
+                ? $"Done — {TotalHits} hits in {FilesMatched} {ResultItemNounPlural}"
+                : $"{routeStatus}; done — {TotalHits} hits in {FilesMatched} {ResultItemNounPlural}";
         }
         catch (OperationCanceledException)
         {
             stopwatch.Stop();
             ElapsedText = $"{stopwatch.Elapsed.TotalSeconds:0.00}s";
-            _status.Text = $"Canceled — {TotalHits} hits in {FilesMatched} files";
+            _status.Text = $"Canceled — {TotalHits} hits in {FilesMatched} {ResultItemNounPlural}";
         }
         catch (Exception ex)
         {
@@ -810,7 +870,7 @@ public sealed partial class SearchViewModel : ObservableObject, IDisposable
         FilesMatched = Files.Count;
         RebuildFacetOptions();
         RefreshFilesView();
-        _status.Text = $"Searching... {TotalHits:n0} hits in {FilesMatched:n0} files";
+        _status.Text = $"Searching... {TotalHits:n0} hits in {FilesMatched:n0} {ResultItemNounPlural}";
     }
 
     [RelayCommand(CanExecute = nameof(CanCancel))]
@@ -860,8 +920,10 @@ public sealed partial class SearchViewModel : ObservableObject, IDisposable
             SearchMode = SearchMode,
             MatchCase = MatchCase,
             EnableDocumentExtraction = EnableDocumentExtraction,
+            EnableImageOcr = EnableImageOcr,
             SkipUnknownFileTypes = SkipUnknownFileTypes,
             UseIndex = UseIndex,
+            SearchTarget = CurrentSearchTarget,
             MinSizeKB = MinSizeKB,
             MaxSizeKB = MaxSizeKB,
             ModifiedAfterEnabled = ModifiedAfterEnabled,
@@ -884,8 +946,11 @@ public sealed partial class SearchViewModel : ObservableObject, IDisposable
         SearchMode = search.SearchMode;
         MatchCase = search.MatchCase;
         EnableDocumentExtraction = search.EnableDocumentExtraction;
+        EnableImageOcr = search.EnableImageOcr;
         SkipUnknownFileTypes = search.SkipUnknownFileTypes;
         UseIndex = search.UseIndex;
+        SelectedSearchTargetOption = SearchTargetOptions.FirstOrDefault(option => option.Value == search.SearchTarget)
+            ?? SearchTargetOptions[0];
         MinSizeKB = Math.Max(0, search.MinSizeKB);
         MaxSizeKB = Math.Max(0, search.MaxSizeKB);
         ModifiedAfterEnabled = search.ModifiedAfterEnabled;
@@ -1266,7 +1331,7 @@ public sealed partial class SearchViewModel : ObservableObject, IDisposable
     private string RenderExportCsv(IReadOnlyList<FileResultViewModel> files)
     {
         var sb = new StringBuilder();
-        sb.AppendLine("path,fileName,folder,extension,sizeBytes,modifiedUtc,source,hitCount,lineNumber,kind,line");
+        sb.AppendLine("path,fileName,folder,extension,sizeBytes,modifiedUtc,source,hitCount,lineNumber,kind,anchor,line");
         foreach (var file in files)
         {
             foreach (var hit in file.Hits)
@@ -1281,6 +1346,7 @@ public sealed partial class SearchViewModel : ObservableObject, IDisposable
                 sb.Append(file.HitCount.ToString(CultureInfo.InvariantCulture)).Append(',');
                 sb.Append(hit.LineNumber.ToString(CultureInfo.InvariantCulture)).Append(',');
                 sb.Append(CsvField(hit.Kind.ToString())).Append(',');
+                sb.Append(CsvField(hit.Anchor?.DisplayText ?? string.Empty)).Append(',');
                 sb.AppendLine(CsvField(hit.LineContent));
             }
         }
@@ -1305,7 +1371,10 @@ public sealed partial class SearchViewModel : ObservableObject, IDisposable
             sb.AppendLine(CultureInfo.InvariantCulture, $"## {file.FullPath}");
             sb.AppendLine();
             foreach (var hit in file.Hits)
-                sb.AppendLine(CultureInfo.InvariantCulture, $"- L{hit.LineNumber}: {hit.LineContent.Trim()}");
+            {
+                var anchor = hit.Anchor is null ? string.Empty : $" [{hit.Anchor.DisplayText}]";
+                sb.AppendLine(CultureInfo.InvariantCulture, $"- L{hit.LineNumber}{anchor}: {hit.LineContent.Trim()}");
+            }
         }
 
         return sb.ToString();
@@ -1316,9 +1385,13 @@ public sealed partial class SearchViewModel : ObservableObject, IDisposable
     private static readonly JsonSerializerOptions s_exportJsonOptions = new()
     {
         WriteIndented = true,
+        Converters = { new JsonStringEnumConverter() },
     };
 
-    private static readonly JsonSerializerOptions s_exportJsonLinesOptions = new();
+    private static readonly JsonSerializerOptions s_exportJsonLinesOptions = new()
+    {
+        Converters = { new JsonStringEnumConverter() },
+    };
 
     private static string CsvField(string value)
     {
@@ -1351,23 +1424,25 @@ public sealed partial class SearchViewModel : ObservableObject, IDisposable
             file.HitCount,
             hit.LineNumber,
             hit.Kind.ToString(),
-            hit.LineContent);
+            hit.LineContent,
+            hit.Anchor);
 
-    private WalkerOptions BuildWalkerOptions()
+    private WalkerOptions BuildWalkerOptions(SearchTarget searchTarget)
     {
         var include = ParsePatterns(FileNamePattern);
         var exclude = ParsePatterns(ExcludeFileNamePattern);
+        var isNameSearch = searchTarget != SearchTarget.Content;
 
         return new WalkerOptions
         {
             IncludeGlobs = include,
             ExcludeGlobs = exclude,
-            IncludeExtensions = SkipUnknownFileTypes
-                ? BuildKnownTextExtensions()
+            IncludeExtensions = !isNameSearch && SkipUnknownFileTypes
+                ? BuildKnownTextExtensions(EnableImageOcr)
                 : new HashSet<string>(StringComparer.OrdinalIgnoreCase),
-            ExcludeExtensions = EnableDocumentExtraction
+            ExcludeExtensions = isNameSearch
                 ? new HashSet<string>(StringComparer.OrdinalIgnoreCase)
-                : _fileTypeOptions.DocumentExtensions.ToHashSet(StringComparer.OrdinalIgnoreCase),
+                : BuildExcludedExtensions(EnableDocumentExtraction, EnableImageOcr),
             Recursive = IncludeSubfolders,
             MinFileSizeBytes = (long)Math.Max(0, MinSizeKB) * 1024,
             // No explicit max falls back to the shared default cap so GUI and
@@ -1379,6 +1454,7 @@ public sealed partial class SearchViewModel : ObservableObject, IDisposable
             ModifiedBeforeUtc = ModifiedBeforeEnabled
                 ? ModifiedBefore.AddDays(1).AddSeconds(-1).ToUniversalTime() // inclusive end-of-day
                 : null,
+            EnableOcr = EnableImageOcr,
         };
     }
 
@@ -1400,6 +1476,7 @@ public sealed partial class SearchViewModel : ObservableObject, IDisposable
             MaxFileSizeBytes = 0,
             ModifiedAfterUtc = null,
             ModifiedBeforeUtc = null,
+            EnableOcr = settings.EnableImageOcr,
         };
 
     private HashSet<string> BuildIndexIncludedExtensions(IndexedLocationSettings settings)
@@ -1409,7 +1486,7 @@ public sealed partial class SearchViewModel : ObservableObject, IDisposable
             return explicitIncludes.ToHashSet(StringComparer.OrdinalIgnoreCase);
 
         return settings.SkipUnknownFileTypes
-            ? BuildKnownTextExtensions()
+            ? BuildKnownTextExtensions(settings.EnableImageOcr)
             : new HashSet<string>(StringComparer.OrdinalIgnoreCase);
     }
 
@@ -1424,6 +1501,12 @@ public sealed partial class SearchViewModel : ObservableObject, IDisposable
                 extensions.Add(extension);
         }
 
+        if (!settings.EnableImageOcr)
+        {
+            foreach (var extension in ImageOcrFileTypes.SupportedExtensions)
+                extensions.Add(extension);
+        }
+
         return extensions;
     }
 
@@ -1435,11 +1518,44 @@ public sealed partial class SearchViewModel : ObservableObject, IDisposable
         return directories;
     }
 
-    private HashSet<string> BuildKnownTextExtensions()
+    internal WalkerOptions BuildQuickSearchWalkerOptions() =>
+        new()
+        {
+            Recursive = true,
+            IncludeHidden = false,
+            IncludeExtensions = SkipUnknownFileTypes
+                ? BuildKnownTextExtensions(EnableImageOcr)
+                : new HashSet<string>(StringComparer.OrdinalIgnoreCase),
+            ExcludeExtensions = BuildExcludedExtensions(EnableDocumentExtraction, EnableImageOcr),
+            MaxFileSizeBytes = WalkerOptions.DefaultMaxFileSizeBytes,
+            EnableOcr = EnableImageOcr,
+        };
+
+    private HashSet<string> BuildKnownTextExtensions(bool includeImageOcr)
     {
         var extensions = _extractorRegistry.SupportedExtensions.ToHashSet(StringComparer.OrdinalIgnoreCase);
+        if (!includeImageOcr)
+        {
+            foreach (var extension in ImageOcrFileTypes.SupportedExtensions)
+                extensions.Remove(extension);
+        }
+
         foreach (var extension in ParseExtensions(AdditionalPlainTextExtensions))
             extensions.Add(extension);
+        return extensions;
+    }
+
+    private HashSet<string> BuildExcludedExtensions(bool enableDocumentExtraction, bool enableImageOcr)
+    {
+        var extensions = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        if (!enableDocumentExtraction)
+            foreach (var extension in _fileTypeOptions.DocumentExtensions)
+                extensions.Add(extension);
+
+        if (!enableImageOcr)
+            foreach (var extension in ImageOcrFileTypes.SupportedExtensions)
+                extensions.Add(extension);
+
         return extensions;
     }
 
@@ -1457,7 +1573,7 @@ public sealed partial class SearchViewModel : ObservableObject, IDisposable
 
         var skipped = progress.FilesSkipped > 0 ? $", {progress.FilesSkipped:n0} skipped" : string.Empty;
         var failed = progress.FilesFailed > 0 ? $", {progress.FilesFailed:n0} failed" : string.Empty;
-        _status.Text = $"Searching... {TotalHits:n0} hits in {FilesMatched:n0} files; {progress.FilesProcessed:n0}/{progress.FilesEnumerated:n0} scanned{skipped}{failed}";
+        _status.Text = $"Searching... {TotalHits:n0} hits in {FilesMatched:n0} {ResultItemNounPlural}; {progress.FilesProcessed:n0}/{progress.FilesEnumerated:n0} scanned{skipped}{failed}";
     }
 
     private async Task LoadPreviewAsync(FileResultViewModel? file)
@@ -1466,6 +1582,7 @@ public sealed partial class SearchViewModel : ObservableObject, IDisposable
         if (file is null || file.Hits.Count == 0)
         {
             PreviewContent = string.Empty;
+            ImageOcrPreview = null;
             return;
         }
 
@@ -1473,6 +1590,9 @@ public sealed partial class SearchViewModel : ObservableObject, IDisposable
         var token = _previewCts.Token;
         try
         {
+            ImageOcrPreview = await ImageOcrPreviewViewModel
+                .TryCreateAsync(file.FullPath, file.Hits, token)
+                .ConfigureAwait(true);
             var hitLines = file.Hits
                 .Where(h => h.Kind == HitKind.Content && h.LineNumber > 0)
                 .Select(h => h.LineNumber)
@@ -1481,7 +1601,9 @@ public sealed partial class SearchViewModel : ObservableObject, IDisposable
                 .LoadHitsPreviewAsync(file.FullPath, hitLines, contextLines: 3, token)
                 .ConfigureAwait(true);
             if (!token.IsCancellationRequested)
-                PreviewContent = content;
+                PreviewContent = string.IsNullOrWhiteSpace(content)
+                    ? file.BuildStoredHitPreview()
+                    : content;
         }
         catch (OperationCanceledException) { }
         catch (Exception ex)
@@ -1518,6 +1640,7 @@ public sealed partial class SearchViewModel : ObservableObject, IDisposable
         _settingsService.Update(settings =>
         {
             settings.SkipUnknownFileTypes = SkipUnknownFileTypes;
+            settings.EnableImageOcr = EnableImageOcr;
             settings.UseIndex = UseIndex;
         });
     }
@@ -1536,6 +1659,13 @@ public sealed partial class SearchViewModel : ObservableObject, IDisposable
 
     partial void OnEnableDocumentExtractionChanged(bool value) =>
         OnPropertyChanged(nameof(DocumentExtractionSummary));
+
+    partial void OnEnableImageOcrChanged(bool value)
+    {
+        OnPropertyChanged(nameof(ImageOcrSummary));
+        if (_isInitialized)
+            SaveOptions();
+    }
 
     partial void OnSkipUnknownFileTypesChanged(bool value)
     {

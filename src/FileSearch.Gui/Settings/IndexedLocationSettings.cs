@@ -27,6 +27,8 @@ public sealed class IndexedLocationSettings : INotifyPropertyChanged
 
     public bool EnableDocumentExtraction { get; set; } = true;
 
+    public bool EnableImageOcr { get; set; }
+
     public bool SkipUnknownFileTypes { get; set; }
 
     public string IncludedExtensions { get; set; } = string.Empty;
@@ -181,6 +183,7 @@ public sealed class IndexedLocationSettings : INotifyPropertyChanged
             var parts = new List<string>
             {
                 EnableDocumentExtraction ? "Documents on" : "Documents off",
+                EnableImageOcr ? "Image OCR on" : "Image OCR off",
                 SkipUnknownFileTypes ? "Known types only" : "Unknown text allowed",
             };
 

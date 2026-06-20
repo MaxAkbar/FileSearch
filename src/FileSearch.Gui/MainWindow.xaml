@@ -863,7 +863,7 @@
                                      Grid.Column="3"
                                      Text="{Binding Search.QueryText, UpdateSourceTrigger=PropertyChanged}"
                                      Style="{StaticResource OmniQueryBoxStyle}"
-                                     ui:ControlHelper.PlaceholderText="Search text, regex, or Boolean query"/>
+                                     ui:ControlHelper.PlaceholderText="{Binding Search.QueryPlaceholderText}"/>
                         </Grid>
                     </Border>
 
@@ -890,6 +890,14 @@
 
                 <!-- Filter chips -->
                 <WrapPanel Grid.Row="1" Margin="0,12,0,0">
+                    <Border Style="{StaticResource FilterChipStyle}">
+                        <StackPanel Orientation="Horizontal">
+                            <TextBlock Text="Search" Style="{StaticResource ChipLabelStyle}"/>
+                            <ComboBox SelectedItem="{Binding Search.SelectedSearchTargetOption}"
+                                      ItemsSource="{Binding Search.SearchTargetOptions}"
+                                      MinWidth="154" BorderThickness="0" Background="Transparent"/>
+                        </StackPanel>
+                    </Border>
                     <Border Style="{StaticResource FilterChipStyle}">
                         <StackPanel Orientation="Horizontal">
                             <TextBlock Text="Pattern" Style="{StaticResource ChipLabelStyle}"/>
@@ -926,6 +934,12 @@
                     </Border>
                     <Border Style="{StaticResource FilterChipStyle}">
                         <CheckBox Content="{Binding Search.DocumentExtractionSummary}" IsChecked="{Binding Search.EnableDocumentExtraction}" VerticalAlignment="Center"/>
+                    </Border>
+                    <Border Style="{StaticResource FilterChipStyle}">
+                        <CheckBox Content="{Binding Search.ImageOcrSummary}"
+                                  IsChecked="{Binding Search.EnableImageOcr}"
+                                  ToolTip="Extract text from PNG, JPEG, BMP, and TIFF images."
+                                  VerticalAlignment="Center"/>
                     </Border>
                     <Border Style="{StaticResource FilterChipStyle}">
                         <CheckBox Content="{Binding Search.IndexSummaryText}" IsChecked="{Binding Search.UseIndex}" VerticalAlignment="Center"/>
@@ -1162,6 +1176,11 @@
                                                     <MenuItem Header="_Open" Command="{Binding OpenCommand}" InputGestureText="Enter">
                                                         <MenuItem.Icon><ui:FontIcon Glyph="&#xE8E5;" FontSize="14"/></MenuItem.Icon>
                                                     </MenuItem>
+                                                    <MenuItem Header="Open OCR _preview"
+                                                              Command="{Binding OpenImageOcrPreviewCommand}"
+                                                              Visibility="{Binding HasImageOcrPreview, Converter={StaticResource BoolToVisibility}}">
+                                                        <MenuItem.Icon><ui:FontIcon Glyph="&#xE8A5;" FontSize="14"/></MenuItem.Icon>
+                                                    </MenuItem>
                                                     <MenuItem Header="_Reveal in Explorer" Command="{Binding RevealInExplorerCommand}">
                                                         <MenuItem.Icon><ui:FontIcon Glyph="&#xE838;" FontSize="14"/></MenuItem.Icon>
                                                     </MenuItem>
@@ -1317,12 +1336,21 @@
                             <Grid.ColumnDefinitions>
                                 <ColumnDefinition Width="*"/>
                                 <ColumnDefinition Width="Auto"/>
+                                <ColumnDefinition Width="Auto"/>
                             </Grid.ColumnDefinitions>
                             <TextBlock Text="PREVIEW" Style="{StaticResource UpperPanelLabelStyle}"/>
                             <Button Grid.Column="1"
+                                    Command="{Binding Search.SelectedFile.OpenImageOcrPreviewCommand}"
+                                    Visibility="{Binding Search.SelectedFile.HasImageOcrPreview, Converter={StaticResource BoolToVisibility}}"
+                                    Style="{StaticResource IconButtonStyle}" Width="28" Height="28"
+                                    ToolTip="Open OCR preview">
+                                <ui:FontIcon Glyph="&#xE8A5;" FontSize="13"/>
+                            </Button>
+                            <Button Grid.Column="2"
                                     Command="{Binding Search.SelectedFile.RevealInExplorerCommand}"
                                     IsEnabled="{Binding Search.HasSelectedFile}"
                                     Style="{StaticResource IconButtonStyle}" Width="28" Height="28"
+                                    Margin="6,0,0,0"
                                     ToolTip="Reveal in Explorer">
                                 <ui:FontIcon Glyph="&#xE838;" FontSize="13"/>
                             </Button>
@@ -1440,8 +1468,50 @@
                                 </Border>
                             </StackPanel>
 
-                            <TextBox Grid.Row="2" Text="{Binding Search.PreviewContent, Mode=OneWay}"
-                                     Style="{StaticResource PreviewCodeBoxStyle}"/>
+                            <Grid Grid.Row="2">
+                                <Grid.RowDefinitions>
+                                    <RowDefinition Height="Auto"/>
+                                    <RowDefinition Height="*"/>
+                                </Grid.RowDefinitions>
+
+                                <Border Grid.Row="0"
+                                        Visibility="{Binding Search.HasImageOcrPreview, Converter={StaticResource BoolToVisibility}}"
+                                        BorderBrush="{DynamicResource Atlas.LineBrush}"
+                                        BorderThickness="1"
+                                        CornerRadius="6"
+                                        Background="{DynamicResource Atlas.Surface2Brush}"
+                                        Padding="8"
+                                        Margin="0,0,0,10"
+                                        MaxHeight="260"
+                                        ClipToBounds="True">
+                                    <DockPanel LastChildFill="True">
+                                        <TextBlock DockPanel.Dock="Bottom"
+                                                   Text="{Binding Search.ImageOcrPreview.Label}"
+                                                   Style="{StaticResource HintLabelStyle}"
+                                                   TextTrimming="CharacterEllipsis"
+                                                   Margin="0,8,0,0"/>
+                                        <Viewbox Stretch="Uniform">
+                                            <Canvas Width="{Binding Search.ImageOcrPreview.SourceWidth}"
+                                                    Height="{Binding Search.ImageOcrPreview.SourceHeight}">
+                                                <Image Source="{Binding Search.ImageOcrPreview.ImagePath}"
+                                                       Width="{Binding Search.ImageOcrPreview.SourceWidth}"
+                                                       Height="{Binding Search.ImageOcrPreview.SourceHeight}"
+                                                       Stretch="Fill"/>
+                                                <Rectangle Canvas.Left="{Binding Search.ImageOcrPreview.X}"
+                                                           Canvas.Top="{Binding Search.ImageOcrPreview.Y}"
+                                                           Width="{Binding Search.ImageOcrPreview.Width}"
+                                                           Height="{Binding Search.ImageOcrPreview.Height}"
+                                                           Stroke="#FFFFCE54"
+                                                           StrokeThickness="6"
+                                                           Fill="#33FFCE54"/>
+                                            </Canvas>
+                                        </Viewbox>
+                                    </DockPanel>
+                                </Border>
+
+                                <TextBox Grid.Row="1" Text="{Binding Search.PreviewContent, Mode=OneWay}"
+                                         Style="{StaticResource PreviewCodeBoxStyle}"/>
+                            </Grid>
                         </Grid>
 
                         <!-- empty -->

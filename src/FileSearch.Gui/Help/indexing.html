@@ -48,6 +48,8 @@
             <div class="callout">
                 Indexed search is opt-in. Turn on the <strong>Use index</strong> checkbox next to the search controls, or <strong>Use index for covered searches</strong> in the Manage indexed locations window. Live scan always remains the fallback, so enabling it never makes results worse.
             </div>
+            <p>When an indexed location is built with <strong>Image OCR</strong> enabled, the index can include recognized text from standalone image files, scanned PDF pages, and embedded images in Office, OpenDocument, EPUB, email, and ZIP/archive files. OCR hits keep source labels such as page, member path, and OCR region when that information is available.</p>
+            <p>If a location was indexed before <strong>Image OCR</strong> was enabled, scanned PDF text will not appear in indexed results until you use <strong>Rebuild selected</strong> for that location.</p>
 
             <h2>Managing Indexed Locations</h2>
             <p>Open <strong>Index &gt; Manage indexed locations...</strong>, or choose <strong>Manage locations</strong> in the sidebar's Indexed locations section.</p>
@@ -117,7 +119,7 @@
                 <li><strong>Refresh</strong> shows when the location was last indexed.</li>
                 <li><strong>Coverage</strong> shows whether subfolders are included or only the top folder.</li>
                 <li><strong>Watcher</strong> shows whether file changes are applied automatically.</li>
-                <li><strong>Indexed with</strong> records the extraction options used, such as whether Office/PDF documents were included and whether unknown file types were skipped.</li>
+                <li><strong>Indexed with</strong> records the extraction options used, such as whether Office/PDF documents and image OCR were included and whether unknown file types were skipped.</li>
             </ul>
 
             <h2>Status Badges</h2>

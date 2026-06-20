@@ -105,6 +105,27 @@ public sealed class ApplicationSettingsViewModelTests
     }
 
     [Fact]
+    public void OcrSettingsLoadNormalizeAndPersist()
+    {
+        var settings = new FakeSettingsService();
+        settings.Current.OcrLanguageTag = " en-US ";
+        settings.Current.OcrMaxPdfPages = 10_000;
+        var appSettings = new ApplicationSettingsViewModel(
+            settings,
+            new StatusBarViewModel());
+
+        Assert.Equal("en-US", appSettings.OcrLanguageTag);
+        Assert.Equal(ApplicationSettingsViewModel.MaximumOcrMaxPdfPages, appSettings.OcrMaxPdfPages);
+
+        appSettings.OcrLanguageTag = " fr-FR ";
+        appSettings.OcrMaxPdfPages = 0;
+
+        Assert.Equal("fr-FR", settings.Current.OcrLanguageTag);
+        Assert.Equal(0, settings.Current.OcrMaxPdfPages);
+        Assert.Contains("no page limit", appSettings.OcrMaxPdfPagesSummary);
+    }
+
+    [Fact]
     public void ShortcutSettingsLoadAndPersist()
     {
         var settings = new FakeSettingsService();

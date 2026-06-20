@@ -50,6 +50,25 @@ public sealed class AdditionalDocumentExtractorTests : IDisposable
     }
 
     [Fact]
+    public async Task OpenDocumentExtractor_ExtractsImageOcrWhenEnabled()
+    {
+        var path = Path.Combine(_directory, "image-document.odt");
+        CreateZipBytes(
+            path,
+            ("content.xml", System.Text.Encoding.UTF8.GetBytes("<office:document><text:p>body</text:p></office:document>")),
+            ("Pictures/scan.png", new byte[] { 1, 2, 3, 4 }));
+
+        var ocr = new FakeEmbeddedImageOcrService("open document image ocr needle");
+        var lines = await ReadAllAsync(new OpenDocumentExtractor(ocr), path, new TextExtractionContext(EnableOcr: true));
+
+        var hit = Assert.Single(lines, line => line.Content == "open document image ocr needle");
+        Assert.NotNull(hit.Anchor);
+        Assert.Equal(SourceAnchorKind.OpenDocument, hit.Anchor.Kind);
+        Assert.Equal("Pictures/scan.png", hit.Anchor.MemberPath);
+        Assert.True(ocr.SawImageBytes);
+    }
+
+    [Fact]
     public async Task EpubExtractor_ExtractsVisibleChapterText()
     {
         var path = Path.Combine(_directory, "book.epub");
@@ -63,6 +82,25 @@ public sealed class AdditionalDocumentExtractorTests : IDisposable
         Assert.Contains(".epub", new EpubExtractor().SupportedExtensions);
         Assert.Contains("EPUB needle text", lines.Single().Content);
         Assert.DoesNotContain(lines, line => line.Content.Contains("container"));
+    }
+
+    [Fact]
+    public async Task EpubExtractor_ExtractsImageOcrWhenEnabled()
+    {
+        var path = Path.Combine(_directory, "image-book.epub");
+        CreateZipBytes(
+            path,
+            ("OEBPS/chapter1.xhtml", System.Text.Encoding.UTF8.GetBytes("<html><body><p>body</p></body></html>")),
+            ("OEBPS/images/figure.png", new byte[] { 5, 6, 7, 8 }));
+
+        var ocr = new FakeEmbeddedImageOcrService("epub image ocr needle");
+        var lines = await ReadAllAsync(new EpubExtractor(ocr), path, new TextExtractionContext(EnableOcr: true));
+
+        var hit = Assert.Single(lines, line => line.Content == "epub image ocr needle");
+        Assert.NotNull(hit.Anchor);
+        Assert.Equal(SourceAnchorKind.Epub, hit.Anchor.Kind);
+        Assert.Equal("OEBPS/images/figure.png", hit.Anchor.MemberPath);
+        Assert.True(ocr.SawImageBytes);
     }
 
     [Fact]
@@ -136,6 +174,51 @@ public sealed class AdditionalDocumentExtractorTests : IDisposable
     }
 
     [Fact]
+    public async Task EmlExtractor_ExtractsImageAttachmentOcrWhenEnabled()
+    {
+        var path = Path.Combine(_directory, "image-message.eml");
+        var imageBytes = Convert.ToBase64String([1, 2, 3, 4]);
+        var content = string.Join(
+            "\r\n",
+            "Subject: Image",
+            "Content-Type: multipart/mixed; boundary=\"abc\"",
+            "",
+            "--abc",
+            "Content-Type: text/plain",
+            "",
+            "body",
+            "--abc",
+            "Content-Type: image/png; name=\"scan.png\"",
+            "Content-Disposition: attachment; filename=\"scan.png\"",
+            "Content-Transfer-Encoding: base64",
+            "",
+            imageBytes,
+            "--abc--",
+            "");
+        await File.WriteAllTextAsync(
+            path,
+            content,
+            TestContext.Current.CancellationToken);
+
+        var ocr = new FakeEmbeddedImageOcrService("email image ocr needle");
+        var extractor = new EmlExtractor(ocr);
+        var lines = new List<TextLine>();
+        await foreach (var line in extractor.ExtractAsync(
+            path,
+            new TextExtractionContext(EnableOcr: true),
+            TestContext.Current.CancellationToken))
+        {
+            lines.Add(line);
+        }
+
+        var hit = Assert.Single(lines, line => line.Content == "email image ocr needle");
+        Assert.NotNull(hit.Anchor);
+        Assert.Equal(SourceAnchorKind.Email, hit.Anchor.Kind);
+        Assert.Equal("scan.png", hit.Anchor.MemberPath);
+        Assert.True(ocr.SawImageBytes);
+    }
+
+    [Fact]
     public async Task RtfExtractor_SplitsParagraphsIntoLines()
     {
         var path = Path.Combine(_directory, "paragraphs.rtf");
@@ -161,6 +244,14 @@ public sealed class AdditionalDocumentExtractorTests : IDisposable
         return lines;
     }
 
+    private static async Task<List<TextLine>> ReadAllAsync(IContextualTextExtractor extractor, string path, TextExtractionContext context)
+    {
+        var lines = new List<TextLine>();
+        await foreach (var line in extractor.ExtractAsync(path, context, TestContext.Current.CancellationToken))
+            lines.Add(line);
+        return lines;
+    }
+
     private static void CreateZip(string path, params (string Name, string Content)[] entries)
     {
         using var archive = ZipFile.Open(path, ZipArchiveMode.Create);
@@ -169,6 +260,17 @@ public sealed class AdditionalDocumentExtractorTests : IDisposable
             var entry = archive.CreateEntry(name);
             using var writer = new StreamWriter(entry.Open());
             writer.Write(content);
+        }
+    }
+
+    private static void CreateZipBytes(string path, params (string Name, byte[] Bytes)[] entries)
+    {
+        using var archive = ZipFile.Open(path, ZipArchiveMode.Create);
+        foreach (var (name, bytes) in entries)
+        {
+            var entry = archive.CreateEntry(name);
+            using var stream = entry.Open();
+            stream.Write(bytes);
         }
     }
 
@@ -209,5 +311,36 @@ public sealed class AdditionalDocumentExtractorTests : IDisposable
                 new A.BodyProperties(),
                 new A.ListStyle(),
                 new A.Paragraph(new A.Run(new A.Text(text)))));
+    }
+
+    private sealed class FakeEmbeddedImageOcrService(string text) : IEmbeddedImageOcrService
+    {
+        public bool SawImageBytes { get; private set; }
+
+        public async IAsyncEnumerable<TextLine> ExtractAsync(
+            byte[] imageBytes,
+            EmbeddedImageOcrRequest request,
+            [System.Runtime.CompilerServices.EnumeratorCancellation] CancellationToken cancellationToken)
+        {
+            await Task.Yield();
+            cancellationToken.ThrowIfCancellationRequested();
+            SawImageBytes = imageBytes.Length > 0;
+            yield return new TextLine(
+                1,
+                text,
+                SourceAnchor.EmbeddedOcrRegion(
+                    request.AnchorKind,
+                    request.Label,
+                    request.MemberPath,
+                    1,
+                    2,
+                    3,
+                    4,
+                    10,
+                    20,
+                    request.Page,
+                    request.Section,
+                    request.Sheet));
+        }
     }
 }

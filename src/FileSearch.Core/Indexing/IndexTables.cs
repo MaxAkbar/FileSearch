@@ -2,6 +2,8 @@ using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Runtime.CompilerServices;
+using System.Text.Json;
+using System.Text.Json.Serialization;
 using System.Text.RegularExpressions;
 using System.Threading;
 using System.Threading.Tasks;
@@ -65,7 +67,8 @@ internal sealed record IndexedLine(
     long SizeBytes,
     long ModifiedUtcTicks,
     int LineNumber,
-    string Content);
+    string Content,
+    SourceAnchor? Anchor);
 
 internal sealed record IndexedFileMetadata(
     string Path,
@@ -89,11 +92,16 @@ internal sealed record IndexedFileMetadata(
 /// </summary>
 internal static partial class IndexTables
 {
+    private static readonly JsonSerializerOptions s_anchorJsonOptions = new()
+    {
+        Converters = { new JsonStringEnumConverter() },
+    };
+
     private const int MetadataTokenPrefixMinLength = 2;
     private const int MetadataTokenPrefixMaxLength = 32;
 
     private const string SelectLinesColumns =
-        "SELECT f.path, f.file_name, f.extension, f.size_bytes, f.modified_utc_ticks, l.line_number, l.content " +
+        "SELECT f.path, f.file_name, f.extension, f.size_bytes, f.modified_utc_ticks, l.line_number, l.content, l.anchor_json " +
         "FROM lines l INNER JOIN files f ON f.id = l.file_id WHERE ";
 
     private const string SelectLinesOrder = " ORDER BY f.path, l.line_number";
@@ -1172,7 +1180,28 @@ internal static partial class IndexTables
                 row[3].AsInteger,
                 row[4].AsInteger,
                 checked((int)row[5].AsInteger),
-                row[6].AsText);
+                row[6].AsText,
+                row[7].IsNull ? null : DeserializeAnchor(row[7].AsText));
+        }
+    }
+
+    public static DbValue SerializeAnchor(SourceAnchor? anchor) =>
+        anchor is null
+            ? DbValue.Null
+            : DbValue.FromText(JsonSerializer.Serialize(anchor, s_anchorJsonOptions));
+
+    private static SourceAnchor? DeserializeAnchor(string json)
+    {
+        if (string.IsNullOrWhiteSpace(json))
+            return null;
+
+        try
+        {
+            return JsonSerializer.Deserialize<SourceAnchor>(json, s_anchorJsonOptions);
+        }
+        catch
+        {
+            return null;
         }
     }
 

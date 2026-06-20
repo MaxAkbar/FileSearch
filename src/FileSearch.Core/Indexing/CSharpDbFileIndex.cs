@@ -175,6 +175,7 @@ public sealed class CSharpDbFileIndex : IFileIndex, IIndexReplayWriter, IIndexUs
             var fileFilterVerdicts = new Dictionary<string, bool>(StringComparer.OrdinalIgnoreCase);
             var ftsQueries = QueryFtsTerms.BuildCandidateQueries(request.Expression);
             HashSet<string>? metadataHitPaths = null;
+            var metadataOnly = request.SearchTarget != SearchTarget.Content;
 
             if (MetadataSearchSpec.TryCreate(request, out var metadataSpec))
             {
@@ -198,6 +199,9 @@ public sealed class CSharpDbFileIndex : IFileIndex, IIndexReplayWriter, IIndexUs
                         yield return hit;
                 }
             }
+
+            if (metadataOnly)
+                yield break;
 
             if (ftsQueries.Count > 0)
             {
@@ -964,7 +968,16 @@ public sealed class CSharpDbFileIndex : IFileIndex, IIndexReplayWriter, IIndexUs
                 }
 
                 var identity = TryGetIndexedFileIdentity(volumeContext?.VolumeId, normalizedPath, lastObservedUsn: null);
-                var indexedLines = await IndexSingleFileAsync(db, rootId, normalizedPath, info, identity, extractor, cancellationToken).ConfigureAwait(false);
+                var indexedLines = await IndexSingleFileAsync(
+                        db,
+                        rootId,
+                        normalizedPath,
+                        info,
+                        identity,
+                        extractor,
+                        walkerOptions,
+                        cancellationToken)
+                    .ConfigureAwait(false);
                 linesIndexed += indexedLines;
                 filesIndexed++;
             }
@@ -1354,7 +1367,16 @@ public sealed class CSharpDbFileIndex : IFileIndex, IIndexReplayWriter, IIndexUs
         if (existingRow is not null && IsUnchanged(existingRow, info, extractor))
             return;
 
-        await IndexSingleFileAsync(db, rootId, path, info, identity, extractor, cancellationToken).ConfigureAwait(false);
+        await IndexSingleFileAsync(
+                db,
+                rootId,
+                path,
+                info,
+                identity,
+                extractor,
+                indexingOptions,
+                cancellationToken)
+            .ConfigureAwait(false);
     }
 
     private static IEnumerable<string> EnumerateIndexDirectories(
@@ -1455,6 +1477,7 @@ public sealed class CSharpDbFileIndex : IFileIndex, IIndexReplayWriter, IIndexUs
         FileInfo info,
         IndexedFileIdentity? identity,
         ITextExtractor? extractor,
+        WalkerOptions options,
         CancellationToken cancellationToken)
     {
         var extractorId = GetExtractorId(extractor);
@@ -1499,7 +1522,8 @@ public sealed class CSharpDbFileIndex : IFileIndex, IIndexReplayWriter, IIndexUs
             var lineIds = new DbIdBlockAllocator(db, "lines", LineInsertBatchSize);
             var batch = db.PrepareInsertBatch("lines", LineInsertBatchSize);
 
-            if (_outOfProcessExtraction?.ShouldUse(extractor) == true)
+            var requiresContextualExtraction = extractor is IContextualTextExtractor && options.EnableOcr;
+            if (!requiresContextualExtraction && _outOfProcessExtraction?.ShouldUse(extractor) == true)
             {
                 var result = await _outOfProcessExtraction.ExtractAsync(path, extractor, cancellationToken).ConfigureAwait(false);
                 foreach (var issue in result.Issues)
@@ -1515,9 +1539,12 @@ public sealed class CSharpDbFileIndex : IFileIndex, IIndexReplayWriter, IIndexUs
             }
             else
             {
-                var lines = extractor is IDiagnosticTextExtractor diagnosticExtractor
+                var context = new TextExtractionContext(options.EnableOcr);
+                var lines = options.EnableOcr && extractor is IContextualDiagnosticTextExtractor contextualDiagnosticExtractor
+                    ? contextualDiagnosticExtractor.ExtractAsync(path, context, issueSink, cancellationToken)
+                    : extractor is IDiagnosticTextExtractor diagnosticExtractor
                     ? diagnosticExtractor.ExtractAsync(path, issueSink, cancellationToken)
-                    : extractor.ExtractAsync(path, cancellationToken);
+                    : extractor.ExtractWithContextAsync(path, context, cancellationToken);
 
                 await foreach (var line in lines.ConfigureAwait(false))
                 {
@@ -1685,7 +1712,8 @@ public sealed class CSharpDbFileIndex : IFileIndex, IIndexReplayWriter, IIndexUs
             DbValue.FromInteger(lineId),
             DbValue.FromInteger(fileId),
             DbValue.FromInteger(line.Number),
-            DbValue.FromText(line.Content));
+            DbValue.FromText(line.Content),
+            IndexTables.SerializeAnchor(line.Anchor));
     }
 
     private sealed class DbIdBlockAllocator
@@ -2008,7 +2036,8 @@ public sealed class CSharpDbFileIndex : IFileIndex, IIndexReplayWriter, IIndexUs
             line.LineNumber,
             line.Content,
             highlightBuffer.ToArray(),
-            Route: HitRoute.Indexed);
+            Route: HitRoute.Indexed,
+            Anchor: line.Anchor);
         return true;
     }
 

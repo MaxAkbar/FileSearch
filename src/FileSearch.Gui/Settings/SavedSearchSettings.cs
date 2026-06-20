@@ -1,5 +1,6 @@
 using System;
 using System.Text.Json.Serialization;
+using FileSearch.Core.Engine;
 using FileSearch.Core.Queries;
 
 namespace FileSearch.Gui.Settings;
@@ -22,9 +23,13 @@ public sealed class SavedSearchSettings
 
     public bool EnableDocumentExtraction { get; set; } = true;
 
+    public bool EnableImageOcr { get; set; }
+
     public bool SkipUnknownFileTypes { get; set; }
 
     public bool UseIndex { get; set; }
+
+    public SearchTarget SearchTarget { get; set; } = SearchTarget.Content;
 
     public int MinSizeKB { get; set; }
 
@@ -51,8 +56,8 @@ public sealed class SavedSearchSettings
         {
             var path = string.IsNullOrWhiteSpace(SearchPath) ? "No folder" : SearchPath.Trim();
             var scope = string.IsNullOrWhiteSpace(FileNamePattern) ? "all files" : FileNamePattern.Trim();
-            var mode = SearchMode.ToString();
-            return $"{path} | {mode} | {scope}";
+            var target = SearchTarget == SearchTarget.Content ? SearchMode.ToString() : SearchTarget.ToString();
+            return $"{path} | {target} | {scope}";
         }
     }
 }

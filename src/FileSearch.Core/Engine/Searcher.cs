@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.IO;
 using System.Runtime.CompilerServices;
 using System.Threading;
 using System.Threading.Channels;
@@ -42,6 +43,13 @@ public sealed class Searcher : ISearcher
         [EnumeratorCancellation] CancellationToken cancellationToken)
     {
         ArgumentNullException.ThrowIfNull(request);
+
+        if (request.SearchTarget != SearchTarget.Content)
+        {
+            await foreach (var hit in SearchNamesAsync(request, cancellationToken).ConfigureAwait(false))
+                yield return hit;
+            yield break;
+        }
 
         // The producer runs on its own linked token so that a consumer that
         // stops enumerating early (break/dispose) can shut it down instead of
@@ -124,7 +132,13 @@ public sealed class Searcher : ISearcher
 
                         try
                         {
-                            var hits = await ProcessFileAsync(path, extractor, request.Expression, channel.Writer, token)
+                            var hits = await ProcessFileAsync(
+                                    path,
+                                    extractor,
+                                    request.Expression,
+                                    request.WalkerOptions,
+                                    channel.Writer,
+                                    token)
                                 .ConfigureAwait(false);
                             Interlocked.Increment(ref filesProcessed);
                             if (hits > 0)
@@ -179,13 +193,15 @@ public sealed class Searcher : ISearcher
         string path,
         ITextExtractor extractor,
         Query query,
+        WalkerOptions options,
         ChannelWriter<Hit> writer,
         CancellationToken token)
     {
         int hitsForFile = 0;
         var highlightBuffer = new List<MatchSpan>(4);
+        var context = new TextExtractionContext(options.EnableOcr);
 
-        await foreach (var line in extractor.ExtractAsync(path, token).ConfigureAwait(false))
+        await foreach (var line in extractor.ExtractWithContextAsync(path, context, token).ConfigureAwait(false))
         {
             if (!query.IsMatch(line.Content)) continue;
 
@@ -196,7 +212,8 @@ public sealed class Searcher : ISearcher
                 path,
                 line.Number,
                 line.Content,
-                highlightBuffer.ToArray());
+                highlightBuffer.ToArray(),
+                Anchor: line.Anchor);
 
             await writer.WriteAsync(hit, token).ConfigureAwait(false);
 
@@ -204,5 +221,312 @@ public sealed class Searcher : ISearcher
         }
 
         return hitsForFile;
+    }
+
+    private async IAsyncEnumerable<Hit> SearchNamesAsync(
+        SearchRequest request,
+        [EnumeratorCancellation] CancellationToken cancellationToken)
+    {
+        await Task.Yield();
+
+        var includeFiles = request.SearchTarget is SearchTarget.FileNames or SearchTarget.FileAndFolderNames;
+        var includeFolders = request.SearchTarget is SearchTarget.FolderNames or SearchTarget.FileAndFolderNames;
+        var highlightBuffer = new List<MatchSpan>(4);
+        long itemsEnumerated = 0;
+        long itemsProcessed = 0;
+        long itemsMatched = 0;
+        long itemsSkipped = 0;
+        long itemsFailed = 0;
+        long lastProgressTimestamp = 0;
+        const long ProgressIntervalMs = 100;
+
+        void PublishProgress(bool force = false)
+        {
+            if (request.Progress is null)
+                return;
+
+            if (!force)
+            {
+                var now = Environment.TickCount64;
+                var last = Interlocked.Read(ref lastProgressTimestamp);
+                if (now - last < ProgressIntervalMs ||
+                    Interlocked.CompareExchange(ref lastProgressTimestamp, now, last) != last)
+                {
+                    return;
+                }
+            }
+
+            request.Progress(new SearchProgress(
+                Interlocked.Read(ref itemsEnumerated),
+                Interlocked.Read(ref itemsProcessed),
+                Interlocked.Read(ref itemsMatched),
+                Interlocked.Read(ref itemsSkipped),
+                Interlocked.Read(ref itemsFailed)));
+        }
+
+        foreach (var root in request.Roots)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            if (string.IsNullOrWhiteSpace(root) || !Directory.Exists(root))
+            {
+                Interlocked.Increment(ref itemsSkipped);
+                PublishProgress();
+                continue;
+            }
+
+            var normalizedRoot = Path.GetFullPath(root);
+
+            if (includeFolders)
+            {
+                foreach (var directory in EnumerateDirectoriesForNameSearch(normalizedRoot, request.WalkerOptions, cancellationToken))
+                {
+                    cancellationToken.ThrowIfCancellationRequested();
+                    Interlocked.Increment(ref itemsEnumerated);
+                    Hit? matchedHit = null;
+                    try
+                    {
+                        Interlocked.Increment(ref itemsProcessed);
+                        if (!TryCreateNameHit(directory, normalizedRoot, isDirectory: true, request.Expression, highlightBuffer, out var hit))
+                        {
+                            PublishProgress();
+                            continue;
+                        }
+
+                        Interlocked.Increment(ref itemsMatched);
+                        matchedHit = hit;
+                    }
+                    catch (Exception ex) when (ex is not OperationCanceledException)
+                    {
+                        Interlocked.Increment(ref itemsFailed);
+                        _logger.LogDebug(ex, "Folder name search failed for {Path}.", directory);
+                    }
+
+                    PublishProgress();
+                    if (matchedHit is not null)
+                        yield return matchedHit;
+                }
+            }
+
+            if (!includeFiles)
+                continue;
+
+            foreach (var path in _walker.Enumerate(new[] { normalizedRoot }, request.WalkerOptions, cancellationToken))
+            {
+                cancellationToken.ThrowIfCancellationRequested();
+                Interlocked.Increment(ref itemsEnumerated);
+                Hit? matchedHit = null;
+                try
+                {
+                    Interlocked.Increment(ref itemsProcessed);
+                    if (!TryCreateNameHit(path, normalizedRoot, isDirectory: false, request.Expression, highlightBuffer, out var hit))
+                    {
+                        PublishProgress();
+                        continue;
+                    }
+
+                    Interlocked.Increment(ref itemsMatched);
+                    matchedHit = hit;
+                }
+                catch (Exception ex) when (ex is not OperationCanceledException)
+                {
+                    Interlocked.Increment(ref itemsFailed);
+                    _logger.LogDebug(ex, "File name search failed for {Path}.", path);
+                }
+
+                PublishProgress();
+                if (matchedHit is not null)
+                    yield return matchedHit;
+            }
+        }
+
+        PublishProgress(force: true);
+    }
+
+    private static IEnumerable<string> EnumerateDirectoriesForNameSearch(
+        string root,
+        WalkerOptions options,
+        CancellationToken cancellationToken)
+    {
+        if (ShouldIncludeDirectoryResult(root, isRoot: true, options))
+            yield return root;
+
+        var stack = new Stack<(string Path, int Depth)>();
+        stack.Push((root, 0));
+        while (stack.Count > 0)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            var (directory, depth) = stack.Pop();
+            if (!options.Recursive && depth > 0)
+                continue;
+
+            string[] children;
+            try
+            {
+                children = Directory.GetDirectories(directory);
+            }
+            catch
+            {
+                continue;
+            }
+
+            foreach (var child in children)
+            {
+                cancellationToken.ThrowIfCancellationRequested();
+                if (!ShouldEnterDirectory(child, options))
+                    continue;
+
+                if (ShouldIncludeDirectoryResult(child, isRoot: false, options))
+                    yield return child;
+
+                if (options.Recursive || depth == 0)
+                    stack.Push((child, depth + 1));
+            }
+        }
+    }
+
+    private static bool ShouldEnterDirectory(string path, WalkerOptions options)
+    {
+        try
+        {
+            var info = new DirectoryInfo(path);
+            if (options.ExcludeDirectories.Contains(info.Name))
+                return false;
+
+            var skipAttributes = FileAttributes.ReparsePoint;
+            if (!options.IncludeHidden)
+                skipAttributes |= FileAttributes.Hidden | FileAttributes.System;
+
+            return (info.Attributes & skipAttributes) == 0;
+        }
+        catch
+        {
+            return false;
+        }
+    }
+
+    private static bool ShouldIncludeDirectoryResult(string path, bool isRoot, WalkerOptions options)
+    {
+        try
+        {
+            var info = new DirectoryInfo(path);
+            if (!isRoot && options.ExcludeDirectories.Contains(info.Name))
+                return false;
+
+            if (!isRoot && !options.IncludeHidden &&
+                (info.Attributes & (FileAttributes.Hidden | FileAttributes.System)) != 0)
+            {
+                return false;
+            }
+
+            if (options.ModifiedAfterUtc is { } after && info.LastWriteTimeUtc < after)
+                return false;
+            if (options.ModifiedBeforeUtc is { } before && info.LastWriteTimeUtc > before)
+                return false;
+
+            return true;
+        }
+        catch
+        {
+            return false;
+        }
+    }
+
+    private static bool TryCreateNameHit(
+        string path,
+        string root,
+        bool isDirectory,
+        Query query,
+        List<MatchSpan> highlightBuffer,
+        out Hit hit)
+    {
+        var name = GetItemName(path, isDirectory);
+        var relativePath = GetRelativePath(root, path);
+        var score = 0d;
+        string? displayText = null;
+
+        if (query.IsMatch(name))
+        {
+            displayText = name;
+            score = 900;
+        }
+        else if (!string.Equals(relativePath, name, StringComparison.OrdinalIgnoreCase) &&
+                 query.IsMatch(relativePath))
+        {
+            displayText = relativePath;
+            score = 600;
+        }
+        else if (query.IsMatch(path))
+        {
+            displayText = path;
+            score = 300;
+        }
+
+        if (displayText is null)
+        {
+            hit = null!;
+            return false;
+        }
+
+        var line = isDirectory
+            ? $"Folder name match: {displayText}"
+            : $"File name match: {displayText}";
+        highlightBuffer.Clear();
+        query.CollectHighlights(line, highlightBuffer);
+
+        var (sizeBytes, modifiedUtc) = TryReadMetadata(path, isDirectory);
+        hit = new Hit(
+            path,
+            0,
+            line,
+            highlightBuffer.ToArray(),
+            HitKind.Metadata,
+            score,
+            sizeBytes,
+            modifiedUtc);
+        return true;
+    }
+
+    private static string GetItemName(string path, bool isDirectory)
+    {
+        var trimmed = isDirectory
+            ? path.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar)
+            : path;
+        var name = Path.GetFileName(trimmed);
+        return string.IsNullOrWhiteSpace(name) ? path : name;
+    }
+
+    private static string GetRelativePath(string root, string path)
+    {
+        try
+        {
+            return Path.GetRelativePath(root, path);
+        }
+        catch
+        {
+            return path;
+        }
+    }
+
+    private static (long? SizeBytes, DateTime? ModifiedUtc) TryReadMetadata(string path, bool isDirectory)
+    {
+        try
+        {
+            if (isDirectory)
+            {
+                var directory = new DirectoryInfo(path);
+                return directory.Exists
+                    ? (null, directory.LastWriteTimeUtc)
+                    : (null, null);
+            }
+
+            var file = new FileInfo(path);
+            return file.Exists
+                ? (file.Length, file.LastWriteTimeUtc)
+                : (null, null);
+        }
+        catch
+        {
+            return (null, null);
+        }
     }
 }

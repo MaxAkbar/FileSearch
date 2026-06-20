@@ -1,3 +1,5 @@
+using FileSearch.Core.Extractors;
+
 namespace FileSearch.Gui.ViewModels;
 
 public enum ResultSortMode
@@ -100,4 +102,5 @@ public sealed record ExportHit(
     int FileHitCount,
     int LineNumber,
     string Kind,
-    string Line);
+    string Line,
+    SourceAnchor? Anchor);

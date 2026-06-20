@@ -66,9 +66,9 @@
             <p>Change the global hotkey and quick-window action shortcuts in <strong>File &gt; Settings &gt; Quick Search</strong>. Main-window shortcuts are configured separately in <strong>File &gt; Settings &gt; Main Window Shortcuts</strong>. If a global hotkey is already reserved by Windows or another app, FileSearch reports that it could not register the hotkey. You can also open Quick Search from the FileSearch tray menu.</p>
 
             <h2>Search Names or Content</h2>
-            <p>Quick Search always starts with fast filename and path matches. Turn on <strong>Content</strong> in the quick window to add indexed file-content matches after those instant results.</p>
+            <p>Quick Search always starts with fast filename and path matches. Turn on <strong>Content</strong> in the quick window to add indexed file-content matches after those instant results. If an indexed location was built with Image OCR enabled, recognized image, scanned-PDF-page, and embedded document image text can appear in content results too.</p>
             <ul class="plain-list">
-                <li><strong>Content on</strong> searches file names, paths, and indexed text for the selected scope.</li>
+                <li><strong>Content on</strong> searches file names, paths, indexed text, indexed image OCR text, indexed scanned-PDF OCR text, and indexed embedded-image OCR text for the selected scope.</li>
                 <li><strong>Content off</strong> searches only file names and paths, which is useful for launcher-style lookup.</li>
                 <li>The <strong>Entire machine metadata</strong> scope is metadata-only, so content search is available on indexed scopes.</li>
             </ul>
@@ -105,7 +105,7 @@
             </div>
 
             <h2>Use the Results</h2>
-            <p>Results appear in stages. Filename and path matches are shown first; indexed content matches are added as the index query returns. The quick window keeps the list bounded so broad searches stay responsive.</p>
+            <p>Results appear in stages. Filename and path matches are shown first; indexed content matches are added as the index query returns. The quick window keeps the list bounded so broad searches stay responsive. OCR content hits include an image, PDF page, or embedded-member region label when available.</p>
             <ul class="plain-list">
                 <li><kbd>Down</kbd> moves from the search box into the results list.</li>
                 <li><kbd>Enter</kbd> opens the selected result.</li>
@@ -121,6 +121,7 @@
             <p>Each result row has buttons for common actions:</p>
             <ul class="plain-list">
                 <li><strong>Open</strong> opens the file in its default app and closes Quick Search.</li>
+                <li><strong>OCR preview</strong> opens a dedicated highlighted preview for image, scanned-PDF-page, and embedded-image OCR hits, then closes Quick Search.</li>
                 <li><strong>Reveal</strong> opens Explorer with the file selected and closes Quick Search.</li>
                 <li><strong>Copy path</strong> copies the full path and closes Quick Search.</li>
                 <li><strong>Pin</strong> saves the result to the top of the quick window's pinned list and closes Quick Search.</li>
@@ -129,7 +130,7 @@
 
             <h2>Pinned Results and Preview</h2>
             <p>When the search box is empty, Quick Search shows pinned results. Pin frequently used files if you want them available before typing a query.</p>
-            <p>Preview is loaded on demand so opening the quick window stays fast. For content hits, preview shows matching lines with nearby context. For filename-only matches, preview may be empty if no content hit lines are available.</p>
+            <p>Preview is loaded on demand so opening the quick window stays fast. For content hits, preview shows matching lines with nearby context. For standalone OCR image hits, preview can show a compact image highlight; for OCR PDF hits, it can render the page with the region highlighted. For embedded OCR hits, preview includes the stored member path and OCR-region label, and can extract the embedded image from the parent document, email, EPUB, or archive so the region can be highlighted. Use the OCR preview action when you want the larger dedicated preview window instead of opening the parent file. For filename-only matches, preview may be empty if no content hit lines are available.</p>
 
             <div class="callout">
                 Use the full FileSearch window for deep search setup, index management, detailed previews, workflows, and reports. Quick Search is optimized for fast lookup and action.

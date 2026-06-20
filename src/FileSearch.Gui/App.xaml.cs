@@ -9,6 +9,7 @@ using FileSearch.Core.Logging;
 using FileSearch.Gui.Services;
 using FileSearch.Gui.Settings;
 using FileSearch.Gui.ViewModels;
+using FileSearch.WindowsOcr;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
@@ -56,8 +57,14 @@ public partial class App : System.Windows.Application
                 services.AddSingleton<ISettingsStore, JsonSettingsStore>();
                 services.AddSingleton<ISettingsService, SettingsService>();
                 services.AddSingleton<IFileTypeOptionsStore, JsonFileTypeOptionsStore>();
-                services.AddFileSearchCore();
                 services.AddSingleton<IFilePreviewService, FilePreviewService>();
+                services.AddFileSearchCore();
+                services.AddWindowsImageOcr(configure: (sp, options) =>
+                {
+                    var settingsService = sp.GetRequiredService<ISettingsService>();
+                    options.OcrLanguageTagProvider = () => settingsService.Current.OcrLanguageTag;
+                    options.MaxPdfPagesProvider = () => settingsService.Current.OcrMaxPdfPages;
+                });
                 services.AddSingleton<IThemeService, ThemeService>();
                 services.AddSingleton<IFileLauncher, FileLauncher>();
                 services.AddSingleton<IFileOperationService, FileOperationService>();
