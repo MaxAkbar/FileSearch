@@ -176,6 +176,19 @@ public sealed class QuickSearchViewModelTests
         }, folderPicker: picker);
     }
 
+    [Fact]
+    public void GetShortcutReadsConfiguredQuickSearchShortcut()
+    {
+        RunWithPump((pump, vm, settings) =>
+        {
+            settings.Current.QuickSearchShortcuts.PreviewSelectedResult = AppShortcutGesture.CtrlI;
+
+            Assert.Equal(
+                AppShortcutGesture.CtrlI,
+                vm.GetShortcut(QuickSearchShortcutAction.PreviewSelectedResult));
+        });
+    }
+
     private static void RunWithPump(
         Action<PumpingSynchronizationContext, QuickSearchViewModel, FakeSettingsService> body,
         ISearcher? quickSearcher = null,

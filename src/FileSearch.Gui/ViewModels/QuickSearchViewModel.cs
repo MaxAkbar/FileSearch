@@ -315,6 +315,22 @@ public sealed partial class QuickSearchViewModel : ObservableObject, IDisposable
             ? "Include indexed content matches"
             : "Content search requires an indexed scope";
 
+    public AppShortcutGesture GetShortcut(QuickSearchShortcutAction action)
+    {
+        var shortcuts = _settingsService.Current.QuickSearchShortcuts ?? QuickSearchShortcutSettings.CreateDefaults();
+        return action switch
+        {
+            QuickSearchShortcutAction.Close => NormalizeShortcutGesture(shortcuts.Close),
+            QuickSearchShortcutAction.FocusResults => NormalizeShortcutGesture(shortcuts.FocusResults),
+            QuickSearchShortcutAction.OpenSelectedResult => NormalizeShortcutGesture(shortcuts.OpenSelectedResult),
+            QuickSearchShortcutAction.RevealSelectedResult => NormalizeShortcutGesture(shortcuts.RevealSelectedResult),
+            QuickSearchShortcutAction.CopySelectedResultPath => NormalizeShortcutGesture(shortcuts.CopySelectedResultPath),
+            QuickSearchShortcutAction.PinSelectedResult => NormalizeShortcutGesture(shortcuts.PinSelectedResult),
+            QuickSearchShortcutAction.PreviewSelectedResult => NormalizeShortcutGesture(shortcuts.PreviewSelectedResult),
+            _ => AppShortcutGesture.Disabled,
+        };
+    }
+
     [RelayCommand]
     private void ChooseQuickFolder()
     {
@@ -816,4 +832,7 @@ public sealed partial class QuickSearchViewModel : ObservableObject, IDisposable
 
         return Environment.CurrentDirectory;
     }
+
+    private static AppShortcutGesture NormalizeShortcutGesture(AppShortcutGesture gesture) =>
+        Enum.IsDefined(gesture) ? gesture : AppShortcutGesture.Disabled;
 }

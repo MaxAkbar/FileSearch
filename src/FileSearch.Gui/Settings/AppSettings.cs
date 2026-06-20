@@ -48,6 +48,8 @@ public sealed class AppSettings
 
     public AppShortcutSettings Shortcuts { get; set; } = AppShortcutSettings.CreateDefaults();
 
+    public QuickSearchShortcutSettings QuickSearchShortcuts { get; set; } = QuickSearchShortcutSettings.CreateDefaults();
+
     public QuickSearchScopeKind QuickSearchDefaultScope { get; set; } = QuickSearchScopeKind.AllIndexedLocations;
 
     public QuickSearchScopeKind QuickSearchLastScope { get; set; } = QuickSearchScopeKind.AllIndexedLocations;

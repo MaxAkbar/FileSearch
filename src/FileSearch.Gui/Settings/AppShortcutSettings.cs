@@ -19,19 +19,34 @@ public enum AppShortcutAction
     ClearResultFacets,
 }
 
+public enum QuickSearchShortcutAction
+{
+    Close,
+    FocusResults,
+    OpenSelectedResult,
+    RevealSelectedResult,
+    CopySelectedResultPath,
+    PinSelectedResult,
+    PreviewSelectedResult,
+}
+
 public enum AppShortcutGesture
 {
     Disabled,
+    Down,
     CtrlF,
     CtrlL,
     CtrlEnter,
     Escape,
     CtrlR,
     F8,
+    F4,
     Enter,
     CtrlO,
     CtrlE,
+    CtrlC,
     CtrlShiftC,
+    CtrlI,
     CtrlP,
     CtrlShiftS,
     F2,
@@ -73,4 +88,23 @@ public sealed class AppShortcutSettings
     public AppShortcutGesture ClearResultFacets { get; set; } = AppShortcutGesture.CtrlShiftBackspace;
 
     public static AppShortcutSettings CreateDefaults() => new();
+}
+
+public sealed class QuickSearchShortcutSettings
+{
+    public AppShortcutGesture Close { get; set; } = AppShortcutGesture.Escape;
+
+    public AppShortcutGesture FocusResults { get; set; } = AppShortcutGesture.Down;
+
+    public AppShortcutGesture OpenSelectedResult { get; set; } = AppShortcutGesture.Enter;
+
+    public AppShortcutGesture RevealSelectedResult { get; set; } = AppShortcutGesture.CtrlR;
+
+    public AppShortcutGesture CopySelectedResultPath { get; set; } = AppShortcutGesture.CtrlC;
+
+    public AppShortcutGesture PinSelectedResult { get; set; } = AppShortcutGesture.CtrlP;
+
+    public AppShortcutGesture PreviewSelectedResult { get; set; } = AppShortcutGesture.F4;
+
+    public static QuickSearchShortcutSettings CreateDefaults() => new();
 }

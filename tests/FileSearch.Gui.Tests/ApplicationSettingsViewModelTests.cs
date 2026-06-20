@@ -139,6 +139,42 @@ public sealed class ApplicationSettingsViewModelTests
     }
 
     [Fact]
+    public void QuickSearchShortcutSettingsLoadAndPersist()
+    {
+        var settings = new FakeSettingsService();
+        settings.Current.QuickSearchShortcuts.PreviewSelectedResult = AppShortcutGesture.CtrlI;
+        var appSettings = new ApplicationSettingsViewModel(
+            settings,
+            new StatusBarViewModel());
+
+        var binding = appSettings.QuickSearchShortcutBindings.Single(item =>
+            item.Action == QuickSearchShortcutAction.PreviewSelectedResult);
+
+        Assert.Equal(AppShortcutGesture.CtrlI, binding.Gesture);
+
+        binding.SelectedShortcut = binding.ShortcutOptions.Single(option => option.Value == AppShortcutGesture.F4);
+
+        Assert.Equal(AppShortcutGesture.F4, settings.Current.QuickSearchShortcuts.PreviewSelectedResult);
+    }
+
+    [Fact]
+    public void ResetQuickSearchShortcutDefaultsRestoresDefaultGestures()
+    {
+        var settings = new FakeSettingsService();
+        settings.Current.QuickSearchShortcuts.Close = AppShortcutGesture.Disabled;
+        var appSettings = new ApplicationSettingsViewModel(
+            settings,
+            new StatusBarViewModel());
+
+        appSettings.ResetQuickSearchShortcutDefaultsCommand.Execute(null);
+
+        var binding = appSettings.QuickSearchShortcutBindings.Single(item =>
+            item.Action == QuickSearchShortcutAction.Close);
+        Assert.Equal(AppShortcutGesture.Escape, binding.Gesture);
+        Assert.Equal(AppShortcutGesture.Escape, settings.Current.QuickSearchShortcuts.Close);
+    }
+
+    [Fact]
     public void CustomThemeSelectionLoadsFromSettingsAndAppliesTheme()
     {
         var settings = new FakeSettingsService();

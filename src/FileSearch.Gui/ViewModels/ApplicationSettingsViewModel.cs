@@ -68,6 +68,7 @@ public sealed partial class ApplicationSettingsViewModel : ObservableObject
         _indexerCpuLimitPercent = NormalizeCpuLimit(_settingsService.Current.IndexerCpuLimitPercent);
         _indexerDiskPauseMilliseconds = NormalizeDiskPause(_settingsService.Current.IndexerDiskPauseMilliseconds);
         ApplyShortcutSettings(NormalizeShortcutSettings(_settingsService.Current.Shortcuts));
+        ApplyQuickSearchShortcutSettings(NormalizeQuickSearchShortcutSettings(_settingsService.Current.QuickSearchShortcuts));
         RefreshQuickIndexedLocationSelectionsCore();
         RefreshCustomThemesCore();
         _isInitialized = true;
@@ -100,6 +101,8 @@ public sealed partial class ApplicationSettingsViewModel : ObservableObject
 
     public ObservableCollection<AppShortcutBindingViewModel> ShortcutBindings { get; } = new();
 
+    public ObservableCollection<QuickSearchShortcutBindingViewModel> QuickSearchShortcutBindings { get; } = new();
+
     public IReadOnlyList<AppShortcutOption> ShortcutOptions { get; } =
     [
         new(AppShortcutGesture.Disabled, "Disabled"),
@@ -119,6 +122,19 @@ public sealed partial class ApplicationSettingsViewModel : ObservableObject
         new(AppShortcutGesture.Delete, "Delete"),
         new(AppShortcutGesture.CtrlShiftW, "Ctrl+Shift+W"),
         new(AppShortcutGesture.CtrlShiftBackspace, "Ctrl+Shift+Backspace"),
+    ];
+
+    public IReadOnlyList<AppShortcutOption> QuickSearchShortcutOptions { get; } =
+    [
+        new(AppShortcutGesture.Disabled, "Disabled"),
+        new(AppShortcutGesture.Escape, "Esc"),
+        new(AppShortcutGesture.Down, "Down"),
+        new(AppShortcutGesture.Enter, "Enter"),
+        new(AppShortcutGesture.CtrlR, "Ctrl+R"),
+        new(AppShortcutGesture.CtrlC, "Ctrl+C"),
+        new(AppShortcutGesture.CtrlP, "Ctrl+P"),
+        new(AppShortcutGesture.F4, "F4"),
+        new(AppShortcutGesture.CtrlI, "Ctrl+I"),
     ];
 
     public ObservableCollection<CustomThemeInfo> CustomThemes { get; } = new();
@@ -423,6 +439,14 @@ public sealed partial class ApplicationSettingsViewModel : ObservableObject
     }
 
     [RelayCommand]
+    private void ResetQuickSearchShortcutDefaults()
+    {
+        ApplyQuickSearchShortcutSettings(QuickSearchShortcutSettings.CreateDefaults());
+        SaveSettings(updateStartupRegistration: false);
+        _status.Text = "Quick Search shortcuts reset.";
+    }
+
+    [RelayCommand]
     private void RefreshQuickIndexedLocations()
     {
         RefreshQuickIndexedLocationSelectionsCore();
@@ -472,6 +496,7 @@ public sealed partial class ApplicationSettingsViewModel : ObservableObject
             settings.IndexerCpuLimitPercent = IndexerCpuLimitPercent;
             settings.IndexerDiskPauseMilliseconds = IndexerDiskPauseMilliseconds;
             settings.Shortcuts = BuildShortcutSettings();
+            settings.QuickSearchShortcuts = BuildQuickSearchShortcutSettings();
             settings.RunInBackground = null;
         });
 
@@ -565,6 +590,38 @@ public sealed partial class ApplicationSettingsViewModel : ObservableObject
         }
     }
 
+    private void ApplyQuickSearchShortcutSettings(QuickSearchShortcutSettings settings)
+    {
+        _isUpdatingShortcuts = true;
+
+        try
+        {
+            if (QuickSearchShortcutBindings.Count == 0)
+            {
+                AddQuickSearchShortcutBinding(QuickSearchShortcutAction.Close, "Close Quick Search", "Hide the quick window.", settings.Close);
+                AddQuickSearchShortcutBinding(QuickSearchShortcutAction.FocusResults, "Focus results", "Move from the search box into the results list.", settings.FocusResults);
+                AddQuickSearchShortcutBinding(QuickSearchShortcutAction.OpenSelectedResult, "Open selected result", "Open the selected result and close Quick Search.", settings.OpenSelectedResult);
+                AddQuickSearchShortcutBinding(QuickSearchShortcutAction.RevealSelectedResult, "Reveal selected result", "Show the selected result in Explorer and close Quick Search.", settings.RevealSelectedResult);
+                AddQuickSearchShortcutBinding(QuickSearchShortcutAction.CopySelectedResultPath, "Copy selected path", "Copy the selected result path and close Quick Search.", settings.CopySelectedResultPath);
+                AddQuickSearchShortcutBinding(QuickSearchShortcutAction.PinSelectedResult, "Pin selected result", "Pin or unpin the selected result.", settings.PinSelectedResult);
+                AddQuickSearchShortcutBinding(QuickSearchShortcutAction.PreviewSelectedResult, "Preview selected result", "Load or refresh the inline preview.", settings.PreviewSelectedResult);
+                return;
+            }
+
+            SetQuickSearchShortcut(QuickSearchShortcutAction.Close, settings.Close);
+            SetQuickSearchShortcut(QuickSearchShortcutAction.FocusResults, settings.FocusResults);
+            SetQuickSearchShortcut(QuickSearchShortcutAction.OpenSelectedResult, settings.OpenSelectedResult);
+            SetQuickSearchShortcut(QuickSearchShortcutAction.RevealSelectedResult, settings.RevealSelectedResult);
+            SetQuickSearchShortcut(QuickSearchShortcutAction.CopySelectedResultPath, settings.CopySelectedResultPath);
+            SetQuickSearchShortcut(QuickSearchShortcutAction.PinSelectedResult, settings.PinSelectedResult);
+            SetQuickSearchShortcut(QuickSearchShortcutAction.PreviewSelectedResult, settings.PreviewSelectedResult);
+        }
+        finally
+        {
+            _isUpdatingShortcuts = false;
+        }
+    }
+
     private void AddShortcutBinding(AppShortcutAction action, string displayName, string description, AppShortcutGesture gesture)
     {
         ShortcutBindings.Add(new AppShortcutBindingViewModel(
@@ -576,9 +633,33 @@ public sealed partial class ApplicationSettingsViewModel : ObservableObject
             OnShortcutChanged));
     }
 
+    private void AddQuickSearchShortcutBinding(
+        QuickSearchShortcutAction action,
+        string displayName,
+        string description,
+        AppShortcutGesture gesture)
+    {
+        QuickSearchShortcutBindings.Add(new QuickSearchShortcutBindingViewModel(
+            action,
+            displayName,
+            description,
+            NormalizeShortcutGesture(gesture),
+            QuickSearchShortcutOptions,
+            OnShortcutChanged));
+    }
+
     private void SetShortcut(AppShortcutAction action, AppShortcutGesture gesture)
     {
         var binding = ShortcutBindings.FirstOrDefault(item => item.Action == action);
+        if (binding is null)
+            return;
+
+        binding.SetGesture(NormalizeShortcutGesture(gesture));
+    }
+
+    private void SetQuickSearchShortcut(QuickSearchShortcutAction action, AppShortcutGesture gesture)
+    {
+        var binding = QuickSearchShortcutBindings.FirstOrDefault(item => item.Action == action);
         if (binding is null)
             return;
 
@@ -597,6 +678,9 @@ public sealed partial class ApplicationSettingsViewModel : ObservableObject
     public AppShortcutGesture GetShortcut(AppShortcutAction action) =>
         ShortcutBindings.FirstOrDefault(binding => binding.Action == action)?.Gesture ?? AppShortcutGesture.Disabled;
 
+    public AppShortcutGesture GetQuickSearchShortcut(QuickSearchShortcutAction action) =>
+        QuickSearchShortcutBindings.FirstOrDefault(binding => binding.Action == action)?.Gesture ?? AppShortcutGesture.Disabled;
+
     private AppShortcutSettings BuildShortcutSettings() => new()
     {
         FocusQuery = GetShortcut(AppShortcutAction.FocusQuery),
@@ -614,6 +698,17 @@ public sealed partial class ApplicationSettingsViewModel : ObservableObject
         DeleteSelectedResult = GetShortcut(AppShortcutAction.DeleteSelectedResult),
         SaveWorkspace = GetShortcut(AppShortcutAction.SaveWorkspace),
         ClearResultFacets = GetShortcut(AppShortcutAction.ClearResultFacets),
+    };
+
+    private QuickSearchShortcutSettings BuildQuickSearchShortcutSettings() => new()
+    {
+        Close = GetQuickSearchShortcut(QuickSearchShortcutAction.Close),
+        FocusResults = GetQuickSearchShortcut(QuickSearchShortcutAction.FocusResults),
+        OpenSelectedResult = GetQuickSearchShortcut(QuickSearchShortcutAction.OpenSelectedResult),
+        RevealSelectedResult = GetQuickSearchShortcut(QuickSearchShortcutAction.RevealSelectedResult),
+        CopySelectedResultPath = GetQuickSearchShortcut(QuickSearchShortcutAction.CopySelectedResultPath),
+        PinSelectedResult = GetQuickSearchShortcut(QuickSearchShortcutAction.PinSelectedResult),
+        PreviewSelectedResult = GetQuickSearchShortcut(QuickSearchShortcutAction.PreviewSelectedResult),
     };
 
     private static AppShortcutSettings NormalizeShortcutSettings(AppShortcutSettings? settings)
@@ -637,6 +732,22 @@ public sealed partial class ApplicationSettingsViewModel : ObservableObject
             DeleteSelectedResult = NormalizeShortcutGesture(settings.DeleteSelectedResult),
             SaveWorkspace = NormalizeShortcutGesture(settings.SaveWorkspace),
             ClearResultFacets = NormalizeShortcutGesture(settings.ClearResultFacets),
+        };
+    }
+
+    private static QuickSearchShortcutSettings NormalizeQuickSearchShortcutSettings(QuickSearchShortcutSettings? settings)
+    {
+        settings ??= QuickSearchShortcutSettings.CreateDefaults();
+
+        return new QuickSearchShortcutSettings
+        {
+            Close = NormalizeShortcutGesture(settings.Close),
+            FocusResults = NormalizeShortcutGesture(settings.FocusResults),
+            OpenSelectedResult = NormalizeShortcutGesture(settings.OpenSelectedResult),
+            RevealSelectedResult = NormalizeShortcutGesture(settings.RevealSelectedResult),
+            CopySelectedResultPath = NormalizeShortcutGesture(settings.CopySelectedResultPath),
+            PinSelectedResult = NormalizeShortcutGesture(settings.PinSelectedResult),
+            PreviewSelectedResult = NormalizeShortcutGesture(settings.PreviewSelectedResult),
         };
     }
 
@@ -734,6 +845,60 @@ public sealed class AppShortcutBindingViewModel : ObservableObject
     }
 
     public AppShortcutAction Action { get; }
+
+    public string DisplayName { get; }
+
+    public string Description { get; }
+
+    public IReadOnlyList<AppShortcutOption> ShortcutOptions => _shortcutOptions;
+
+    public AppShortcutOption SelectedShortcut
+    {
+        get => _selectedShortcut;
+        set
+        {
+            if (value is null || !SetProperty(ref _selectedShortcut, value))
+                return;
+
+            _changed();
+        }
+    }
+
+    public AppShortcutGesture Gesture => SelectedShortcut.Value;
+
+    public void SetGesture(AppShortcutGesture gesture)
+    {
+        SelectedShortcut = FindOption(gesture);
+    }
+
+    private AppShortcutOption FindOption(AppShortcutGesture gesture) =>
+        _shortcutOptions.FirstOrDefault(option => option.Value == gesture)
+        ?? _shortcutOptions.First(option => option.Value == AppShortcutGesture.Disabled);
+}
+
+public sealed class QuickSearchShortcutBindingViewModel : ObservableObject
+{
+    private readonly IReadOnlyList<AppShortcutOption> _shortcutOptions;
+    private readonly Action _changed;
+    private AppShortcutOption _selectedShortcut;
+
+    public QuickSearchShortcutBindingViewModel(
+        QuickSearchShortcutAction action,
+        string displayName,
+        string description,
+        AppShortcutGesture selectedShortcut,
+        IReadOnlyList<AppShortcutOption> shortcutOptions,
+        Action changed)
+    {
+        Action = action;
+        DisplayName = displayName;
+        Description = description;
+        _shortcutOptions = shortcutOptions;
+        _changed = changed;
+        _selectedShortcut = FindOption(selectedShortcut);
+    }
+
+    public QuickSearchShortcutAction Action { get; }
 
     public string DisplayName { get; }
 

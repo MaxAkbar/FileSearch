@@ -6,6 +6,7 @@ using System.Windows.Forms;
 using System.Windows.Input;
 using System.Windows.Interop;
 using System.Windows.Threading;
+using FileSearch.Gui.Settings;
 using FileSearch.Gui.ViewModels;
 using DataObject = System.Windows.DataObject;
 using DragDropEffects = System.Windows.DragDropEffects;
@@ -74,54 +75,20 @@ public partial class QuickSearchWindow : Window
         if (DataContext is not QuickSearchViewModel viewModel)
             return;
 
-        if (e.Key == Key.Escape)
+        foreach (var action in s_shortcutActionOrder)
         {
-            DismissAndHide();
+            var gesture = viewModel.GetShortcut(action);
+            if (!MatchesShortcut(gesture, e))
+                continue;
+
+            if (ShouldIgnoreShortcut(action, gesture))
+                return;
+
+            if (!TryExecuteShortcut(action, viewModel))
+                return;
+
             e.Handled = true;
             return;
-        }
-
-        if (e.Key == Key.Down && SearchBox.IsKeyboardFocusWithin)
-        {
-            FocusFirstResult();
-            e.Handled = true;
-            return;
-        }
-
-        if (e.Key == Key.Enter && viewModel.OpenResultCommand.CanExecute(null))
-        {
-            viewModel.OpenResultCommand.Execute(null);
-            e.Handled = true;
-            return;
-        }
-
-        var modifiers = Keyboard.Modifiers;
-        if (modifiers == ModifierKeys.Control && e.Key == Key.R && viewModel.RevealResultCommand.CanExecute(null))
-        {
-            viewModel.RevealResultCommand.Execute(null);
-            e.Handled = true;
-            return;
-        }
-
-        if (modifiers == ModifierKeys.Control && e.Key == Key.C && !SearchBox.IsKeyboardFocusWithin && viewModel.CopyResultPathCommand.CanExecute(null))
-        {
-            viewModel.CopyResultPathCommand.Execute(null);
-            e.Handled = true;
-            return;
-        }
-
-        if (modifiers == ModifierKeys.Control && e.Key == Key.P && viewModel.PinResultCommand.CanExecute(null))
-        {
-            viewModel.PinResultCommand.Execute(null);
-            e.Handled = true;
-            return;
-        }
-
-        if ((e.Key == Key.F4 || (modifiers == ModifierKeys.Control && e.Key == Key.I)) &&
-            viewModel.PreviewResultCommand.CanExecute(null))
-        {
-            viewModel.PreviewResultCommand.Execute(null);
-            e.Handled = true;
         }
     }
 
@@ -203,6 +170,102 @@ public partial class QuickSearchWindow : Window
         if (ResultsList.ItemContainerGenerator.ContainerFromIndex(ResultsList.SelectedIndex) is ListBoxItem item)
             item.Focus();
     }
+
+    private bool TryExecuteShortcut(QuickSearchShortcutAction action, QuickSearchViewModel viewModel)
+    {
+        switch (action)
+        {
+            case QuickSearchShortcutAction.Close:
+                DismissAndHide();
+                return true;
+
+            case QuickSearchShortcutAction.FocusResults:
+                FocusFirstResult();
+                return ResultsList.Items.Count > 0;
+
+            case QuickSearchShortcutAction.OpenSelectedResult:
+                return ExecuteCommand(viewModel.OpenResultCommand);
+
+            case QuickSearchShortcutAction.RevealSelectedResult:
+                return ExecuteCommand(viewModel.RevealResultCommand);
+
+            case QuickSearchShortcutAction.CopySelectedResultPath:
+                return ExecuteCommand(viewModel.CopyResultPathCommand);
+
+            case QuickSearchShortcutAction.PinSelectedResult:
+                return ExecuteCommand(viewModel.PinResultCommand);
+
+            case QuickSearchShortcutAction.PreviewSelectedResult:
+                return ExecuteCommand(viewModel.PreviewResultCommand);
+
+            default:
+                return false;
+        }
+    }
+
+    private static bool ExecuteCommand(ICommand command)
+    {
+        if (!command.CanExecute(null))
+            return false;
+
+        command.Execute(null);
+        return true;
+    }
+
+    private bool ShouldIgnoreShortcut(QuickSearchShortcutAction action, AppShortcutGesture gesture)
+    {
+        if (action == QuickSearchShortcutAction.FocusResults &&
+            gesture == AppShortcutGesture.Down &&
+            !SearchBox.IsKeyboardFocusWithin)
+        {
+            return true;
+        }
+
+        return action == QuickSearchShortcutAction.CopySelectedResultPath &&
+               gesture == AppShortcutGesture.CtrlC &&
+               SearchBox.IsKeyboardFocusWithin;
+    }
+
+    private static bool MatchesShortcut(AppShortcutGesture gesture, System.Windows.Input.KeyEventArgs e)
+    {
+        var key = NormalizeKey(e);
+        var modifiers = Keyboard.Modifiers;
+
+        return gesture switch
+        {
+            AppShortcutGesture.Down => modifiers == ModifierKeys.None && key == Key.Down,
+            AppShortcutGesture.Escape => modifiers == ModifierKeys.None && key == Key.Escape,
+            AppShortcutGesture.Enter => modifiers == ModifierKeys.None && key == Key.Return,
+            AppShortcutGesture.CtrlR => modifiers == ModifierKeys.Control && key == Key.R,
+            AppShortcutGesture.CtrlC => modifiers == ModifierKeys.Control && key == Key.C,
+            AppShortcutGesture.CtrlP => modifiers == ModifierKeys.Control && key == Key.P,
+            AppShortcutGesture.F4 => modifiers == ModifierKeys.None && key == Key.F4,
+            AppShortcutGesture.CtrlI => modifiers == ModifierKeys.Control && key == Key.I,
+            _ => false,
+        };
+    }
+
+    private static Key NormalizeKey(System.Windows.Input.KeyEventArgs e)
+    {
+        if (e.Key == Key.System)
+            return e.SystemKey;
+
+        if (e.Key == Key.ImeProcessed)
+            return e.ImeProcessedKey;
+
+        return e.Key;
+    }
+
+    private static readonly QuickSearchShortcutAction[] s_shortcutActionOrder =
+    [
+        QuickSearchShortcutAction.Close,
+        QuickSearchShortcutAction.FocusResults,
+        QuickSearchShortcutAction.OpenSelectedResult,
+        QuickSearchShortcutAction.RevealSelectedResult,
+        QuickSearchShortcutAction.CopySelectedResultPath,
+        QuickSearchShortcutAction.PinSelectedResult,
+        QuickSearchShortcutAction.PreviewSelectedResult,
+    ];
 
     private void PositionOnActiveMonitor()
     {
