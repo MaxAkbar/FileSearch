@@ -128,6 +128,70 @@ public sealed class SearcherTests : IDisposable
     }
 
     [Fact]
+    public async Task UnifiedContentSearchFiltersByFileName()
+    {
+        File.WriteAllText(Path.Combine(_root, "QuarterlyReport.txt"), "needle\n");
+        File.WriteAllText(Path.Combine(_root, "notes.txt"), "needle\n");
+
+        var query = new UnifiedQueryParser().Parse("name:report content:needle");
+        var hits = await SearchAsync(query);
+
+        var hit = Assert.Single(hits);
+        Assert.EndsWith("QuarterlyReport.txt", hit.Path);
+        Assert.Equal(HitKind.Content, hit.Kind);
+    }
+
+    [Fact]
+    public async Task UnifiedMetadataOnlySearchReturnsFileHits()
+    {
+        File.WriteAllText(Path.Combine(_root, "QuarterlyReport.txt"), "body has no query text\n");
+        File.WriteAllText(Path.Combine(_root, "notes.txt"), "body has no query text\n");
+
+        var query = new UnifiedQueryParser().Parse("name:report");
+        var hits = await SearchAsync(query);
+
+        var hit = Assert.Single(hits);
+        Assert.EndsWith("QuarterlyReport.txt", hit.Path);
+        Assert.Equal(HitKind.Metadata, hit.Kind);
+        Assert.Equal(0, hit.LineNumber);
+        Assert.Contains("File match", hit.LineContent);
+    }
+
+    [Fact]
+    public async Task UnifiedMetadataOnlySearchFiltersByExtension()
+    {
+        File.WriteAllText(Path.Combine(_root, "report.txt"), "body\n");
+        File.WriteAllText(Path.Combine(_root, "report.md"), "body\n");
+
+        var query = new UnifiedQueryParser().Parse("ext:md");
+        var hits = await SearchAsync(query);
+
+        var hit = Assert.Single(hits);
+        Assert.EndsWith("report.md", hit.Path);
+        Assert.Equal(HitKind.Metadata, hit.Kind);
+    }
+
+    [Fact]
+    public async Task UnifiedSemanticSearchUnavailable_ReturnsNoHitsAndReportsStatus()
+    {
+        File.WriteAllText(Path.Combine(_root, "auth.txt"), "authentication migration\n");
+        var query = new UnifiedQueryParser().Parse("semantic:\"authentication migration\"");
+        string? status = null;
+        var request = new SearchRequest(
+            query,
+            new[] { _root },
+            new WalkerOptions(),
+            Status: message => status = message);
+
+        var hits = new List<Hit>();
+        await foreach (var hit in _searcher.SearchAsync(request, CancellationToken.None))
+            hits.Add(hit);
+
+        Assert.Empty(hits);
+        Assert.Equal(UnifiedQuery.SemanticUnavailableMessage, status);
+    }
+
+    [Fact]
     public async Task FileNameSearchFindsMatchingFileNamesWithoutContentMatch()
     {
         File.WriteAllText(Path.Combine(_root, "QuarterlyReport.txt"), "body has no query text\n");

@@ -33,6 +33,15 @@ public sealed class QueryFactoryTests
     }
 
     [Fact]
+    public void Unified_DelegatesToUnifiedQueryParser()
+    {
+        var query = _factory.Build("name:report content:needle", QueryMode.Unified, caseSensitive: false);
+        var unified = Assert.IsType<UnifiedQuery>(query);
+        Assert.Equal(new[] { "report" }, unified.Filters.NameTerms);
+        Assert.True(unified.HasContentCriteria);
+    }
+
+    [Fact]
     public void CaseSensitive_Propagates()
     {
         var query = _factory.Build("Hello", QueryMode.PlainText, caseSensitive: true);

@@ -17,7 +17,7 @@ public sealed class SavedSearchSettings
 
     public bool IncludeSubfolders { get; set; } = true;
 
-    public QueryMode SearchMode { get; set; } = QueryMode.Boolean;
+    public QueryMode SearchMode { get; set; } = QueryMode.Unified;
 
     public bool MatchCase { get; set; }
 

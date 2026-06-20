@@ -83,6 +83,144 @@ public sealed class SearchViewModelTests
     }
 
     [Fact]
+    public void UnifiedQueryTextBuildsInterpretedChips()
+    {
+        RunWithPump((pump, vm, history, status, settings) =>
+        {
+            vm.SearchMode = QueryMode.Unified;
+            vm.QueryText = "invoice type:pdf modified:last-year";
+
+            Assert.True(vm.HasQueryChips);
+            Assert.Contains(vm.QueryChips, chip => chip.Field == "Content" && chip.Value == "invoice");
+            Assert.Contains(vm.QueryChips, chip => chip.Field == "Type" && chip.Value == "pdf");
+            Assert.Contains(vm.QueryChips, chip => chip.Field == "Modified" && chip.Value == "last-year");
+        });
+    }
+
+    [Fact]
+    public void NonUnifiedModeClearsInterpretedChips()
+    {
+        RunWithPump((pump, vm, history, status, settings) =>
+        {
+            vm.SearchMode = QueryMode.Unified;
+            vm.QueryText = "invoice type:pdf";
+            Assert.NotEmpty(vm.QueryChips);
+
+            vm.SearchMode = QueryMode.Regex;
+
+            Assert.False(vm.HasQueryChips);
+            Assert.Empty(vm.QueryChips);
+        });
+    }
+
+    [Fact]
+    public void RemoveQueryChipRemovesRawQueryToken()
+    {
+        RunWithPump((pump, vm, history, status, settings) =>
+        {
+            vm.SearchMode = QueryMode.Unified;
+            vm.QueryText = "invoice type:pdf modified:last-year";
+            var typeChip = Assert.Single(vm.QueryChips, chip => chip.Field == "Type");
+
+            vm.RemoveQueryChipCommand.Execute(typeChip);
+
+            Assert.Equal("invoice modified:last-year", vm.QueryText);
+            Assert.DoesNotContain(vm.QueryChips, chip => chip.Field == "Type");
+            Assert.Contains(vm.QueryChips, chip => chip.Field == "Content" && chip.Value == "invoice");
+            Assert.Contains(vm.QueryChips, chip => chip.Field == "Modified" && chip.Value == "last-year");
+        });
+    }
+
+    [Fact]
+    public void EditingQueryChipValueRewritesRawQueryToken()
+    {
+        RunWithPump((pump, vm, history, status, settings) =>
+        {
+            vm.SearchMode = QueryMode.Unified;
+            vm.QueryText = "invoice type:pdf modified:last-year";
+            var typeChip = Assert.Single(vm.QueryChips, chip => chip.Field == "Type");
+
+            typeChip.Value = "docx";
+
+            Assert.Equal("invoice type:docx modified:last-year", vm.QueryText);
+            Assert.Contains(vm.QueryChips, chip => chip.Field == "Type" && chip.Value == "docx");
+            Assert.DoesNotContain(vm.QueryChips, chip => chip.Field == "Type" && chip.Value == "pdf");
+        });
+    }
+
+    [Fact]
+    public void EditingFuzzyQueryChipPreservesFuzzyOperator()
+    {
+        RunWithPump((pump, vm, history, status, settings) =>
+        {
+            vm.SearchMode = QueryMode.Unified;
+            vm.QueryText = "invoice~2";
+            var fuzzyChip = Assert.Single(vm.QueryChips, chip => chip.Field == "Fuzzy 2");
+
+            fuzzyChip.Value = "receipt";
+
+            Assert.Equal("receipt~2", vm.QueryText);
+            Assert.Contains(vm.QueryChips, chip => chip.Field == "Fuzzy 2" && chip.Value == "receipt");
+        });
+    }
+
+    [Fact]
+    public void NaturalLanguageQueryTextBuildsEditableInterpretedChips()
+    {
+        RunWithPump((pump, vm, history, status, settings) =>
+        {
+            vm.SearchMode = QueryMode.Unified;
+            vm.QueryText = "PDF invoices from Acme modified last summer";
+
+            Assert.Contains(vm.QueryChips, chip => chip.Field == "Type" && chip.Value == "pdf");
+            Assert.Contains(vm.QueryChips, chip => chip.Field == "Modified" && chip.Value == "last-summer");
+            Assert.Contains(vm.QueryChips, chip => chip.Field == "Content" && chip.Value == "invoice");
+            Assert.Contains(vm.QueryChips, chip => chip.Field == "Content" && chip.Value == "Acme");
+
+            var modifiedChip = Assert.Single(vm.QueryChips, chip => chip.Field == "Modified");
+            modifiedChip.Value = "last-month";
+
+            Assert.Contains("modified:last-month", vm.QueryText);
+        });
+    }
+
+    [Fact]
+    public void SemanticQueryTextBuildsDisabledExplainedChip()
+    {
+        RunWithPump((pump, vm, history, status, settings) =>
+        {
+            vm.SearchMode = QueryMode.Unified;
+            vm.QueryText = "semantic:\"authentication migration\"";
+
+            var chip = Assert.Single(vm.QueryChips);
+            Assert.Equal("Semantic", chip.Field);
+            Assert.Equal("authentication migration", chip.Value);
+            Assert.False(chip.IsEnabled);
+            Assert.True(chip.IsDisabled);
+            Assert.Equal(UnifiedQuery.SemanticUnavailableMessage, chip.Explanation);
+        });
+    }
+
+    [Fact]
+    public void SemanticUnavailableSearchDoesNotStartAndReportsStatus()
+    {
+        var searcher = new RecordingSearcher();
+        RunWithPump((pump, vm, history, status, settings) =>
+        {
+            vm.SearchMode = QueryMode.Unified;
+            vm.QueryText = "semantic:\"authentication migration\"";
+            vm.SearchPath = Path.GetTempPath();
+
+            var task = vm.SearchCommand.ExecuteAsync(null);
+            pump.PumpUntil(() => task.IsCompleted, TimeSpan.FromSeconds(10));
+
+            Assert.Equal(UnifiedQuery.SemanticUnavailableMessage, status.Text);
+            Assert.False(vm.IsSearching);
+            Assert.Equal(0, searcher.RequestCount);
+        }, searcher);
+    }
+
+    [Fact]
     public void SearcherFailureReportsErrorAndResets()
     {
         RunWithPump((pump, vm, history, status, settings) =>

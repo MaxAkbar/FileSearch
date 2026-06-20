@@ -17,11 +17,31 @@ internal sealed record MetadataSearchSpec(
     {
         spec = null!;
 
-        if (request.Mode == QueryMode.Regex || request.Expression is RegexQuery)
+        var expression = request.Expression;
+        if (expression is UnifiedQuery unified)
+        {
+            if (!unified.HasContentCriteria)
+            {
+                var metadataTerms = unified.MetadataTerms
+                    .Select(NormalizeTerm)
+                    .Where(term => term.Length > 0)
+                    .Distinct(StringComparer.OrdinalIgnoreCase)
+                    .ToArray();
+                if (metadataTerms.Length == 0)
+                    return false;
+
+                spec = new MetadataSearchSpec(metadataTerms, true, true, request.SearchTarget);
+                return true;
+            }
+
+            expression = unified.ContentQuery;
+        }
+
+        if (request.Mode == QueryMode.Regex || expression is RegexQuery)
             return false;
 
         var metadataTarget = request.SearchTarget != SearchTarget.Content;
-        if (!TryCollectTerms(request.Expression, metadataTarget, out var terms, out var requireAllTerms))
+        if (!TryCollectTerms(expression, metadataTarget, out var terms, out var requireAllTerms))
             return false;
 
         var normalized = terms
@@ -32,7 +52,7 @@ internal sealed record MetadataSearchSpec(
         if (normalized.Length == 0)
             return false;
 
-        var singleTerm = normalized.Length == 1 && request.Expression is TermQuery;
+        var singleTerm = normalized.Length == 1 && expression is TermQuery;
         var metadataDominant =
             metadataTarget ||
             singleTerm ||

@@ -63,7 +63,7 @@ public static class WorkflowEditorOptions
 public static class WorkflowEnumValues
 {
     public static IReadOnlyList<QueryMode> QueryModes { get; } =
-        new[] { QueryMode.PlainText, QueryMode.Regex, QueryMode.Boolean };
+        new[] { QueryMode.Unified, QueryMode.PlainText, QueryMode.Regex, QueryMode.Boolean };
 
     public static IReadOnlyList<ExportFormat> ExportFormats { get; } =
         new[] { ExportFormat.Json, ExportFormat.Csv, ExportFormat.Markdown };

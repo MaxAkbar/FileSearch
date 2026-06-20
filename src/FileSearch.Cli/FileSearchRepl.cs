@@ -784,7 +784,8 @@ internal sealed class FileSearchRepl
             "plain" or "text" or "literal" => QueryMode.PlainText,
             "regex" or "regexp" => QueryMode.Regex,
             "bool" or "boolean" => QueryMode.Boolean,
-            _ => throw new ArgumentException("Mode must be plain, regex, or boolean."),
+            "unified" or "query" or "structured" => QueryMode.Unified,
+            _ => throw new ArgumentException("Mode must be plain, regex, boolean, or unified."),
         };
 
     private static OneShotOutputFormat ParseOutputFormat(string value) =>
@@ -1513,7 +1514,7 @@ internal sealed class FileSearchRepl
         table.AddColumn("Description");
         table.AddRow("[cyan]search[/] QUERY", "Search current root. Unknown input is treated as a query.");
         table.AddRow("[cyan]path[/] FOLDER", "Set the current search root.");
-        table.AddRow("[cyan]mode plain|regex|boolean[/]", "Choose query mode.");
+        table.AddRow("[cyan]mode plain|regex|boolean|unified[/]", "Choose query mode.");
         table.AddRow("[cyan]case on|off[/]", "Toggle case-sensitive matching.");
         table.AddRow("[cyan]recursive on|off[/]", "Toggle subfolder traversal.");
         table.AddRow("[cyan]hidden on|off[/]", "Include or skip hidden files.");
@@ -1610,7 +1611,8 @@ internal sealed class FileSearchRepl
             "plain" or "text" or "literal" => QueryMode.PlainText,
             "regex" or "regexp" => QueryMode.Regex,
             "bool" or "boolean" => QueryMode.Boolean,
-            _ => throw new ArgumentException("Mode must be plain, regex, or boolean."),
+            "unified" or "query" or "structured" => QueryMode.Unified,
+            _ => throw new ArgumentException("Mode must be plain, regex, boolean, or unified."),
         };
         AnsiConsole.MarkupLine($"[green]Mode set to {_state.Mode}.[/]");
     }
@@ -1937,7 +1939,7 @@ internal sealed class FileSearchRepl
     }
 
     private const string OneShotSearchUsage =
-        "Usage: filesearch search QUERY [--path FOLDER] [--mode plain|regex|boolean] " +
+        "Usage: filesearch search QUERY [--path FOLDER] [--mode plain|regex|boolean|unified] " +
         "[--json|--jsonl|--csv|--markdown] [--output PATH] [--limit N]";
 
     private const string OneShotIndexUsage =

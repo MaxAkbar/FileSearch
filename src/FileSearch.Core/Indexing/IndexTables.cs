@@ -65,7 +65,11 @@ internal sealed record IndexedLine(
     string FileName,
     string Extension,
     long SizeBytes,
+    long CreatedUtcTicks,
     long ModifiedUtcTicks,
+    string Status,
+    string ExtractorId,
+    string FileTypeCategory,
     int LineNumber,
     string Content,
     SourceAnchor? Anchor);
@@ -82,7 +86,8 @@ internal sealed record IndexedFileMetadata(
     string FileTypeCategory,
     long OpenCount,
     long LastOpenedUtcTicks,
-    string Status);
+    string Status,
+    string ExtractorId);
 
 /// <summary>
 /// Every DML statement against the index tables lives here, composed through
@@ -101,7 +106,8 @@ internal static partial class IndexTables
     private const int MetadataTokenPrefixMaxLength = 32;
 
     private const string SelectLinesColumns =
-        "SELECT f.path, f.file_name, f.extension, f.size_bytes, f.modified_utc_ticks, l.line_number, l.content, l.anchor_json " +
+        "SELECT f.path, f.file_name, f.extension, f.size_bytes, f.created_utc_ticks, f.modified_utc_ticks, " +
+        "f.status, f.extractor_id, f.file_type_category, l.line_number, l.content, l.anchor_json " +
         "FROM lines l INNER JOIN files f ON f.id = l.file_id WHERE ";
 
     private const string SelectLinesOrder = " ORDER BY f.path, l.line_number";
@@ -682,7 +688,7 @@ internal static partial class IndexTables
         await using var result = await db.ExecuteAsync(
             Sql.Format(
                 $"SELECT path, directory_path, file_name, extension, size_bytes, created_utc_ticks, " +
-                $"modified_utc_ticks, attributes, file_type_category, open_count, last_opened_utc_ticks, status " +
+                $"modified_utc_ticks, attributes, file_type_category, open_count, last_opened_utc_ticks, status, extractor_id " +
                 $"FROM files WHERE root_id = {rootId} AND status != {FileStatus.Indexing}"),
             cancellationToken).ConfigureAwait(false);
 
@@ -701,7 +707,8 @@ internal static partial class IndexTables
                 row[8].IsNull ? string.Empty : row[8].AsText,
                 row[9].IsNull ? 0 : row[9].AsInteger,
                 row[10].IsNull ? 0 : row[10].AsInteger,
-                row[11].AsText);
+                row[11].AsText,
+                row[12].IsNull ? string.Empty : row[12].AsText);
         }
     }
 
@@ -716,7 +723,7 @@ internal static partial class IndexTables
             await using var result = await db.ExecuteAsync(
                 Sql.Format(
                     $"SELECT path, directory_path, file_name, extension, size_bytes, created_utc_ticks, " +
-                    $"modified_utc_ticks, attributes, file_type_category, open_count, last_opened_utc_ticks, status " +
+                    $"modified_utc_ticks, attributes, file_type_category, open_count, last_opened_utc_ticks, status, extractor_id " +
                     $"FROM files WHERE root_id = {rootId} AND id IN ({new Sql.IdList(batch)}) AND status != {FileStatus.Indexing}"),
                 cancellationToken).ConfigureAwait(false);
 
@@ -735,7 +742,8 @@ internal static partial class IndexTables
                     row[8].IsNull ? string.Empty : row[8].AsText,
                     row[9].IsNull ? 0 : row[9].AsInteger,
                     row[10].IsNull ? 0 : row[10].AsInteger,
-                    row[11].AsText);
+                    row[11].AsText,
+                    row[12].IsNull ? string.Empty : row[12].AsText);
             }
         }
     }
@@ -1178,10 +1186,14 @@ internal static partial class IndexTables
                 row[1].AsText,
                 row[2].AsText,
                 row[3].AsInteger,
-                row[4].AsInteger,
-                checked((int)row[5].AsInteger),
+                row[4].IsNull ? 0 : row[4].AsInteger,
+                row[5].AsInteger,
                 row[6].AsText,
-                row[7].IsNull ? null : DeserializeAnchor(row[7].AsText));
+                row[7].IsNull ? string.Empty : row[7].AsText,
+                row[8].IsNull ? string.Empty : row[8].AsText,
+                checked((int)row[9].AsInteger),
+                row[10].AsText,
+                row[11].IsNull ? null : DeserializeAnchor(row[11].AsText));
         }
     }
 

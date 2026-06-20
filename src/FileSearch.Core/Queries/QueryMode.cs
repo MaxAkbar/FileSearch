@@ -14,4 +14,7 @@ public enum QueryMode
 
     /// <summary>Input is parsed with Boolean operators (AND/OR/NOT, parens).</summary>
     Boolean,
+
+    /// <summary>Input is parsed as a structured query with field filters.</summary>
+    Unified,
 }

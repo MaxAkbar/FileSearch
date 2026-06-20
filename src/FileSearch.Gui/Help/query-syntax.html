@@ -33,8 +33,9 @@
         <main class="content">
             <section class="hero">
                 <div class="eyebrow">Search Expressions</div>
-                <h1>Choose the query mode that matches the job.</h1>
-                <p class="lead">The Options tab controls how FileSearch interprets the Containing text field. Boolean is the default and works well for most searches.</p>
+                <h1>Use one query for text and file filters.</h1>
+                <p class="lead">Unified mode is the default for the full search window. It combines normal text search with fields such as <code>type:</code>, <code>name:</code>, <code>modified:</code>, and <code>size:</code>.</p>
+                <p>AI is optional. FileSearch can interpret simple natural-language queries with built-in rules, and <code>semantic:</code> records semantic intent as an explained chip. Real semantic matching requires a future local semantic index; FileSearch does not call paid embedding services.</p>
             </section>
 
             <h2>Modes</h2>
@@ -49,6 +50,11 @@
                     </thead>
                     <tbody>
                         <tr>
+                            <td><strong>Unified</strong></td>
+                            <td>Parses ordinary content terms plus structured fields. Content terms support <code>AND</code>, <code>OR</code>, <code>NOT</code>, parentheses, quoted phrases, wildcard terms, fuzzy terms, regex terms, and <code>NEAR/n</code> proximity.</td>
+                            <td>You want one query like <code>invoice acme modified:last-year type:pdf</code>.</td>
+                        </tr>
+                        <tr>
                             <td><strong>Boolean</strong></td>
                             <td>Parses terms, quoted phrases, slash-delimited regex terms, <code>AND</code>, <code>OR</code>, <code>NOT</code>, and parentheses.</td>
                             <td>You want combinations like <code>(invoice OR receipt) AND NOT draft</code>.</td>
@@ -62,6 +68,104 @@
                             <td><strong>Regex</strong></td>
                             <td>Treats the whole input as a .NET regular expression.</td>
                             <td>You need pattern matching such as <code>TODO|FIXME</code>.</td>
+                        </tr>
+                    </tbody>
+                </table>
+            </div>
+
+            <h2>Unified Fields</h2>
+            <p>Fields narrow the files that can match. Unfielded words still search file content. In Unified mode, FileSearch shows interpreted chips below the search box so you can see the content terms and filters it understood; edit a chip value to rewrite that token, or remove a chip to remove it from the query.</p>
+            <div class="table-wrap">
+                <table>
+                    <thead>
+                        <tr>
+                            <th>Field</th>
+                            <th>Examples</th>
+                            <th>Meaning</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <tr>
+                            <td><code>name:</code></td>
+                            <td><code>name:report</code></td>
+                            <td>Only files whose filename contains the value.</td>
+                        </tr>
+                        <tr>
+                            <td><code>path:</code>, <code>folder:</code>, <code>root:</code></td>
+                            <td><code>path:finance</code>, <code>folder:src</code></td>
+                            <td>Only files under matching paths, folders, or search roots.</td>
+                        </tr>
+                        <tr>
+                            <td><code>content:</code>, <code>regex:</code></td>
+                            <td><code>content:"termination clause"</code>, <code>regex:"TODO|FIXME"</code></td>
+                            <td>Search file contents for a phrase or .NET regular expression.</td>
+                        </tr>
+                        <tr>
+                            <td><code>semantic:</code></td>
+                            <td><code>semantic:"authentication migration"</code></td>
+                            <td>Records semantic intent as a disabled explained chip until a local semantic index is configured. FileSearch does not call paid embedding services.</td>
+                        </tr>
+                        <tr>
+                            <td><code>ext:</code>, <code>type:</code></td>
+                            <td><code>ext:pdf</code>, <code>type:excel</code>, <code>type:image</code></td>
+                            <td>Only files with matching extensions or broad file categories.</td>
+                        </tr>
+                        <tr>
+                            <td><code>modified:</code>, <code>created:</code></td>
+                            <td><code>modified:last-month</code>, <code>created:2026</code>, <code>modified:2026-01-01..2026-03-31</code></td>
+                            <td>Only files in the requested date range.</td>
+                        </tr>
+                        <tr>
+                            <td><code>size:</code></td>
+                            <td><code>size:&gt;5mb</code>, <code>size:1mb..10mb</code></td>
+                            <td>Only files within the requested size range.</td>
+                        </tr>
+                        <tr>
+                            <td><code>status:</code>, <code>extractor:</code></td>
+                            <td><code>status:ok</code>, <code>extractor:pdf</code></td>
+                            <td>Use indexed metadata to filter by index status or extractor id.</td>
+                        </tr>
+                    </tbody>
+                </table>
+            </div>
+
+            <h2>Unified Examples</h2>
+            <div class="table-wrap">
+                <table>
+                    <thead>
+                        <tr>
+                            <th>Expression</th>
+                            <th>Meaning</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <tr>
+                            <td><code>invoice acme modified:last-year type:pdf</code></td>
+                            <td>Find PDF content containing both words, limited to files modified in the last year.</td>
+                        </tr>
+                        <tr>
+                            <td><code>PDF invoices from Acme modified last summer</code></td>
+                            <td>Interprets plain language into chips such as <code>Type: pdf</code>, <code>Content: invoice</code>, <code>Content: Acme</code>, and <code>Modified: last-summer</code>.</td>
+                        </tr>
+                        <tr>
+                            <td><code>PDFs about authentication migration modified last year</code></td>
+                            <td>Interprets <code>about authentication migration</code> as a semantic chip and shows it disabled until semantic indexing is available.</td>
+                        </tr>
+                        <tr>
+                            <td><code>name:report path:finance size:&gt;5mb</code></td>
+                            <td>Find matching files by filename/path/size without requiring a content term.</td>
+                        </tr>
+                        <tr>
+                            <td><code>(error OR timeout) AND NOT test path:src</code></td>
+                            <td>Search content under matching source paths while excluding lines containing <code>test</code>.</td>
+                        </tr>
+                        <tr>
+                            <td><code>content:"termination clause" NEAR/25 notice</code></td>
+                            <td>Find lines where the phrase and word appear within 25 word tokens of each other.</td>
+                        </tr>
+                        <tr>
+                            <td><code>invoice~</code>, <code>authentication~2</code></td>
+                            <td>Use fuzzy content matching. A bare <code>~</code> allows one edit; <code>~2</code> allows two edits.</td>
                         </tr>
                     </tbody>
                 </table>

@@ -152,6 +152,12 @@ public sealed class CSharpDbFileIndex : IFileIndex, IIndexReplayWriter, IIndexUs
         SearchRequest request,
         [EnumeratorCancellation] CancellationToken cancellationToken)
     {
+        if (request.Expression is UnifiedQuery { HasUnavailableSemantic: true })
+        {
+            request.Status?.Invoke(UnifiedQuery.SemanticUnavailableMessage);
+            yield break;
+        }
+
         // Coverage gating routes multi-root requests to the live searcher;
         // reaching here with anything but one root is a caller bug — fail
         // loudly instead of silently searching only the first root.
@@ -177,6 +183,22 @@ public sealed class CSharpDbFileIndex : IFileIndex, IIndexReplayWriter, IIndexUs
             HashSet<string>? metadataHitPaths = null;
             var metadataOnly = request.SearchTarget != SearchTarget.Content;
 
+            if (request.Expression is UnifiedQuery unified && !unified.HasContentCriteria)
+            {
+                await foreach (var hit in SearchUnifiedMetadataOnlyAsync(
+                        db,
+                        rootId.Value,
+                        root,
+                        request.WalkerOptions,
+                        unified,
+                        cancellationToken).ConfigureAwait(false))
+                {
+                    yield return hit;
+                }
+
+                yield break;
+            }
+
             if (MetadataSearchSpec.TryCreate(request, out var metadataSpec))
             {
                 var metadataHits = await SearchMetadataAsync(
@@ -184,6 +206,7 @@ public sealed class CSharpDbFileIndex : IFileIndex, IIndexReplayWriter, IIndexUs
                         rootId.Value,
                         root,
                         request.WalkerOptions,
+                        request.Expression,
                         metadataSpec,
                         cancellationToken)
                     .ConfigureAwait(false);
@@ -289,6 +312,7 @@ public sealed class CSharpDbFileIndex : IFileIndex, IIndexReplayWriter, IIndexUs
         long rootId,
         string root,
         WalkerOptions options,
+        Query query,
         MetadataSearchSpec spec,
         CancellationToken cancellationToken)
     {
@@ -329,6 +353,22 @@ public sealed class CSharpDbFileIndex : IFileIndex, IIndexReplayWriter, IIndexUs
                 continue;
             }
 
+            if (query is UnifiedQuery unified &&
+                !unified.MatchesFile(
+                    root,
+                    file.Path,
+                    file.FileName,
+                    file.Extension,
+                    file.SizeBytes,
+                    file.CreatedUtcTicks,
+                    file.ModifiedUtcTicks,
+                    file.Status,
+                    file.ExtractorId,
+                    file.FileTypeCategory))
+            {
+                continue;
+            }
+
             var score = spec.Score(file, root, out var displayText);
             if (score <= 0)
                 continue;
@@ -351,6 +391,68 @@ public sealed class CSharpDbFileIndex : IFileIndex, IIndexReplayWriter, IIndexUs
             .ThenBy(hit => hit.Path, StringComparer.OrdinalIgnoreCase)
             .Take(MetadataHitLimit)
             .ToList();
+    }
+
+    private static async IAsyncEnumerable<Hit> SearchUnifiedMetadataOnlyAsync(
+        Database db,
+        long rootId,
+        string root,
+        WalkerOptions options,
+        UnifiedQuery query,
+        [EnumeratorCancellation] CancellationToken cancellationToken)
+    {
+        await foreach (var file in IndexTables.ReadFileMetadataAsync(db, rootId, cancellationToken).ConfigureAwait(false))
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+
+            if (!options.IncludeHidden &&
+                (((FileAttributes)file.Attributes) & (FileAttributes.Hidden | FileAttributes.System)) != 0)
+            {
+                continue;
+            }
+
+            if (!IndexedFileFilter.Matches(
+                    root,
+                    file.Path,
+                    file.FileName,
+                    file.Extension,
+                    file.SizeBytes,
+                    file.ModifiedUtcTicks,
+                    options))
+            {
+                continue;
+            }
+
+            if (!query.MatchesFile(
+                    root,
+                    file.Path,
+                    file.FileName,
+                    file.Extension,
+                    file.SizeBytes,
+                    file.CreatedUtcTicks,
+                    file.ModifiedUtcTicks,
+                    file.Status,
+                    file.ExtractorId,
+                    file.FileTypeCategory))
+            {
+                continue;
+            }
+
+            var relative = GetRelativePath(root, file.Path);
+            var displayText = string.IsNullOrWhiteSpace(relative) || relative == "."
+                ? file.FileName
+                : relative;
+            yield return new Hit(
+                file.Path,
+                0,
+                $"File match: {displayText}",
+                Array.Empty<MatchSpan>(),
+                HitKind.Metadata,
+                700 + RecencyScore(file.ModifiedUtcTicks),
+                file.SizeBytes,
+                file.ModifiedUtcTicks > 0 ? new DateTime(file.ModifiedUtcTicks, DateTimeKind.Utc) : null,
+                HitRoute.Indexed);
+        }
     }
 
     public async Task<IndexCoverage> GetCoverageAsync(SearchRequest request, CancellationToken cancellationToken)
@@ -2013,7 +2115,19 @@ public sealed class CSharpDbFileIndex : IFileIndex, IIndexReplayWriter, IIndexUs
         if (!fileFilterVerdicts.TryGetValue(line.Path, out var fileAllowed))
         {
             fileAllowed = IndexedFileFilter.Matches(
-                root, line.Path, line.FileName, line.Extension, line.SizeBytes, line.ModifiedUtcTicks, options);
+                    root, line.Path, line.FileName, line.Extension, line.SizeBytes, line.ModifiedUtcTicks, options) &&
+                (query is not UnifiedQuery unified ||
+                 unified.MatchesFile(
+                     root,
+                     line.Path,
+                     line.FileName,
+                     line.Extension,
+                     line.SizeBytes,
+                     line.CreatedUtcTicks,
+                     line.ModifiedUtcTicks,
+                     line.Status,
+                     line.ExtractorId,
+                     line.FileTypeCategory));
             fileFilterVerdicts[line.Path] = fileAllowed;
         }
 
@@ -2057,6 +2171,34 @@ public sealed class CSharpDbFileIndex : IFileIndex, IIndexReplayWriter, IIndexUs
             relative != "." &&
             !relative.StartsWith("..", StringComparison.Ordinal) &&
             !Path.IsPathRooted(relative);
+    }
+
+    private static string GetRelativePath(string root, string path)
+    {
+        try
+        {
+            return Path.GetRelativePath(root, path);
+        }
+        catch
+        {
+            return path;
+        }
+    }
+
+    private static double RecencyScore(long modifiedUtcTicks)
+    {
+        if (modifiedUtcTicks <= 0)
+            return 0;
+
+        var age = DateTime.UtcNow - new DateTime(modifiedUtcTicks, DateTimeKind.Utc);
+        if (age <= TimeSpan.FromDays(7))
+            return 50;
+        if (age <= TimeSpan.FromDays(30))
+            return 25;
+        if (age <= TimeSpan.FromDays(365))
+            return 10;
+
+        return 0;
     }
 
     private sealed record IndexVolumeContext(

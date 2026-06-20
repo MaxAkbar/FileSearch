@@ -1589,6 +1589,43 @@ public sealed class FileIndexTests : IDisposable
         Assert.Empty(hits);
     }
 
+    [Fact]
+    public async Task UnifiedIndexedContentSearchFiltersByFileName()
+    {
+        File.WriteAllText(Path.Combine(_root, "QuarterlyReport.txt"), "needle\n");
+        File.WriteAllText(Path.Combine(_root, "notes.txt"), "needle\n");
+        await BuildAsync();
+
+        var query = new UnifiedQueryParser().Parse("name:report content:needle");
+        var hits = await RawIndexedSearchAsync(
+            query,
+            rawQuery: "name:report content:needle",
+            mode: QueryMode.Unified);
+
+        var hit = Assert.Single(hits);
+        Assert.EndsWith("QuarterlyReport.txt", hit.Path);
+        Assert.Equal(HitKind.Content, hit.Kind);
+    }
+
+    [Fact]
+    public async Task UnifiedIndexedMetadataOnlySearchReturnsFileHits()
+    {
+        File.WriteAllText(Path.Combine(_root, "report.txt"), "body\n");
+        File.WriteAllText(Path.Combine(_root, "report.md"), "body\n");
+        await BuildAsync();
+
+        var query = new UnifiedQueryParser().Parse("ext:md");
+        var hits = await RawIndexedSearchAsync(
+            query,
+            rawQuery: "ext:md",
+            mode: QueryMode.Unified);
+
+        var hit = Assert.Single(hits);
+        Assert.EndsWith("report.md", hit.Path);
+        Assert.Equal(HitKind.Metadata, hit.Kind);
+        Assert.Equal(0, hit.LineNumber);
+    }
+
     private async Task BuildAsync(WalkerOptions? options = null)
     {
         await _index.BuildOrRefreshAsync(

@@ -27,6 +27,7 @@ Still missing or partial:
 - Retrying failed index files from the CLI remains future work.
 - Saved searches, custom scopes, and shareable workspace import/export exist; workspaces can optionally run their saved search when loaded.
 - Results now have GUI facets, indexed/live source route filtering, grouping, sort presets, direct CSV/JSON/JSON Lines/Markdown export, drag-and-drop, persistent favorites, shared pinned paths, safe result rename/delete, and configurable main-window and Quick Search action shortcuts; richer reporting remains missing.
+- Unified query syntax now records `semantic:` intent as an explained disabled chip, but real semantic ranking is not implemented yet.
 - Durable USN replay is NTFS-only. ReFS remains on snapshot validation until 128-bit file identifiers are supported and tested.
 - Hard-link-aware path identity is not fully implemented; ambiguous USN deletes fall back to root validation.
 - There is no true Windows Service yet. Background indexing is a per-user tray process that starts after user sign-in.
@@ -51,6 +52,12 @@ Still missing or partial:
 - Add default excluded folders for large noisy trees: `.git`, `.vs`, `bin`, `obj`, `node_modules`, package caches, and build outputs.
 - Add optional **Search all indexed locations** mode separate from folder-specific search.
 - Add ranking and snippets for indexed results while still rechecking every hit with the existing query engine.
+- Add optional local-only semantic indexing and ranking for `semantic:` queries. This should be disabled by default, never call paid embedding services, and store model id/license/hash with the local semantic index. First candidates to evaluate:
+  - `sentence-transformers/all-MiniLM-L6-v2` as the fast default candidate: Apache-2.0, ONNX, 384-dimensional vectors, small desktop footprint.
+  - `BAAI/bge-small-en-v1.5` as a stronger retrieval candidate: MIT, ONNX, 384-dimensional vectors, larger than MiniLM.
+  - `intfloat/e5-small-v2` as an alternate retrieval candidate: MIT, ONNX, 384-dimensional vectors, but requires query/passage prefixes for best behavior.
+  - `sentence-transformers/all-mpnet-base-v2` as a quality candidate: Apache-2.0, ONNX, 768-dimensional vectors, heavier index and runtime cost.
+  - `sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2` or `intfloat/multilingual-e5-small` if multilingual semantic search becomes a product requirement.
 - Add ReFS-safe durable replay with 128-bit file identifiers, `ExtendedFileIdType`, and native integration tests.
 - Add explicit hard-link policy or path-level identity storage for USN delete/rename replay.
 - Consider a true non-UI Windows Service only as a later, separate component for startup-before-login and deeper enterprise scenarios.
@@ -100,5 +107,6 @@ Still missing or partial:
 - CSharpDB remains the embedded database for the next roadmap phase.
 - Live scan remains the correctness fallback.
 - Indexing remains opt-in by location.
+- Semantic indexing remains optional, local-only, and model-backed by freely usable ONNX assets unless the user explicitly chooses another provider later.
 - Watchers run while an indexing owner is running: either the GUI process or the per-user tray indexer.
 - PowerShell support should initially use CLI automation, not a separate module.

@@ -22,6 +22,16 @@ internal static partial class QueryFtsTerms
     {
         switch (query)
         {
+            case UnifiedQuery unified:
+                return Build(unified.ContentQuery);
+
+            case MatchAllQuery:
+            case FuzzyQuery:
+                return Array.Empty<IReadOnlySet<string>>();
+
+            case NearQuery near:
+                return Build(new AndQuery(new[] { near.Left, near.Right }));
+
             case TermQuery term:
                 var tokens = ExtractTokens(term.Term);
                 return tokens.Count == 0

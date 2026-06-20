@@ -44,9 +44,22 @@ public sealed class Searcher : ISearcher
     {
         ArgumentNullException.ThrowIfNull(request);
 
+        if (request.Expression is UnifiedQuery { HasUnavailableSemantic: true })
+        {
+            request.Status?.Invoke(UnifiedQuery.SemanticUnavailableMessage);
+            yield break;
+        }
+
         if (request.SearchTarget != SearchTarget.Content)
         {
             await foreach (var hit in SearchNamesAsync(request, cancellationToken).ConfigureAwait(false))
+                yield return hit;
+            yield break;
+        }
+
+        if (request.Expression is UnifiedQuery unified && !unified.HasContentCriteria)
+        {
+            await foreach (var hit in SearchUnifiedFileMetadataAsync(request, unified, cancellationToken).ConfigureAwait(false))
                 yield return hit;
             yield break;
         }
@@ -124,6 +137,14 @@ public sealed class Searcher : ISearcher
                     {
                         var extractor = _extractors.GetFor(path);
                         if (extractor is null)
+                        {
+                            Interlocked.Increment(ref filesSkipped);
+                            PublishProgress();
+                            return;
+                        }
+
+                        if (request.Expression is UnifiedQuery unified &&
+                            !unified.MatchesLiveFile(request.Roots, path, extractor.ExtractorId))
                         {
                             Interlocked.Increment(ref filesSkipped);
                             PublishProgress();
@@ -221,6 +242,92 @@ public sealed class Searcher : ISearcher
         }
 
         return hitsForFile;
+    }
+
+    private async IAsyncEnumerable<Hit> SearchUnifiedFileMetadataAsync(
+        SearchRequest request,
+        UnifiedQuery query,
+        [EnumeratorCancellation] CancellationToken cancellationToken)
+    {
+        await Task.Yield();
+
+        long filesEnumerated = 0;
+        long filesProcessed = 0;
+        long filesMatched = 0;
+        long filesSkipped = 0;
+        long filesFailed = 0;
+        long lastProgressTimestamp = 0;
+        const long ProgressIntervalMs = 100;
+
+        void PublishProgress(bool force = false)
+        {
+            if (request.Progress is null)
+                return;
+
+            if (!force)
+            {
+                var now = Environment.TickCount64;
+                var last = Interlocked.Read(ref lastProgressTimestamp);
+                if (now - last < ProgressIntervalMs ||
+                    Interlocked.CompareExchange(ref lastProgressTimestamp, now, last) != last)
+                {
+                    return;
+                }
+            }
+
+            request.Progress(new SearchProgress(
+                Interlocked.Read(ref filesEnumerated),
+                Interlocked.Read(ref filesProcessed),
+                Interlocked.Read(ref filesMatched),
+                Interlocked.Read(ref filesSkipped),
+                Interlocked.Read(ref filesFailed)));
+        }
+
+        foreach (var path in _walker.Enumerate(request.Roots, request.WalkerOptions, cancellationToken))
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            Interlocked.Increment(ref filesEnumerated);
+            Hit? matchedHit = null;
+            try
+            {
+                Interlocked.Increment(ref filesProcessed);
+                var extractor = _extractors.GetFor(path);
+                if (!query.MatchesLiveFile(request.Roots, path, extractor?.ExtractorId))
+                {
+                    Interlocked.Increment(ref filesSkipped);
+                    PublishProgress();
+                    continue;
+                }
+
+                var root = FindContainingRoot(request.Roots, path);
+                var relative = GetRelativePath(root, path);
+                var displayText = string.IsNullOrWhiteSpace(relative) || relative == "."
+                    ? Path.GetFileName(path)
+                    : relative;
+                var (sizeBytes, modifiedUtc) = TryReadMetadata(path, isDirectory: false);
+                matchedHit = new Hit(
+                    path,
+                    0,
+                    $"File match: {displayText}",
+                    Array.Empty<MatchSpan>(),
+                    HitKind.Metadata,
+                    700,
+                    sizeBytes,
+                    modifiedUtc);
+                Interlocked.Increment(ref filesMatched);
+            }
+            catch (Exception ex) when (ex is not OperationCanceledException)
+            {
+                Interlocked.Increment(ref filesFailed);
+                _logger.LogDebug(ex, "Unified metadata search failed for file {Path}.", path);
+            }
+
+            PublishProgress();
+            if (matchedHit is not null)
+                yield return matchedHit;
+        }
+
+        PublishProgress(force: true);
     }
 
     private async IAsyncEnumerable<Hit> SearchNamesAsync(
@@ -505,6 +612,34 @@ public sealed class Searcher : ISearcher
         {
             return path;
         }
+    }
+
+    private static string FindContainingRoot(IReadOnlyList<string> roots, string path)
+    {
+        foreach (var root in roots)
+        {
+            if (string.IsNullOrWhiteSpace(root))
+                continue;
+
+            try
+            {
+                var normalizedRoot = Path.GetFullPath(root);
+                var normalizedPath = Path.GetFullPath(path);
+                var relative = Path.GetRelativePath(normalizedRoot, normalizedPath);
+                if (relative.Length > 0 &&
+                    relative != "." &&
+                    !relative.StartsWith("..", StringComparison.Ordinal) &&
+                    !Path.IsPathRooted(relative))
+                {
+                    return normalizedRoot;
+                }
+            }
+            catch
+            {
+            }
+        }
+
+        return roots.Count > 0 ? roots[0] : string.Empty;
     }
 
     private static (long? SizeBytes, DateTime? ModifiedUtc) TryReadMetadata(string path, bool isDirectory)

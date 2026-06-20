@@ -51,6 +51,7 @@ public sealed class BindingPathAuditTests
         typeof(QuickIndexedLocationSelection),
         typeof(AppShortcutBindingViewModel),
         typeof(QuickSearchShortcutBindingViewModel),
+        typeof(QueryChipViewModel),
     };
 
     /// <summary>Window-scope (DataContext) type per file; default is the shell.</summary>

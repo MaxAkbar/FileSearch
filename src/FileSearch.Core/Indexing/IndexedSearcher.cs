@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Runtime.CompilerServices;
 using System.Threading;
 using FileSearch.Core.Engine;
+using FileSearch.Core.Queries;
 
 namespace FileSearch.Core.Indexing;
 
@@ -42,6 +43,12 @@ public sealed class IndexedSearcher : ISearcher
         SearchRequest request,
         [EnumeratorCancellation] CancellationToken cancellationToken)
     {
+        if (request.Expression is UnifiedQuery { HasUnavailableSemantic: true })
+        {
+            request.Status?.Invoke(UnifiedQuery.SemanticUnavailableMessage);
+            yield break;
+        }
+
         if (_indexingCoordinator is not null)
             await _indexingCoordinator.SetForegroundSearchActiveAsync(true, cancellationToken).ConfigureAwait(false);
 

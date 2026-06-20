@@ -149,6 +149,10 @@ public sealed partial class SearchViewModel : ObservableObject, IDisposable
 
     public ObservableCollection<ResultFacetOption> SizeFacetOptions { get; } = new();
 
+    public ObservableCollection<QueryChipViewModel> QueryChips { get; } = new();
+
+    public bool HasQueryChips => QueryChips.Count > 0;
+
     public IReadOnlyList<ResultSortOption> ResultSortOptions { get; } =
         new[]
         {
@@ -180,7 +184,7 @@ public sealed partial class SearchViewModel : ObservableObject, IDisposable
         (FilesView as ListCollectionView)?.Count ?? Files.Count;
 
     public IReadOnlyList<QueryMode> AvailableModes { get; } =
-        new[] { QueryMode.Boolean, QueryMode.Regex, QueryMode.PlainText };
+        new[] { QueryMode.Unified, QueryMode.Boolean, QueryMode.Regex, QueryMode.PlainText };
 
     public IReadOnlyList<SearchTargetOption> SearchTargetOptions { get; } =
         new[]
@@ -200,7 +204,7 @@ public sealed partial class SearchViewModel : ObservableObject, IDisposable
     [ObservableProperty] private string? _selectedRecentPath;
 
     // --- options (Options tab) ---
-    [ObservableProperty] private QueryMode _searchMode = QueryMode.Boolean;
+    [ObservableProperty] private QueryMode _searchMode = QueryMode.Unified;
     [ObservableProperty] private bool _matchCase;
     [ObservableProperty] private bool _enableDocumentExtraction = true;
     [ObservableProperty] private bool _enableImageOcr;
@@ -370,7 +374,7 @@ public sealed partial class SearchViewModel : ObservableObject, IDisposable
     public string SearchTargetSummary => SelectedSearchTargetOption?.DisplayName ?? "Contents";
 
     public string QueryPlaceholderText => CurrentSearchTarget == SearchTarget.Content
-        ? "Search text, regex, or Boolean query"
+        ? "Search text or fields like type:pdf modified:last-month"
         : "Search file or folder names";
 
     private string ResultItemNounPlural => CurrentSearchTarget == SearchTarget.Content ? "files" : "items";
@@ -475,6 +479,15 @@ public sealed partial class SearchViewModel : ObservableObject, IDisposable
 
     [RelayCommand]
     private void TogglePreviewPane() => IsPreviewPaneVisible = !IsPreviewPaneVisible;
+
+    [RelayCommand]
+    private void RemoveQueryChip(QueryChipViewModel? chip)
+    {
+        if (chip is null || string.IsNullOrWhiteSpace(QueryText))
+            return;
+
+        QueryText = RemoveQueryChipText(QueryText, chip);
+    }
 
     [RelayCommand(CanExecute = nameof(CanCopyPreview))]
     private void CopyPreview()
@@ -747,6 +760,12 @@ public sealed partial class SearchViewModel : ObservableObject, IDisposable
         catch (Exception ex)
         {
             _status.Text = $"Invalid query: {ex.Message}";
+            return;
+        }
+
+        if (query is UnifiedQuery { HasUnavailableSemantic: true })
+        {
+            _status.Text = UnifiedQuery.SemanticUnavailableMessage;
             return;
         }
 
@@ -1634,6 +1653,155 @@ public sealed partial class SearchViewModel : ObservableObject, IDisposable
         return raw.Split(s_patternSeparators, StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
     }
 
+    private void RefreshQueryChips()
+    {
+        QueryChips.Clear();
+
+        if (SearchMode == QueryMode.Unified && !string.IsNullOrWhiteSpace(QueryText))
+        {
+            try
+            {
+                if (_queryFactory.Build(QueryText, QueryMode.Unified, MatchCase) is UnifiedQuery unified)
+                {
+                    foreach (var chip in unified.Chips)
+                        QueryChips.Add(new QueryChipViewModel(chip, ReplaceQueryChipValue));
+                }
+            }
+            catch
+            {
+                // Partial queries should not interrupt typing. The search
+                // command still reports parser errors when the user runs it.
+            }
+        }
+
+        OnPropertyChanged(nameof(HasQueryChips));
+    }
+
+    private static string RemoveQueryChipText(string query, QueryChipViewModel chip)
+    {
+        if (!TryFindQueryChipSpan(query, chip, out var start, out var length))
+            return query;
+
+        var end = start + length;
+        var left = start;
+        while (left > 0 && char.IsWhiteSpace(query[left - 1]))
+            left--;
+
+        var right = end;
+        while (right < query.Length && char.IsWhiteSpace(query[right]))
+            right++;
+
+        if (left < start && right > end)
+        {
+            start = left;
+        }
+        else
+        {
+            start = left;
+            end = right;
+        }
+
+        return (query[..start] + query[end..]).Trim();
+    }
+
+    private void ReplaceQueryChipValue(QueryChipViewModel chip, string value)
+    {
+        if (string.IsNullOrWhiteSpace(value))
+        {
+            QueryText = RemoveQueryChipText(QueryText, chip);
+            return;
+        }
+
+        QueryText = ReplaceQueryChipText(QueryText, chip, value);
+    }
+
+    private static string ReplaceQueryChipText(string query, QueryChipViewModel chip, string value)
+    {
+        if (!TryFindQueryChipSpan(query, chip, out var start, out var length))
+            return query;
+
+        var existing = query.Substring(start, length);
+        var replacementValue = FormatQueryChipReplacement(chip, existing, value);
+        var colon = existing.IndexOf(':', StringComparison.Ordinal);
+        var replacement = colon > 0
+            ? existing[..(colon + 1)] + replacementValue
+            : FieldNameForReplacement(chip) is { } fieldName
+                ? fieldName + ":" + replacementValue
+                : replacementValue;
+
+        return query[..start] + replacement + query[(start + length)..];
+    }
+
+    private static bool TryFindQueryChipSpan(string query, QueryChipViewModel chip, out int start, out int length)
+    {
+        start = chip.Position;
+        length = chip.Length;
+        if (start >= 0 &&
+            length > 0 &&
+            start + length <= query.Length &&
+            (length != chip.RawText.Length ||
+             string.Equals(query.Substring(start, length), chip.RawText, StringComparison.Ordinal)))
+        {
+            return true;
+        }
+
+        start = query.IndexOf(chip.RawText, StringComparison.Ordinal);
+        length = chip.RawText.Length;
+        return start >= 0 && length > 0 && start + length <= query.Length;
+    }
+
+    private static string? FieldNameForReplacement(QueryChipViewModel chip)
+    {
+        var field = chip.Field.StartsWith("Not ", StringComparison.OrdinalIgnoreCase)
+            ? chip.Field[4..]
+            : chip.Field;
+        return field.ToLowerInvariant() switch
+        {
+            "created" => "created",
+            "extension" => "ext",
+            "extractor" => "extractor",
+            "folder" => "folder",
+            "modified" => "modified",
+            "name" => "name",
+            "path" => "path",
+            "root" => "root",
+            "semantic" => "semantic",
+            "size" => "size",
+            "status" => "status",
+            "type" => "type",
+            _ => null,
+        };
+    }
+
+    private static string FormatQueryChipValue(string value)
+    {
+        var trimmed = value.Trim();
+        if (trimmed.Length == 0)
+            return string.Empty;
+
+        var needsQuotes = trimmed.Any(ch => char.IsWhiteSpace(ch) || ch is '(' or ')' or '"');
+        return needsQuotes
+            ? "\"" + trimmed.Replace("\"", "\\\"", StringComparison.Ordinal) + "\""
+            : trimmed;
+    }
+
+    private static string FormatQueryChipReplacement(QueryChipViewModel chip, string existing, string value)
+    {
+        var replacement = FormatQueryChipValue(value);
+        if (replacement.Length == 0)
+            return replacement;
+
+        if (chip.Field.Contains("fuzzy", StringComparison.OrdinalIgnoreCase))
+        {
+            var suffixStart = existing.LastIndexOf('~');
+            var suffix = suffixStart >= 0 ? existing[suffixStart..] : "~";
+            if (!replacement.EndsWith(suffix, StringComparison.Ordinal))
+                replacement += suffix;
+        }
+
+        return replacement;
+    }
+
     /// <summary>Persists this view model's slice of the settings.</summary>
     public void SaveOptions()
     {
@@ -1654,8 +1822,14 @@ public sealed partial class SearchViewModel : ObservableObject, IDisposable
     partial void OnIncludeSubfoldersChanged(bool value) =>
         OnPropertyChanged(nameof(SubfoldersSummary));
 
-    partial void OnMatchCaseChanged(bool value) =>
+    partial void OnMatchCaseChanged(bool value)
+    {
         OnPropertyChanged(nameof(MatchCaseSummary));
+        RefreshQueryChips();
+    }
+
+    partial void OnSearchModeChanged(QueryMode value) =>
+        RefreshQueryChips();
 
     partial void OnEnableDocumentExtractionChanged(bool value) =>
         OnPropertyChanged(nameof(DocumentExtractionSummary));
@@ -1696,8 +1870,11 @@ public sealed partial class SearchViewModel : ObservableObject, IDisposable
     partial void OnModifiedBeforeChanged(DateTime value) =>
         OnPropertyChanged(nameof(DateSummary));
 
-    partial void OnQueryTextChanged(string value) =>
+    partial void OnQueryTextChanged(string value)
+    {
         OnPropertyChanged(nameof(ResultsContextText));
+        RefreshQueryChips();
+    }
 
     partial void OnSearchPathChanged(string value)
     {

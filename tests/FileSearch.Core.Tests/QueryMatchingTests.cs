@@ -87,4 +87,45 @@ public sealed class QueryMatchingTests
         q.CollectHighlights("foo and bar", spans);
         Assert.Equal(2, spans.Count);
     }
+
+    [Fact]
+    public void NearQuery_RequiresTermsWithinTokenDistance()
+    {
+        var q = new NearQuery(new TermQuery("termination"), new TermQuery("notice"), 2);
+
+        Assert.True(q.IsMatch("termination clause notice"));
+        Assert.True(q.IsMatch("notice follows termination"));
+        Assert.False(q.IsMatch("termination one two three notice"));
+    }
+
+    [Fact]
+    public void NearQuery_HighlightsMatchingTerms()
+    {
+        var q = new NearQuery(new TermQuery("error"), new TermQuery("timeout"), 3);
+        var spans = new List<MatchSpan>();
+
+        q.CollectHighlights("error after timeout", spans);
+
+        Assert.Equal(2, spans.Count);
+    }
+
+    [Fact]
+    public void FuzzyQuery_MatchesWordsWithinEditDistance()
+    {
+        var q = new FuzzyQuery("invoice");
+
+        Assert.True(q.IsMatch("invoce"));
+        Assert.True(q.IsMatch("invoice"));
+        Assert.False(q.IsMatch("receipt"));
+    }
+
+    [Fact]
+    public void FuzzyQuery_RespectsConfiguredEditDistance()
+    {
+        var oneEdit = new FuzzyQuery("invoice", maxEdits: 1);
+        var twoEdits = new FuzzyQuery("invoice", maxEdits: 2);
+
+        Assert.False(oneEdit.IsMatch("invioce"));
+        Assert.True(twoEdits.IsMatch("invioce"));
+    }
 }
