@@ -26,7 +26,7 @@
             <TextBlock Text="About FileSearch" Style="{StaticResource CtxTitleStyle}"/>
         </Border>
 
-        <Grid Margin="20">
+        <Grid Margin="{DynamicResource AppDensity.WindowContentMargin}">
             <Grid.RowDefinitions>
                 <RowDefinition Height="*"/>
                 <RowDefinition Height="Auto"/>
@@ -125,7 +125,7 @@
                         Margin="0,16,0,0">
                 <Button Click="OnCopyDetailsClick"
                         Style="{StaticResource SecondaryButtonStyle}"
-                        Height="34"
+                        Height="{DynamicResource AppDensity.DialogButtonHeight}"
                         MinWidth="112"
                         Margin="0,0,8,0">
                     <StackPanel Orientation="Horizontal">
@@ -135,7 +135,7 @@
                 </Button>
                 <Button Click="OnCloseClick"
                         Style="{StaticResource PrimaryButtonStyle}"
-                        Height="34"
+                        Height="{DynamicResource AppDensity.DialogButtonHeight}"
                         MinWidth="92">
                     <StackPanel Orientation="Horizontal">
                         <ui:FontIcon Glyph="&#xE711;" FontSize="12" Margin="0,0,7,0"/>

@@ -39,7 +39,7 @@
             </Grid>
         </Border>
 
-        <Grid Margin="20">
+        <Grid Margin="{DynamicResource AppDensity.WindowContentMargin}">
             <Grid.RowDefinitions>
                 <RowDefinition Height="*"/>
                 <RowDefinition Height="Auto"/>
@@ -65,7 +65,7 @@
                     <StackPanel Grid.Row="0" Margin="4,2,4,10">
                         <Button Command="{Binding Index.AddCurrentFolderToIndexCommand}"
                                 Style="{StaticResource SecondaryButtonStyle}"
-                                Height="34"
+                                Height="{DynamicResource AppDensity.DialogButtonHeight}"
                                 HorizontalAlignment="Stretch"
                                 HorizontalContentAlignment="Center"
                                 Margin="0,0,0,8">
@@ -76,7 +76,7 @@
                         </Button>
                         <Button Click="OnAddFolderClick"
                                 Style="{StaticResource SecondaryButtonStyle}"
-                                Height="34"
+                                Height="{DynamicResource AppDensity.DialogButtonHeight}"
                                 HorizontalAlignment="Stretch"
                                 HorizontalContentAlignment="Center"
                                 Margin="0,0,0,8">
@@ -87,7 +87,7 @@
                         </Button>
                         <Button Click="OnConfigureAddOptionsClick"
                                 Style="{StaticResource SecondaryButtonStyle}"
-                                Height="34"
+                                Height="{DynamicResource AppDensity.DialogButtonHeight}"
                                 HorizontalAlignment="Stretch"
                                 HorizontalContentAlignment="Center">
                             <StackPanel Orientation="Horizontal">
@@ -241,7 +241,7 @@
                         <WrapPanel Margin="0,0,0,18">
                             <Button Command="{Binding Index.RebuildSelectedSemanticIndexCommand}"
                                     Style="{StaticResource SecondaryButtonStyle}"
-                                    Height="34"
+                                    Height="{DynamicResource AppDensity.DialogButtonHeight}"
                                     MinWidth="152"
                                     Margin="0,0,8,8">
                                 <StackPanel Orientation="Horizontal">
@@ -251,7 +251,7 @@
                             </Button>
                             <Button Command="{Binding Index.RefreshSelectedSemanticIndexStatusCommand}"
                                     Style="{StaticResource SecondaryButtonStyle}"
-                                    Height="34"
+                                    Height="{DynamicResource AppDensity.DialogButtonHeight}"
                                     MinWidth="116"
                                     Margin="0,0,8,8">
                                 <StackPanel Orientation="Horizontal">
@@ -345,7 +345,7 @@
                         <WrapPanel>
                             <Button Command="{Binding Index.RebuildSelectedIndexCommand}"
                                     Style="{StaticResource PrimaryButtonStyle}"
-                                    Height="34"
+                                    Height="{DynamicResource AppDensity.DialogButtonHeight}"
                                     MinWidth="142"
                                     Margin="0,0,8,8">
                                 <StackPanel Orientation="Horizontal">
@@ -355,7 +355,7 @@
                             </Button>
                             <Button Command="{Binding Index.RemoveSelectedIndexCommand}"
                                     Style="{StaticResource SecondaryButtonStyle}"
-                                    Height="34"
+                                    Height="{DynamicResource AppDensity.DialogButtonHeight}"
                                     MinWidth="138"
                                     Margin="0,0,8,8">
                                 <StackPanel Orientation="Horizontal">
@@ -365,7 +365,7 @@
                             </Button>
                             <Button Command="{Binding Index.OpenIndexLocationCommand}"
                                     Style="{StaticResource SecondaryButtonStyle}"
-                                    Height="34"
+                                    Height="{DynamicResource AppDensity.DialogButtonHeight}"
                                     MinWidth="132"
                                     Margin="0,0,8,8">
                                 <StackPanel Orientation="Horizontal">
@@ -375,7 +375,7 @@
                             </Button>
                             <Button Command="{Binding Index.ValidateSelectedIndexCommand}"
                                     Style="{StaticResource SecondaryButtonStyle}"
-                                    Height="34"
+                                    Height="{DynamicResource AppDensity.DialogButtonHeight}"
                                     MinWidth="132"
                                     Margin="0,0,8,8">
                                 <StackPanel Orientation="Horizontal">
@@ -385,7 +385,7 @@
                             </Button>
                             <Button Command="{Binding Index.ExportIndexFailuresCommand}"
                                     Style="{StaticResource SecondaryButtonStyle}"
-                                    Height="34"
+                                    Height="{DynamicResource AppDensity.DialogButtonHeight}"
                                     MinWidth="132"
                                     Margin="0,0,8,8">
                                 <StackPanel Orientation="Horizontal">
@@ -395,7 +395,7 @@
                             </Button>
                             <Button Command="{Binding Index.CompactIndexDatabaseCommand}"
                                     Style="{StaticResource SecondaryButtonStyle}"
-                                    Height="34"
+                                    Height="{DynamicResource AppDensity.DialogButtonHeight}"
                                     MinWidth="146"
                                     Margin="0,0,8,8">
                                 <StackPanel Orientation="Horizontal">
@@ -624,7 +624,7 @@
                                     <Button Grid.Column="1"
                                             Command="{Binding Index.RebuildSelectedHealthRootCommand}"
                                             Style="{StaticResource PrimaryButtonStyle}"
-                                            Height="34"
+                                            Height="{DynamicResource AppDensity.DialogButtonHeight}"
                                             MinWidth="112"
                                             VerticalAlignment="Center">
                                         <StackPanel Orientation="Horizontal">
@@ -645,7 +645,7 @@
                         Margin="0,16,0,0">
                 <Button Command="{Binding Index.PauseBackgroundIndexingCommand}"
                         Style="{StaticResource SecondaryButtonStyle}"
-                        Height="34"
+                        Height="{DynamicResource AppDensity.DialogButtonHeight}"
                         MinWidth="86"
                         Margin="0,0,8,0">
                     <StackPanel Orientation="Horizontal">
@@ -655,7 +655,7 @@
                 </Button>
                 <Button Command="{Binding Index.ResumeBackgroundIndexingCommand}"
                         Style="{StaticResource SecondaryButtonStyle}"
-                        Height="34"
+                        Height="{DynamicResource AppDensity.DialogButtonHeight}"
                         MinWidth="92"
                         Margin="0,0,8,0">
                     <StackPanel Orientation="Horizontal">
@@ -666,7 +666,7 @@
                 <Button Click="OnCloseClick"
                         IsDefault="True"
                         Style="{StaticResource PrimaryButtonStyle}"
-                        Height="34"
+                        Height="{DynamicResource AppDensity.DialogButtonHeight}"
                         MinWidth="92">
                     <StackPanel Orientation="Horizontal">
                         <ui:FontIcon Glyph="&#xE711;" FontSize="12" Margin="0,0,7,0"/>

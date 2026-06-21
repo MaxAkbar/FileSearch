@@ -115,6 +115,16 @@ jobs:
             -p:DebugSymbols=true `
             -o $publishDir
 
+          dotnet publish .\src\FileSearch.Cli\FileSearch.Cli.csproj `
+            --configuration Release `
+            --runtime win-x64 `
+            --self-contained true `
+            -p:PublishSingleFile=false `
+            -p:PublishReadyToRun=true `
+            -p:DebugType=portable `
+            -p:DebugSymbols=true `
+            -o $publishDir
+
           .\scripts\Test-PublishedSidecars.ps1 -PublishDirectory $publishDir
 
       - name: Upload test results and coverage

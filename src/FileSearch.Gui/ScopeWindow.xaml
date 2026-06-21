@@ -25,7 +25,7 @@
             <TextBlock Text="New scope" Style="{StaticResource CtxTitleStyle}"/>
         </Border>
 
-        <Grid Margin="20">
+        <Grid Margin="{DynamicResource AppDensity.WindowContentMargin}">
             <Grid.RowDefinitions>
                 <RowDefinition Height="Auto"/>
                 <RowDefinition Height="Auto"/>
@@ -35,7 +35,7 @@
                     BorderBrush="{DynamicResource Atlas.LineBrush}"
                     BorderThickness="1"
                     CornerRadius="8"
-                    Padding="20">
+                    Padding="{DynamicResource AppDensity.SettingsSurfacePadding}">
                 <StackPanel>
                     <TextBlock Text="Name" Style="{StaticResource FieldLabelStyle}"/>
                     <TextBox x:Name="NameBox"
@@ -57,7 +57,7 @@
                 <Button Click="OnCancelClick"
                         IsCancel="True"
                         Style="{StaticResource SecondaryButtonStyle}"
-                        Height="34"
+                        Height="{DynamicResource AppDensity.DialogButtonHeight}"
                         MinWidth="84"
                         Margin="0,0,8,0">
                     <StackPanel Orientation="Horizontal">
@@ -68,7 +68,7 @@
                 <Button Click="OnSaveClick"
                         IsDefault="True"
                         Style="{StaticResource PrimaryButtonStyle}"
-                        Height="34"
+                        Height="{DynamicResource AppDensity.DialogButtonHeight}"
                         MinWidth="84">
                     <StackPanel Orientation="Horizontal">
                         <ui:FontIcon Glyph="&#xE74E;" FontSize="13" Margin="0,0,7,0"/>

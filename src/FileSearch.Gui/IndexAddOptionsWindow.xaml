@@ -31,7 +31,7 @@
             </StackPanel>
         </Border>
 
-        <Grid Margin="20">
+        <Grid Margin="{DynamicResource AppDensity.WindowContentMargin}">
             <Grid.RowDefinitions>
                 <RowDefinition Height="*"/>
                 <RowDefinition Height="Auto"/>
@@ -161,7 +161,7 @@
                         IsDefault="True"
                         IsCancel="True"
                         Style="{StaticResource PrimaryButtonStyle}"
-                        Height="34"
+                        Height="{DynamicResource AppDensity.DialogButtonHeight}"
                         MinWidth="92">
                     <StackPanel Orientation="Horizontal">
                         <ui:FontIcon Glyph="&#xE73E;" FontSize="13" Margin="0,0,7,0"/>

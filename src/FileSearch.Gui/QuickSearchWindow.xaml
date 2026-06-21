@@ -39,7 +39,7 @@
             BorderBrush="{DynamicResource Atlas.Line2Brush}"
             BorderThickness="1"
             CornerRadius="8"
-            Padding="12">
+            Padding="{DynamicResource AppDensity.QuickSearchPadding}">
         <Grid>
             <Grid.RowDefinitions>
                 <RowDefinition Height="Auto"/>
@@ -48,7 +48,7 @@
                 <RowDefinition Height="Auto"/>
             </Grid.RowDefinitions>
 
-            <Border Grid.Row="0" Style="{StaticResource OmniBarStyle}" Height="44">
+            <Border Grid.Row="0" Style="{StaticResource OmniBarStyle}" Height="{DynamicResource AppDensity.QuickSearchOmniBarHeight}">
                 <Grid>
                     <Grid.ColumnDefinitions>
                         <ColumnDefinition Width="Auto"/>
@@ -109,8 +109,8 @@
                         <Button Grid.Column="2"
                                 Command="{Binding ChooseQuickFolderCommand}"
                                 Style="{StaticResource IconButtonStyle}"
-                                Width="30"
-                                Height="30"
+                                Width="{DynamicResource AppDensity.QuickFolderButtonSize}"
+                                Height="{DynamicResource AppDensity.QuickFolderButtonSize}"
                                 Margin="8,0,0,0"
                                 ToolTip="Choose folder">
                             <ui:FontIcon Glyph="&#xE838;" FontSize="13"/>
@@ -142,7 +142,7 @@
                          PreviewMouseMove="OnResultsPreviewMouseMove">
                     <ListBox.ItemTemplate>
                         <DataTemplate DataType="{x:Type vm:FileResultViewModel}">
-                            <Grid Margin="12,10">
+                            <Grid Margin="{DynamicResource AppDensity.QuickResultCardInnerMargin}">
                                 <Grid.ColumnDefinitions>
                                     <ColumnDefinition Width="Auto"/>
                                     <ColumnDefinition Width="*"/>
@@ -166,7 +166,9 @@
                                                         <ColumnDefinition Width="Auto"/>
                                                         <ColumnDefinition Width="*"/>
                                                     </Grid.ColumnDefinitions>
-                                                    <TextBlock Text="{Binding LineNumber}" Style="{StaticResource LineNoStyle}" Width="34"/>
+                                                    <TextBlock Text="{Binding LineNumber}"
+                                                               Style="{StaticResource LineNoStyle}"
+                                                               Width="{DynamicResource AppDensity.QuickLineNoWidth}"/>
                                                     <TextBlock Grid.Column="1"
                                                                Style="{StaticResource LineTextStyle}"
                                                                hl:HitHighlight.Hit="{Binding}"/>
@@ -187,35 +189,40 @@
                                                 CommandParameter="{Binding}"
                                                 Visibility="{Binding HasImageOcrPreview, Converter={StaticResource BoolToVisibility}}"
                                                 Style="{StaticResource IconButtonStyle}"
-                                                Width="28" Height="28"
+                                                Width="{DynamicResource AppDensity.PreviewIconButtonSize}"
+                                                Height="{DynamicResource AppDensity.PreviewIconButtonSize}"
                                                 ToolTip="Open OCR preview">
                                             <ui:FontIcon Glyph="&#xE8A5;" FontSize="13"/>
                                         </Button>
                                         <Button Command="{Binding DataContext.OpenResultCommand, RelativeSource={RelativeSource AncestorType=ListBox}}"
                                                 CommandParameter="{Binding}"
                                                 Style="{StaticResource IconButtonStyle}"
-                                                Width="28" Height="28"
+                                                Width="{DynamicResource AppDensity.PreviewIconButtonSize}"
+                                                Height="{DynamicResource AppDensity.PreviewIconButtonSize}"
                                                 ToolTip="Open">
                                             <ui:FontIcon Glyph="&#xE8E5;" FontSize="13"/>
                                         </Button>
                                         <Button Command="{Binding DataContext.RevealResultCommand, RelativeSource={RelativeSource AncestorType=ListBox}}"
                                                 CommandParameter="{Binding}"
                                                 Style="{StaticResource IconButtonStyle}"
-                                                Width="28" Height="28"
+                                                Width="{DynamicResource AppDensity.PreviewIconButtonSize}"
+                                                Height="{DynamicResource AppDensity.PreviewIconButtonSize}"
                                                 ToolTip="Reveal in Explorer">
                                             <ui:FontIcon Glyph="&#xE838;" FontSize="13"/>
                                         </Button>
                                         <Button Command="{Binding DataContext.CopyResultPathCommand, RelativeSource={RelativeSource AncestorType=ListBox}}"
                                                 CommandParameter="{Binding}"
                                                 Style="{StaticResource IconButtonStyle}"
-                                                Width="28" Height="28"
+                                                Width="{DynamicResource AppDensity.PreviewIconButtonSize}"
+                                                Height="{DynamicResource AppDensity.PreviewIconButtonSize}"
                                                 ToolTip="Copy path">
                                             <ui:FontIcon Glyph="&#xE8C8;" FontSize="13"/>
                                         </Button>
                                         <Button Command="{Binding DataContext.PinResultCommand, RelativeSource={RelativeSource AncestorType=ListBox}}"
                                                 CommandParameter="{Binding}"
                                                 Style="{StaticResource IconButtonStyle}"
-                                                Width="28" Height="28"
+                                                Width="{DynamicResource AppDensity.PreviewIconButtonSize}"
+                                                Height="{DynamicResource AppDensity.PreviewIconButtonSize}"
                                                 ToolTip="{Binding PinActionText}">
                                             <ui:FontIcon Glyph="{Binding PinGlyph}" FontSize="13"/>
                                         </Button>

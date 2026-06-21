@@ -94,12 +94,13 @@ The app provides the main search form, result grid, match preview panel, result 
 
 ### `FileSearch.Cli`
 
-Interactive REPL front end for the core search library. It targets `net10.0` and uses:
+Interactive REPL front end for the core search library. It targets `net10.0-windows` and uses:
 
 - `Spectre.Console` for rich terminal prompts, status spinners, tables, panels, and highlighted match output.
 - `Microsoft.Extensions.DependencyInjection` for the same core service registration used by the GUI.
+- `FileSearch.WindowsOcr` so command-line searches can opt into the same Windows OCR extractors as the desktop app.
 
-The CLI supports live search, covered indexed search, query mode switching, file filters, one-shot CSV/JSON/JSON Lines/Markdown search output, structured one-shot index reporting, CSharpDB index build/clear/stats commands, and direct query entry from the prompt.
+The CLI supports live search, covered indexed search, content/file/folder-name targets, document/OCR/known-type filters, one-shot CSV/JSON/JSON Lines/Markdown search output, structured one-shot index reporting, CSharpDB index build/clear/stats commands, workflow execution, background indexer control, and direct query entry from the prompt.
 
 ### `FileSearch.Core.Tests`
 
@@ -136,16 +137,19 @@ Build the solution:
 dotnet build .\FileSearch.slnx
 ```
 
-Run the WPF app:
+Create a portable release folder:
 
 ```powershell
-dotnet run --project .\src\FileSearch.Gui\FileSearch.Gui.csproj
+powershell -ExecutionPolicy Bypass -File .\scripts\New-PortableRelease.ps1 `
+  -Version 1.0.0.0 `
+  -RuntimeIdentifier win-x64
 ```
 
-Run the interactive CLI:
+Run the release executables:
 
 ```powershell
-dotnet run --project .\src\FileSearch.Cli\FileSearch.Cli.csproj
+.\artifacts\release\publish\win-x64\FileSearch.Gui.exe
+.\artifacts\release\publish\win-x64\FileSearch.Cli.exe
 ```
 
 Run tests:
@@ -179,7 +183,7 @@ dotnet test .\FileSearch.slnx
 
 ## Using the CLI
 
-Run the CLI without arguments to open the REPL. Type `help` to see available commands, or type a query directly to search the current folder.
+Run `.\FileSearch.Cli.exe` from the installed or portable release folder without arguments to open the REPL. Type `help` to see available commands, or type a query directly to search the current folder.
 
 Useful commands:
 
@@ -188,46 +192,75 @@ path C:\src\project
 mode plain
 mode regex
 mode boolean
+target files
 case on
 recursive off
+docs off
+ocr on
+known-only on
 include *.cs;*.xaml
 exclude bin;obj
 ext .cs,.md
+plain-ext .log,.cfg
 limit 25
 search connection string
 index build
 index on
 index stats
 index locations
+workflow list
+indexer status
 exit
 ```
 
 For automation, use the one-shot search command. Results stream to stdout unless `--output` is provided:
 
 ```powershell
-dotnet run --project .\src\FileSearch.Cli\FileSearch.Cli.csproj -- search "connection string" --path C:\src --mode plain --json
-dotnet run --project .\src\FileSearch.Cli\FileSearch.Cli.csproj -- search needle --path C:\src --csv --output .\results.csv
-dotnet run --project .\src\FileSearch.Cli\FileSearch.Cli.csproj -- search needle --path C:\src --jsonl --limit 500
-dotnet run --project .\src\FileSearch.Cli\FileSearch.Cli.csproj -- search needle --path C:\src --markdown --index
+.\FileSearch.Cli.exe search "connection string" --path C:\src --mode plain --json
+.\FileSearch.Cli.exe search invoice --path C:\docs --target files --json
+.\FileSearch.Cli.exe search "serial number" --path C:\scans --ocr --markdown
+.\FileSearch.Cli.exe search needle --path C:\src --csv --output .\results.csv
+.\FileSearch.Cli.exe search needle --path C:\src --jsonl --limit 500
+.\FileSearch.Cli.exe search needle --path C:\src --markdown --index
 ```
 
-One-shot search accepts the same common filters as the REPL, including `--include`, `--exclude`, `--ext`, `--exclude-ext`, `--exclude-dir`, `--min-size`, `--max-size`, `--after`, `--before`, `--recursive`, `--no-recursive`, `--hidden`, `--case`, `--index`, and `--no-index`.
+One-shot search accepts the same common filters as the REPL, including `--target`, `--docs`, `--no-docs`, `--ocr`, `--no-ocr`, `--known-only`, `--all-types`, `--plain-ext`, `--include`, `--exclude`, `--ext`, `--exclude-ext`, `--exclude-dir`, `--min-size`, `--max-size`, `--after`, `--before`, `--recursive`, `--no-recursive`, `--hidden`, `--case`, `--index`, and `--no-index`.
 
 Index maintenance and reporting also have one-shot structured output. Use these commands when scripts need to build or clear an index, inspect configured roots, inspect per-root stats, or list failed extraction details without parsing the interactive tables:
 
 ```powershell
-dotnet run --project .\src\FileSearch.Cli\FileSearch.Cli.csproj -- index build C:\src --json
-dotnet run --project .\src\FileSearch.Cli\FileSearch.Cli.csproj -- index rebuild C:\src --csv --output .\index-rebuild.csv
-dotnet run --project .\src\FileSearch.Cli\FileSearch.Cli.csproj -- index clear C:\src --json
-dotnet run --project .\src\FileSearch.Cli\FileSearch.Cli.csproj -- index locations --json
-dotnet run --project .\src\FileSearch.Cli\FileSearch.Cli.csproj -- index stats C:\src --csv
-dotnet run --project .\src\FileSearch.Cli\FileSearch.Cli.csproj -- index failures --jsonl --output .\index-failures.jsonl
-dotnet run --project .\src\FileSearch.Cli\FileSearch.Cli.csproj -- index locations --markdown --output .\index-locations.md
+.\FileSearch.Cli.exe index build C:\src --json
+.\FileSearch.Cli.exe index rebuild C:\src --csv --output .\index-rebuild.csv
+.\FileSearch.Cli.exe index clear C:\src --json
+.\FileSearch.Cli.exe index locations --json
+.\FileSearch.Cli.exe index stats C:\src --csv
+.\FileSearch.Cli.exe index failures --jsonl --output .\index-failures.jsonl
+.\FileSearch.Cli.exe index locations --markdown --output .\index-locations.md
 ```
 
-`index build [FOLDER]`, `index rebuild [FOLDER]`, `index clear [FOLDER]`, `index locations`, `index stats [FOLDER]`, and `index failures` support `--json`, `--jsonl`, `--csv`, `--markdown`, `--format`, and `--output`. `index build` and `index rebuild` also accept the common traversal filters such as `--include`, `--exclude`, `--ext`, `--exclude-ext`, `--exclude-dir`, `--min-size`, `--max-size`, `--after`, `--before`, `--recursive`, `--no-recursive`, and `--hidden`. If no folder is passed to folder-specific index commands, the current working directory is used.
+`index build [FOLDER]`, `index rebuild [FOLDER]`, `index clear [FOLDER]`, `index locations`, `index stats [FOLDER]`, and `index failures` support `--json`, `--jsonl`, `--csv`, `--markdown`, `--format`, and `--output`. `index build` and `index rebuild` also accept traversal and extraction filters such as `--include`, `--exclude`, `--ext`, `--exclude-ext`, `--exclude-dir`, `--min-size`, `--max-size`, `--after`, `--before`, `--recursive`, `--no-recursive`, `--hidden`, `--ocr`, `--no-docs`, `--known-only`, and `--plain-ext`. If no folder is passed to folder-specific index commands, the current working directory is used.
 
-The CLI uses the same `FileSearch.Core` search pipeline and CSharpDB index database as the desktop app. Indexed search is opt-in with `index on`; when the current search is not covered by the index, the CLI falls back to live scan.
+Saved workflow JSON files can be inspected and run from the CLI:
+
+```powershell
+.\FileSearch.Cli.exe workflow list
+.\FileSearch.Cli.exe workflow validate "Find TODOs"
+.\FileSearch.Cli.exe workflow run "Find TODOs" --dry-run
+.\FileSearch.Cli.exe workflow run "Find TODOs" --yes --no-hits
+```
+
+Background indexer controls are available as `indexer` commands. They use the same per-user named-pipe API as the GUI:
+
+```powershell
+.\FileSearch.Cli.exe indexer start
+.\FileSearch.Cli.exe indexer status
+.\FileSearch.Cli.exe indexer pause
+.\FileSearch.Cli.exe indexer resume
+.\FileSearch.Cli.exe indexer refresh C:\src
+.\FileSearch.Cli.exe indexer validate C:\src
+```
+
+The CLI uses the same `FileSearch.Core` search pipeline, Windows OCR package, workflow runner, and CSharpDB index database as the desktop app. Indexed search is opt-in with `index on`; when the current search is not covered by the index, the CLI falls back to live scan.
 
 ## Indexed search
 
@@ -401,10 +434,10 @@ services.AddFileSearchCore();
 
 ## PowerShell usage
 
-No PowerShell extension is required for normal use. The CLI can be launched directly from PowerShell:
+No PowerShell extension is required for normal use. The CLI can be launched directly from PowerShell from the installed or portable release folder:
 
 ```powershell
-dotnet run --project .\src\FileSearch.Cli\FileSearch.Cli.csproj
+.\FileSearch.Cli.exe
 ```
 
 PowerShell can also drive the REPL non-interactively by piping commands:
@@ -417,24 +450,24 @@ PowerShell can also drive the REPL non-interactively by piping commands:
   'limit 25'
   'search error AND timeout'
   'exit'
-) | dotnet run --project .\src\FileSearch.Cli\FileSearch.Cli.csproj
+) | .\FileSearch.Cli.exe
 ```
 
 For structured search automation, prefer one-shot output:
 
 ```powershell
-dotnet run --project .\src\FileSearch.Cli\FileSearch.Cli.csproj -- search TODO --path C:\src\project --json |
+.\FileSearch.Cli.exe search TODO --path C:\src\project --json |
   ConvertFrom-Json
 ```
 
 For structured index automation, call the one-shot index commands directly:
 
 ```powershell
-dotnet run --project .\src\FileSearch.Cli\FileSearch.Cli.csproj -- index build C:\src\project --json |
+.\FileSearch.Cli.exe index build C:\src\project --json |
   ConvertFrom-Json
-dotnet run --project .\src\FileSearch.Cli\FileSearch.Cli.csproj -- index locations --json |
+.\FileSearch.Cli.exe index locations --json |
   ConvertFrom-Json
-dotnet run --project .\src\FileSearch.Cli\FileSearch.Cli.csproj -- index failures --csv --output .\failures.csv
+.\FileSearch.Cli.exe index failures --csv --output .\failures.csv
 ```
 
 Index maintenance works the same way:
@@ -446,7 +479,7 @@ Index maintenance works the same way:
   'index on'
   'search TODO'
   'exit'
-) | dotnet run --project .\src\FileSearch.Cli\FileSearch.Cli.csproj
+) | .\FileSearch.Cli.exe
 ```
 
 Directly loading `FileSearch.Core` from PowerShell is possible, but it is not the recommended path because PowerShell has to resolve the full dependency graph and consume async streams. For automation, use the CLI. A future PowerShell module would mainly be useful for pipeline-native commands such as `Search-FileContent` and `Update-FileSearchIndex`.
@@ -455,7 +488,7 @@ Directly loading `FileSearch.Core` from PowerShell is possible, but it is not th
 
 FileSearch can produce both MSI and MSIX artifacts for Store distribution. The MSI path is useful for the Microsoft Store MSI/EXE submission flow; the MSIX path remains available when a Partner Center package identity is reserved.
 
-CI builds, tests, CLI smoke tests, published sidecar smoke tests, dependency review, manual Store packaging, portable tag-based releases, MSI artifacts, and optional signed Store artifacts are configured with GitHub Actions. Release steps are documented in [docs/RELEASE_CHECKLIST.md](docs/RELEASE_CHECKLIST.md).
+CI builds, tests, CLI smoke tests, published executable smoke tests, dependency review, manual Store packaging, portable tag-based releases, MSI artifacts, and optional signed Store artifacts are configured with GitHub Actions. Release steps are documented in [docs/RELEASE_CHECKLIST.md](docs/RELEASE_CHECKLIST.md).
 
 Create an MSI installer from the repository root:
 
@@ -467,7 +500,7 @@ powershell -ExecutionPolicy Bypass -File .\scripts\New-MsiInstaller.ps1 `
 
 Outputs are written to `artifacts\msi`:
 
-- `.msi` installer containing the GUI, background indexer, extractor host, and help bundle.
+- `.msi` installer containing the GUI, CLI, background indexer, extractor host, and help bundle.
 - `SHA256SUMS-<runtime>.txt` for checksum review.
 
 For Store submission through the MSI/EXE path, sign the MSI with a certificate that chains to a Microsoft Trusted Root Program certificate authority. For local testing, an unsigned MSI can still validate the installer layout.
@@ -525,7 +558,7 @@ Work landed from `bbd4b73` (*Add background indexed search*, June 2026) to the c
 
 ### Command line
 
-- **Interactive search REPL** (`b9c2ec5`): Spectre.Console front end with live and indexed search, query-mode/case/filter/limit commands, and index build/clear/stats — sharing the same core pipeline and index database as the GUI.
+- **Interactive search REPL** (`b9c2ec5`): Spectre.Console front end with live and indexed search, query-mode/case/filter/limit commands, target/document/OCR controls, workflow execution, background-indexer controls, and index build/clear/stats — sharing the same core pipeline and index database as the GUI.
 
 ### Extractors
 

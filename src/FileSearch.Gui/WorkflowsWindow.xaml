@@ -510,7 +510,7 @@
             </Grid>
         </Border>
 
-        <Grid Margin="20">
+        <Grid Margin="{DynamicResource AppDensity.WindowContentMargin}">
             <Grid.ColumnDefinitions>
                 <ColumnDefinition Width="280"/>
                 <ColumnDefinition Width="16"/>

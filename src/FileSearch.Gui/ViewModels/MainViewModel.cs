@@ -15,6 +15,7 @@ namespace FileSearch.Gui.ViewModels;
 public sealed partial class MainViewModel : ObservableObject, IDisposable
 {
     private readonly IThemeService _themeService;
+    private readonly IStyleService _styleService;
     private readonly IShellIntegrationService _shellIntegrationService;
 
     public MainViewModel(
@@ -25,6 +26,7 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
         StatusBarViewModel status,
         WorkflowsViewModel workflows,
         IThemeService themeService,
+        IStyleService styleService,
         IShellIntegrationService shellIntegrationService)
     {
         Search = search;
@@ -34,6 +36,7 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
         Status = status;
         Workflows = workflows;
         _themeService = themeService;
+        _styleService = styleService;
         _shellIntegrationService = shellIntegrationService;
     }
 
@@ -54,6 +57,24 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
     {
         if (Enum.TryParse<AppTheme>(themeName, out var theme))
             _themeService.SetTheme(theme);
+    }
+
+    [RelayCommand]
+    private void ApplyStyle(string styleName)
+    {
+        if (Enum.TryParse<AppStyle>(styleName, out var style))
+        {
+            foreach (var option in Settings.StyleOptions)
+            {
+                if (option.Value != style)
+                    continue;
+
+                Settings.SelectedStyle = option;
+                return;
+            }
+
+            _styleService.SetStyle(style);
+        }
     }
 
     [RelayCommand]

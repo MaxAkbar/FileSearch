@@ -26,6 +26,7 @@ public sealed partial class ApplicationSettingsViewModel : ObservableObject
     private readonly ISettingsService _settingsService;
     private readonly IStartupRegistrationService? _startupRegistration;
     private readonly IThemeService? _themeService;
+    private readonly IStyleService? _styleService;
     private readonly IGlobalHotkeyService? _hotkeyService;
     private readonly IEmbeddingModelPackCatalog? _semanticModelCatalog;
     private readonly IEmbeddingModelPackStore? _semanticModelStore;
@@ -52,6 +53,7 @@ public sealed partial class ApplicationSettingsViewModel : ObservableObject
     private bool _enableLocalReranker;
     private string _semanticModelInstallStatus = string.Empty;
     private CustomThemeInfo? _selectedCustomTheme;
+    private AppStyleOption _selectedStyle;
     private bool _isUpdatingShortcuts;
 
     public ApplicationSettingsViewModel(
@@ -59,6 +61,7 @@ public sealed partial class ApplicationSettingsViewModel : ObservableObject
         StatusBarViewModel status,
         IStartupRegistrationService? startupRegistration = null,
         IThemeService? themeService = null,
+        IStyleService? styleService = null,
         IGlobalHotkeyService? hotkeyService = null,
         IEmbeddingModelPackCatalog? semanticModelCatalog = null,
         IEmbeddingModelPackStore? semanticModelStore = null,
@@ -68,6 +71,7 @@ public sealed partial class ApplicationSettingsViewModel : ObservableObject
         _settingsService = settingsService;
         _startupRegistration = startupRegistration;
         _themeService = themeService;
+        _styleService = styleService;
         _hotkeyService = hotkeyService;
         _semanticModelCatalog = semanticModelCatalog;
         _semanticModelStore = semanticModelStore;
@@ -94,6 +98,7 @@ public sealed partial class ApplicationSettingsViewModel : ObservableObject
         _semanticModelPack = FindSemanticModelOption(_settingsService.Current.SemanticModelPackId);
         _semanticModelPacksDirectory = NormalizeSemanticModelDirectory(_settingsService.Current.SemanticModelPacksDirectory);
         _enableLocalReranker = _settingsService.Current.EnableLocalReranker;
+        _selectedStyle = FindStyleOption(NormalizeStyle(_settingsService.Current.Style));
         ApplyShortcutSettings(NormalizeShortcutSettings(_settingsService.Current.Shortcuts));
         ApplyQuickSearchShortcutSettings(NormalizeQuickSearchShortcutSettings(_settingsService.Current.QuickSearchShortcuts));
         RefreshQuickIndexedLocationSelectionsCore();
@@ -128,6 +133,12 @@ public sealed partial class ApplicationSettingsViewModel : ObservableObject
         new(QuickSearchScopeKind.SelectedIndexedLocations, "Selected indexed locations"),
         new(QuickSearchScopeKind.AllIndexedLocations, "All indexed locations"),
         new(QuickSearchScopeKind.EntireMachineMetadata, "Entire machine metadata"),
+    ];
+
+    public IReadOnlyList<AppStyleOption> StyleOptions { get; } =
+    [
+        new(AppStyle.Comfortable, "Comfortable", "Uses roomier controls and spacing."),
+        new(AppStyle.Compact, "Compact", "Fits more controls and results on screen."),
     ];
 
     public ObservableCollection<AppShortcutBindingViewModel> ShortcutBindings { get; } = new();
@@ -212,6 +223,32 @@ public sealed partial class ApplicationSettingsViewModel : ObservableObject
             return "Using the built-in theme menu selection.";
         }
     }
+
+    public AppStyleOption SelectedStyle
+    {
+        get => _selectedStyle;
+        set
+        {
+            if (value is null || !SetProperty(ref _selectedStyle, value))
+                return;
+
+            OnPropertyChanged(nameof(StyleSummary));
+
+            if (!_isInitialized)
+                return;
+
+            _styleService?.SetStyle(value.Value);
+            SaveSettings(updateStartupRegistration: false);
+
+            _status.Text = $"Using {value.DisplayName} style.";
+        }
+    }
+
+    public string StyleSummary => SelectedStyle.Value switch
+    {
+        AppStyle.Compact => "Compact uses tighter controls, lists, and panels.",
+        _ => "Comfortable uses the default roomier spacing.",
+    };
 
     public int SidebarPageSize
     {
@@ -704,6 +741,7 @@ public sealed partial class ApplicationSettingsViewModel : ObservableObject
             settings.SemanticModelPackId = SemanticModelPack.IsDisabled ? string.Empty : SemanticModelPack.Id;
             settings.SemanticModelPacksDirectory = SemanticModelPacksDirectory;
             settings.EnableLocalReranker = EnableLocalReranker;
+            settings.Style = SelectedStyle.Value;
             settings.Shortcuts = BuildShortcutSettings();
             settings.QuickSearchShortcuts = BuildQuickSearchShortcutSettings();
             settings.RunInBackground = null;
@@ -740,6 +778,13 @@ public sealed partial class ApplicationSettingsViewModel : ObservableObject
         value < MinimumSidebarPageSize || value > MaximumSidebarPageSize
             ? DefaultSidebarPageSize
             : value;
+
+    private static AppStyle NormalizeStyle(AppStyle style) =>
+        Enum.IsDefined(style) ? style : AppStyle.Comfortable;
+
+    private AppStyleOption FindStyleOption(AppStyle style) =>
+        StyleOptions.FirstOrDefault(option => option.Value == style)
+        ?? StyleOptions[0];
 
     private static IndexerResourceProfile NormalizeIndexerResourceProfile(IndexerResourceProfile profile) =>
         Enum.IsDefined(profile) ? profile : IndexerResourceProfile.Balanced;
@@ -1069,6 +1114,11 @@ public sealed partial class ApplicationSettingsViewModel : ObservableObject
 }
 
 public sealed record QuickSearchHotkeyOption(QuickSearchHotkey Value, string DisplayName)
+{
+    public override string ToString() => DisplayName;
+}
+
+public sealed record AppStyleOption(AppStyle Value, string DisplayName, string Description)
 {
     public override string ToString() => DisplayName;
 }

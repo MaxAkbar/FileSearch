@@ -145,6 +145,7 @@ try {
     Assert-ZipEntry $msixArchive "FileSearch.Gui.exe" "GUI executable" | Out-Null
     Assert-ZipEntry $msixArchive "FileSearch.Indexer.exe" "background indexer executable" | Out-Null
     Assert-ZipEntry $msixArchive "FileSearch.ExtractorHost.exe" "extractor host executable" | Out-Null
+    Assert-ZipEntry $msixArchive "FileSearch.Cli.exe" "CLI executable" | Out-Null
     Assert-ZipEntry $msixArchive "Help/index.html" "help bundle" | Out-Null
 
     [xml]$manifest = Read-ZipEntryText $msixArchive "AppxManifest.xml"

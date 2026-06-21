@@ -30,7 +30,7 @@
             <TextBlock Text="Regex tester" Style="{StaticResource CtxTitleStyle}"/>
         </Border>
 
-        <Grid Margin="20">
+        <Grid Margin="{DynamicResource AppDensity.WindowContentMargin}">
             <Grid.RowDefinitions>
                 <RowDefinition Height="*"/>
                 <RowDefinition Height="Auto"/>
@@ -107,7 +107,7 @@
                                  Text="{Binding Replacement, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
                                  FontFamily="{DynamicResource Atlas.MonoFont}"
                                  FontSize="12"
-                                 Height="34"
+                                 Height="{DynamicResource AppDensity.DialogButtonHeight}"
                                  Margin="0,0,0,12"
                                  ui:ControlHelper.PlaceholderText="Optional replacement"/>
                     </Grid>
@@ -221,7 +221,7 @@
                 <Button Click="OnCloseClick"
                         IsCancel="True"
                         Style="{StaticResource PrimaryButtonStyle}"
-                        Height="34"
+                        Height="{DynamicResource AppDensity.DialogButtonHeight}"
                         MinWidth="84">
                     <StackPanel Orientation="Horizontal">
                         <ui:FontIcon Glyph="&#xE711;" FontSize="12" Margin="0,0,7,0"/>

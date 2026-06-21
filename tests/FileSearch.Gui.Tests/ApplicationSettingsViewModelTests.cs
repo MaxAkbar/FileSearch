@@ -245,4 +245,24 @@ public sealed class ApplicationSettingsViewModelTests
         Assert.Equal(1, themeService.SetThemeCallCount);
         Assert.Equal(AppTheme.VisualStudio, themeService.CurrentTheme);
     }
+
+    [Fact]
+    public void StyleSelectionLoadsAppliesAndPersists()
+    {
+        var settings = new FakeSettingsService();
+        settings.Current.Style = AppStyle.Compact;
+        var styleService = new FakeStyleService();
+        var appSettings = new ApplicationSettingsViewModel(
+            settings,
+            new StatusBarViewModel(),
+            styleService: styleService);
+
+        Assert.Equal(AppStyle.Compact, appSettings.SelectedStyle.Value);
+
+        appSettings.SelectedStyle = appSettings.StyleOptions.Single(option => option.Value == AppStyle.Comfortable);
+
+        Assert.Equal(1, styleService.SetStyleCallCount);
+        Assert.Equal(AppStyle.Comfortable, styleService.CurrentStyle);
+        Assert.Equal(AppStyle.Comfortable, settings.Current.Style);
+    }
 }

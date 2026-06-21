@@ -94,6 +94,7 @@ public partial class App : System.Windows.Application
                 services.AddSingleton<IFolderPicker, FolderPicker>();
                 services.AddSingleton<IUiDispatcher, WpfUiDispatcher>();
                 services.AddSingleton<StatusBarViewModel>();
+                services.AddSingleton<IStyleService, StyleService>();
                 services.AddSingleton<ApplicationSettingsViewModel>();
                 services.AddSingleton<HistoryViewModel>();
                 services.AddSingleton<SearchViewModel>();
@@ -116,6 +117,8 @@ public partial class App : System.Windows.Application
         {
             themeService.SetTheme(savedSettings.Theme);
         }
+
+        _host.Services.GetRequiredService<IStyleService>().SetStyle(savedSettings.Style);
 
         var window = _host.Services.GetRequiredService<MainWindow>();
         var viewModel = _host.Services.GetRequiredService<MainViewModel>();

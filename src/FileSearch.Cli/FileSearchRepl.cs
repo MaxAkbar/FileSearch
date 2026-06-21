@@ -1,21 +1,29 @@
 using System.Buffers;
 using System.Collections.Concurrent;
+using System.Diagnostics;
 using System.Globalization;
 using System.Text;
 using System.Text.Json;
+using FileSearch.Core.Extractors;
 using FileSearch.Core.Engine;
 using FileSearch.Core.Indexing;
 using FileSearch.Core.Queries;
+using FileSearch.Core.Workflows;
 using Spectre.Console;
 
 namespace FileSearch.Cli;
 
 internal sealed class FileSearchRepl
 {
+    private static readonly string[] s_indexerStatusArgs = ["status"];
+
     private readonly Searcher _liveSearcher;
     private readonly IFileIndex _index;
     private readonly IndexCoverageService _coverageService;
     private readonly IQueryFactory _queryFactory;
+    private readonly IExtractorRegistry _extractorRegistry;
+    private readonly IWorkflowStore _workflowStore;
+    private readonly IWorkflowRunner _workflowRunner;
     private readonly CliState _state = new();
     private CancellationTokenSource? _activeCommand;
 
@@ -23,12 +31,18 @@ internal sealed class FileSearchRepl
         Searcher liveSearcher,
         IFileIndex index,
         IndexCoverageService coverageService,
-        IQueryFactory queryFactory)
+        IQueryFactory queryFactory,
+        IExtractorRegistry extractorRegistry,
+        IWorkflowStore workflowStore,
+        IWorkflowRunner workflowRunner)
     {
         _liveSearcher = liveSearcher;
         _index = index;
         _coverageService = coverageService;
         _queryFactory = queryFactory;
+        _extractorRegistry = extractorRegistry;
+        _workflowStore = workflowStore;
+        _workflowRunner = workflowRunner;
         Console.CancelKeyPress += OnCancelKeyPress;
     }
 
@@ -55,6 +69,36 @@ internal sealed class FileSearchRepl
             try
             {
                 return await RunOneShotIndexAsync(args.Skip(1).ToArray(), CancellationToken.None)
+                    .ConfigureAwait(false);
+            }
+            catch (Exception ex) when (ex is not OperationCanceledException)
+            {
+                Console.Error.WriteLine($"Error: {ex.Message}");
+                return 1;
+            }
+        }
+
+        if (args.Length > 0 &&
+            args[0].Equals("workflow", StringComparison.OrdinalIgnoreCase))
+        {
+            try
+            {
+                return await RunOneShotWorkflowAsync(args.Skip(1).ToArray(), CancellationToken.None)
+                    .ConfigureAwait(false);
+            }
+            catch (Exception ex) when (ex is not OperationCanceledException)
+            {
+                Console.Error.WriteLine($"Error: {ex.Message}");
+                return 1;
+            }
+        }
+
+        if (args.Length > 0 &&
+            args[0].Equals("indexer", StringComparison.OrdinalIgnoreCase))
+        {
+            try
+            {
+                return await RunOneShotIndexerAsync(args.Skip(1).ToArray(), CancellationToken.None)
                     .ConfigureAwait(false);
             }
             catch (Exception ex) when (ex is not OperationCanceledException)
@@ -142,6 +186,9 @@ internal sealed class FileSearchRepl
             case "mode":
                 SetMode(tokens);
                 return true;
+            case "target":
+                SetTarget(tokens);
+                return true;
             case "case":
                 SetBool(tokens, "case sensitivity", value => _state.CaseSensitive = value, () => _state.CaseSensitive);
                 return true;
@@ -151,6 +198,20 @@ internal sealed class FileSearchRepl
                 return true;
             case "hidden":
                 SetBool(tokens, "hidden files", value => _state.IncludeHidden = value, () => _state.IncludeHidden);
+                return true;
+            case "docs":
+            case "documents":
+            case "document-extraction":
+                SetBool(tokens, "document extraction", value => _state.EnableDocumentExtraction = value, () => _state.EnableDocumentExtraction);
+                return true;
+            case "ocr":
+            case "image-ocr":
+                SetBool(tokens, "image OCR", value => _state.EnableImageOcr = value, () => _state.EnableImageOcr);
+                return true;
+            case "known-only":
+            case "known-types":
+            case "skip-unknown":
+                SetBool(tokens, "known file types only", value => _state.SkipUnknownFileTypes = value, () => _state.SkipUnknownFileTypes);
                 return true;
             case "limit":
                 SetLimit(tokens);
@@ -171,6 +232,10 @@ internal sealed class FileSearchRepl
             case "exclude-dir":
             case "exclude-dirs":
                 SetNameList(tokens, _state.ExcludeDirectories, "excluded folders");
+                return true;
+            case "plain-ext":
+            case "text-ext":
+                SetExtensionList(tokens, _state.AdditionalPlainTextExtensions, "additional plain-text extensions");
                 return true;
             case "min-size":
                 SetSize(tokens, "minimum file size", value => _state.MinFileSizeBytes = value);
@@ -195,6 +260,12 @@ internal sealed class FileSearchRepl
                 return true;
             case "index":
                 await ExecuteIndexCommandAsync(tokens, cancellationToken).ConfigureAwait(false);
+                return true;
+            case "workflow":
+                await ExecuteWorkflowCommandAsync(tokens, cancellationToken).ConfigureAwait(false);
+                return true;
+            case "indexer":
+                await ExecuteIndexerCommandAsync(tokens, cancellationToken).ConfigureAwait(false);
                 return true;
             case "locations":
                 await RenderLocationsAsync(cancellationToken).ConfigureAwait(false);
@@ -236,7 +307,7 @@ internal sealed class FileSearchRepl
         var progress = new SearchProgress(0, 0, 0, 0, 0);
         var indexed = false;
         var stopwatch = System.Diagnostics.Stopwatch.StartNew();
-        var walkerOptions = _state.ToWalkerOptions();
+        var walkerOptions = _state.ToWalkerOptions(_extractorRegistry.SupportedExtensions);
         var request = new SearchRequest(
             query,
             [_state.Root],
@@ -245,7 +316,8 @@ internal sealed class FileSearchRepl
             UseIndex: _state.UseIndex,
             Status: message => statusMessages.Enqueue(message),
             RawQuery: queryText,
-            Mode: _state.Mode);
+            Mode: _state.Mode,
+            SearchTarget: _state.SearchTarget);
 
         await AnsiConsole.Status()
             .Spinner(Spinner.Known.Dots)
@@ -317,12 +389,13 @@ internal sealed class FileSearchRepl
         var request = new SearchRequest(
             query,
             [options.State.Root],
-            options.State.ToWalkerOptions(),
+            options.State.ToWalkerOptions(_extractorRegistry.SupportedExtensions),
             Progress: null,
             UseIndex: options.State.UseIndex,
             Status: message => statusMessages.Enqueue(message),
             RawQuery: options.QueryText,
-            Mode: options.State.Mode);
+            Mode: options.State.Mode,
+            SearchTarget: options.State.SearchTarget);
 
         IAsyncEnumerable<Hit> stream;
         if (options.State.UseIndex)
@@ -436,7 +509,7 @@ internal sealed class FileSearchRepl
         var stopwatch = System.Diagnostics.Stopwatch.StartNew();
         var request = new IndexRequest(
             root,
-            options.State.ToWalkerOptions(),
+            options.State.ToWalkerOptions(_extractorRegistry.SupportedExtensions),
             p => progress = p);
 
         await _index.RefreshRootAsync(request, mode, cancellationToken).ConfigureAwait(false);
@@ -484,6 +557,28 @@ internal sealed class FileSearchRepl
         return 0;
     }
 
+    private async Task<int> RunOneShotWorkflowAsync(string[] args, CancellationToken cancellationToken)
+    {
+        if (args.Length == 0 || args.Any(arg => arg is "--help" or "-h" or "/?"))
+        {
+            Console.Out.WriteLine(OneShotWorkflowUsage);
+            return 0;
+        }
+
+        return await ExecuteWorkflowActionAsync(args, oneShot: true, cancellationToken).ConfigureAwait(false);
+    }
+
+    private async Task<int> RunOneShotIndexerAsync(string[] args, CancellationToken cancellationToken)
+    {
+        if (args.Length == 0 || args.Any(arg => arg is "--help" or "-h" or "/?"))
+        {
+            Console.Out.WriteLine(OneShotIndexerUsage);
+            return 0;
+        }
+
+        return await ExecuteIndexerActionAsync(args, oneShot: true, cancellationToken).ConfigureAwait(false);
+    }
+
     private static OneShotSearchOptions ParseOneShotSearchOptions(string[] args)
     {
         if (args.Length == 0)
@@ -507,6 +602,10 @@ internal sealed class FileSearchRepl
                 case "--mode":
                 case "-m":
                     state.Mode = ParseMode(NextValue(args, ref i, arg));
+                    break;
+                case "--target":
+                case "-t":
+                    state.SearchTarget = ParseSearchTarget(NextValue(args, ref i, arg));
                     break;
                 case "--limit":
                 case "-n":
@@ -554,6 +653,31 @@ internal sealed class FileSearchRepl
                 case "--include-hidden":
                     state.IncludeHidden = true;
                     break;
+                case "--docs":
+                case "--documents":
+                    state.EnableDocumentExtraction = true;
+                    break;
+                case "--no-docs":
+                case "--no-documents":
+                    state.EnableDocumentExtraction = false;
+                    break;
+                case "--ocr":
+                case "--image-ocr":
+                    state.EnableImageOcr = true;
+                    break;
+                case "--no-ocr":
+                case "--no-image-ocr":
+                    state.EnableImageOcr = false;
+                    break;
+                case "--known-only":
+                case "--known-types-only":
+                case "--skip-unknown":
+                    state.SkipUnknownFileTypes = true;
+                    break;
+                case "--all-types":
+                case "--include-unknown":
+                    state.SkipUnknownFileTypes = false;
+                    break;
                 case "--index":
                     state.UseIndex = true;
                     break;
@@ -583,6 +707,12 @@ internal sealed class FileSearchRepl
                 case "--exclude-dirs":
                     state.ExcludeDirectories.Clear();
                     state.ExcludeDirectories.UnionWith(CliState.SplitList(NextValue(args, ref i, arg)));
+                    break;
+                case "--plain-ext":
+                case "--text-ext":
+                    state.AdditionalPlainTextExtensions.Clear();
+                    foreach (var extension in CliState.SplitList(NextValue(args, ref i, arg)).Select(CliState.NormalizeExtension))
+                        state.AdditionalPlainTextExtensions.Add(extension);
                     break;
                 case "--min-size":
                     if (!CliState.TryParseSize(NextValue(args, ref i, arg), out var minSize))
@@ -671,6 +801,37 @@ internal sealed class FileSearchRepl
                     EnsureOneShotWalkerOptionsAllowed(allowWalkerOptions, arg);
                     state.IncludeHidden = true;
                     break;
+                case "--docs":
+                case "--documents":
+                    EnsureOneShotWalkerOptionsAllowed(allowWalkerOptions, arg);
+                    state.EnableDocumentExtraction = true;
+                    break;
+                case "--no-docs":
+                case "--no-documents":
+                    EnsureOneShotWalkerOptionsAllowed(allowWalkerOptions, arg);
+                    state.EnableDocumentExtraction = false;
+                    break;
+                case "--ocr":
+                case "--image-ocr":
+                    EnsureOneShotWalkerOptionsAllowed(allowWalkerOptions, arg);
+                    state.EnableImageOcr = true;
+                    break;
+                case "--no-ocr":
+                case "--no-image-ocr":
+                    EnsureOneShotWalkerOptionsAllowed(allowWalkerOptions, arg);
+                    state.EnableImageOcr = false;
+                    break;
+                case "--known-only":
+                case "--known-types-only":
+                case "--skip-unknown":
+                    EnsureOneShotWalkerOptionsAllowed(allowWalkerOptions, arg);
+                    state.SkipUnknownFileTypes = true;
+                    break;
+                case "--all-types":
+                case "--include-unknown":
+                    EnsureOneShotWalkerOptionsAllowed(allowWalkerOptions, arg);
+                    state.SkipUnknownFileTypes = false;
+                    break;
                 case "--include":
                     EnsureOneShotWalkerOptionsAllowed(allowWalkerOptions, arg);
                     state.IncludeGlobs.Clear();
@@ -699,6 +860,13 @@ internal sealed class FileSearchRepl
                     EnsureOneShotWalkerOptionsAllowed(allowWalkerOptions, arg);
                     state.ExcludeDirectories.Clear();
                     state.ExcludeDirectories.UnionWith(CliState.SplitList(NextValue(args, ref i, arg)));
+                    break;
+                case "--plain-ext":
+                case "--text-ext":
+                    EnsureOneShotWalkerOptionsAllowed(allowWalkerOptions, arg);
+                    state.AdditionalPlainTextExtensions.Clear();
+                    foreach (var extension in CliState.SplitList(NextValue(args, ref i, arg)).Select(CliState.NormalizeExtension))
+                        state.AdditionalPlainTextExtensions.Add(extension);
                     break;
                 case "--min-size":
                     EnsureOneShotWalkerOptionsAllowed(allowWalkerOptions, arg);
@@ -788,6 +956,31 @@ internal sealed class FileSearchRepl
             _ => throw new ArgumentException("Mode must be plain, regex, boolean, or unified."),
         };
 
+    private static SearchTarget ParseSearchTarget(string value) =>
+        NormalizeTargetToken(value) switch
+        {
+            "content" or "contents" or "text" => SearchTarget.Content,
+            "file" or "files" or "filename" or "filenames" or "file-name" or "file-names" =>
+                SearchTarget.FileNames,
+            "folder" or "folders" or "directory" or "directories" or "folder-name" or "folder-names" =>
+                SearchTarget.FolderNames,
+            "name" or "names" or "file-folder" or "files-folders" or "file-and-folder" or "file-and-folder-names" =>
+                SearchTarget.FileAndFolderNames,
+            _ => throw new ArgumentException("Target must be content, files, folders, or names."),
+        };
+
+    private static string FormatSearchTarget(SearchTarget target) =>
+        target switch
+        {
+            SearchTarget.FileNames => "file names",
+            SearchTarget.FolderNames => "folder names",
+            SearchTarget.FileAndFolderNames => "file and folder names",
+            _ => "contents",
+        };
+
+    private static string NormalizeTargetToken(string value) =>
+        value.Trim().ToLowerInvariant().Replace('_', '-').Replace(' ', '-');
+
     private static OneShotOutputFormat ParseOutputFormat(string value) =>
         value.ToLowerInvariant() switch
         {
@@ -833,6 +1026,7 @@ internal sealed class FileSearchRepl
             options.QueryText,
             options.State.Root,
             options.State.Mode.ToString(),
+            options.State.SearchTarget.ToString(),
             indexed ? "indexed" : "live",
             totalHits,
             hits.Count,
@@ -882,6 +1076,7 @@ internal sealed class FileSearchRepl
         sb.AppendLine(CultureInfo.InvariantCulture, $"- Query: {options.QueryText}");
         sb.AppendLine(CultureInfo.InvariantCulture, $"- Root: {options.State.Root}");
         sb.AppendLine(CultureInfo.InvariantCulture, $"- Mode: {options.State.Mode}");
+        sb.AppendLine(CultureInfo.InvariantCulture, $"- Target: {FormatSearchTarget(options.State.SearchTarget)}");
         sb.AppendLine(CultureInfo.InvariantCulture, $"- Search: {(indexed ? "indexed" : "live")}");
         sb.AppendLine(CultureInfo.InvariantCulture, $"- Hits: {totalHits:n0}");
         sb.AppendLine(CultureInfo.InvariantCulture, $"- Displayed: {hits.Count:n0}");
@@ -1305,6 +1500,217 @@ internal sealed class FileSearchRepl
         }
     }
 
+    private async Task ExecuteWorkflowCommandAsync(IReadOnlyList<string> tokens, CancellationToken cancellationToken)
+    {
+        if (tokens.Count == 1)
+        {
+            RenderWorkflowHelp();
+            return;
+        }
+
+        _ = await ExecuteWorkflowActionAsync(tokens.Skip(1).ToArray(), oneShot: false, cancellationToken)
+            .ConfigureAwait(false);
+    }
+
+    private async Task<int> ExecuteWorkflowActionAsync(
+        string[] args,
+        bool oneShot,
+        CancellationToken cancellationToken)
+    {
+        var action = args[0].ToLowerInvariant();
+        switch (action)
+        {
+            case "list":
+            case "ls":
+                RenderWorkflowList();
+                return 0;
+            case "folder":
+            case "dir":
+                AnsiConsole.MarkupLine($"[bold]Workflow folder:[/] {Markup.Escape(_workflowStore.DirectoryPath)}");
+                return 0;
+            case "show":
+            case "cat":
+                {
+                    var selector = RequireArgument(args, 1, "workflow show needs a workflow name or file.");
+                    var workflow = LoadWorkflow(selector, out _, out var error);
+                    if (workflow is null)
+                        return RenderCommandError(error ?? "Workflow not found.", oneShot);
+                    Console.Out.WriteLine(WorkflowJson.Serialize(workflow));
+                    return 0;
+                }
+            case "validate":
+            case "check":
+                {
+                    var selector = RequireArgument(args, 1, "workflow validate needs a workflow name or file.");
+                    var workflow = LoadWorkflow(selector, out var fileName, out var error);
+                    if (workflow is null)
+                        return RenderCommandError(error ?? "Workflow not found.", oneShot);
+
+                    var errors = WorkflowValidator.Validate(workflow);
+                    if (errors.Count == 0)
+                    {
+                        AnsiConsole.MarkupLine($"[green]Workflow is valid:[/] {Markup.Escape(fileName)}");
+                        return 0;
+                    }
+
+                    AnsiConsole.MarkupLine($"[red]Workflow is invalid:[/] {Markup.Escape(fileName)}");
+                    foreach (var validationError in errors)
+                        AnsiConsole.MarkupLine($"  [red]-[/] {Markup.Escape(validationError)}");
+                    return 2;
+                }
+            case "dry-run":
+            case "dryrun":
+                return await RunWorkflowAsync(args, forceDryRun: true, oneShot, cancellationToken).ConfigureAwait(false);
+            case "run":
+                return await RunWorkflowAsync(args, forceDryRun: false, oneShot, cancellationToken).ConfigureAwait(false);
+            default:
+                return RenderCommandError($"Unknown workflow command: {args[0]}", oneShot);
+        }
+    }
+
+    private async Task<int> RunWorkflowAsync(
+        string[] args,
+        bool forceDryRun,
+        bool oneShot,
+        CancellationToken cancellationToken)
+    {
+        var selector = RequireArgument(args, 1, "workflow run needs a workflow name or file.");
+        var dryRun = forceDryRun;
+        var assumeYes = false;
+        var showHits = true;
+
+        for (var i = 2; i < args.Length; i++)
+        {
+            switch (args[i].ToLowerInvariant())
+            {
+                case "--dry-run":
+                case "--dryrun":
+                    dryRun = true;
+                    break;
+                case "--yes":
+                case "-y":
+                    assumeYes = true;
+                    break;
+                case "--no-hits":
+                    showHits = false;
+                    break;
+                default:
+                    return RenderCommandError($"Unknown workflow run option: {args[i]}", oneShot);
+            }
+        }
+
+        var workflow = LoadWorkflow(selector, out var fileName, out var error);
+        if (workflow is null)
+            return RenderCommandError(error ?? "Workflow not found.", oneShot);
+
+        AnsiConsole.MarkupLine(dryRun
+            ? $"[yellow]Dry-running workflow:[/] {Markup.Escape(workflow.Name)} ([grey]{Markup.Escape(fileName)}[/])"
+            : $"[green]Running workflow:[/] {Markup.Escape(workflow.Name)} ([grey]{Markup.Escape(fileName)}[/])");
+
+        var observer = new CliWorkflowObserver(showHits);
+        var interaction = new CliWorkflowInteraction(assumeYes);
+        var result = await _workflowRunner.RunAsync(
+                workflow,
+                new WorkflowRunOptions { DryRun = dryRun },
+                observer,
+                interaction,
+                cancellationToken)
+            .ConfigureAwait(false);
+
+        RenderWorkflowResult(result);
+        return result.Succeeded ? 0 : 2;
+    }
+
+    private async Task ExecuteIndexerCommandAsync(IReadOnlyList<string> tokens, CancellationToken cancellationToken)
+    {
+        if (tokens.Count == 1)
+        {
+            _ = await ExecuteIndexerActionAsync(s_indexerStatusArgs, oneShot: false, cancellationToken)
+                .ConfigureAwait(false);
+            return;
+        }
+
+        _ = await ExecuteIndexerActionAsync(tokens.Skip(1).ToArray(), oneShot: false, cancellationToken)
+            .ConfigureAwait(false);
+    }
+
+    private async Task<int> ExecuteIndexerActionAsync(
+        string[] args,
+        bool oneShot,
+        CancellationToken cancellationToken)
+    {
+        var action = args[0].ToLowerInvariant();
+        switch (action)
+        {
+            case "status":
+                return await RenderBackgroundIndexerStatusAsync(oneShot, cancellationToken).ConfigureAwait(false);
+            case "start":
+                return await StartBackgroundIndexerAsync(oneShot, cancellationToken).ConfigureAwait(false);
+            case "pause":
+                return await SendSimpleIndexerCommandAsync(BackgroundIndexerCommand.Pause, "Background indexing paused.", oneShot, cancellationToken)
+                    .ConfigureAwait(false);
+            case "resume":
+                return await SendSimpleIndexerCommandAsync(BackgroundIndexerCommand.Resume, "Background indexing resumed.", oneShot, cancellationToken)
+                    .ConfigureAwait(false);
+            case "shutdown":
+            case "stop":
+                return await SendSimpleIndexerCommandAsync(
+                        BackgroundIndexerCommand.Shutdown,
+                        "Background indexer shutdown requested.",
+                        oneShot,
+                        cancellationToken,
+                        TimeSpan.FromSeconds(5))
+                    .ConfigureAwait(false);
+            case "compact":
+                return await SendSimpleIndexerCommandAsync(
+                        BackgroundIndexerCommand.CompactDatabase,
+                        "Index database compaction requested.",
+                        oneShot,
+                        cancellationToken,
+                        TimeSpan.FromSeconds(90))
+                    .ConfigureAwait(false);
+            case "profile":
+                return await SetIndexerProfileAsync(args, oneShot, cancellationToken).ConfigureAwait(false);
+            case "runtime":
+                return await SetIndexerRuntimeAsync(args, oneShot, cancellationToken).ConfigureAwait(false);
+            case "refresh":
+                return await SendLocationIndexerCommandAsync(
+                        args,
+                        BackgroundIndexerCommand.RefreshRoot,
+                        "Background index refresh queued.",
+                        oneShot,
+                        cancellationToken)
+                    .ConfigureAwait(false);
+            case "semantic":
+            case "smart":
+                return await SendLocationIndexerCommandAsync(
+                        args,
+                        BackgroundIndexerCommand.RefreshSemanticRoot,
+                        "Smart Search index refresh queued.",
+                        oneShot,
+                        cancellationToken)
+                    .ConfigureAwait(false);
+            case "validate":
+                return await ValidateBackgroundIndexerRootAsync(args, oneShot, cancellationToken).ConfigureAwait(false);
+            case "queue":
+                return await QueueBackgroundIndexerRootAsync(args, oneShot, cancellationToken).ConfigureAwait(false);
+            case "add":
+            case "add-location":
+                return await SendLocationIndexerCommandAsync(
+                        args,
+                        BackgroundIndexerCommand.AddOrUpdateLocation,
+                        "Background indexed location added or updated.",
+                        oneShot,
+                        cancellationToken)
+                    .ConfigureAwait(false);
+            case "remove":
+            case "remove-location":
+                return await RemoveBackgroundIndexerLocationAsync(args, oneShot, cancellationToken).ConfigureAwait(false);
+            default:
+                return RenderCommandError($"Unknown indexer command: {args[0]}", oneShot);
+        }
+    }
+
     private async Task BuildIndexAsync(
         string root,
         IndexRefreshMode mode,
@@ -1324,7 +1730,7 @@ internal sealed class FileSearchRepl
             {
                 var request = new IndexRequest(
                     root,
-                    _state.ToWalkerOptions(),
+                    _state.ToWalkerOptions(_extractorRegistry.SupportedExtensions),
                     p =>
                     {
                         progress = p;
@@ -1423,7 +1829,7 @@ internal sealed class FileSearchRepl
     {
         if (tokens.Count < 4)
         {
-            AnsiConsole.MarkupLine("[red]Usage:[/] index failures export PATH [csv|json]");
+            AnsiConsole.MarkupLine("[red]Usage:[/] index failures export PATH [[csv|json]]");
             return;
         }
 
@@ -1434,6 +1840,501 @@ internal sealed class FileSearchRepl
 
         await _index.ExportFailedFilesAsync(path, format, cancellationToken).ConfigureAwait(false);
         AnsiConsole.MarkupLine($"[green]Exported index failures to:[/] {Markup.Escape(Path.GetFullPath(path))}");
+    }
+
+    private void RenderWorkflowHelp()
+    {
+        var table = new Table().Border(TableBorder.Rounded).Title("[bold]Workflow commands[/]");
+        table.AddColumn("Command");
+        table.AddColumn("Description");
+        table.AddRow("[cyan]workflow list[/]", "List saved workflow JSON files.");
+        table.AddRow("[cyan]workflow folder[/]", "Show the workflow library folder.");
+        table.AddRow("[cyan]workflow show[/] NAME", "Print a workflow JSON file.");
+        table.AddRow("[cyan]workflow validate[/] NAME", "Validate a workflow without running it.");
+        table.AddRow("[cyan]workflow run[/] NAME [[--dry-run]] [[--yes]] [[--no-hits]]", "Run a workflow.");
+        table.AddRow("[cyan]workflow dry-run[/] NAME", "Run searches and exports in dry-run mode for side-effecting steps.");
+        AnsiConsole.Write(table);
+    }
+
+    private void RenderWorkflowList()
+    {
+        var workflows = _workflowStore.List();
+        if (workflows.Count == 0)
+        {
+            AnsiConsole.MarkupLine($"[yellow]No workflows found in:[/] {Markup.Escape(_workflowStore.DirectoryPath)}");
+            return;
+        }
+
+        var table = new Table().Border(TableBorder.Rounded).Title("[bold]Workflows[/]");
+        table.AddColumn("File");
+        table.AddColumn("Name");
+        table.AddColumn("Description");
+        table.AddColumn("Status");
+
+        foreach (var workflow in workflows)
+        {
+            table.AddRow(
+                Markup.Escape(workflow.FileName),
+                Markup.Escape(workflow.Name),
+                Markup.Escape(workflow.Description),
+                workflow.Error is null ? "[green]ok[/]" : $"[red]{Markup.Escape(workflow.Error)}[/]");
+        }
+
+        AnsiConsole.Write(table);
+    }
+
+    private WorkflowDefinition? LoadWorkflow(string selector, out string displayName, out string? error)
+    {
+        selector = ExpandHome(selector.Trim());
+        if (File.Exists(selector))
+        {
+            displayName = Path.GetFileName(selector);
+            return WorkflowJson.TryDeserialize(File.ReadAllText(selector), out error);
+        }
+
+        var directFileName = selector.EndsWith(".json", StringComparison.OrdinalIgnoreCase)
+            ? selector
+            : selector + ".json";
+        if (directFileName == Path.GetFileName(directFileName))
+        {
+            var direct = _workflowStore.TryLoad(directFileName, out error);
+            if (direct is not null)
+            {
+                displayName = directFileName;
+                return direct;
+            }
+        }
+
+        var matches = _workflowStore.List()
+            .Where(summary =>
+                string.Equals(summary.FileName, selector, StringComparison.OrdinalIgnoreCase) ||
+                string.Equals(Path.GetFileNameWithoutExtension(summary.FileName), selector, StringComparison.OrdinalIgnoreCase) ||
+                string.Equals(summary.Name, selector, StringComparison.OrdinalIgnoreCase))
+            .ToArray();
+
+        if (matches.Length > 1)
+        {
+            displayName = selector;
+            error = $"Workflow selector '{selector}' is ambiguous.";
+            return null;
+        }
+
+        if (matches.Length == 1)
+        {
+            displayName = matches[0].FileName;
+            return _workflowStore.TryLoad(matches[0].FileName, out error);
+        }
+
+        displayName = selector;
+        error = $"Workflow not found: {selector}";
+        return null;
+    }
+
+    private static void RenderWorkflowResult(WorkflowRunResult result)
+    {
+        var color = result.Succeeded ? "green" : "red";
+        AnsiConsole.MarkupLine($"[{color}]Workflow {result.Status}.[/]" +
+            (string.IsNullOrWhiteSpace(result.Message) ? "" : $" {Markup.Escape(result.Message)}"));
+
+        if (result.ValidationErrors.Count > 0)
+        {
+            foreach (var error in result.ValidationErrors)
+                AnsiConsole.MarkupLine($"  [red]-[/] {Markup.Escape(error)}");
+        }
+
+        if (result.StepOutcomes.Count == 0)
+            return;
+
+        var table = new Table().Border(TableBorder.Rounded).Title("[bold]Workflow steps[/]");
+        table.AddColumn("Step");
+        table.AddColumn("Kind");
+        table.AddColumn("Result");
+        table.AddColumn("Hits");
+        table.AddColumn("Files");
+        table.AddColumn("Detail");
+
+        foreach (var outcome in result.StepOutcomes)
+        {
+            table.AddRow(
+                Markup.Escape(outcome.DisplayName),
+                Markup.Escape(outcome.StepKind),
+                outcome.Succeeded ? "[green]ok[/]" : "[red]failed[/]",
+                outcome.HitCount.ToString("n0", CultureInfo.CurrentCulture),
+                outcome.FileCount.ToString("n0", CultureInfo.CurrentCulture),
+                Markup.Escape(outcome.Detail ?? ""));
+        }
+
+        AnsiConsole.Write(table);
+    }
+
+    private async Task<int> RenderBackgroundIndexerStatusAsync(bool oneShot, CancellationToken cancellationToken)
+    {
+        var response = await SendIndexerAsync(
+                new BackgroundIndexerRequest(BackgroundIndexerCommand.GetStatus),
+                TimeSpan.FromSeconds(1),
+                cancellationToken)
+            .ConfigureAwait(false);
+
+        if (response?.Success != true || response.Status is null)
+        {
+            AnsiConsole.MarkupLine("[yellow]Background indexer is not running.[/]");
+            return 0;
+        }
+
+        RenderIndexingStatus(response.Status);
+        return 0;
+    }
+
+    private static void RenderIndexingStatus(IndexingStatus status)
+    {
+        var table = new Table().Border(TableBorder.Rounded).Title("[bold]Background indexer[/]");
+        table.AddColumn("Property");
+        table.AddColumn("Value");
+        table.AddRow("Running", status.IsRunning ? "[green]yes[/]" : "[yellow]no[/]");
+        table.AddRow("Paused", status.IsPaused ? "[yellow]yes[/]" : "[green]no[/]");
+        table.AddRow("Processing", status.IsProcessing ? "[green]yes[/]" : "[grey]no[/]");
+        table.AddRow("Queue", status.QueueLength.ToString("n0", CultureInfo.CurrentCulture));
+        table.AddRow("Message", Markup.Escape(status.Message));
+        table.AddRow("Active root", Markup.Escape(status.ActiveRoot ?? ""));
+        table.AddRow("Active kind", Markup.Escape(status.ActiveKind?.ToString() ?? ""));
+
+        if (status.ActiveProgress is { } progress)
+        {
+            table.AddRow("Files indexed", progress.FilesIndexed.ToString("n0", CultureInfo.CurrentCulture));
+            table.AddRow("Files failed", progress.FilesFailed.ToString("n0", CultureInfo.CurrentCulture));
+            table.AddRow("Lines indexed", progress.LinesIndexed.ToString("n0", CultureInfo.CurrentCulture));
+        }
+
+        AnsiConsole.Write(table);
+    }
+
+    private async Task<int> StartBackgroundIndexerAsync(bool oneShot, CancellationToken cancellationToken)
+    {
+        var ping = await SendIndexerAsync(
+                new BackgroundIndexerRequest(BackgroundIndexerCommand.Ping),
+                TimeSpan.FromSeconds(1),
+                cancellationToken)
+            .ConfigureAwait(false);
+        if (ping?.Success == true)
+        {
+            AnsiConsole.MarkupLine("[green]Background indexer is already running.[/]");
+            return 0;
+        }
+
+        var executablePath = ResolveIndexerExecutablePath();
+        if (!File.Exists(executablePath))
+            return RenderCommandError($"Could not find FileSearch.Indexer.exe near '{AppContext.BaseDirectory}'.", oneShot);
+
+        Process.Start(new ProcessStartInfo(executablePath)
+        {
+            Arguments = "--headless",
+            UseShellExecute = true,
+            WindowStyle = ProcessWindowStyle.Hidden,
+        });
+
+        for (var attempt = 0; attempt < 15; attempt++)
+        {
+            await Task.Delay(TimeSpan.FromMilliseconds(200), cancellationToken).ConfigureAwait(false);
+            ping = await SendIndexerAsync(
+                    new BackgroundIndexerRequest(BackgroundIndexerCommand.Ping),
+                    TimeSpan.FromSeconds(1),
+                    cancellationToken)
+                .ConfigureAwait(false);
+            if (ping?.Success == true)
+            {
+                AnsiConsole.MarkupLine("[green]Background indexer started.[/]");
+                return 0;
+            }
+        }
+
+        return RenderCommandError("Background indexer did not respond after starting.", oneShot);
+    }
+
+    private async Task<int> SendSimpleIndexerCommandAsync(
+        BackgroundIndexerCommand command,
+        string successMessage,
+        bool oneShot,
+        CancellationToken cancellationToken,
+        TimeSpan? timeout = null)
+    {
+        var response = await SendIndexerAsync(
+                new BackgroundIndexerRequest(command),
+                timeout ?? TimeSpan.FromSeconds(10),
+                cancellationToken)
+            .ConfigureAwait(false);
+
+        if (response?.Success != true)
+            return RenderCommandError(response?.Message ?? "Background indexer is not running.", oneShot);
+
+        AnsiConsole.MarkupLine($"[green]{Markup.Escape(successMessage)}[/]");
+        return 0;
+    }
+
+    private async Task<int> SendLocationIndexerCommandAsync(
+        IReadOnlyList<string> args,
+        BackgroundIndexerCommand command,
+        string successMessage,
+        bool oneShot,
+        CancellationToken cancellationToken)
+    {
+        var root = ResolveIndexerRoot(args);
+        if (!Directory.Exists(root))
+            return RenderCommandError($"Folder does not exist: {root}", oneShot);
+
+        var response = await SendIndexerAsync(
+                new BackgroundIndexerRequest(command, Location: CreateBackgroundLocation(root)),
+                TimeSpan.FromSeconds(10),
+                cancellationToken)
+            .ConfigureAwait(false);
+
+        if (response?.Success != true)
+            return RenderCommandError(response?.Message ?? "Background indexer is not running.", oneShot);
+
+        AnsiConsole.MarkupLine($"[green]{Markup.Escape(successMessage)}[/] {Markup.Escape(root)}");
+        return 0;
+    }
+
+    private async Task<int> ValidateBackgroundIndexerRootAsync(
+        IReadOnlyList<string> args,
+        bool oneShot,
+        CancellationToken cancellationToken)
+    {
+        var root = ResolveIndexerRoot(args);
+        if (!Directory.Exists(root))
+            return RenderCommandError($"Folder does not exist: {root}", oneShot);
+
+        var response = await SendIndexerAsync(
+                new BackgroundIndexerRequest(
+                    BackgroundIndexerCommand.ValidateRoot,
+                    Location: CreateBackgroundLocation(root)),
+                TimeSpan.FromSeconds(90),
+                cancellationToken)
+            .ConfigureAwait(false);
+
+        if (response?.Success != true || response.ValidationResult is null)
+            return RenderCommandError(response?.Message ?? "Background indexer is not running.", oneShot);
+
+        RenderValidationResult(response.ValidationResult);
+        return response.ValidationResult.Status is IndexValidationStatus.Passed ? 0 : 2;
+    }
+
+    private async Task<int> QueueBackgroundIndexerRootAsync(
+        string[] args,
+        bool oneShot,
+        CancellationToken cancellationToken)
+    {
+        var root = ResolveIndexerRoot(args);
+        if (!Directory.Exists(root))
+            return RenderCommandError($"Folder does not exist: {root}", oneShot);
+
+        var priority = args.Length >= 3
+            ? ParseIndexQueuePriority(args[2])
+            : IndexQueuePriority.Normal;
+        var response = await SendIndexerAsync(
+                new BackgroundIndexerRequest(
+                    BackgroundIndexerCommand.QueueRootRefresh,
+                    Location: CreateBackgroundLocation(root),
+                    Priority: priority),
+                TimeSpan.FromSeconds(10),
+                cancellationToken)
+            .ConfigureAwait(false);
+
+        if (response?.Success != true)
+            return RenderCommandError(response?.Message ?? "Background indexer is not running.", oneShot);
+
+        AnsiConsole.MarkupLine($"[green]Background index refresh queued ({priority}).[/] {Markup.Escape(root)}");
+        return 0;
+    }
+
+    private async Task<int> RemoveBackgroundIndexerLocationAsync(
+        IReadOnlyList<string> args,
+        bool oneShot,
+        CancellationToken cancellationToken)
+    {
+        var root = ResolveIndexerRoot(args);
+        var response = await SendIndexerAsync(
+                new BackgroundIndexerRequest(
+                    BackgroundIndexerCommand.RemoveLocation,
+                    Root: IndexPath.NormalizeRoot(root)),
+                TimeSpan.FromSeconds(10),
+                cancellationToken)
+            .ConfigureAwait(false);
+
+        if (response?.Success != true)
+            return RenderCommandError(response?.Message ?? "Background indexer is not running.", oneShot);
+
+        AnsiConsole.MarkupLine($"[green]Background indexed location removed.[/] {Markup.Escape(root)}");
+        return 0;
+    }
+
+    private async Task<int> SetIndexerProfileAsync(
+        string[] args,
+        bool oneShot,
+        CancellationToken cancellationToken)
+    {
+        if (args.Length < 2)
+            return RenderCommandError("Usage: indexer profile low|balanced|high", oneShot);
+
+        var profile = args[1].ToLowerInvariant() switch
+        {
+            "low" => IndexerResourceProfile.Low,
+            "balanced" or "normal" => IndexerResourceProfile.Balanced,
+            "high" => IndexerResourceProfile.High,
+            _ => throw new ArgumentException("Profile must be low, balanced, or high."),
+        };
+
+        var response = await SendIndexerAsync(
+                new BackgroundIndexerRequest(
+                    BackgroundIndexerCommand.SetResourceProfile,
+                    ResourceProfile: profile),
+                TimeSpan.FromSeconds(10),
+                cancellationToken)
+            .ConfigureAwait(false);
+
+        if (response?.Success != true)
+            return RenderCommandError(response?.Message ?? "Background indexer is not running.", oneShot);
+
+        AnsiConsole.MarkupLine($"[green]Background indexer profile set to {profile}.[/]");
+        return 0;
+    }
+
+    private async Task<int> SetIndexerRuntimeAsync(
+        string[] args,
+        bool oneShot,
+        CancellationToken cancellationToken)
+    {
+        var pauseOnBattery = false;
+        var idleOnly = false;
+        var cpuLimit = 0;
+        var diskPauseMs = 0;
+
+        for (var i = 1; i < args.Length; i++)
+        {
+            switch (args[i].ToLowerInvariant())
+            {
+                case "--pause-on-battery":
+                    pauseOnBattery = ParseBool(RequireArgument(args, ++i, "--pause-on-battery requires on or off."));
+                    break;
+                case "--idle-only":
+                    idleOnly = ParseBool(RequireArgument(args, ++i, "--idle-only requires on or off."));
+                    break;
+                case "--cpu":
+                    if (!int.TryParse(RequireArgument(args, ++i, "--cpu requires a percent."), NumberStyles.Integer, CultureInfo.InvariantCulture, out cpuLimit))
+                        return RenderCommandError("--cpu requires an integer percent.", oneShot);
+                    break;
+                case "--disk-ms":
+                    if (!int.TryParse(RequireArgument(args, ++i, "--disk-ms requires milliseconds."), NumberStyles.Integer, CultureInfo.InvariantCulture, out diskPauseMs))
+                        return RenderCommandError("--disk-ms requires an integer millisecond value.", oneShot);
+                    break;
+                default:
+                    return RenderCommandError($"Unknown runtime option: {args[i]}", oneShot);
+            }
+        }
+
+        var runtime = new IndexerRuntimeOptions(pauseOnBattery, idleOnly, cpuLimit, diskPauseMs).Normalize();
+        var response = await SendIndexerAsync(
+                new BackgroundIndexerRequest(
+                    BackgroundIndexerCommand.SetRuntimeOptions,
+                    RuntimeOptions: runtime),
+                TimeSpan.FromSeconds(10),
+                cancellationToken)
+            .ConfigureAwait(false);
+
+        if (response?.Success != true)
+            return RenderCommandError(response?.Message ?? "Background indexer is not running.", oneShot);
+
+        AnsiConsole.MarkupLine("[green]Background indexer runtime options updated.[/]");
+        return 0;
+    }
+
+    private static void RenderValidationResult(IndexValidationResult validation)
+    {
+        var table = new Table().Border(TableBorder.Rounded).Title("[bold]Index validation[/]");
+        table.AddColumn("Property");
+        table.AddColumn("Value");
+        table.AddRow("Root", Markup.Escape(validation.Root));
+        table.AddRow("Status", validation.Status == IndexValidationStatus.Passed
+            ? "[green]Passed[/]"
+            : $"[yellow]{Markup.Escape(validation.Status.ToString())}[/]");
+        table.AddRow("Checked", validation.FilesChecked.ToString("n0", CultureInfo.CurrentCulture));
+        table.AddRow("Matched", validation.FilesMatched.ToString("n0", CultureInfo.CurrentCulture));
+        table.AddRow("Missing from index", validation.MissingFromIndex.ToString("n0", CultureInfo.CurrentCulture));
+        table.AddRow("Changed", validation.ChangedSinceIndex.ToString("n0", CultureInfo.CurrentCulture));
+        table.AddRow("Missing from disk", validation.MissingFromDisk.ToString("n0", CultureInfo.CurrentCulture));
+        table.AddRow("Failed checks", validation.FailedChecks.ToString("n0", CultureInfo.CurrentCulture));
+        table.AddRow("Message", Markup.Escape(validation.Message));
+        AnsiConsole.Write(table);
+    }
+
+    private string ResolveIndexerRoot(IReadOnlyList<string> args) =>
+        args.Count >= 2
+            ? Path.GetFullPath(ExpandHome(args[1]))
+            : Path.GetFullPath(_state.Root);
+
+    private BackgroundIndexedLocation CreateBackgroundLocation(string root)
+    {
+        var location = new IndexedLocation(
+            IndexPath.NormalizeRoot(root),
+            _state.ToWalkerOptions(_extractorRegistry.SupportedExtensions),
+            WatchEnabled: true);
+        return BackgroundIndexedLocation.FromIndexedLocation(location);
+    }
+
+    private static IndexQueuePriority ParseIndexQueuePriority(string value) =>
+        value.ToLowerInvariant() switch
+        {
+            "high" => IndexQueuePriority.High,
+            "normal" => IndexQueuePriority.Normal,
+            "low" => IndexQueuePriority.Low,
+            _ => throw new ArgumentException("Priority must be high, normal, or low."),
+        };
+
+    private static Task<BackgroundIndexerResponse?> SendIndexerAsync(
+        BackgroundIndexerRequest request,
+        TimeSpan timeout,
+        CancellationToken cancellationToken) =>
+        BackgroundIndexerClient.TrySendAsync(request, timeout, cancellationToken);
+
+    private static string ResolveIndexerExecutablePath()
+    {
+        var candidates = new[]
+        {
+            Path.Combine(AppContext.BaseDirectory, "FileSearch.Indexer.exe"),
+            Path.GetFullPath(Path.Combine(
+                AppContext.BaseDirectory,
+                "..", "..", "..", "..",
+                "FileSearch.Indexer",
+                "bin",
+                "Debug",
+                "net10.0-windows10.0.19041.0",
+                "FileSearch.Indexer.exe")),
+            Path.GetFullPath(Path.Combine(
+                AppContext.BaseDirectory,
+                "..", "..", "..", "..",
+                "FileSearch.Indexer",
+                "bin",
+                "Debug",
+                "net10.0-windows",
+                "FileSearch.Indexer.exe")),
+        };
+
+        return candidates.FirstOrDefault(File.Exists) ?? candidates[0];
+    }
+
+    private static string RequireArgument(string[] args, int index, string message)
+    {
+        if (index >= args.Length || string.IsNullOrWhiteSpace(args[index]))
+            throw new ArgumentException(message);
+        return args[index];
+    }
+
+    private static int RenderCommandError(string message, bool oneShot)
+    {
+        if (oneShot)
+            Console.Error.WriteLine(message);
+        else
+            AnsiConsole.MarkupLine($"[red]{Markup.Escape(message)}[/]");
+        return 2;
     }
 
     private void RenderSearchSummary(
@@ -1448,7 +2349,7 @@ internal sealed class FileSearchRepl
         var summary =
             $"[bold]Query:[/] {Markup.Escape(queryText)}\n" +
             $"[bold]Root:[/] {Markup.Escape(_state.Root)}\n" +
-            $"[bold]Mode:[/] {_state.Mode}  [bold]Search:[/] {mode}\n" +
+            $"[bold]Mode:[/] {_state.Mode}  [bold]Target:[/] {Markup.Escape(FormatSearchTarget(_state.SearchTarget))}  [bold]Search:[/] {mode}\n" +
             $"[bold]Hits:[/] {totalHits:n0}  [bold]Displayed:[/] {displayedHits:n0}  [bold]Elapsed:[/] {elapsed.TotalSeconds:n1}s";
 
         if (!statusMessages.IsEmpty)
@@ -1515,14 +2416,19 @@ internal sealed class FileSearchRepl
         table.AddRow("[cyan]search[/] QUERY", "Search current root. Unknown input is treated as a query.");
         table.AddRow("[cyan]path[/] FOLDER", "Set the current search root.");
         table.AddRow("[cyan]mode plain|regex|boolean|unified[/]", "Choose query mode.");
+        table.AddRow("[cyan]target contents|files|folders|names[/]", "Search file contents, file names, folder names, or both name types.");
         table.AddRow("[cyan]case on|off[/]", "Toggle case-sensitive matching.");
         table.AddRow("[cyan]recursive on|off[/]", "Toggle subfolder traversal.");
         table.AddRow("[cyan]hidden on|off[/]", "Include or skip hidden files.");
+        table.AddRow("[cyan]docs on|off[/]", "Include Office/PDF/document extractors.");
+        table.AddRow("[cyan]ocr on|off[/]", "Include image OCR and OCR fallbacks for scanned/embedded images.");
+        table.AddRow("[cyan]known-only on|off[/]", "Restrict content searches to known extractor extensions.");
         table.AddRow("[cyan]include[/] GLOB;GLOB", "Set include glob filters, such as *.cs;*.xaml.");
         table.AddRow("[cyan]exclude[/] GLOB;GLOB", "Set exclude glob filters.");
         table.AddRow("[cyan]ext[/] .cs,.md", "Set included extensions. Use clear to remove.");
         table.AddRow("[cyan]exclude-ext[/] .dll,.exe", "Set excluded extensions. Use clear to remove.");
         table.AddRow("[cyan]exclude-dir[/] .git;node_modules", "Folders pruned from traversal. Use clear to search everything.");
+        table.AddRow("[cyan]plain-ext[/] .log,.cfg", "Treat extra extensions as known plain text when known-only is on.");
         table.AddRow("[cyan]min-size 10kb[/] / [cyan]max-size 50mb[/]", "Set file size filters.");
         table.AddRow("[cyan]after yyyy-mm-dd[/] / [cyan]before yyyy-mm-dd[/]", "Set modified date filters.");
         table.AddRow("[cyan]index on|off[/]", "Allow indexed search when the current root is covered.");
@@ -1530,7 +2436,9 @@ internal sealed class FileSearchRepl
         table.AddRow("[cyan]index stats[/] FOLDER", "Show index stats for a folder. Folder is optional.");
         table.AddRow("[cyan]index locations[/]", "Show all indexed roots in the database.");
         table.AddRow("[cyan]index failures[/]", "Show failed index extractions.");
-        table.AddRow("[cyan]index failures export[/] PATH [csv|json]", "Export failed index extractions.");
+        table.AddRow("[cyan]index failures export[/] PATH [[csv|json]]", "Export failed index extractions.");
+        table.AddRow("[cyan]workflow list|run|dry-run|validate[/]", "List, validate, or run saved workflow JSON files.");
+        table.AddRow("[cyan]indexer status|start|pause|resume[/]", "Control the background indexer process.");
         table.AddRow("[cyan]options[/]", "Show current REPL settings.");
         table.AddRow("[cyan]clear-filters[/]", "Reset filters to defaults.");
         table.AddRow("[cyan]exit[/]", "Quit the REPL.");
@@ -1544,16 +2452,21 @@ internal sealed class FileSearchRepl
         table.AddColumn("Value");
         table.AddRow("Root", Markup.Escape(_state.Root));
         table.AddRow("Mode", _state.Mode.ToString());
+        table.AddRow("Target", Markup.Escape(FormatSearchTarget(_state.SearchTarget)));
         table.AddRow("Case sensitive", Bool(_state.CaseSensitive));
         table.AddRow("Recursive", Bool(_state.Recursive));
         table.AddRow("Include hidden", Bool(_state.IncludeHidden));
         table.AddRow("Use index", Bool(_state.UseIndex));
+        table.AddRow("Document extraction", Bool(_state.EnableDocumentExtraction));
+        table.AddRow("Image OCR", Bool(_state.EnableImageOcr));
+        table.AddRow("Known file types only", Bool(_state.SkipUnknownFileTypes));
         table.AddRow("Result limit", _state.ResultLimit.ToString("n0", CultureInfo.CurrentCulture));
         table.AddRow("Include globs", ListOrAll(_state.IncludeGlobs));
         table.AddRow("Exclude globs", ListOrNone(_state.ExcludeGlobs));
         table.AddRow("Include extensions", ListOrAll(_state.IncludeExtensions));
         table.AddRow("Exclude extensions", ListOrNone(_state.ExcludeExtensions));
         table.AddRow("Exclude folders", ListOrNone(_state.ExcludeDirectories));
+        table.AddRow("Additional plain-text extensions", ListOrNone(_state.AdditionalPlainTextExtensions));
         table.AddRow("Min size", CliState.FormatBytes(_state.MinFileSizeBytes));
         table.AddRow("Max size", _state.MaxFileSizeBytes == 0 ? "unlimited" : CliState.FormatBytes(_state.MaxFileSizeBytes));
         table.AddRow("Modified after", FormatDate(_state.ModifiedAfterUtc));
@@ -1615,6 +2528,18 @@ internal sealed class FileSearchRepl
             _ => throw new ArgumentException("Mode must be plain, regex, boolean, or unified."),
         };
         AnsiConsole.MarkupLine($"[green]Mode set to {_state.Mode}.[/]");
+    }
+
+    private void SetTarget(IReadOnlyList<string> tokens)
+    {
+        if (tokens.Count == 1)
+        {
+            AnsiConsole.MarkupLine($"[bold]Target:[/] {Markup.Escape(FormatSearchTarget(_state.SearchTarget))}");
+            return;
+        }
+
+        _state.SearchTarget = ParseSearchTarget(CommandLine.JoinArgs(tokens.Skip(1)));
+        AnsiConsole.MarkupLine($"[green]Target set to {Markup.Escape(FormatSearchTarget(_state.SearchTarget))}.[/]");
     }
 
     private static void SetBool(
@@ -1940,11 +2865,18 @@ internal sealed class FileSearchRepl
 
     private const string OneShotSearchUsage =
         "Usage: filesearch search QUERY [--path FOLDER] [--mode plain|regex|boolean|unified] " +
+        "[--target contents|files|folders|names] [--ocr] [--no-docs] [--known-only] " +
         "[--json|--jsonl|--csv|--markdown] [--output PATH] [--limit N]";
 
     private const string OneShotIndexUsage =
         "Usage: filesearch index build|rebuild|clear [FOLDER] OR locations|stats [FOLDER]|failures " +
-        "[--json|--jsonl|--csv|--markdown] [--output PATH]";
+        "[--ocr] [--no-docs] [--known-only] [--json|--jsonl|--csv|--markdown] [--output PATH]";
+
+    private const string OneShotWorkflowUsage =
+        "Usage: filesearch workflow list|folder|show NAME|validate NAME|run NAME [--dry-run] [--yes] [--no-hits]";
+
+    private const string OneShotIndexerUsage =
+        "Usage: filesearch indexer status|start|pause|resume|shutdown|compact|refresh [FOLDER]|validate [FOLDER]|semantic [FOLDER]";
 
     private enum OneShotOutputFormat
     {
@@ -1970,6 +2902,7 @@ internal sealed class FileSearchRepl
         string Query,
         string Root,
         string Mode,
+        string Target,
         string Search,
         int TotalHits,
         int DisplayedHits,
@@ -2051,6 +2984,66 @@ internal sealed class FileSearchRepl
         long RetryCount,
         DateTime? LastAttemptUtc,
         string Error);
+
+    private sealed class CliWorkflowObserver(bool showHits) : IWorkflowObserver
+    {
+        public void OnStepStarted(WorkflowStep step, int depth)
+        {
+            var indent = new string(' ', Math.Max(0, depth) * 2);
+            AnsiConsole.MarkupLine($"{Markup.Escape(indent)}[yellow]start[/] {Markup.Escape(step.DisplayName)} [grey]({Markup.Escape(step.Kind)})[/]");
+        }
+
+        public void OnStepCompleted(WorkflowStepOutcome outcome)
+        {
+            var color = outcome.Succeeded ? "green" : "red";
+            var detail = string.IsNullOrWhiteSpace(outcome.Detail) ? "" : $" [grey]{Markup.Escape(outcome.Detail)}[/]";
+            AnsiConsole.MarkupLine($"[{color}]done[/] {Markup.Escape(outcome.DisplayName)}{detail}");
+        }
+
+        public void OnHit(SearchStep step, Hit hit)
+        {
+            if (!showHits)
+                return;
+
+            var line = hit.LineContent.Length <= 160 ? hit.LineContent : hit.LineContent[..157] + "...";
+            AnsiConsole.MarkupLine(
+                $"[grey]{Markup.Escape(step.Id)}[/] {Markup.Escape(hit.Path)}:{hit.LineNumber:n0} {Markup.Escape(line)}");
+        }
+
+        public void OnLog(string message) =>
+            AnsiConsole.MarkupLine($"[grey]{Markup.Escape(message)}[/]");
+    }
+
+    private sealed class CliWorkflowInteraction(bool assumeYes) : IWorkflowInteraction
+    {
+        public Task<bool> ConfirmAsync(WorkflowConfirmation confirmation, CancellationToken cancellationToken)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+
+            if (assumeYes)
+            {
+                AnsiConsole.MarkupLine($"[yellow]confirmed[/] {Markup.Escape(confirmation.Title)}");
+                return Task.FromResult(true);
+            }
+
+            var details = confirmation.Details.Count == 0
+                ? ""
+                : Environment.NewLine + string.Join(
+                    Environment.NewLine,
+                    confirmation.Details.Take(10).Select(detail => $"  {detail}"));
+            AnsiConsole.Write(new Panel(Markup.Escape(confirmation.Description + details))
+                .Header($"[bold yellow]{Markup.Escape(confirmation.Title)}[/]")
+                .Border(BoxBorder.Rounded));
+
+            if (Console.IsInputRedirected)
+            {
+                AnsiConsole.MarkupLine("[yellow]Declined side-effecting workflow step because input is redirected. Pass --yes to approve unattended runs.[/]");
+                return Task.FromResult(false);
+            }
+
+            return Task.FromResult(AnsiConsole.Confirm("Continue?", defaultValue: false));
+        }
+    }
 
     private void OnCancelKeyPress(object? sender, ConsoleCancelEventArgs e)
     {

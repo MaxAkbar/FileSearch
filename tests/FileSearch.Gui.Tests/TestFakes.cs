@@ -226,6 +226,19 @@ internal sealed class FakeThemeService : IThemeService
     }
 }
 
+internal sealed class FakeStyleService : IStyleService
+{
+    public AppStyle CurrentStyle { get; private set; } = AppStyle.Comfortable;
+
+    public int SetStyleCallCount { get; private set; }
+
+    public void SetStyle(AppStyle style)
+    {
+        SetStyleCallCount++;
+        CurrentStyle = style;
+    }
+}
+
 internal sealed class FakeBackgroundIndexerProcessService : IBackgroundIndexerProcessService
 {
     public bool EnsureRunningResult { get; set; } = true;

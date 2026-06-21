@@ -1,0 +1,112 @@
+<!doctype html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Command Line - FileSearch Help</title>
+    <link rel="stylesheet" href="css/help.css">
+</head>
+<body>
+    <div class="shell">
+        <aside class="sidebar">
+            <a class="brand" href="index.html" aria-label="FileSearch help home">
+                <img src="../Assets/FileSearch-256.png" alt="">
+                <span>
+                    <span class="brand-title">FileSearch</span>
+                    <span class="brand-subtitle">User help</span>
+                </span>
+            </a>
+            <div class="nav-heading">Using FileSearch</div>
+            <nav class="nav">
+                <a href="index.html">Overview</a>
+                <a href="search.html">Run a Search</a>
+                <a href="quick-search.html">Quick Search</a>
+                <a href="query-syntax.html">Query Syntax</a>
+                <a href="results.html">Results and Preview</a>
+                <a href="indexing.html">Indexed Search</a>
+                <a href="workflows.html">Workflows</a>
+                <a class="active" href="cli.html">Command Line</a>
+                <a href="executables.html">Release Executables</a>
+                <a href="options.html">Options</a>
+                <a href="troubleshooting.html">Troubleshooting</a>
+            </nav>
+        </aside>
+
+        <main class="content">
+            <section class="hero">
+                <div class="eyebrow">Command Line</div>
+                <h1>Automate FileSearch from a terminal.</h1>
+                <p class="lead">The release package includes <code>FileSearch.Cli.exe</code> next to the desktop app. Use it for scripted searches, structured output, index maintenance, workflow runs, and background indexer control.</p>
+            </section>
+
+            <h2>Open the REPL</h2>
+            <p>Run the CLI from the installed or portable release folder without a subcommand to open the interactive prompt. Type <code>help</code> for commands, <code>options</code> for current settings, or type a query directly to search the current folder.</p>
+            <pre><code>.\FileSearch.Cli.exe</code></pre>
+
+            <h2>Interactive Commands</h2>
+            <div class="table-wrap">
+                <table>
+                    <thead>
+                        <tr>
+                            <th>Command</th>
+                            <th>Behavior</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <tr><td><code>path C:\src</code></td><td>Sets the current search root.</td></tr>
+                        <tr><td><code>mode plain|regex|boolean|unified</code></td><td>Chooses the query parser.</td></tr>
+                        <tr><td><code>target contents|files|folders|names</code></td><td>Searches content, file names, folder names, or both file and folder names.</td></tr>
+                        <tr><td><code>case on|off</code></td><td>Toggles case-sensitive matching.</td></tr>
+                        <tr><td><code>recursive on|off</code></td><td>Includes or skips subfolders.</td></tr>
+                        <tr><td><code>docs on|off</code></td><td>Includes or skips Office/PDF/document extractors.</td></tr>
+                        <tr><td><code>ocr on|off</code></td><td>Includes or skips image OCR and OCR fallbacks for scanned or embedded images.</td></tr>
+                        <tr><td><code>known-only on|off</code></td><td>Restricts content searches to known extractor extensions.</td></tr>
+                        <tr><td><code>include</code>, <code>exclude</code>, <code>ext</code>, <code>exclude-ext</code>, <code>plain-ext</code></td><td>Controls glob, extension, and custom text-extension filters.</td></tr>
+                        <tr><td><code>index on|off</code></td><td>Allows covered searches to use the local index.</td></tr>
+                    </tbody>
+                </table>
+            </div>
+
+            <h2>One-Shot Search</h2>
+            <p>Use <code>search</code> for automation. Results go to standard output unless <code>--output</code> is provided.</p>
+            <pre><code>.\FileSearch.Cli.exe search "connection string" --path C:\src --mode plain --json
+.\FileSearch.Cli.exe search invoice --path C:\docs --target files --json
+.\FileSearch.Cli.exe search "serial number" --path C:\scans --ocr --markdown</code></pre>
+            <p>Search output formats include JSON, JSON Lines, CSV, and Markdown. Use <code>.\FileSearch.Cli.exe search --help</code> to print the executable's current search usage.</p>
+
+            <h2>Index Commands</h2>
+            <p>The CLI can build, rebuild, clear, inspect, and report on the CSharpDB index without opening the desktop app.</p>
+            <pre><code>.\FileSearch.Cli.exe index build C:\src --json
+.\FileSearch.Cli.exe index locations --markdown
+.\FileSearch.Cli.exe index failures --jsonl --output .\index-failures.jsonl</code></pre>
+            <p>Use <code>.\FileSearch.Cli.exe index --help</code> to print the executable's current index usage.</p>
+
+            <h2>Workflow Commands</h2>
+            <p>Saved workflow JSON files can be listed, inspected, validated, and run from the CLI. Side-effecting workflow steps ask for confirmation in an interactive terminal; pass <code>--yes</code> only for unattended runs you have reviewed.</p>
+            <pre><code>.\FileSearch.Cli.exe workflow list
+.\FileSearch.Cli.exe workflow validate "Find TODOs"
+.\FileSearch.Cli.exe workflow run "Find TODOs" --dry-run
+.\FileSearch.Cli.exe workflow run "Find TODOs" --yes --no-hits</code></pre>
+
+            <h2>Background Indexer Commands</h2>
+            <p><code>indexer</code> commands use the same per-user named-pipe API as the GUI and tray indexer. Use them to check status, start or stop the worker, pause or resume indexing, queue root refreshes, validate index health, and compact the database.</p>
+            <pre><code>.\FileSearch.Cli.exe indexer start
+.\FileSearch.Cli.exe indexer status
+.\FileSearch.Cli.exe indexer pause
+.\FileSearch.Cli.exe indexer refresh C:\src
+.\FileSearch.Cli.exe indexer validate C:\src</code></pre>
+
+            <div class="callout">
+                The CLI ships as <code>FileSearch.Cli.exe</code> in the release package. The examples on this page assume you are running from the installed or portable app folder.
+            </div>
+
+            <div class="next-links">
+                <a href="executables.html">Release Executables</a>
+                <a href="search.html">Run a Search</a>
+                <a href="indexing.html">Indexed Search</a>
+                <a href="workflows.html">Workflows</a>
+            </div>
+        </main>
+    </div>
+</body>
+</html>

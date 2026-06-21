@@ -3,6 +3,7 @@ using System.Text.Json.Serialization;
 using FileSearch.Core.Engine;
 using FileSearch.Core.Indexing;
 using FileSearch.Core.Queries;
+using FileSearch.Gui.Services;
 using FileSearch.Gui.Settings;
 
 namespace FileSearch.Gui.Tests;
@@ -23,6 +24,7 @@ public sealed class AppSettingsSerializationTests
         {
             UseIndex = true,
             CustomThemeFileName = "nord-dark.json",
+            Style = AppStyle.Compact,
             SidebarPageSize = 15,
             IndexerResourceProfile = IndexerResourceProfile.Low,
             KeepIndexUpdatedAfterClose = true,
@@ -181,6 +183,7 @@ public sealed class AppSettingsSerializationTests
         Assert.DoesNotContain(nameof(WorkspaceSettings.Summary), json);
         Assert.NotNull(loaded);
         Assert.Equal("nord-dark.json", loaded.CustomThemeFileName);
+        Assert.Equal(AppStyle.Compact, loaded.Style);
         Assert.Equal(15, loaded.SidebarPageSize);
         Assert.Equal(IndexerResourceProfile.Low, loaded.IndexerResourceProfile);
         Assert.True(loaded.KeepIndexUpdatedAfterClose);

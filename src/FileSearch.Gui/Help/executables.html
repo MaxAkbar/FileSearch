@@ -1,0 +1,161 @@
+<!doctype html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Release Executables - FileSearch Help</title>
+    <link rel="stylesheet" href="css/help.css">
+</head>
+<body>
+    <div class="shell">
+        <aside class="sidebar">
+            <a class="brand" href="index.html" aria-label="FileSearch help home">
+                <img src="../Assets/FileSearch-256.png" alt="">
+                <span>
+                    <span class="brand-title">FileSearch</span>
+                    <span class="brand-subtitle">User help</span>
+                </span>
+            </a>
+            <div class="nav-heading">Using FileSearch</div>
+            <nav class="nav">
+                <a href="index.html">Overview</a>
+                <a href="search.html">Run a Search</a>
+                <a href="quick-search.html">Quick Search</a>
+                <a href="query-syntax.html">Query Syntax</a>
+                <a href="results.html">Results and Preview</a>
+                <a href="indexing.html">Indexed Search</a>
+                <a href="workflows.html">Workflows</a>
+                <a href="cli.html">Command Line</a>
+                <a class="active" href="executables.html">Release Executables</a>
+                <a href="options.html">Options</a>
+                <a href="troubleshooting.html">Troubleshooting</a>
+            </nav>
+        </aside>
+
+        <main class="content">
+            <section class="hero">
+                <div class="eyebrow">Release Executables</div>
+                <h1>Use the commands included with the installed app.</h1>
+                <p class="lead">The release package installs the FileSearch desktop app, command-line app, and helper executables in the same folder. Use the desktop app for interactive work, the CLI for scripts, and let FileSearch manage the indexer and extractor helpers.</p>
+            </section>
+
+            <h2>Desktop App</h2>
+            <p>Launch FileSearch from the Start menu, Explorer integration, or by running the desktop executable from the install or portable folder.</p>
+            <pre><code>.\FileSearch.Gui.exe
+.\FileSearch.Gui.exe "C:\Projects"
+.\FileSearch.Gui.exe --background</code></pre>
+            <div class="table-wrap">
+                <table>
+                    <thead>
+                        <tr>
+                            <th>Command</th>
+                            <th>Behavior</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <tr>
+                            <td><code>.\FileSearch.Gui.exe</code></td>
+                            <td>Opens the main FileSearch window.</td>
+                        </tr>
+                        <tr>
+                            <td><code>.\FileSearch.Gui.exe "C:\Folder"</code></td>
+                            <td>Opens FileSearch with <strong>Look in</strong> set to the folder when the folder exists.</td>
+                        </tr>
+                        <tr>
+                            <td><code>.\FileSearch.Gui.exe --background</code></td>
+                            <td>Starts FileSearch without showing the main window. When background indexing at sign-in is enabled, FileSearch starts the indexer and exits.</td>
+                        </tr>
+                    </tbody>
+                </table>
+            </div>
+            <p>If FileSearch is already running, launching the desktop executable activates the existing instance and applies any folder argument.</p>
+
+            <h2>Command-Line App</h2>
+            <p>Run the CLI executable from the install or portable folder. With no subcommand it opens the interactive REPL. In the REPL, type <code>help</code> for commands, <code>options</code> for current settings, or type a query directly to search the current folder.</p>
+            <pre><code>.\FileSearch.Cli.exe
+.\FileSearch.Cli.exe search "connection string" --path C:\Projects --mode plain --json
+.\FileSearch.Cli.exe index locations --json
+.\FileSearch.Cli.exe workflow list
+.\FileSearch.Cli.exe indexer status</code></pre>
+            <div class="table-wrap">
+                <table>
+                    <thead>
+                        <tr>
+                            <th>Subcommand</th>
+                            <th>Executable usage</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <tr>
+                            <td><code>search</code></td>
+                            <td><code>.\FileSearch.Cli.exe search QUERY [--path FOLDER] [--mode plain|regex|boolean|unified] [--target contents|files|folders|names] [--ocr] [--no-docs] [--known-only] [--json|--jsonl|--csv|--markdown] [--output PATH] [--limit N]</code></td>
+                        </tr>
+                        <tr>
+                            <td><code>index</code></td>
+                            <td><code>.\FileSearch.Cli.exe index build|rebuild|clear [FOLDER]</code> or <code>.\FileSearch.Cli.exe index locations|stats [FOLDER]|failures [--json|--jsonl|--csv|--markdown] [--output PATH]</code></td>
+                        </tr>
+                        <tr>
+                            <td><code>workflow</code></td>
+                            <td><code>.\FileSearch.Cli.exe workflow list|folder|show NAME|validate NAME|run NAME [--dry-run] [--yes] [--no-hits]</code></td>
+                        </tr>
+                        <tr>
+                            <td><code>indexer</code></td>
+                            <td><code>.\FileSearch.Cli.exe indexer status|start|pause|resume|shutdown|compact|refresh [FOLDER]|validate [FOLDER]|semantic [FOLDER]</code></td>
+                        </tr>
+                    </tbody>
+                </table>
+            </div>
+            <p>Use <code>--help</code> after a subcommand, such as <code>.\FileSearch.Cli.exe search --help</code>, to print that subcommand's usage.</p>
+
+            <h2>Release Executable Set</h2>
+            <p>These executables live together in the install or portable folder.</p>
+            <div class="table-wrap">
+                <table>
+                    <thead>
+                        <tr>
+                            <th>Executable</th>
+                            <th>Purpose</th>
+                            <th>User action</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <tr>
+                            <td><code>FileSearch.Gui.exe</code></td>
+                            <td>Runs the desktop app, Quick Search window, settings, workflows, previews, shell integration, and indexed-location management.</td>
+                            <td>Launch from Start, Explorer integration, a shortcut, or directly from the install folder.</td>
+                        </tr>
+                        <tr>
+                            <td><code>FileSearch.Cli.exe</code></td>
+                            <td>Runs interactive and one-shot search, index, workflow, and indexer commands from a terminal.</td>
+                            <td>Run directly from PowerShell, Windows Terminal, Command Prompt, scripts, or scheduled tasks.</td>
+                        </tr>
+                        <tr>
+                            <td><code>FileSearch.Indexer.exe</code></td>
+                            <td>Keeps configured indexed locations current and exposes status, pause, resume, refresh, validation, and compaction operations to the desktop app.</td>
+                            <td>Manage it from <strong>Index</strong>, <strong>File &gt; Settings</strong>, or the tray icon instead of launching it manually.</td>
+                        </tr>
+                        <tr>
+                            <td><code>FileSearch.ExtractorHost.exe</code></td>
+                            <td>Runs document text extraction out of process so expensive or fragile extractors do not block the main app.</td>
+                            <td>No direct action is needed; FileSearch starts it when document extraction requires it.</td>
+                        </tr>
+                    </tbody>
+                </table>
+            </div>
+
+            <h2>Automation Boundary</h2>
+            <p>The installed release is centered on the desktop app, Explorer integration, Quick Search, workflows, indexed locations, the CLI executable, and tray-managed background indexing. The bundled help documents the executables and arguments that ship with the installed app.</p>
+            <div class="callout">
+                For repeatable user workflows, save a workflow in the desktop app and run it from the Workflows window or <code>.\FileSearch.Cli.exe workflow run</code>. For unattended scripting, use only executables and arguments present in the release package you are deploying.
+            </div>
+
+            <div class="next-links">
+                <a href="search.html">Run a Search</a>
+                <a href="indexing.html">Indexed Search</a>
+                <a href="workflows.html">Workflows</a>
+                <a href="troubleshooting.html">Troubleshooting</a>
+            </div>
+        </main>
+    </div>
+</body>
+</html>

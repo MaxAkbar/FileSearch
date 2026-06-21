@@ -14,6 +14,8 @@ public sealed class AppSettings
 
     public string CustomThemeFileName { get; set; } = string.Empty;
 
+    public AppStyle Style { get; set; } = AppStyle.Comfortable;
+
     /// <summary>
     /// Number of rows shown per page in each searchable sidebar section.
     /// </summary>

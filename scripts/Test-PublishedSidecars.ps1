@@ -176,6 +176,31 @@ function Assert-Success($Response, [string]$Command) {
     }
 }
 
+function Invoke-CliSmoke([string]$CliExe, [string]$PublishPath) {
+    Write-SmokeLog "Running published CLI smoke test..."
+    $output = & $CliExe "search" "FileSearch" "--path" $PublishPath "--target" "files" "--limit" "1" "--json" "--no-docs"
+    if ($LASTEXITCODE -ne 0) {
+        throw "Published CLI smoke test failed with exit code $LASTEXITCODE."
+    }
+
+    if ([string]::IsNullOrWhiteSpace(($output -join [Environment]::NewLine))) {
+        throw "Published CLI smoke test returned no output."
+    }
+
+    try {
+        $json = ($output -join [Environment]::NewLine) | ConvertFrom-Json
+    }
+    catch {
+        throw "Published CLI smoke test did not return valid JSON: $($_.Exception.Message)"
+    }
+
+    if ($json.Query -ne "FileSearch") {
+        throw "Published CLI smoke test returned an unexpected query value: $($json.Query)"
+    }
+
+    Write-SmokeLog "Published CLI smoke test passed."
+}
+
 $publishPath = [System.IO.Path]::GetFullPath($PublishDirectory)
 if (-not (Test-Path -LiteralPath $publishPath -PathType Container)) {
     throw "Publish directory does not exist: $publishPath"
@@ -184,12 +209,15 @@ if (-not (Test-Path -LiteralPath $publishPath -PathType Container)) {
 $guiExe = Join-Path $publishPath "FileSearch.Gui.exe"
 $indexerExe = Join-Path $publishPath "FileSearch.Indexer.exe"
 $extractorHostExe = Join-Path $publishPath "FileSearch.ExtractorHost.exe"
+$cliExe = Join-Path $publishPath "FileSearch.Cli.exe"
 $helpIndex = Join-Path $publishPath "Help\index.html"
 
 Assert-FileExists $guiExe "Published GUI executable"
 Assert-FileExists $indexerExe "Published background indexer executable"
 Assert-FileExists $extractorHostExe "Published extractor host executable"
+Assert-FileExists $cliExe "Published CLI executable"
 Assert-FileExists $helpIndex "Published help bundle"
+Invoke-CliSmoke $cliExe $publishPath
 
 $pipeName = Get-BackgroundIndexerPipeName
 $existing = Invoke-IndexerCommand $pipeName "Ping" 500 -AllowUnavailable

@@ -28,7 +28,7 @@ Use this checklist before creating a public FileSearch release or Microsoft Stor
   - `WINDOWS_SIGNING_PFX_PASSWORD`
 - Protect the `release-signing` environment with required reviewers before allowing public releases.
 - Create release tags as `v<major>.<minor>.<patch>`, for example `v1.2.3`. The release workflow converts that to MSIX version `1.2.3.0`. Tags may also use four parts, such as `v1.2.3.4`.
-- The **Release** workflow runs Release build/test gates, creates a portable ZIP and MSI, verifies sidecars, writes `SHA256SUMS-<runtime>.txt`, uploads artifacts, and creates a draft GitHub Release for tag pushes.
+- The **Release** workflow runs Release build/test gates, creates a portable ZIP and MSI, verifies published executables and sidecars, writes `SHA256SUMS-<runtime>.txt`, uploads artifacts, and creates a draft GitHub Release for tag pushes.
 - When signing secrets are configured, the **Release** workflow signs and timestamps the MSI. When they are missing, it still creates an unsigned MSI for validation.
 - When all Store variables and signing secrets are configured, the **Release** workflow also creates and verifies a signed MSIX Store package. When they are missing, it logs a warning and skips only the MSIX artifacts.
 - For Store packages, run the **Store package** workflow manually with the intended version, runtime, package identity, publisher, and publisher display name. The default publisher display name is `Max Akbar`, but confirm it against Partner Center before submitting.
@@ -59,6 +59,7 @@ The Release workflow creates portable ZIP and MSI artifacts without signing secr
 - MSIX Store artifacts are present only when signed Store configuration was available.
 - Confirm `SHA256SUMS*.txt` is present and matches the release assets.
 - Confirm the packaged app includes `Help\index.html`.
+- Confirm the packaged app includes `FileSearch.Cli.exe`.
 - Confirm the packaged app includes `FileSearch.Indexer.exe`.
 - Confirm the packaged app includes `FileSearch.ExtractorHost.exe`.
 - Confirm the package identity and publisher match the Partner Center reservation for MSIX artifacts.

@@ -251,6 +251,7 @@ $repoRoot = [System.IO.Path]::GetFullPath((Join-Path $PSScriptRoot ".."))
 $projectPath = Resolve-RepoPath "src\FileSearch.Gui\FileSearch.Gui.csproj"
 $indexerProjectPath = Resolve-RepoPath "src\FileSearch.Indexer\FileSearch.Indexer.csproj"
 $extractorHostProjectPath = Resolve-RepoPath "src\FileSearch.ExtractorHost\FileSearch.ExtractorHost.csproj"
+$cliProjectPath = Resolve-RepoPath "src\FileSearch.Cli\FileSearch.Cli.csproj"
 $manifestTemplate = Resolve-RepoPath "packaging\AppxManifest.template.xml"
 $outputRootPath = Resolve-RepoPath $OutputRoot
 $publishDirectory = Join-Path $outputRootPath "publish\$RuntimeIdentifier"
@@ -284,6 +285,7 @@ foreach ($pattern in @("*.msix", "*.appxsym", "*.msixupload", "SHA256SUMS*.txt")
 Publish-Project $projectPath "FileSearch.Gui" $publishDirectory
 Publish-Project $indexerProjectPath "FileSearch.Indexer" $publishDirectory
 Publish-Project $extractorHostProjectPath "FileSearch.ExtractorHost" $publishDirectory
+Publish-Project $cliProjectPath "FileSearch.Cli" $publishDirectory
 
 $helpIndex = Join-Path $publishDirectory "Help\index.html"
 if (-not (Test-Path $helpIndex)) {
@@ -298,6 +300,11 @@ if (-not (Test-Path $indexerExe)) {
 $extractorHostExe = Join-Path $publishDirectory "FileSearch.ExtractorHost.exe"
 if (-not (Test-Path $extractorHostExe)) {
     throw "FileSearch extractor host was not published. Expected: $extractorHostExe"
+}
+
+$cliExe = Join-Path $publishDirectory "FileSearch.Cli.exe"
+if (-not (Test-Path $cliExe)) {
+    throw "FileSearch CLI was not published. Expected: $cliExe"
 }
 
 Write-Host "Staging MSIX package root..."

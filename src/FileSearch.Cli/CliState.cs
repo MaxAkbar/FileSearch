@@ -1,6 +1,9 @@
 using System.Globalization;
+using FileSearch.Core;
+using FileSearch.Core.Engine;
 using FileSearch.Core.Queries;
 using FileSearch.Core.Walker;
+using FileSearch.WindowsOcr;
 
 namespace FileSearch.Cli;
 
@@ -8,9 +11,16 @@ internal sealed class CliState
 {
     public const int DefaultResultLimit = 50;
 
+    private static readonly string[] s_documentExtensions =
+    [
+        ".pdf", ".docx", ".xlsx", ".pptx", ".rtf", ".odt", ".ods", ".odp", ".epub", ".eml",
+    ];
+
     public string Root { get; set; } = Directory.GetCurrentDirectory();
 
     public QueryMode Mode { get; set; } = QueryMode.PlainText;
+
+    public SearchTarget SearchTarget { get; set; } = SearchTarget.Content;
 
     public bool CaseSensitive { get; set; }
 
@@ -19,6 +29,12 @@ internal sealed class CliState
     public bool IncludeHidden { get; set; }
 
     public bool UseIndex { get; set; }
+
+    public bool EnableDocumentExtraction { get; set; } = true;
+
+    public bool EnableImageOcr { get; set; }
+
+    public bool SkipUnknownFileTypes { get; set; }
 
     public int ResultLimit { get; set; } = DefaultResultLimit;
 
@@ -32,6 +48,8 @@ internal sealed class CliState
 
     public HashSet<string> ExcludeDirectories { get; } = new(WalkerOptions.DefaultExcludeDirectories, StringComparer.OrdinalIgnoreCase);
 
+    public HashSet<string> AdditionalPlainTextExtensions { get; } = new(StringComparer.OrdinalIgnoreCase);
+
     public long MinFileSizeBytes { get; set; }
 
     public long MaxFileSizeBytes { get; set; } = WalkerOptions.DefaultMaxFileSizeBytes;
@@ -40,13 +58,36 @@ internal sealed class CliState
 
     public DateTime? ModifiedBeforeUtc { get; set; }
 
-    public WalkerOptions ToWalkerOptions() =>
-        new()
+    public WalkerOptions ToWalkerOptions(IReadOnlySet<string>? supportedExtensions = null)
+    {
+        var includeExtensions = new HashSet<string>(IncludeExtensions, StringComparer.OrdinalIgnoreCase);
+        var excludeExtensions = new HashSet<string>(ExcludeExtensions, StringComparer.OrdinalIgnoreCase);
+
+        if (SearchTarget == SearchTarget.Content)
+        {
+            if (SkipUnknownFileTypes && includeExtensions.Count == 0)
+            {
+                if (supportedExtensions is not null)
+                    includeExtensions.UnionWith(supportedExtensions);
+                includeExtensions.UnionWith(AdditionalPlainTextExtensions);
+
+                if (!EnableImageOcr)
+                    includeExtensions.ExceptWith(ImageOcrFileTypes.SupportedExtensions);
+            }
+
+            if (!EnableDocumentExtraction)
+                excludeExtensions.UnionWith(s_documentExtensions);
+
+            if (!EnableImageOcr)
+                excludeExtensions.UnionWith(ImageOcrFileTypes.SupportedExtensions);
+        }
+
+        return new()
         {
             IncludeGlobs = IncludeGlobs.ToArray(),
             ExcludeGlobs = ExcludeGlobs.ToArray(),
-            IncludeExtensions = new HashSet<string>(IncludeExtensions, StringComparer.OrdinalIgnoreCase),
-            ExcludeExtensions = new HashSet<string>(ExcludeExtensions, StringComparer.OrdinalIgnoreCase),
+            IncludeExtensions = includeExtensions,
+            ExcludeExtensions = excludeExtensions,
             ExcludeDirectories = new HashSet<string>(ExcludeDirectories, StringComparer.OrdinalIgnoreCase),
             Recursive = Recursive,
             IncludeHidden = IncludeHidden,
@@ -54,7 +95,9 @@ internal sealed class CliState
             MaxFileSizeBytes = MaxFileSizeBytes,
             ModifiedAfterUtc = ModifiedAfterUtc,
             ModifiedBeforeUtc = ModifiedBeforeUtc,
+            EnableOcr = EnableImageOcr,
         };
+    }
 
     public void ClearFilters()
     {
@@ -64,6 +107,7 @@ internal sealed class CliState
         ExcludeExtensions.Clear();
         ExcludeDirectories.Clear();
         ExcludeDirectories.UnionWith(WalkerOptions.DefaultExcludeDirectories);
+        AdditionalPlainTextExtensions.Clear();
         MinFileSizeBytes = 0;
         MaxFileSizeBytes = WalkerOptions.DefaultMaxFileSizeBytes;
         ModifiedAfterUtc = null;

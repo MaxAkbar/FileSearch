@@ -31,7 +31,7 @@
             <TextBlock Text="Settings" Style="{StaticResource CtxTitleStyle}"/>
         </Border>
 
-        <Grid Margin="20">
+        <Grid Margin="{DynamicResource AppDensity.WindowContentMargin}">
             <Grid.RowDefinitions>
                 <RowDefinition Height="*"/>
                 <RowDefinition Height="Auto"/>
@@ -43,7 +43,7 @@
                     BorderBrush="{DynamicResource Atlas.LineBrush}"
                     BorderThickness="1"
                     CornerRadius="8"
-                    Padding="20"
+                    Padding="{DynamicResource AppDensity.SettingsSurfacePadding}"
                     Margin="0,0,8,0">
                 <StackPanel>
                     <TextBlock Text="NAVIGATION" Style="{StaticResource SectionHeaderStyle}"/>
@@ -177,7 +177,7 @@
                         <Button Grid.Column="1"
                                 Command="{Binding RefreshQuickIndexedLocationsCommand}"
                                 Style="{StaticResource SecondaryButtonStyle}"
-                                Height="34"
+                                Height="{DynamicResource AppDensity.DialogButtonHeight}"
                                 MinWidth="84"
                                 VerticalAlignment="Center">
                             <StackPanel Orientation="Horizontal">
@@ -246,7 +246,7 @@
 
                     <Button Command="{Binding ResetQuickSearchShortcutDefaultsCommand}"
                             Style="{StaticResource SecondaryButtonStyle}"
-                            Height="34"
+                            Height="{DynamicResource AppDensity.DialogButtonHeight}"
                             MinWidth="172"
                             HorizontalAlignment="Left"
                             Margin="0,2,0,0">
@@ -380,7 +380,7 @@
                         <Button Command="{Binding InstallSemanticModelCommand}"
                                 IsEnabled="{Binding CanInstallSemanticModel}"
                                 Style="{StaticResource SecondaryButtonStyle}"
-                                Height="34"
+                                Height="{DynamicResource AppDensity.DialogButtonHeight}"
                                 MinWidth="120"
                                 Margin="0,0,8,0">
                             <StackPanel Orientation="Horizontal">
@@ -390,7 +390,7 @@
                         </Button>
                         <Button Command="{Binding RefreshSemanticModelsCommand}"
                                 Style="{StaticResource SecondaryButtonStyle}"
-                                Height="34"
+                                Height="{DynamicResource AppDensity.DialogButtonHeight}"
                                 MinWidth="96">
                             <StackPanel Orientation="Horizontal">
                                 <ui:FontIcon Glyph="&#xE72C;" FontSize="12" Margin="0,0,7,0"/>
@@ -436,7 +436,7 @@
 
                     <Button Command="{Binding ResetShortcutDefaultsCommand}"
                             Style="{StaticResource SecondaryButtonStyle}"
-                            Height="34"
+                            Height="{DynamicResource AppDensity.DialogButtonHeight}"
                             MinWidth="132"
                             HorizontalAlignment="Left"
                             Margin="0,2,0,0">
@@ -480,7 +480,7 @@
                                       Margin="0,0,8,0"/>
                             <Button Command="{Binding RefreshCustomThemesCommand}"
                                     Style="{StaticResource SecondaryButtonStyle}"
-                                    Height="34"
+                                    Height="{DynamicResource AppDensity.DialogButtonHeight}"
                                     MinWidth="84"
                                     Margin="0,0,8,0">
                                 <StackPanel Orientation="Horizontal">
@@ -490,7 +490,7 @@
                             </Button>
                             <Button Command="{Binding UseBuiltInThemeCommand}"
                                     Style="{StaticResource SecondaryButtonStyle}"
-                                    Height="34"
+                                    Height="{DynamicResource AppDensity.DialogButtonHeight}"
                                     MinWidth="96">
                                 <StackPanel Orientation="Horizontal">
                                     <ui:FontIcon Glyph="&#xE790;" FontSize="12" Margin="0,0,7,0"/>
@@ -498,6 +498,29 @@
                                 </StackPanel>
                             </Button>
                         </StackPanel>
+                    </Grid>
+
+                    <Grid Margin="0,14,0,0">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="*"/>
+                            <ColumnDefinition Width="Auto"/>
+                        </Grid.ColumnDefinitions>
+
+                        <StackPanel Grid.Column="0" Margin="0,0,20,0">
+                            <TextBlock Text="Layout style"
+                                       Style="{StaticResource FieldLabelStyle}"/>
+                            <TextBlock Text="{Binding StyleSummary}"
+                                       Style="{StaticResource MutedValueStyle}"
+                                       TextWrapping="Wrap"
+                                       Margin="0,4,0,0"/>
+                        </StackPanel>
+
+                        <ComboBox Grid.Column="1"
+                                  ItemsSource="{Binding StyleOptions}"
+                                  SelectedItem="{Binding SelectedStyle, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
+                                  DisplayMemberPath="DisplayName"
+                                  MinWidth="150"
+                                  VerticalAlignment="Center"/>
                     </Grid>
 
                     <Border Height="1"
@@ -665,7 +688,7 @@
                         Margin="0,16,0,0">
                 <Button Command="{Binding ResetNavigationDefaultsCommand}"
                         Style="{StaticResource SecondaryButtonStyle}"
-                        Height="34"
+                        Height="{DynamicResource AppDensity.DialogButtonHeight}"
                         MinWidth="128"
                         Margin="0,0,8,0">
                     <StackPanel Orientation="Horizontal">
@@ -677,7 +700,7 @@
                         IsDefault="True"
                         IsCancel="True"
                         Style="{StaticResource PrimaryButtonStyle}"
-                        Height="34"
+                        Height="{DynamicResource AppDensity.DialogButtonHeight}"
                         MinWidth="84">
                     <StackPanel Orientation="Horizontal">
                         <ui:FontIcon Glyph="&#xE73E;" FontSize="13" Margin="0,0,7,0"/>

@@ -1,5 +1,6 @@
 <ResourceDictionary xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
                     xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+                    xmlns:sys="clr-namespace:System;assembly=mscorlib"
                     xmlns:ui="http://schemas.modernwpf.com/2019">
 
     <!-- =====================================================================
@@ -38,6 +39,75 @@
     <FontFamily x:Key="Atlas.SerifFont">Cambria, Georgia, Times New Roman</FontFamily>
     <FontFamily x:Key="Atlas.MonoFont">Cascadia Code, Consolas, Courier New</FontFamily>
 
+    <!-- ===== Density tokens (Comfortable defaults) ===== -->
+    <Thickness x:Key="AppDensity.TitleBarPadding">12,6</Thickness>
+    <sys:Double x:Key="AppDensity.TitleBarMinHeight">44</sys:Double>
+    <Thickness x:Key="AppDensity.StatusBarPadding">18,5</Thickness>
+    <Thickness x:Key="AppDensity.SidebarPadding">12,14</Thickness>
+    <Thickness x:Key="AppDensity.NavSectionLabelMargin">9,14,0,7</Thickness>
+    <Thickness x:Key="AppDensity.NavItemPadding">9,8</Thickness>
+    <Thickness x:Key="AppDensity.NavListItemPadding">9,7</Thickness>
+    <Thickness x:Key="AppDensity.SidebarSearchBoxPadding">8,4,28,4</Thickness>
+    <Thickness x:Key="AppDensity.SidebarSearchBoxMargin">0,2,0,4</Thickness>
+    <sys:Double x:Key="AppDensity.SidebarSearchBoxMinHeight">30</sys:Double>
+    <Thickness x:Key="AppDensity.BadgePadding">6,2</Thickness>
+    <Thickness x:Key="AppDensity.BadgeMargin">0,3,0,3</Thickness>
+    <Thickness x:Key="AppDensity.SurfacePadding">20</Thickness>
+    <Thickness x:Key="AppDensity.NavSectionMargin">0,0,0,8</Thickness>
+    <Thickness x:Key="AppDensity.NavSectionHeaderPadding">10,7</Thickness>
+    <Thickness x:Key="AppDensity.NavSectionContentPadding">8,7,8,8</Thickness>
+    <sys:Double x:Key="AppDensity.ThemeMiniButtonHeight">28</sys:Double>
+    <sys:Double x:Key="AppDensity.CommandButtonHeight">36</sys:Double>
+    <sys:Double x:Key="AppDensity.DialogButtonHeight">34</sys:Double>
+    <sys:Double x:Key="AppDensity.PrimaryButtonMinWidth">92</sys:Double>
+    <sys:Double x:Key="AppDensity.SecondaryButtonMinWidth">80</sys:Double>
+    <Thickness x:Key="AppDensity.PrimaryButtonPadding">16,0</Thickness>
+    <Thickness x:Key="AppDensity.SecondaryButtonPadding">14,0</Thickness>
+    <sys:Double x:Key="AppDensity.ButtonFontSize">13</sys:Double>
+    <sys:Double x:Key="AppDensity.IconButtonSize">34</sys:Double>
+    <sys:Double x:Key="AppDensity.SmallIconButtonSize">24</sys:Double>
+    <sys:Double x:Key="AppDensity.TinyIconButtonSize">22</sys:Double>
+    <sys:Double x:Key="AppDensity.PreviewIconButtonSize">28</sys:Double>
+    <sys:Double x:Key="AppDensity.OmniBarHeight">38</sys:Double>
+    <Thickness x:Key="AppDensity.OmniBarPadding">12,0</Thickness>
+    <Thickness x:Key="AppDensity.OmniDividerMargin">10,0</Thickness>
+    <Thickness x:Key="AppDensity.FilterChipPadding">11,6</Thickness>
+    <Thickness x:Key="AppDensity.FilterChipMargin">0,0,8,8</Thickness>
+    <sys:Double x:Key="AppDensity.FilterChipMinHeight">34</sys:Double>
+    <Thickness x:Key="AppDensity.QueryChipPadding">9,4</Thickness>
+    <Thickness x:Key="AppDensity.QueryChipMargin">0,0,7,7</Thickness>
+    <sys:Double x:Key="AppDensity.QueryChipMinHeight">30</sys:Double>
+    <Thickness x:Key="AppDensity.AdvancedFlyoutPadding">16</Thickness>
+    <Thickness x:Key="AppDensity.SectionHeaderMargin">0,0,0,10</Thickness>
+    <Thickness x:Key="AppDensity.FieldLabelMargin">0,0,0,4</Thickness>
+    <Thickness x:Key="AppDensity.HintLabelMargin">0,4,0,0</Thickness>
+    <Thickness x:Key="AppDensity.ResultsListPadding">0,2,4,8</Thickness>
+    <Thickness x:Key="AppDensity.ResultCardMargin">0,0,0,8</Thickness>
+    <CornerRadius x:Key="AppDensity.ResultCardCornerRadius">12</CornerRadius>
+    <sys:Double x:Key="AppDensity.TypeBadgeSize">30</sys:Double>
+    <CornerRadius x:Key="AppDensity.TypeBadgeCornerRadius">8</CornerRadius>
+    <Thickness x:Key="AppDensity.HitsPillPadding">10,3</Thickness>
+    <sys:Double x:Key="AppDensity.LineNoWidth">46</sys:Double>
+    <Thickness x:Key="AppDensity.LineNoMargin">0,0,14,0</Thickness>
+    <Thickness x:Key="AppDensity.MoreLinkPadding">15,7</Thickness>
+    <sys:Double x:Key="AppDensity.PreviewBadgeSize">60</sys:Double>
+    <CornerRadius x:Key="AppDensity.PreviewBadgeCornerRadius">14</CornerRadius>
+    <Thickness x:Key="AppDensity.PreviewNameMargin">0,10,0,0</Thickness>
+    <Thickness x:Key="AppDensity.PreviewCodePadding">10</Thickness>
+    <Thickness x:Key="AppDensity.WindowContentMargin">20</Thickness>
+    <Thickness x:Key="AppDensity.SettingsSurfacePadding">20</Thickness>
+    <Thickness x:Key="AppDensity.MainContentMargin">14,14,8,12</Thickness>
+    <Thickness x:Key="AppDensity.ResultHeaderMargin">2,0,2,10</Thickness>
+    <Thickness x:Key="AppDensity.ResultCardInnerMargin">15,12,15,12</Thickness>
+    <Thickness x:Key="AppDensity.PreviewHeaderPadding">16,14,14,12</Thickness>
+    <Thickness x:Key="AppDensity.PreviewActionMargin">16,12,16,16</Thickness>
+    <Thickness x:Key="AppDensity.PreviewBodyMargin">16,16,16,8</Thickness>
+    <Thickness x:Key="AppDensity.QuickSearchPadding">12</Thickness>
+    <sys:Double x:Key="AppDensity.QuickSearchOmniBarHeight">44</sys:Double>
+    <sys:Double x:Key="AppDensity.QuickFolderButtonSize">30</sys:Double>
+    <Thickness x:Key="AppDensity.QuickResultCardInnerMargin">12,10</Thickness>
+    <sys:Double x:Key="AppDensity.QuickLineNoWidth">34</sys:Double>
+
     <!-- =====================================================================
          Shell
          ===================================================================== -->
@@ -55,8 +125,8 @@
         <Setter Property="Background" Value="{DynamicResource Atlas.PaperBrush}"/>
         <Setter Property="BorderBrush" Value="{DynamicResource Atlas.LineBrush}"/>
         <Setter Property="BorderThickness" Value="0,0,0,1"/>
-        <Setter Property="Padding" Value="12,6"/>
-        <Setter Property="MinHeight" Value="44"/>
+        <Setter Property="Padding" Value="{DynamicResource AppDensity.TitleBarPadding}"/>
+        <Setter Property="MinHeight" Value="{DynamicResource AppDensity.TitleBarMinHeight}"/>
     </Style>
 
     <Style x:Key="TitleTextStyle" TargetType="TextBlock">
@@ -79,7 +149,7 @@
         <Setter Property="Background" Value="{DynamicResource Atlas.PaperBrush}"/>
         <Setter Property="BorderBrush" Value="{DynamicResource Atlas.LineBrush}"/>
         <Setter Property="BorderThickness" Value="0,1,0,0"/>
-        <Setter Property="Padding" Value="18,5"/>
+        <Setter Property="Padding" Value="{DynamicResource AppDensity.StatusBarPadding}"/>
     </Style>
 
     <Style x:Key="StatusTextStyle" TargetType="TextBlock">
@@ -102,7 +172,7 @@
         <Setter Property="Background" Value="{DynamicResource Atlas.SidebarBrush}"/>
         <Setter Property="BorderBrush" Value="{DynamicResource Atlas.LineBrush}"/>
         <Setter Property="BorderThickness" Value="0,0,1,0"/>
-        <Setter Property="Padding" Value="12,14"/>
+        <Setter Property="Padding" Value="{DynamicResource AppDensity.SidebarPadding}"/>
     </Style>
 
     <Style x:Key="LogoTextStyle" TargetType="TextBlock">
@@ -117,7 +187,7 @@
         <Setter Property="FontSize" Value="10.5"/>
         <Setter Property="FontWeight" Value="Bold"/>
         <Setter Property="Foreground" Value="{DynamicResource Atlas.Ink3Brush}"/>
-        <Setter Property="Margin" Value="9,14,0,7"/>
+        <Setter Property="Margin" Value="{DynamicResource AppDensity.NavSectionLabelMargin}"/>
     </Style>
 
     <!-- Sidebar command rows (Scopes presets, footer actions) -->
@@ -126,7 +196,7 @@
         <Setter Property="HorizontalAlignment" Value="Stretch"/>
         <Setter Property="Background" Value="Transparent"/>
         <Setter Property="Foreground" Value="{DynamicResource Atlas.Ink2Brush}"/>
-        <Setter Property="Padding" Value="9,8"/>
+        <Setter Property="Padding" Value="{DynamicResource AppDensity.NavItemPadding}"/>
         <Setter Property="Margin" Value="0,1"/>
         <Setter Property="FontSize" Value="13.5"/>
         <Setter Property="Cursor" Value="Hand"/>
@@ -175,7 +245,7 @@
     <Style x:Key="NavListBoxItemStyle" TargetType="ListBoxItem">
         <Setter Property="Background" Value="Transparent"/>
         <Setter Property="Foreground" Value="{DynamicResource Atlas.Ink2Brush}"/>
-        <Setter Property="Padding" Value="9,7"/>
+        <Setter Property="Padding" Value="{DynamicResource AppDensity.NavListItemPadding}"/>
         <Setter Property="Margin" Value="0,1"/>
         <Setter Property="FontSize" Value="13"/>
         <Setter Property="HorizontalContentAlignment" Value="Stretch"/>
@@ -207,9 +277,9 @@
     </Style>
 
     <Style x:Key="SidebarSearchBoxStyle" TargetType="TextBox" BasedOn="{StaticResource {x:Type TextBox}}">
-        <Setter Property="MinHeight" Value="30"/>
-        <Setter Property="Padding" Value="8,4,28,4"/>
-        <Setter Property="Margin" Value="0,2,0,4"/>
+        <Setter Property="MinHeight" Value="{DynamicResource AppDensity.SidebarSearchBoxMinHeight}"/>
+        <Setter Property="Padding" Value="{DynamicResource AppDensity.SidebarSearchBoxPadding}"/>
+        <Setter Property="Margin" Value="{DynamicResource AppDensity.SidebarSearchBoxMargin}"/>
         <Setter Property="FontSize" Value="12.5"/>
         <Setter Property="Foreground" Value="{DynamicResource Atlas.InkBrush}"/>
         <Setter Property="Background" Value="{DynamicResource Atlas.Surface2Brush}"/>
@@ -231,8 +301,8 @@
         <Setter Property="BorderBrush" Value="{DynamicResource Atlas.Line2Brush}"/>
         <Setter Property="BorderThickness" Value="1"/>
         <Setter Property="CornerRadius" Value="6"/>
-        <Setter Property="Padding" Value="6,2"/>
-        <Setter Property="Margin" Value="0,3,0,3"/>
+        <Setter Property="Padding" Value="{DynamicResource AppDensity.BadgePadding}"/>
+        <Setter Property="Margin" Value="{DynamicResource AppDensity.BadgeMargin}"/>
         <Setter Property="TextElement.Foreground" Value="{DynamicResource Atlas.Ink2Brush}"/>
         <Style.Triggers>
             <DataTrigger Binding="{Binding IsQueued}" Value="True">
@@ -265,8 +335,8 @@
         <Setter Property="BorderBrush" Value="{DynamicResource Atlas.Line2Brush}"/>
         <Setter Property="BorderThickness" Value="1"/>
         <Setter Property="CornerRadius" Value="6"/>
-        <Setter Property="Padding" Value="6,2"/>
-        <Setter Property="Margin" Value="0,3,0,3"/>
+        <Setter Property="Padding" Value="{DynamicResource AppDensity.BadgePadding}"/>
+        <Setter Property="Margin" Value="{DynamicResource AppDensity.BadgeMargin}"/>
         <Setter Property="TextElement.Foreground" Value="{DynamicResource Atlas.Ink3Brush}"/>
         <Style.Triggers>
             <DataTrigger Binding="{Binding WatchEnabled}" Value="True">
@@ -282,7 +352,7 @@
         <Setter Property="BorderBrush" Value="{DynamicResource Atlas.LineBrush}"/>
         <Setter Property="BorderThickness" Value="1"/>
         <Setter Property="CornerRadius" Value="8"/>
-        <Setter Property="Padding" Value="20"/>
+        <Setter Property="Padding" Value="{DynamicResource AppDensity.SurfacePadding}"/>
         <Style.Triggers>
             <DataTrigger Binding="{Binding Index.SelectedIndexedLocation.WatchEnabled}" Value="True">
                 <Setter Property="Background" Value="{DynamicResource Atlas.AccentSoftBrush}"/>
@@ -295,7 +365,7 @@
     <!-- Collapsible sidebar section header (SCOPES / RECENT FOLDERS / SAVED FINDS). -->
     <Style x:Key="NavSectionExpanderStyle" TargetType="Expander">
         <Setter Property="IsExpanded" Value="True"/>
-        <Setter Property="Margin" Value="0,0,0,8"/>
+        <Setter Property="Margin" Value="{DynamicResource AppDensity.NavSectionMargin}"/>
         <Setter Property="Template">
             <Setter.Value>
                 <ControlTemplate TargetType="Expander">
@@ -322,7 +392,7 @@
                                                 BorderBrush="{DynamicResource Atlas.LineBrush}"
                                                 BorderThickness="0,0,0,1"
                                                 CornerRadius="8,8,0,0"
-                                                Padding="10,7"
+                                                Padding="{DynamicResource AppDensity.NavSectionHeaderPadding}"
                                                 SnapsToDevicePixels="True"
                                                 TextElement.FontSize="10.5" TextElement.FontWeight="Bold"
                                                 TextElement.Foreground="{DynamicResource Atlas.Ink3Brush}">
@@ -351,7 +421,7 @@
                                 </ToggleButton.Template>
                             </ToggleButton>
                             <Border x:Name="SectionContent"
-                                    Padding="8,7,8,8"
+                                     Padding="{DynamicResource AppDensity.NavSectionContentPadding}"
                                     Visibility="Collapsed">
                                 <ContentPresenter ContentSource="Content"/>
                             </Border>
@@ -371,7 +441,7 @@
     </Style>
 
     <Style x:Key="ThemeMiniButtonStyle" TargetType="Button">
-        <Setter Property="Height" Value="28"/>
+        <Setter Property="Height" Value="{DynamicResource AppDensity.ThemeMiniButtonHeight}"/>
         <Setter Property="Background" Value="{DynamicResource Atlas.SurfaceBrush}"/>
         <Setter Property="Foreground" Value="{DynamicResource Atlas.Ink2Brush}"/>
         <Setter Property="FontSize" Value="11"/>
@@ -402,12 +472,12 @@
          Buttons (omni / command bar)
          ===================================================================== -->
     <Style x:Key="PrimaryButtonStyle" TargetType="Button">
-        <Setter Property="Height" Value="36"/>
-        <Setter Property="MinWidth" Value="92"/>
-        <Setter Property="Padding" Value="16,0"/>
+        <Setter Property="Height" Value="{DynamicResource AppDensity.CommandButtonHeight}"/>
+        <Setter Property="MinWidth" Value="{DynamicResource AppDensity.PrimaryButtonMinWidth}"/>
+        <Setter Property="Padding" Value="{DynamicResource AppDensity.PrimaryButtonPadding}"/>
         <Setter Property="Background" Value="{DynamicResource Atlas.AccentBrush}"/>
         <Setter Property="Foreground" Value="{DynamicResource Atlas.OnAccentBrush}"/>
-        <Setter Property="FontSize" Value="13"/>
+        <Setter Property="FontSize" Value="{DynamicResource AppDensity.ButtonFontSize}"/>
         <Setter Property="FontWeight" Value="SemiBold"/>
         <Setter Property="Cursor" Value="Hand"/>
         <Setter Property="FocusVisualStyle" Value="{x:Null}"/>
@@ -436,12 +506,12 @@
     </Style>
 
     <Style x:Key="SecondaryButtonStyle" TargetType="Button">
-        <Setter Property="Height" Value="36"/>
-        <Setter Property="MinWidth" Value="80"/>
-        <Setter Property="Padding" Value="14,0"/>
+        <Setter Property="Height" Value="{DynamicResource AppDensity.CommandButtonHeight}"/>
+        <Setter Property="MinWidth" Value="{DynamicResource AppDensity.SecondaryButtonMinWidth}"/>
+        <Setter Property="Padding" Value="{DynamicResource AppDensity.SecondaryButtonPadding}"/>
         <Setter Property="Background" Value="{DynamicResource Atlas.SurfaceBrush}"/>
         <Setter Property="Foreground" Value="{DynamicResource Atlas.Ink2Brush}"/>
-        <Setter Property="FontSize" Value="13"/>
+        <Setter Property="FontSize" Value="{DynamicResource AppDensity.ButtonFontSize}"/>
         <Setter Property="Cursor" Value="Hand"/>
         <Setter Property="FocusVisualStyle" Value="{x:Null}"/>
         <Setter Property="Template">
@@ -470,8 +540,8 @@
     </Style>
 
     <Style x:Key="IconButtonStyle" TargetType="Button">
-        <Setter Property="Width" Value="34"/>
-        <Setter Property="Height" Value="34"/>
+        <Setter Property="Width" Value="{DynamicResource AppDensity.IconButtonSize}"/>
+        <Setter Property="Height" Value="{DynamicResource AppDensity.IconButtonSize}"/>
         <Setter Property="Background" Value="Transparent"/>
         <Setter Property="Foreground" Value="{DynamicResource Atlas.Ink2Brush}"/>
         <Setter Property="Cursor" Value="Hand"/>
@@ -505,8 +575,8 @@
         <Setter Property="BorderBrush" Value="{DynamicResource Atlas.Line2Brush}"/>
         <Setter Property="BorderThickness" Value="1"/>
         <Setter Property="CornerRadius" Value="9"/>
-        <Setter Property="Padding" Value="12,0"/>
-        <Setter Property="Height" Value="38"/>
+        <Setter Property="Padding" Value="{DynamicResource AppDensity.OmniBarPadding}"/>
+        <Setter Property="Height" Value="{DynamicResource AppDensity.OmniBarHeight}"/>
     </Style>
 
     <Style x:Key="OmniPathBoxStyle" TargetType="TextBox" BasedOn="{StaticResource {x:Type TextBox}}">
@@ -534,7 +604,7 @@
         <Setter Property="Width" Value="1"/>
         <Setter Property="Height" Value="18"/>
         <Setter Property="Background" Value="{DynamicResource Atlas.Line2Brush}"/>
-        <Setter Property="Margin" Value="10,0"/>
+        <Setter Property="Margin" Value="{DynamicResource AppDensity.OmniDividerMargin}"/>
         <Setter Property="VerticalAlignment" Value="Center"/>
     </Style>
 
@@ -543,9 +613,9 @@
         <Setter Property="BorderBrush" Value="{DynamicResource Atlas.LineBrush}"/>
         <Setter Property="BorderThickness" Value="1"/>
         <Setter Property="CornerRadius" Value="8"/>
-        <Setter Property="Padding" Value="11,6"/>
-        <Setter Property="Margin" Value="0,0,8,8"/>
-        <Setter Property="MinHeight" Value="34"/>
+        <Setter Property="Padding" Value="{DynamicResource AppDensity.FilterChipPadding}"/>
+        <Setter Property="Margin" Value="{DynamicResource AppDensity.FilterChipMargin}"/>
+        <Setter Property="MinHeight" Value="{DynamicResource AppDensity.FilterChipMinHeight}"/>
     </Style>
 
     <Style x:Key="QueryChipStyle" TargetType="Border">
@@ -553,9 +623,9 @@
         <Setter Property="BorderBrush" Value="{DynamicResource Atlas.AccentBrush}"/>
         <Setter Property="BorderThickness" Value="1"/>
         <Setter Property="CornerRadius" Value="8"/>
-        <Setter Property="Padding" Value="9,4"/>
-        <Setter Property="Margin" Value="0,0,7,7"/>
-        <Setter Property="MinHeight" Value="30"/>
+        <Setter Property="Padding" Value="{DynamicResource AppDensity.QueryChipPadding}"/>
+        <Setter Property="Margin" Value="{DynamicResource AppDensity.QueryChipMargin}"/>
+        <Setter Property="MinHeight" Value="{DynamicResource AppDensity.QueryChipMinHeight}"/>
     </Style>
 
     <Style x:Key="QueryChipFieldStyle" TargetType="TextBlock">
@@ -599,7 +669,7 @@
         <Setter Property="BorderBrush" Value="{DynamicResource Atlas.LineBrush}"/>
         <Setter Property="BorderThickness" Value="1"/>
         <Setter Property="CornerRadius" Value="10"/>
-        <Setter Property="Padding" Value="16"/>
+        <Setter Property="Padding" Value="{DynamicResource AppDensity.AdvancedFlyoutPadding}"/>
         <Setter Property="MinWidth" Value="560"/>
         <Setter Property="Margin" Value="0,6,0,0"/>
     </Style>
@@ -608,20 +678,20 @@
         <Setter Property="FontSize" Value="11"/>
         <Setter Property="FontWeight" Value="Bold"/>
         <Setter Property="Foreground" Value="{DynamicResource Atlas.Ink3Brush}"/>
-        <Setter Property="Margin" Value="0,0,0,10"/>
+        <Setter Property="Margin" Value="{DynamicResource AppDensity.SectionHeaderMargin}"/>
     </Style>
 
     <Style x:Key="FieldLabelStyle" TargetType="TextBlock">
         <Setter Property="FontSize" Value="13"/>
         <Setter Property="FontWeight" Value="SemiBold"/>
         <Setter Property="Foreground" Value="{DynamicResource Atlas.Ink2Brush}"/>
-        <Setter Property="Margin" Value="0,0,0,4"/>
+        <Setter Property="Margin" Value="{DynamicResource AppDensity.FieldLabelMargin}"/>
     </Style>
 
     <Style x:Key="HintLabelStyle" TargetType="TextBlock">
         <Setter Property="FontSize" Value="12"/>
         <Setter Property="Foreground" Value="{DynamicResource Atlas.Ink3Brush}"/>
-        <Setter Property="Margin" Value="0,4,0,0"/>
+        <Setter Property="Margin" Value="{DynamicResource AppDensity.HintLabelMargin}"/>
         <Setter Property="TextWrapping" Value="Wrap"/>
     </Style>
 
@@ -644,7 +714,7 @@
     <Style x:Key="ResultsListStyle" TargetType="ListBox" BasedOn="{StaticResource {x:Type ListBox}}">
         <Setter Property="Background" Value="Transparent"/>
         <Setter Property="BorderThickness" Value="0"/>
-        <Setter Property="Padding" Value="0,2,4,8"/>
+        <Setter Property="Padding" Value="{DynamicResource AppDensity.ResultsListPadding}"/>
         <Setter Property="HorizontalContentAlignment" Value="Stretch"/>
         <Setter Property="ScrollViewer.HorizontalScrollBarVisibility" Value="Disabled"/>
         <Setter Property="ScrollViewer.VerticalScrollBarVisibility" Value="Auto"/>
@@ -654,7 +724,7 @@
 
     <!-- Result card = ListBoxItem chrome; the DataTemplate fills the inside. -->
     <Style x:Key="ResultCardContainerStyle" TargetType="ListBoxItem">
-        <Setter Property="Margin" Value="0,0,0,8"/>
+        <Setter Property="Margin" Value="{DynamicResource AppDensity.ResultCardMargin}"/>
         <Setter Property="Padding" Value="0"/>
         <Setter Property="HorizontalContentAlignment" Value="Stretch"/>
         <Setter Property="FocusVisualStyle" Value="{x:Null}"/>
@@ -663,7 +733,7 @@
                 <ControlTemplate TargetType="ListBoxItem">
                     <Border x:Name="card" Background="{DynamicResource Atlas.SurfaceBrush}"
                             BorderBrush="{DynamicResource Atlas.LineBrush}" BorderThickness="1"
-                            CornerRadius="12" SnapsToDevicePixels="True">
+                            CornerRadius="{DynamicResource AppDensity.ResultCardCornerRadius}" SnapsToDevicePixels="True">
                         <ContentPresenter/>
                     </Border>
                     <ControlTemplate.Triggers>
@@ -697,9 +767,9 @@
     <!-- Type badge (the little coloured square). Background is bound per item
          via the file-type converter; this just sets shape + label typography. -->
     <Style x:Key="TypeBadgeStyle" TargetType="Border">
-        <Setter Property="Width" Value="30"/>
-        <Setter Property="Height" Value="30"/>
-        <Setter Property="CornerRadius" Value="8"/>
+        <Setter Property="Width" Value="{DynamicResource AppDensity.TypeBadgeSize}"/>
+        <Setter Property="Height" Value="{DynamicResource AppDensity.TypeBadgeSize}"/>
+        <Setter Property="CornerRadius" Value="{DynamicResource AppDensity.TypeBadgeCornerRadius}"/>
         <Setter Property="VerticalAlignment" Value="Center"/>
     </Style>
 
@@ -715,7 +785,7 @@
     <Style x:Key="HitsPillStyle" TargetType="Border">
         <Setter Property="Background" Value="{DynamicResource Atlas.AccentTintBrush}"/>
         <Setter Property="CornerRadius" Value="20"/>
-        <Setter Property="Padding" Value="10,3"/>
+        <Setter Property="Padding" Value="{DynamicResource AppDensity.HitsPillPadding}"/>
         <Setter Property="VerticalAlignment" Value="Center"/>
     </Style>
 
@@ -730,9 +800,9 @@
         <Setter Property="FontFamily" Value="{DynamicResource Atlas.MonoFont}"/>
         <Setter Property="FontSize" Value="12"/>
         <Setter Property="Foreground" Value="{DynamicResource Atlas.Ink3Brush}"/>
-        <Setter Property="Width" Value="46"/>
+        <Setter Property="Width" Value="{DynamicResource AppDensity.LineNoWidth}"/>
         <Setter Property="TextAlignment" Value="Right"/>
-        <Setter Property="Margin" Value="0,0,14,0"/>
+        <Setter Property="Margin" Value="{DynamicResource AppDensity.LineNoMargin}"/>
     </Style>
 
     <Style x:Key="LineTextStyle" TargetType="TextBlock">
@@ -749,7 +819,7 @@
         <Setter Property="Background" Value="Transparent"/>
         <Setter Property="Foreground" Value="{DynamicResource Atlas.AccentBrush}"/>
         <Setter Property="FontSize" Value="11.5"/>
-        <Setter Property="Padding" Value="15,7"/>
+        <Setter Property="Padding" Value="{DynamicResource AppDensity.MoreLinkPadding}"/>
         <Setter Property="Cursor" Value="Hand"/>
         <Setter Property="FocusVisualStyle" Value="{x:Null}"/>
         <Setter Property="Template">
@@ -805,9 +875,9 @@
     </Style>
 
     <Style x:Key="PreviewBadgeStyle" TargetType="Border">
-        <Setter Property="Width" Value="60"/>
-        <Setter Property="Height" Value="60"/>
-        <Setter Property="CornerRadius" Value="14"/>
+        <Setter Property="Width" Value="{DynamicResource AppDensity.PreviewBadgeSize}"/>
+        <Setter Property="Height" Value="{DynamicResource AppDensity.PreviewBadgeSize}"/>
+        <Setter Property="CornerRadius" Value="{DynamicResource AppDensity.PreviewBadgeCornerRadius}"/>
         <Setter Property="HorizontalAlignment" Value="Center"/>
     </Style>
 
@@ -828,7 +898,7 @@
         <Setter Property="HorizontalAlignment" Value="Center"/>
         <Setter Property="TextAlignment" Value="Center"/>
         <Setter Property="TextWrapping" Value="Wrap"/>
-        <Setter Property="Margin" Value="0,10,0,0"/>
+        <Setter Property="Margin" Value="{DynamicResource AppDensity.PreviewNameMargin}"/>
     </Style>
 
     <Style x:Key="MetaKeyStyle" TargetType="TextBlock">
@@ -857,16 +927,16 @@
         <Setter Property="BorderThickness" Value="1"/>
         <Setter Property="BorderBrush" Value="{DynamicResource Atlas.LineBrush}"/>
         <Setter Property="Background" Value="{DynamicResource Atlas.SurfaceBrush}"/>
-        <Setter Property="Padding" Value="10"/>
+        <Setter Property="Padding" Value="{DynamicResource AppDensity.PreviewCodePadding}"/>
     </Style>
 
     <Style x:Key="PreviewActionButtonStyle" TargetType="Button" BasedOn="{StaticResource PrimaryButtonStyle}">
-        <Setter Property="Height" Value="36"/>
+        <Setter Property="Height" Value="{DynamicResource AppDensity.CommandButtonHeight}"/>
         <Setter Property="MinWidth" Value="0"/>
     </Style>
 
     <Style x:Key="SecondaryPreviewActionButtonStyle" TargetType="Button" BasedOn="{StaticResource SecondaryButtonStyle}">
-        <Setter Property="Height" Value="36"/>
+        <Setter Property="Height" Value="{DynamicResource AppDensity.CommandButtonHeight}"/>
         <Setter Property="MinWidth" Value="0"/>
     </Style>
 

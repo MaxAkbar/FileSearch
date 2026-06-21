@@ -2,6 +2,7 @@ using FileSearch.Cli;
 using FileSearch.Core;
 using FileSearch.Core.Engine;
 using FileSearch.Core.Logging;
+using FileSearch.WindowsOcr;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 
@@ -17,6 +18,7 @@ services.AddLogging(logging => logging.AddProvider(new FileLoggerProvider(
         "FileSearch", "logs"),
     "filesearch-cli")));
 services.AddFileSearchCore();
+services.AddWindowsImageOcr();
 services.AddSingleton<FileSearchRepl>();
 
 using var provider = services.BuildServiceProvider();
