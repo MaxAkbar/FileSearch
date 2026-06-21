@@ -132,6 +132,16 @@
                 <li><strong>Quick window shortcuts</strong> controls close, focus results, open, reveal, copy path, pin, and preview actions inside Quick Search.</li>
             </ul>
 
+            <h2>Smart Search Model Packs</h2>
+            <p>Use <strong>File &gt; Settings &gt; Smart Search</strong> to choose and install an optional local embedding model. FileSearch does not download a model until you click <strong>Install model</strong>, and semantic search runs locally through ONNX Runtime after a model pack is installed. After download, FileSearch loads the ONNX model and runs a small document/query embedding smoke test before marking the pack ready.</p>
+            <ul class="plain-list">
+                <li><strong>Disabled</strong> keeps FileSearch in classic mode with filename, metadata, indexed content, OCR, Boolean, regex, fuzzy and proximity search.</li>
+                <li><strong>BGE small English v1.5</strong> is the recommended local semantic model for English documents.</li>
+                <li><strong>all-MiniLM-L6-v2</strong> is a smaller compatibility option.</li>
+                <li><strong>Local reranker</strong> applies a lightweight local ranking pass after result fusion. Turn it off to keep the raw provider-fusion order.</li>
+            </ul>
+            <p>Model packs are stored in the configured model folder under your user profile by default. Removing the model folder disables semantic indexing until another model is installed. Use <strong>Indexed locations &gt; Location &gt; Smart Search</strong> to check vector coverage for a location or queue a Smart Search rebuild without changing the indexed content.</p>
+
             <h2>Main Window Shortcuts</h2>
             <p>Use <strong>File &gt; Settings &gt; Main Window Shortcuts</strong> to change the main-window shortcuts for search fields, results, preview, workspaces, facets, and selected-result actions. Set an action to <strong>Disabled</strong> if you do not want a shortcut for it.</p>
             <div class="table-wrap">

@@ -29,4 +29,7 @@ public sealed record Hit(
     long? SizeBytes = null,
     DateTime? ModifiedUtc = null,
     HitRoute Route = HitRoute.Live,
-    SourceAnchor? Anchor = null);
+    SourceAnchor? Anchor = null,
+    long? ContentUnitId = null,
+    SourceLocator? Locator = null,
+    SearchSnippet? Snippet = null);

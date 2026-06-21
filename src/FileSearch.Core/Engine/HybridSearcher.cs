@@ -43,5 +43,8 @@ public sealed class HybridSearcher : IHybridSearcher
             candidate.SizeBytes,
             candidate.ModifiedUtc,
             candidate.Route ?? HitRoute.Live,
-            candidate.Anchor);
+            candidate.Anchor,
+            candidate.ContentUnitId,
+            candidate.Locator,
+            candidate.Snippet);
 }

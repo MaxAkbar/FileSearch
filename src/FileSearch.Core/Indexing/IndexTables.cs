@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.IO;
+using System.Linq;
 using System.Runtime.CompilerServices;
 using System.Text.Json;
 using System.Text.Json.Serialization;
@@ -9,6 +10,7 @@ using System.Threading;
 using System.Threading.Tasks;
 using CSharpDB.Engine;
 using CSharpDB.Primitives;
+using FileSearch.Core.Engine;
 using FileSearch.Core.Extractors;
 
 namespace FileSearch.Core.Indexing;
@@ -72,7 +74,14 @@ internal sealed record IndexedLine(
     string FileTypeCategory,
     int LineNumber,
     string Content,
-    SourceAnchor? Anchor);
+    SourceAnchor? Anchor,
+    long? ContentUnitId,
+    ContentUnitKind ContentUnitKind,
+    SourceLocator? Locator,
+    string ContentHash,
+    string Language,
+    string UnitExtractorId,
+    string UnitExtractorVersion);
 
 internal sealed record IndexedFileMetadata(
     string Path,
@@ -101,16 +110,23 @@ internal static partial class IndexTables
     {
         Converters = { new JsonStringEnumConverter() },
     };
+    private static readonly JsonSerializerOptions s_locatorJsonOptions = new();
 
     private const int MetadataTokenPrefixMinLength = 2;
     private const int MetadataTokenPrefixMaxLength = 32;
 
     private const string SelectLinesColumns =
         "SELECT f.path, f.file_name, f.extension, f.size_bytes, f.created_utc_ticks, f.modified_utc_ticks, " +
-        "f.status, f.extractor_id, f.file_type_category, l.line_number, l.content, l.anchor_json " +
-        "FROM lines l INNER JOIN files f ON f.id = l.file_id WHERE ";
+        "f.status, f.extractor_id, f.file_type_category, l.line_number, l.content, l.anchor_json, " +
+        "l.content_unit_id, u.kind, u.locator_json, u.content_hash, u.language, u.extractor_id, u.extractor_version " +
+        "FROM lines l INNER JOIN files f ON f.id = l.file_id " +
+        "LEFT JOIN content_units u ON u.id = l.content_unit_id WHERE ";
 
     private const string SelectLinesOrder = " ORDER BY f.path, l.line_number";
+
+    private const string SelectContentUnitColumns =
+        "SELECT u.id, u.file_id, u.kind, u.locator_json, u.unit_text, u.content_hash, " +
+        "u.language, u.extractor_id, u.extractor_version FROM content_units u ";
 
     // ----- index_roots -----
 
@@ -975,6 +991,16 @@ internal static partial class IndexTables
                 Sql.Format($"DELETE FROM extraction_issues WHERE file_id IN (SELECT id FROM files WHERE root_id = {rootId})"),
                 cancellationToken)
             .ConfigureAwait(false);
+        await ExecuteAsync(
+                db,
+                Sql.Format($"DELETE FROM lines WHERE file_id IN (SELECT id FROM files WHERE root_id = {rootId})"),
+                cancellationToken)
+            .ConfigureAwait(false);
+        await ExecuteAsync(
+                db,
+                Sql.Format($"DELETE FROM content_units WHERE file_id IN (SELECT id FROM files WHERE root_id = {rootId})"),
+                cancellationToken)
+            .ConfigureAwait(false);
         await ExecuteAsync(db, Sql.Format($"DELETE FROM files WHERE root_id = {rootId}"), cancellationToken)
             .ConfigureAwait(false);
     }
@@ -997,8 +1023,12 @@ internal static partial class IndexTables
 
     // ----- lines -----
 
-    public static Task DeleteLinesAsync(Database db, long fileId, CancellationToken cancellationToken) =>
-        ExecuteAsync(db, Sql.Format($"DELETE FROM lines WHERE file_id = {fileId}"), cancellationToken);
+    public static async Task DeleteLinesAsync(Database db, long fileId, CancellationToken cancellationToken)
+    {
+        await ExecuteAsync(db, Sql.Format($"DELETE FROM lines WHERE file_id = {fileId}"), cancellationToken)
+            .ConfigureAwait(false);
+        await DeleteContentUnitsAsync(db, fileId, cancellationToken).ConfigureAwait(false);
+    }
 
     private static async Task DeleteFileByIdAsync(Database db, long fileId, CancellationToken cancellationToken)
     {
@@ -1153,8 +1183,20 @@ internal static partial class IndexTables
         }
     }
 
-    public static Task DeleteLinesForFilesAsync(Database db, IEnumerable<long> fileIds, CancellationToken cancellationToken) =>
-        ExecuteAsync(db, Sql.Format($"DELETE FROM lines WHERE file_id IN ({new Sql.IdList(fileIds)})"), cancellationToken);
+    public static async Task DeleteLinesForFilesAsync(Database db, IEnumerable<long> fileIds, CancellationToken cancellationToken)
+    {
+        var ids = fileIds.ToArray();
+        if (ids.Length == 0)
+            return;
+
+        await ExecuteAsync(db, Sql.Format($"DELETE FROM lines WHERE file_id IN ({new Sql.IdList(ids)})"), cancellationToken)
+            .ConfigureAwait(false);
+        await ExecuteAsync(db, Sql.Format($"DELETE FROM content_units WHERE file_id IN ({new Sql.IdList(ids)})"), cancellationToken)
+            .ConfigureAwait(false);
+    }
+
+    private static Task DeleteContentUnitsAsync(Database db, long fileId, CancellationToken cancellationToken) =>
+        ExecuteAsync(db, Sql.Format($"DELETE FROM content_units WHERE file_id = {fileId}"), cancellationToken);
 
     public static Task<long> CountOkLinesAsync(Database db, long rootId, CancellationToken cancellationToken) =>
         GetCountAsync(
@@ -1193,14 +1235,140 @@ internal static partial class IndexTables
                 row[8].IsNull ? string.Empty : row[8].AsText,
                 checked((int)row[9].AsInteger),
                 row[10].AsText,
-                row[11].IsNull ? null : DeserializeAnchor(row[11].AsText));
+                row[11].IsNull ? null : DeserializeAnchor(row[11].AsText),
+                row[12].IsNull ? null : row[12].AsInteger,
+                ParseEnum(row[13].IsNull ? null : row[13].AsText, ContentUnitKind.Text),
+                row[14].IsNull ? null : DeserializeLocator(row[14].AsText),
+                row[15].IsNull ? string.Empty : row[15].AsText,
+                row[16].IsNull ? string.Empty : row[16].AsText,
+                row[17].IsNull ? string.Empty : row[17].AsText,
+                row[18].IsNull ? string.Empty : row[18].AsText);
         }
+    }
+
+    public static async Task<ContentUnit?> ReadContentUnitAsync(
+        Database db,
+        long id,
+        CancellationToken cancellationToken)
+    {
+        await using var result = await db.ExecuteAsync(
+            SelectContentUnitColumns + Sql.Format($"WHERE u.id = {id}"),
+            cancellationToken).ConfigureAwait(false);
+
+        return await result.MoveNextAsync(cancellationToken).ConfigureAwait(false)
+            ? ReadContentUnit(result.Current)
+            : null;
+    }
+
+    public static async Task<string?> ReadFilePathAsync(
+        Database db,
+        long fileId,
+        CancellationToken cancellationToken)
+    {
+        await using var result = await db.ExecuteAsync(
+            Sql.Format($"SELECT path FROM files WHERE id = {fileId}"),
+            cancellationToken).ConfigureAwait(false);
+
+        return await result.MoveNextAsync(cancellationToken).ConfigureAwait(false)
+            ? result.Current[0].AsText
+            : null;
+    }
+
+    public static async Task<long?> ReadFileIdAsync(
+        Database db,
+        long rootId,
+        string path,
+        CancellationToken cancellationToken)
+    {
+        await using var result = await db.ExecuteAsync(
+            Sql.Format($"SELECT id FROM files WHERE root_id = {rootId} AND path = {path}"),
+            cancellationToken).ConfigureAwait(false);
+
+        return await result.MoveNextAsync(cancellationToken).ConfigureAwait(false)
+            ? result.Current[0].AsInteger
+            : null;
+    }
+
+    public static async Task<IReadOnlyList<long>> ReadContentUnitIdsForRootAsync(
+        Database db,
+        long rootId,
+        CancellationToken cancellationToken)
+    {
+        var ids = new List<long>();
+        await using var result = await db.ExecuteAsync(
+            Sql.Format(
+                $"SELECT u.id FROM content_units u INNER JOIN files f ON f.id = u.file_id " +
+                $"WHERE f.root_id = {rootId} ORDER BY u.id"),
+            cancellationToken).ConfigureAwait(false);
+
+        while (await result.MoveNextAsync(cancellationToken).ConfigureAwait(false))
+            ids.Add(result.Current[0].AsInteger);
+
+        return ids;
+    }
+
+    public static async Task<IReadOnlyList<ContentUnit>> ReadContentUnitsForFileAsync(
+        Database db,
+        long fileId,
+        CancellationToken cancellationToken)
+    {
+        var units = new List<ContentUnit>();
+        await using var result = await db.ExecuteAsync(
+            SelectContentUnitColumns +
+            "INNER JOIN lines l ON l.content_unit_id = u.id " +
+            Sql.Format($"WHERE u.file_id = {fileId}") +
+            " ORDER BY l.line_number, u.id",
+            cancellationToken).ConfigureAwait(false);
+
+        while (await result.MoveNextAsync(cancellationToken).ConfigureAwait(false))
+            units.Add(ReadContentUnit(result.Current));
+
+        return units;
+    }
+
+    public static async Task<IReadOnlyList<ContentUnit>> ReadNeighboringContentUnitsAsync(
+        Database db,
+        long contentUnitId,
+        int before,
+        int after,
+        CancellationToken cancellationToken)
+    {
+        var center = await ReadContentUnitAsync(db, contentUnitId, cancellationToken).ConfigureAwait(false);
+        if (center is null)
+            return Array.Empty<ContentUnit>();
+
+        var units = await ReadContentUnitsForFileAsync(db, center.FileId, cancellationToken).ConfigureAwait(false);
+        var centerIndex = units
+            .Select((unit, index) => new { unit.Id, Index = index })
+            .FirstOrDefault(unit => unit.Id == contentUnitId)
+            ?.Index;
+        if (centerIndex is null)
+            return Array.Empty<ContentUnit>();
+
+        var start = Math.Max(0, centerIndex.Value - before);
+        var count = Math.Min(units.Count - start, before + 1 + after);
+        return units.Skip(start).Take(count).ToArray();
     }
 
     public static DbValue SerializeAnchor(SourceAnchor? anchor) =>
         anchor is null
             ? DbValue.Null
             : DbValue.FromText(JsonSerializer.Serialize(anchor, s_anchorJsonOptions));
+
+    public static DbValue SerializeLocator(SourceLocator locator) =>
+        DbValue.FromText(JsonSerializer.Serialize(locator, s_locatorJsonOptions));
+
+    private static ContentUnit ReadContentUnit(DbValue[] row) =>
+        new(
+            row[0].AsInteger,
+            row[1].AsInteger,
+            ParseEnum(row[2].IsNull ? null : row[2].AsText, ContentUnitKind.Text),
+            row[3].IsNull ? new SourceLocator() : DeserializeLocator(row[3].AsText) ?? new SourceLocator(),
+            row[4].IsNull ? string.Empty : row[4].AsText,
+            row[5].IsNull ? string.Empty : row[5].AsText,
+            row[6].IsNull ? string.Empty : row[6].AsText,
+            row[7].IsNull ? string.Empty : row[7].AsText,
+            row[8].IsNull ? string.Empty : row[8].AsText);
 
     private static SourceAnchor? DeserializeAnchor(string json)
     {
@@ -1210,6 +1378,21 @@ internal static partial class IndexTables
         try
         {
             return JsonSerializer.Deserialize<SourceAnchor>(json, s_anchorJsonOptions);
+        }
+        catch
+        {
+            return null;
+        }
+    }
+
+    private static SourceLocator? DeserializeLocator(string json)
+    {
+        if (string.IsNullOrWhiteSpace(json))
+            return null;
+
+        try
+        {
+            return JsonSerializer.Deserialize<SourceLocator>(json, s_locatorJsonOptions);
         }
         catch
         {

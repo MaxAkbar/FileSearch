@@ -1,5 +1,6 @@
 using FileSearch.Core.Engine;
 using FileSearch.Core.Extractors;
+using FileSearch.Core.Indexing;
 using FileSearch.Core.Queries;
 using FileSearch.Core.Walker;
 using Microsoft.Extensions.DependencyInjection;
@@ -62,7 +63,7 @@ public sealed class QueryPlannerTests
     }
 
     [Fact]
-    public void CreatePlan_UnavailableSemantic_AddsDisabledSmartProvider()
+    public void CreatePlan_SemanticQuery_AddsSmartProvider()
     {
         var query = new UnifiedQueryParser().Parse("semantic:\"authentication migration\"");
 
@@ -70,15 +71,15 @@ public sealed class QueryPlannerTests
         var semanticProvider = plan.GetProvider(CandidateProviderKind.Semantic);
 
         Assert.NotNull(semanticProvider);
-        Assert.False(semanticProvider.IsEnabled);
+        Assert.True(semanticProvider.IsEnabled);
         Assert.True(plan.HasProvider(CandidateProviderKind.Semantic));
-        Assert.False(plan.HasEnabledProvider(CandidateProviderKind.Semantic));
-        Assert.Equal(UnifiedQuery.SemanticUnavailableMessage, semanticProvider.Explanation);
+        Assert.True(plan.HasEnabledProvider(CandidateProviderKind.Semantic));
+        Assert.Null(semanticProvider.Explanation);
         Assert.Contains(
             plan.Explanations,
             explanation =>
-                explanation.Code == "semantic-unavailable" &&
-                explanation.Severity == SearchExplanationSeverity.Disabled);
+                explanation.Code == "semantic-requested" &&
+                explanation.Severity == SearchExplanationSeverity.Info);
     }
 
     [Fact]
@@ -96,6 +97,8 @@ public sealed class QueryPlannerTests
     {
         var highlights = new[] { new MatchSpan(3, 6) };
         var anchor = new SourceAnchor(SourceAnchorKind.Text, "line 42", Line: 42, Column: 7);
+        var locator = SourceLocator.FromAnchor(anchor, 42);
+        var snippet = new SearchSnippet("context needle", contentUnitId: 123);
         var hit = new Hit(
             @"C:\docs\report.txt",
             42,
@@ -105,7 +108,10 @@ public sealed class QueryPlannerTests
             SizeBytes: 1024,
             ModifiedUtc: new DateTime(2026, 1, 2, 3, 4, 5, DateTimeKind.Utc),
             Route: HitRoute.Indexed,
-            Anchor: anchor);
+            Anchor: anchor,
+            ContentUnitId: 123,
+            Locator: locator,
+            Snippet: snippet);
 
         var candidate = SearchCandidate.FromHit(hit, CandidateProviderKind.Lexical, "fts");
 
@@ -120,6 +126,9 @@ public sealed class QueryPlannerTests
         Assert.Equal(hit.ModifiedUtc, candidate.ModifiedUtc);
         Assert.Equal(hit.Route, candidate.Route);
         Assert.Equal(anchor, candidate.Anchor);
+        Assert.Equal(123, candidate.ContentUnitId);
+        Assert.Equal(locator, candidate.Locator);
+        Assert.Same(snippet, candidate.Snippet);
     }
 
     [Fact]
@@ -146,6 +155,71 @@ public sealed class QueryPlannerTests
         Assert.Contains(
             services,
             service =>
+                service.ServiceType == typeof(IContentUnitReader) &&
+                service.ImplementationFactory is not null);
+        Assert.Contains(
+            services,
+            service =>
+                service.ServiceType == typeof(ISnippetGenerator) &&
+                service.ImplementationType == typeof(ContentUnitSnippetGenerator));
+        Assert.Contains(
+            services,
+            service =>
+                service.ServiceType == typeof(IContentChunker) &&
+                service.ImplementationType == typeof(ContentUnitChunker));
+        Assert.Contains(
+            services,
+            service =>
+                service.ServiceType == typeof(IVectorIndex) &&
+                service.ImplementationType == typeof(FileVectorIndex));
+        Assert.Contains(
+            services,
+            service =>
+                service.ServiceType == typeof(VectorIndexOptions) &&
+                service.ImplementationFactory is not null);
+        Assert.Contains(
+            services,
+            service =>
+                service.ServiceType == typeof(ITextEmbedder) &&
+                service.ImplementationType == typeof(OnnxTextEmbedder));
+        Assert.Contains(
+            services,
+            service =>
+                service.ServiceType == typeof(EmbeddingModelPackOptions) &&
+                service.ImplementationType == typeof(EmbeddingModelPackOptions));
+        Assert.Contains(
+            services,
+            service =>
+                service.ServiceType == typeof(IEmbeddingModelPackCatalog) &&
+                service.ImplementationType == typeof(EmbeddingModelPackCatalog));
+        Assert.Contains(
+            services,
+            service =>
+                service.ServiceType == typeof(IEmbeddingModelPackStore) &&
+                service.ImplementationType == typeof(EmbeddingModelPackStore));
+        Assert.Contains(
+            services,
+            service =>
+                service.ServiceType == typeof(IEmbeddingModelPackValidator) &&
+                service.ImplementationType == typeof(OnnxEmbeddingModelPackValidator));
+        Assert.Contains(
+            services,
+            service =>
+                service.ServiceType == typeof(IEmbeddingModelPackInstaller) &&
+                service.ImplementationType == typeof(EmbeddingModelPackInstaller));
+        Assert.Contains(
+            services,
+            service =>
+                service.ServiceType == typeof(ISemanticIndexBuilder) &&
+                service.ImplementationType == typeof(SemanticIndexBuilder));
+        Assert.Contains(
+            services,
+            service =>
+                service.ServiceType == typeof(ISemanticIndexingCoordinator) &&
+                service.ImplementationType == typeof(SemanticIndexingCoordinator));
+        Assert.Contains(
+            services,
+            service =>
                 service.ServiceType == typeof(IHybridRetrievalPipeline) &&
                 service.ImplementationType == typeof(HybridRetrievalPipeline));
         Assert.Contains(
@@ -167,7 +241,7 @@ public sealed class QueryPlannerTests
             services,
             service =>
                 service.ServiceType == typeof(IReranker) &&
-                service.ImplementationType == typeof(PassthroughReranker));
+                service.ImplementationType == typeof(LocalHeuristicReranker));
         Assert.Contains(
             services,
             service =>
@@ -208,6 +282,11 @@ public sealed class QueryPlannerTests
             service =>
                 service.ServiceType == typeof(ICandidateProvider) &&
                 service.ImplementationType == typeof(IndexedFuzzyCandidateProvider));
+        Assert.Contains(
+            services,
+            service =>
+                service.ServiceType == typeof(ICandidateProvider) &&
+                service.ImplementationType == typeof(SemanticCandidateProvider));
     }
 
     private static SearchPlan CreatePlan(

@@ -351,6 +351,169 @@ public sealed class IndexingServiceTests
     }
 
     [Fact]
+    public async Task UpsertFileQueueItem_CleansOldSemanticVectorsBeforeIndexingAndUpsertsAfter()
+    {
+        var operations = new OperationRecorder();
+        var index = new BlockingFileIndex { CompleteRefreshImmediately = true, OperationRecorder = operations };
+        var semantic = new RecordingSemanticIndexingCoordinator(operations);
+        var queue = new IndexQueue(index);
+        var service = new IndexingService(
+            index,
+            queue,
+            new IndexWatcherService(queue),
+            semanticIndexing: semantic);
+        var root = Path.Combine(Path.GetTempPath(), "filesearch-semantic-upsert-" + Guid.NewGuid().ToString("N"));
+        var path = Path.Combine(root, "a.txt");
+
+        await service.StartAsync(Array.Empty<IndexedLocation>(), TestContext.Current.CancellationToken);
+        try
+        {
+            await queue.EnqueueAsync(
+                new IndexQueueItem(
+                    root,
+                    path,
+                    new WalkerOptions(),
+                    IndexChangeKind.UpsertFile,
+                    IndexQueuePriority.High,
+                    DateTime.UtcNow,
+                    Persisted: false),
+                TestContext.Current.CancellationToken);
+
+            await WaitUntilAsync(() => semantic.HasUpsertedFiles, TestContext.Current.CancellationToken);
+
+            Assert.Equal(
+                new[] { "semantic-delete-file", "index-upsert-file", "semantic-upsert-file" },
+                operations.Snapshot());
+            Assert.Contains(path, semantic.SnapshotUpsertedFiles());
+        }
+        finally
+        {
+            await service.StopAsync(TestContext.Current.CancellationToken);
+        }
+    }
+
+    [Fact]
+    public async Task DeleteFileQueueItem_CleansSemanticVectorsBeforeIndexDelete()
+    {
+        var operations = new OperationRecorder();
+        var index = new BlockingFileIndex { CompleteRefreshImmediately = true, OperationRecorder = operations };
+        var semantic = new RecordingSemanticIndexingCoordinator(operations);
+        var queue = new IndexQueue(index);
+        var service = new IndexingService(
+            index,
+            queue,
+            new IndexWatcherService(queue),
+            semanticIndexing: semantic);
+        var root = Path.Combine(Path.GetTempPath(), "filesearch-semantic-delete-" + Guid.NewGuid().ToString("N"));
+        var path = Path.Combine(root, "a.txt");
+
+        await service.StartAsync(Array.Empty<IndexedLocation>(), TestContext.Current.CancellationToken);
+        try
+        {
+            await queue.EnqueueAsync(
+                new IndexQueueItem(
+                    root,
+                    path,
+                    new WalkerOptions(),
+                    IndexChangeKind.DeleteFile,
+                    IndexQueuePriority.High,
+                    DateTime.UtcNow,
+                    Persisted: false),
+                TestContext.Current.CancellationToken);
+
+            await WaitUntilAsync(() => index.HasDeletedPaths, TestContext.Current.CancellationToken);
+
+            Assert.Equal(
+                new[] { "semantic-delete-file", "index-delete-file" },
+                operations.Snapshot());
+            Assert.Contains(path, semantic.SnapshotDeletedFiles());
+        }
+        finally
+        {
+            await service.StopAsync(TestContext.Current.CancellationToken);
+        }
+    }
+
+    [Fact]
+    public async Task RefreshRootQueueItem_RebuildsSemanticRootAroundCoreRefresh()
+    {
+        var operations = new OperationRecorder();
+        var index = new BlockingFileIndex { CompleteRefreshImmediately = true, OperationRecorder = operations };
+        var semantic = new RecordingSemanticIndexingCoordinator(operations);
+        var queue = new IndexQueue(index);
+        var service = new IndexingService(
+            index,
+            queue,
+            new IndexWatcherService(queue),
+            semanticIndexing: semantic);
+        var root = Path.Combine(Path.GetTempPath(), "filesearch-semantic-refresh-" + Guid.NewGuid().ToString("N"));
+
+        await service.StartAsync(Array.Empty<IndexedLocation>(), TestContext.Current.CancellationToken);
+        try
+        {
+            await service.EnqueueRootRefreshAsync(
+                root,
+                new WalkerOptions(),
+                IndexQueuePriority.High,
+                TestContext.Current.CancellationToken);
+
+            await WaitUntilAsync(() => semantic.HasUpsertedRoots, TestContext.Current.CancellationToken);
+
+            Assert.Equal(
+                new[] { "semantic-delete-root", "index-refresh-root", "semantic-upsert-root" },
+                operations.Snapshot());
+            Assert.Contains(IndexPath.NormalizeRoot(root), semantic.SnapshotUpsertedRoots());
+        }
+        finally
+        {
+            await service.StopAsync(TestContext.Current.CancellationToken);
+        }
+    }
+
+    [Fact]
+    public async Task RefreshSemanticRootQueueItem_RebuildsOnlySemanticRoot()
+    {
+        var operations = new OperationRecorder();
+        var index = new BlockingFileIndex { CompleteRefreshImmediately = true, OperationRecorder = operations };
+        var semantic = new RecordingSemanticIndexingCoordinator(operations);
+        var queue = new IndexQueue(index);
+        var service = new IndexingService(
+            index,
+            queue,
+            new IndexWatcherService(queue),
+            semanticIndexing: semantic);
+        var root = Path.Combine(Path.GetTempPath(), "filesearch-semantic-only-refresh-" + Guid.NewGuid().ToString("N"));
+        var normalizedRoot = IndexPath.NormalizeRoot(root);
+
+        await service.StartAsync(Array.Empty<IndexedLocation>(), TestContext.Current.CancellationToken);
+        try
+        {
+            await service.EnqueueSemanticRootRefreshAsync(
+                root,
+                new WalkerOptions(),
+                IndexQueuePriority.High,
+                TestContext.Current.CancellationToken);
+
+            await WaitUntilAsync(() => semantic.HasUpsertedRoots, TestContext.Current.CancellationToken);
+
+            Assert.Equal(
+                new[] { "semantic-delete-root", "semantic-upsert-root" },
+                operations.Snapshot());
+            Assert.Null(index.RefreshRequest);
+            Assert.Contains(normalizedRoot, semantic.SnapshotUpsertedRoots());
+            Assert.NotNull(service.CurrentStatus.RootStatusDetails);
+            Assert.Contains(
+                "Smart Search vectors complete",
+                service.CurrentStatus.RootStatusDetails![normalizedRoot],
+                StringComparison.Ordinal);
+        }
+        finally
+        {
+            await service.StopAsync(TestContext.Current.CancellationToken);
+        }
+    }
+
+    [Fact]
     public async Task PauseDefersProcessingUntilResume()
     {
         var index = new BlockingFileIndex();
@@ -501,6 +664,165 @@ public sealed class IndexingServiceTests
             LastIndexedUtc: null,
             RootStrategies: new[] { strategy });
 
+    private sealed class OperationRecorder
+    {
+        private readonly object _sync = new();
+        private readonly List<string> _operations = new();
+
+        public void Add(string operation)
+        {
+            lock (_sync)
+                _operations.Add(operation);
+        }
+
+        public string[] Snapshot()
+        {
+            lock (_sync)
+                return _operations.ToArray();
+        }
+    }
+
+    private sealed class RecordingSemanticIndexingCoordinator(OperationRecorder operations) : ISemanticIndexingCoordinator
+    {
+        private readonly object _sync = new();
+
+        public List<string> UpsertedFiles { get; } = new();
+
+        public List<string> DeletedFiles { get; } = new();
+
+        public List<string> UpsertedRoots { get; } = new();
+
+        public bool HasUpsertedFiles
+        {
+            get
+            {
+                lock (_sync)
+                    return UpsertedFiles.Count > 0;
+            }
+        }
+
+        public bool HasDeletedFiles
+        {
+            get
+            {
+                lock (_sync)
+                    return DeletedFiles.Count > 0;
+            }
+        }
+
+        public bool HasUpsertedRoots
+        {
+            get
+            {
+                lock (_sync)
+                    return UpsertedRoots.Count > 0;
+            }
+        }
+
+        public string[] SnapshotUpsertedFiles()
+        {
+            lock (_sync)
+                return UpsertedFiles.ToArray();
+        }
+
+        public string[] SnapshotDeletedFiles()
+        {
+            lock (_sync)
+                return DeletedFiles.ToArray();
+        }
+
+        public string[] SnapshotUpsertedRoots()
+        {
+            lock (_sync)
+                return UpsertedRoots.ToArray();
+        }
+
+        public Task<SemanticIndexBuildResult> UpsertFileAsync(
+            long fileId,
+            CancellationToken cancellationToken)
+        {
+            operations.Add("semantic-upsert-file-id");
+            return Task.FromResult(SemanticIndexBuildResult.Completed(
+                fileId,
+                contentUnitCount: 1,
+                chunkCount: 1,
+                vectorCount: 1,
+                model: null,
+                "semantic file indexed"));
+        }
+
+        public Task<SemanticIndexBuildResult> UpsertFileAsync(
+            string root,
+            string path,
+            CancellationToken cancellationToken)
+        {
+            operations.Add("semantic-upsert-file");
+            lock (_sync)
+                UpsertedFiles.Add(path);
+            return Task.FromResult(SemanticIndexBuildResult.Completed(
+                1,
+                contentUnitCount: 1,
+                chunkCount: 1,
+                vectorCount: 1,
+                model: null,
+                "semantic file indexed"));
+        }
+
+        public Task<SemanticRootIndexBuildResult> UpsertRootAsync(
+            string root,
+            CancellationToken cancellationToken)
+        {
+            operations.Add("semantic-upsert-root");
+            lock (_sync)
+                UpsertedRoots.Add(IndexPath.NormalizeRoot(root));
+            return Task.FromResult(SemanticRootIndexBuildResult.Completed(
+                IndexPath.NormalizeRoot(root),
+                fileCount: 1,
+                indexedFileCount: 1,
+                vectorCount: 1,
+                "semantic root indexed"));
+        }
+
+        public Task<SemanticIndexCleanupResult> DeleteFileAsync(
+            long fileId,
+            CancellationToken cancellationToken)
+        {
+            operations.Add("semantic-delete-file-id");
+            return Task.FromResult(new SemanticIndexCleanupResult(fileId, new long[] { 1 }, "semantic file deleted"));
+        }
+
+        public Task<SemanticIndexCleanupResult> DeleteFileAsync(
+            string root,
+            string path,
+            CancellationToken cancellationToken)
+        {
+            operations.Add("semantic-delete-file");
+            lock (_sync)
+                DeletedFiles.Add(path);
+            return Task.FromResult(new SemanticIndexCleanupResult(1, new long[] { 1 }, "semantic file deleted"));
+        }
+
+        public Task<SemanticIndexCleanupResult> DeleteRootAsync(
+            string root,
+            CancellationToken cancellationToken)
+        {
+            operations.Add("semantic-delete-root");
+            return Task.FromResult(new SemanticIndexCleanupResult(
+                null,
+                new long[] { 1 },
+                "semantic root deleted",
+                IndexPath.NormalizeRoot(root)));
+        }
+
+        public Task<SemanticIndexCleanupResult> DeleteContentUnitsAsync(
+            IReadOnlyCollection<long> contentUnitIds,
+            CancellationToken cancellationToken)
+        {
+            operations.Add("semantic-delete-units");
+            return Task.FromResult(new SemanticIndexCleanupResult(null, contentUnitIds, "semantic units deleted"));
+        }
+    }
+
     private sealed class RecordingQueue : IIndexQueue
     {
         private readonly object _sync = new();
@@ -588,6 +910,21 @@ public sealed class IndexingServiceTests
 
         public List<string> ClearedRoots { get; } = new();
 
+        public List<string> DeletedPaths { get; } = new();
+
+        public bool CompleteRefreshImmediately { get; init; }
+
+        public OperationRecorder? OperationRecorder { get; init; }
+
+        public bool HasDeletedPaths
+        {
+            get
+            {
+                lock (DeletedPaths)
+                    return DeletedPaths.Count > 0;
+            }
+        }
+
         public bool RefreshCanceled { get; private set; }
 
         public int ValidateCallCount { get; private set; }
@@ -627,7 +964,11 @@ public sealed class IndexingServiceTests
         public async Task RefreshRootAsync(IndexRequest request, IndexRefreshMode mode, CancellationToken cancellationToken)
         {
             RefreshRequest = request;
+            OperationRecorder?.Add("index-refresh-root");
             RefreshStarted.TrySetResult();
+            if (CompleteRefreshImmediately)
+                return;
+
             try
             {
                 await Task.Delay(Timeout.InfiniteTimeSpan, cancellationToken);
@@ -639,11 +980,19 @@ public sealed class IndexingServiceTests
             }
         }
 
-        public Task UpsertFileAsync(string root, string path, WalkerOptions options, CancellationToken cancellationToken) =>
-            Task.CompletedTask;
+        public Task UpsertFileAsync(string root, string path, WalkerOptions options, CancellationToken cancellationToken)
+        {
+            OperationRecorder?.Add("index-upsert-file");
+            return Task.CompletedTask;
+        }
 
-        public Task DeleteFileAsync(string root, string path, CancellationToken cancellationToken) =>
-            Task.CompletedTask;
+        public Task DeleteFileAsync(string root, string path, CancellationToken cancellationToken)
+        {
+            OperationRecorder?.Add("index-delete-file");
+            lock (DeletedPaths)
+                DeletedPaths.Add(path);
+            return Task.CompletedTask;
+        }
 
         public async IAsyncEnumerable<Hit> SearchAsync(SearchRequest request, [System.Runtime.CompilerServices.EnumeratorCancellation] CancellationToken cancellationToken)
         {

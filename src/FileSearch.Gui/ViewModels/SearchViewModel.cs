@@ -55,6 +55,7 @@ public sealed partial class SearchViewModel : ObservableObject, IDisposable
     private readonly IFolderPicker _folderPicker;
     private readonly IFileSavePicker? _fileSavePicker;
     private readonly IFileOperationService? _fileOperationService;
+    private readonly IGroundedAnswerBuilder _groundedAnswerBuilder;
     private readonly HistoryViewModel _history;
     private readonly StatusBarViewModel _status;
 
@@ -82,7 +83,8 @@ public sealed partial class SearchViewModel : ObservableObject, IDisposable
         StatusBarViewModel status,
         IIndexUsageStore? indexUsageStore = null,
         IFileSavePicker? fileSavePicker = null,
-        IFileOperationService? fileOperationService = null)
+        IFileOperationService? fileOperationService = null,
+        IGroundedAnswerBuilder? groundedAnswerBuilder = null)
     {
         _searcher = searcher;
         _extractorRegistry = extractorRegistry;
@@ -96,6 +98,7 @@ public sealed partial class SearchViewModel : ObservableObject, IDisposable
         _folderPicker = folderPicker;
         _fileSavePicker = fileSavePicker;
         _fileOperationService = fileOperationService;
+        _groundedAnswerBuilder = groundedAnswerBuilder ?? new GroundedAnswerBuilder();
         _history = history;
         _status = status;
 
@@ -286,12 +289,14 @@ public sealed partial class SearchViewModel : ObservableObject, IDisposable
         FilesView.Refresh();
         OnPropertyChanged(nameof(FilesVisible));
         ExportResultsCommand.NotifyCanExecuteChanged();
+        CopyGroundedAnswerCommand.NotifyCanExecuteChanged();
     }
 
     private void OnFilesChanged(object? sender, NotifyCollectionChangedEventArgs e)
     {
         OnPropertyChanged(nameof(FilesVisible));
         ExportResultsCommand.NotifyCanExecuteChanged();
+        CopyGroundedAnswerCommand.NotifyCanExecuteChanged();
         if (!_suppressResultViewMaintenance)
             RebuildFacetOptions();
     }
@@ -560,6 +565,24 @@ public sealed partial class SearchViewModel : ObservableObject, IDisposable
 
     private bool CanExportResults(string? formatName) => _fileSavePicker is not null && FilesVisible > 0;
 
+    [RelayCommand(CanExecute = nameof(CanCopyGroundedAnswer))]
+    private void CopyGroundedAnswer()
+    {
+        var visibleFiles = VisibleResultFiles().ToList();
+        if (visibleFiles.Count == 0)
+            return;
+
+        var evidence = visibleFiles
+            .SelectMany(file => file.Hits.Select((hit, index) =>
+                GroundedAnswerEvidence.FromHit(file.FullPath, file.SearchRank, index + 1, hit)))
+            .ToArray();
+        var draft = _groundedAnswerBuilder.Build(QueryText, evidence);
+        _fileLauncher.CopyToClipboard(draft.Markdown);
+        _status.Text = $"Copied grounded answer draft with {draft.Citations.Count:n0} citation(s).";
+    }
+
+    private bool CanCopyGroundedAnswer() => FilesVisible > 0;
+
     [RelayCommand(CanExecute = nameof(CanTogglePinResult))]
     private void TogglePinResult(FileResultViewModel? file)
     {
@@ -760,12 +783,6 @@ public sealed partial class SearchViewModel : ObservableObject, IDisposable
         catch (Exception ex)
         {
             _status.Text = $"Invalid query: {ex.Message}";
-            return;
-        }
-
-        if (query is UnifiedQuery { HasUnavailableSemantic: true })
-        {
-            _status.Text = UnifiedQuery.SemanticUnavailableMessage;
             return;
         }
 
@@ -1090,6 +1107,7 @@ public sealed partial class SearchViewModel : ObservableObject, IDisposable
 
         OnPropertyChanged(nameof(FilesVisible));
         ExportResultsCommand.NotifyCanExecuteChanged();
+        CopyGroundedAnswerCommand.NotifyCanExecuteChanged();
     }
 
     private void ApplyResultSort(string? value)
@@ -1350,7 +1368,7 @@ public sealed partial class SearchViewModel : ObservableObject, IDisposable
     private string RenderExportCsv(IReadOnlyList<FileResultViewModel> files)
     {
         var sb = new StringBuilder();
-        sb.AppendLine("path,fileName,folder,extension,sizeBytes,modifiedUtc,source,hitCount,lineNumber,kind,anchor,line");
+        sb.AppendLine("path,fileName,folder,extension,sizeBytes,modifiedUtc,source,hitCount,lineNumber,kind,location,line,snippet");
         foreach (var file in files)
         {
             foreach (var hit in file.Hits)
@@ -1365,8 +1383,9 @@ public sealed partial class SearchViewModel : ObservableObject, IDisposable
                 sb.Append(file.HitCount.ToString(CultureInfo.InvariantCulture)).Append(',');
                 sb.Append(hit.LineNumber.ToString(CultureInfo.InvariantCulture)).Append(',');
                 sb.Append(CsvField(hit.Kind.ToString())).Append(',');
-                sb.Append(CsvField(hit.Anchor?.DisplayText ?? string.Empty)).Append(',');
-                sb.AppendLine(CsvField(hit.LineContent));
+                sb.Append(CsvField(SourceLocationFormatter.Format(hit.Anchor, hit.Locator))).Append(',');
+                sb.Append(CsvField(hit.LineContent)).Append(',');
+                sb.AppendLine(CsvField(hit.Snippet?.Text ?? string.Empty));
             }
         }
 
@@ -1391,8 +1410,17 @@ public sealed partial class SearchViewModel : ObservableObject, IDisposable
             sb.AppendLine();
             foreach (var hit in file.Hits)
             {
-                var anchor = hit.Anchor is null ? string.Empty : $" [{hit.Anchor.DisplayText}]";
+                var location = SourceLocationFormatter.Format(hit.Anchor, hit.Locator);
+                var anchor = string.IsNullOrWhiteSpace(location) ? string.Empty : $" [{location}]";
                 sb.AppendLine(CultureInfo.InvariantCulture, $"- L{hit.LineNumber}{anchor}: {hit.LineContent.Trim()}");
+                if (!string.IsNullOrWhiteSpace(hit.Snippet?.Text))
+                {
+                    sb.AppendLine();
+                    sb.AppendLine("  ```text");
+                    foreach (var line in hit.Snippet.Text.Trim().Split(s_markdownLineSeparators, StringSplitOptions.None))
+                        sb.Append("  ").AppendLine(line);
+                    sb.AppendLine("  ```");
+                }
             }
         }
 
@@ -1400,6 +1428,7 @@ public sealed partial class SearchViewModel : ObservableObject, IDisposable
     }
 
     private static readonly SearchValues<char> s_csvSpecialChars = SearchValues.Create(",\"\n\r");
+    private static readonly string[] s_markdownLineSeparators = { "\r\n", "\n" };
 
     private static readonly JsonSerializerOptions s_exportJsonOptions = new()
     {
@@ -1444,7 +1473,10 @@ public sealed partial class SearchViewModel : ObservableObject, IDisposable
             hit.LineNumber,
             hit.Kind.ToString(),
             hit.LineContent,
-            hit.Anchor);
+            SourceLocationFormatter.Format(hit.Anchor, hit.Locator),
+            hit.Anchor,
+            hit.Locator,
+            hit.Snippet);
 
     private WalkerOptions BuildWalkerOptions(SearchTarget searchTarget)
     {
@@ -1612,6 +1644,15 @@ public sealed partial class SearchViewModel : ObservableObject, IDisposable
             ImageOcrPreview = await ImageOcrPreviewViewModel
                 .TryCreateAsync(file.FullPath, file.Hits, token)
                 .ConfigureAwait(true);
+            var storedPreview = file.HasStructuredSnippets
+                ? file.BuildStoredHitPreview()
+                : string.Empty;
+            if (!string.IsNullOrWhiteSpace(storedPreview))
+            {
+                PreviewContent = storedPreview;
+                return;
+            }
+
             var hitLines = file.Hits
                 .Where(h => h.Kind == HitKind.Content && h.LineNumber > 0)
                 .Select(h => h.LineNumber)

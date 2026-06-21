@@ -163,6 +163,18 @@ public sealed class BackgroundIndexerProcessService : IBackgroundIndexerProcessS
         return response?.Success == true;
     }
 
+    public async Task<bool> RefreshSemanticRootAsync(
+        IndexedLocation location,
+        CancellationToken cancellationToken)
+    {
+        var response = await SendLocationAsync(
+                BackgroundIndexerCommand.RefreshSemanticRoot,
+                location,
+                cancellationToken)
+            .ConfigureAwait(false);
+        return response?.Success == true;
+    }
+
     public async Task<bool> QueueRootRefreshAsync(
         IndexedLocation location,
         IndexQueuePriority priority,

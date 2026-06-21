@@ -4,6 +4,7 @@ using System.IO;
 using System.Linq;
 using System.Windows;
 using FileSearch.Core;
+using FileSearch.Core.Engine;
 using FileSearch.Core.Indexing;
 using FileSearch.Core.Logging;
 using FileSearch.Gui.Services;
@@ -58,6 +59,21 @@ public partial class App : System.Windows.Application
                 services.AddSingleton<ISettingsService, SettingsService>();
                 services.AddSingleton<IFileTypeOptionsStore, JsonFileTypeOptionsStore>();
                 services.AddSingleton<IFilePreviewService, FilePreviewService>();
+                services.AddSingleton(sp => new LocalRerankerOptions
+                {
+                    IsEnabledProvider = () => sp.GetRequiredService<ISettingsService>().Current.EnableLocalReranker,
+                });
+                services.AddSingleton(sp =>
+                {
+                    var settings = sp.GetRequiredService<ISettingsService>().Current;
+                    return new EmbeddingModelPackOptions
+                    {
+                        SelectedModelPackId = settings.SemanticModelPackId ?? string.Empty,
+                        ModelPacksDirectory = string.IsNullOrWhiteSpace(settings.SemanticModelPacksDirectory)
+                            ? EmbeddingModelPackOptions.GetDefaultModelPacksDirectory()
+                            : settings.SemanticModelPacksDirectory,
+                    };
+                });
                 services.AddFileSearchCore();
                 services.AddWindowsImageOcr(configure: (sp, options) =>
                 {

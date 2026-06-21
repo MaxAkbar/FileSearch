@@ -128,6 +128,47 @@ public sealed class FileIndexTests : IDisposable
         Assert.Equal(30, hit.Anchor.Width);
         Assert.Equal(40, hit.Anchor.Height);
         Assert.Equal("OCR region x10 y20 30x40 of 100x200", hit.Anchor.DisplayText);
+        Assert.NotNull(hit.ContentUnitId);
+        Assert.NotNull(hit.Locator);
+        Assert.Equal(3, hit.Locator.StartLine);
+        Assert.Equal(10, hit.Locator.X);
+        Assert.Equal(20, hit.Locator.Y);
+        Assert.Equal(30, hit.Locator.Width);
+        Assert.Equal(40, hit.Locator.Height);
+        Assert.Equal(100, hit.Locator.SourceWidth);
+        Assert.Equal(200, hit.Locator.SourceHeight);
+
+        var unit = await index.GetContentUnitAsync(hit.ContentUnitId.Value, TestContext.Current.CancellationToken);
+        Assert.NotNull(unit);
+        Assert.Equal(hit.ContentUnitId, unit.Id);
+        Assert.Equal(ContentUnitKind.ImageOcrRegion, unit.Kind);
+        Assert.Equal("anchored needle", unit.Text);
+        Assert.Equal("test.anchored", unit.ExtractorId);
+        Assert.Equal(hit.Locator, unit.Locator);
+
+        var fileUnits = await index.GetContentUnitsForFileAsync(unit.FileId, TestContext.Current.CancellationToken);
+        Assert.Contains(fileUnits, candidate => candidate.Id == unit.Id);
+    }
+
+    [Fact]
+    public async Task ContentUnitReaderReturnsNeighboringUnits()
+    {
+        File.WriteAllText(Path.Combine(_root, "neighbors.txt"), "before\nmiddle needle\nafter\n");
+
+        await BuildAsync();
+
+        var hit = Assert.Single(await RawIndexedSearchAsync(new TermQuery("needle")));
+        Assert.NotNull(hit.ContentUnitId);
+
+        var neighbors = await _index.GetNeighboringUnitsAsync(
+            hit.ContentUnitId.Value,
+            before: 1,
+            after: 1,
+            TestContext.Current.CancellationToken);
+
+        Assert.Equal(new[] { "before", "middle needle", "after" }, neighbors.Select(unit => unit.Text).ToArray());
+        Assert.All(neighbors, unit => Assert.Equal(ContentUnitKind.Text, unit.Kind));
+        Assert.Equal(new[] { 1, 2, 3 }, neighbors.Select(unit => unit.Locator.StartLine!.Value).ToArray());
     }
 
     [Fact]

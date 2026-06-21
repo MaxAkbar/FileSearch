@@ -14,6 +14,35 @@ public interface IIndexSearch
     Task<IndexCoverage> GetCoverageAsync(SearchRequest request, CancellationToken cancellationToken);
 }
 
+/// <summary>Read side: structured indexed content units for snippets, citations and grounded answers.</summary>
+public interface IContentUnitReader
+{
+    Task<ContentUnit?> GetContentUnitAsync(long id, CancellationToken cancellationToken) =>
+        Task.FromResult<ContentUnit?>(null);
+
+    Task<IReadOnlyList<ContentUnit>> GetContentUnitsForFileAsync(long fileId, CancellationToken cancellationToken) =>
+        Task.FromResult<IReadOnlyList<ContentUnit>>(System.Array.Empty<ContentUnit>());
+
+    Task<IReadOnlyList<ContentUnit>> GetNeighboringUnitsAsync(
+        long contentUnitId,
+        int before,
+        int after,
+        CancellationToken cancellationToken) =>
+        Task.FromResult<IReadOnlyList<ContentUnit>>(System.Array.Empty<ContentUnit>());
+
+    Task<string?> GetFilePathAsync(long fileId, CancellationToken cancellationToken) =>
+        Task.FromResult<string?>(null);
+
+    Task<long?> GetFileIdAsync(string root, string path, CancellationToken cancellationToken) =>
+        Task.FromResult<long?>(null);
+
+    Task<IReadOnlyList<long>> GetFileIdsForRootAsync(string root, CancellationToken cancellationToken) =>
+        Task.FromResult<IReadOnlyList<long>>(System.Array.Empty<long>());
+
+    Task<IReadOnlyList<long>> GetContentUnitIdsForRootAsync(string root, CancellationToken cancellationToken) =>
+        Task.FromResult<IReadOnlyList<long>>(System.Array.Empty<long>());
+}
+
 /// <summary>Write side: building, refreshing, and removing indexed content.</summary>
 public interface IIndexWriter
 {
@@ -91,6 +120,6 @@ public interface IPendingChangeStore
 /// Composite of all index roles. Implementations provide everything; most
 /// consumers should depend on the narrowest role interface they need.
 /// </summary>
-public interface IFileIndex : IIndexSearch, IIndexWriter, IIndexMaintenance, IPendingChangeStore
+public interface IFileIndex : IIndexSearch, IContentUnitReader, IIndexWriter, IIndexMaintenance, IPendingChangeStore
 {
 }

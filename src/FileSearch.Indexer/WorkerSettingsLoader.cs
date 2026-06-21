@@ -1,6 +1,7 @@
 using System.Text.Json;
 using System.Text.Json.Serialization;
 using FileSearch.Core;
+using FileSearch.Core.Engine;
 using FileSearch.Core.Extractors;
 using FileSearch.Core.Indexing;
 using FileSearch.Core.Walker;
@@ -58,6 +59,21 @@ internal sealed class WorkerSettingsLoader
         return new WorkerOcrSettings(
             settings.OcrLanguageTag ?? string.Empty,
             Math.Max(0, settings.OcrMaxPdfPages));
+    }
+
+    public EmbeddingModelPackOptions LoadEmbeddingModelOptions()
+    {
+        if (!File.Exists(_settingsPath))
+            return new EmbeddingModelPackOptions();
+
+        var settings = LoadAppSettings(_settingsPath);
+        return new EmbeddingModelPackOptions
+        {
+            SelectedModelPackId = settings.SemanticModelPackId ?? string.Empty,
+            ModelPacksDirectory = string.IsNullOrWhiteSpace(settings.SemanticModelPacksDirectory)
+                ? EmbeddingModelPackOptions.GetDefaultModelPacksDirectory()
+                : settings.SemanticModelPacksDirectory,
+        };
     }
 
     private IEnumerable<IndexedLocation> LoadLocations(WorkerAppSettings settings)
@@ -194,6 +210,10 @@ internal sealed class WorkerSettingsLoader
         public string OcrLanguageTag { get; set; } = string.Empty;
 
         public int OcrMaxPdfPages { get; set; } = 50;
+
+        public string SemanticModelPackId { get; set; } = string.Empty;
+
+        public string SemanticModelPacksDirectory { get; set; } = string.Empty;
     }
 
     private sealed class WorkerIndexedLocation

@@ -7,8 +7,9 @@ public sealed class IndexedRegexCandidateProvider : IndexedCandidateProvider
 {
     public IndexedRegexCandidateProvider(
         IIndexSearch index,
-        IndexCoverageService coverageService)
-        : base(index, coverageService, CandidateProviderKind.Regex, "indexed-regex")
+        IndexCoverageService coverageService,
+        ISnippetGenerator? snippetGenerator = null)
+        : base(index, coverageService, CandidateProviderKind.Regex, "indexed-regex", snippetGenerator)
     {
     }
 

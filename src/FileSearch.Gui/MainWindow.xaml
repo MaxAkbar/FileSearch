@@ -1074,11 +1074,23 @@
                                     <ColumnDefinition Width="*"/>
                                     <ColumnDefinition Width="Auto"/>
                                     <ColumnDefinition Width="Auto"/>
+                                    <ColumnDefinition Width="Auto"/>
                                 </Grid.ColumnDefinitions>
                                 <TextBlock Text="{Binding Search.ResultsContextText}" Style="{StaticResource CtxTitleStyle}"/>
                                 <TextBlock Grid.Column="1" Text="{Binding Search.ResultsSummaryText}"
                                            Style="{StaticResource MutedValueStyle}" Margin="12,3,0,0"/>
                                 <Button Grid.Column="3"
+                                        Command="{Binding Search.CopyGroundedAnswerCommand}"
+                                        Style="{StaticResource SecondaryButtonStyle}"
+                                        Padding="10,5"
+                                        Margin="0,0,8,0"
+                                        ToolTip="Copy grounded answer draft">
+                                    <StackPanel Orientation="Horizontal">
+                                        <ui:FontIcon Glyph="&#xE8A5;" FontSize="12" Margin="0,0,6,0"/>
+                                        <TextBlock Text="Answer"/>
+                                    </StackPanel>
+                                </Button>
+                                <Button Grid.Column="4"
                                         Style="{StaticResource SecondaryButtonStyle}"
                                         Padding="10,5"
                                         Margin="0,0,8,0"
@@ -1099,7 +1111,7 @@
                                         <ui:FontIcon Glyph="&#xE70D;" FontSize="9" Margin="6,2,0,0"/>
                                     </StackPanel>
                                 </Button>
-                                <Grid Grid.Column="4" Width="210">
+                                <Grid Grid.Column="5" Width="210">
                                     <TextBox Text="{Binding Search.RefinementQuery, UpdateSourceTrigger=PropertyChanged, Delay=120}"
                                              ui:ControlHelper.PlaceholderText="Filter results"
                                              Padding="8,4,28,4"/>

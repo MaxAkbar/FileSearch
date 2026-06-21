@@ -1,4 +1,5 @@
 using System.ComponentModel;
+using FileSearch.Core.Engine;
 using FileSearch.Core.Extractors;
 using FileSearch.Core.Indexing;
 using FileSearch.Core.Queries;
@@ -546,6 +547,70 @@ public sealed class IndexViewModelTests
     }
 
     [Fact]
+    public async Task SelectingLocationRefreshesSemanticIndexStatus()
+    {
+        var root = Path.Combine(Path.GetTempPath(), "filesearch-semantic-status-" + Guid.NewGuid().ToString("N"));
+        var semanticStatus = new StubSemanticIndexStatusService(new SemanticIndexRootStatus(
+            root,
+            IsModelAvailable: true,
+            "test-model",
+            "Test model",
+            IndexedFileCount: 2,
+            ContentUnitCount: 5,
+            VectorCount: 3,
+            CoveredContentUnitCount: 4,
+            "Smart Search covers 4 of 5 content unit(s)."));
+        var (_, index) = Build(
+            configureSettings: settings => settings.IndexedLocations.Add(new() { Root = root }),
+            semanticIndexStatusService: semanticStatus);
+
+        index.SelectedIndexedLocation = Assert.Single(index.IndexedLocations);
+        await WaitUntilAsync(() => index.SelectedSemanticIndexStatusText.Contains("Test model", StringComparison.Ordinal));
+
+        Assert.Contains("3 vectors cover 4/5", index.SelectedSemanticIndexStatusText);
+        Assert.Equal(IndexPath.NormalizeRoot(root), semanticStatus.LastRoot);
+    }
+
+    [Fact]
+    public async Task RebuildSelectedSemanticIndexQueuesSemanticRefresh()
+    {
+        var root = Path.Combine(Path.GetTempPath(), "filesearch-semantic-rebuild-" + Guid.NewGuid().ToString("N"));
+        var indexingService = new FakeIndexingService();
+        var (_, index) = Build(
+            indexingService: indexingService,
+            configureSettings: settings => settings.IndexedLocations.Add(new() { Root = root }));
+        index.SelectedIndexedLocation = Assert.Single(index.IndexedLocations);
+
+        await index.RebuildSelectedSemanticIndexCommand.ExecuteAsync(null);
+
+        Assert.Equal(1, indexingService.EnqueuedSemanticRootRefreshCount);
+        Assert.Equal("Smart Search rebuild queued.", index.SelectedSemanticIndexStatusText);
+    }
+
+    [Fact]
+    public async Task RebuildSelectedSemanticIndexUsesWorkerWhenBackgroundIndexerModeIsEnabled()
+    {
+        var root = Path.Combine(Path.GetTempPath(), "filesearch-semantic-rebuild-worker-" + Guid.NewGuid().ToString("N"));
+        var indexingService = new FakeIndexingService();
+        var backgroundIndexer = new FakeBackgroundIndexerProcessService();
+        var (_, index) = Build(
+            indexingService: indexingService,
+            backgroundIndexer: backgroundIndexer,
+            configureSettings: settings =>
+            {
+                settings.StartBackgroundIndexerAtSignIn = true;
+                settings.IndexedLocations.Add(new() { Root = root });
+            });
+        index.SelectedIndexedLocation = Assert.Single(index.IndexedLocations);
+
+        await index.RebuildSelectedSemanticIndexCommand.ExecuteAsync(null);
+
+        Assert.Equal(0, indexingService.EnqueuedSemanticRootRefreshCount);
+        Assert.Equal(1, backgroundIndexer.RefreshSemanticRootCallCount);
+        Assert.Equal(IndexPath.NormalizeRoot(root), Assert.Single(backgroundIndexer.SemanticRefreshedLocations).Root);
+    }
+
+    [Fact]
     public async Task ExportIndexFailuresUsesSavePickerAndIndexExport()
     {
         var exportPath = Path.Combine(Path.GetTempPath(), "filesearch-failures.json");
@@ -669,6 +734,7 @@ public sealed class IndexViewModelTests
         FakeIndexingService? indexingService = null,
         FakeBackgroundIndexerProcessService? backgroundIndexer = null,
         FakeFileSavePicker? savePicker = null,
+        ISemanticIndexStatusService? semanticIndexStatusService = null,
         Action<AppSettings>? configureSettings = null)
     {
         var status = new StatusBarViewModel();
@@ -697,7 +763,8 @@ public sealed class IndexViewModelTests
             search,
             status,
             backgroundIndexer,
-            savePicker);
+            savePicker,
+            semanticIndexStatusService: semanticIndexStatusService);
         return (search, index);
     }
 
@@ -718,6 +785,19 @@ public sealed class IndexViewModelTests
         {
             await Task.CompletedTask;
             yield break;
+        }
+    }
+
+    private sealed class StubSemanticIndexStatusService(SemanticIndexRootStatus status) : ISemanticIndexStatusService
+    {
+        public string? LastRoot { get; private set; }
+
+        public Task<SemanticIndexRootStatus> GetRootStatusAsync(
+            string root,
+            CancellationToken cancellationToken)
+        {
+            LastRoot = IndexPath.NormalizeRoot(root);
+            return Task.FromResult(status with { Root = LastRoot });
         }
     }
 }

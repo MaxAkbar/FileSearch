@@ -122,10 +122,11 @@ internal sealed class IndexerApplicationContext : Forms.ApplicationContext
             .ConfigureServices(services =>
             {
                 TraceIpc("host services configuring");
-                services.AddFileSearchCore();
-                TraceIpc("host core services configured");
                 services.AddSingleton<WorkerSettingsLoader>();
                 TraceIpc("host worker settings configured");
+                services.AddSingleton(sp => sp.GetRequiredService<WorkerSettingsLoader>().LoadEmbeddingModelOptions());
+                services.AddFileSearchCore();
+                TraceIpc("host core services configured");
                 services.AddWindowsImageOcr(configure: (sp, options) =>
                 {
                     options.OcrLanguageTagProvider = () =>
@@ -340,6 +341,22 @@ internal sealed class IndexerApplicationContext : Forms.ApplicationContext
                         IndexQueuePriority.High,
                         cancellationToken).ConfigureAwait(false);
                     return new BackgroundIndexerResponse(true, "Index rebuild queued.", _indexingService.CurrentStatus);
+                case BackgroundIndexerCommand.RefreshSemanticRoot:
+                    if (request.Location is null)
+                        return new BackgroundIndexerResponse(false, "Indexed location is required.");
+
+                    await _startupTask.ConfigureAwait(false);
+                    var semanticLocation = request.Location.ToIndexedLocation();
+                    await _indexingService.AddOrUpdateLocationAsync(
+                        semanticLocation,
+                        queueInitialRefresh: false,
+                        cancellationToken).ConfigureAwait(false);
+                    await _indexingService.EnqueueSemanticRootRefreshAsync(
+                        semanticLocation.Root,
+                        semanticLocation.WalkerOptions,
+                        IndexQueuePriority.High,
+                        cancellationToken).ConfigureAwait(false);
+                    return new BackgroundIndexerResponse(true, "Smart Search rebuild queued.", _indexingService.CurrentStatus);
                 case BackgroundIndexerCommand.QueueRootRefresh:
                     if (request.Location is null)
                         return new BackgroundIndexerResponse(false, "Indexed location is required.");

@@ -120,7 +120,7 @@
             <h2>Actions</h2>
             <p>Each result row has buttons for common actions:</p>
             <ul class="plain-list">
-                <li><strong>Open</strong> opens the file in its default app and closes Quick Search.</li>
+                <li><strong>Open</strong> opens the exact source location when available, otherwise opens the file in its default app, then closes Quick Search.</li>
                 <li><strong>OCR preview</strong> opens a dedicated highlighted preview for image, scanned-PDF-page, and embedded-image OCR hits, then closes Quick Search.</li>
                 <li><strong>Reveal</strong> opens Explorer with the file selected and closes Quick Search.</li>
                 <li><strong>Copy path</strong> copies the full path and closes Quick Search.</li>
@@ -130,7 +130,7 @@
 
             <h2>Pinned Results and Preview</h2>
             <p>When the search box is empty, Quick Search shows pinned results. Pin frequently used files if you want them available before typing a query.</p>
-            <p>Preview is loaded on demand so opening the quick window stays fast. For content hits, preview shows matching lines with nearby context. For standalone OCR image hits, preview can show a compact image highlight; for OCR PDF hits, it can render the page with the region highlighted. For embedded OCR hits, preview includes the stored member path and OCR-region label, and can extract the embedded image from the parent document, email, EPUB, or archive so the region can be highlighted. Use the OCR preview action when you want the larger dedicated preview window instead of opening the parent file. For filename-only matches, preview may be empty if no content hit lines are available.</p>
+            <p>Preview is loaded on demand so opening the quick window stays fast. For content hits, preview shows matching lines with nearby context. For standalone OCR image hits, preview can show a compact image highlight; for OCR PDF hits, it can render the page with the region highlighted. For embedded OCR hits, preview includes the stored member path and OCR-region label, and can extract the embedded image from the parent document, email, EPUB, or archive so the region can be highlighted. Use the OCR preview action when you want the larger dedicated preview window without opening the result. For filename-only matches, preview may be empty if no content hit lines are available.</p>
 
             <div class="callout">
                 Use the full FileSearch window for deep search setup, index management, detailed previews, workflows, and reports. Quick Search is optimized for fast lookup and action.

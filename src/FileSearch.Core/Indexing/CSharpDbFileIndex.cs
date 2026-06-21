@@ -81,6 +81,174 @@ public sealed class CSharpDbFileIndex : IFileIndex, IIndexReplayWriter, IIndexUs
 
     public void Dispose() => _database.Dispose();
 
+    public async Task<ContentUnit?> GetContentUnitAsync(long id, CancellationToken cancellationToken)
+    {
+        ArgumentOutOfRangeException.ThrowIfNegativeOrZero(id);
+
+        var db = await _database.OpenExistingAsync(cancellationToken).ConfigureAwait(false);
+        if (db is null)
+            return null;
+
+        try
+        {
+            return await IndexTables.ReadContentUnitAsync(db, id, cancellationToken).ConfigureAwait(false);
+        }
+        finally
+        {
+            await IndexDatabase.CloseQuietlyAsync(db).ConfigureAwait(false);
+        }
+    }
+
+    public async Task<IReadOnlyList<ContentUnit>> GetContentUnitsForFileAsync(
+        long fileId,
+        CancellationToken cancellationToken)
+    {
+        ArgumentOutOfRangeException.ThrowIfNegativeOrZero(fileId);
+
+        var db = await _database.OpenExistingAsync(cancellationToken).ConfigureAwait(false);
+        if (db is null)
+            return Array.Empty<ContentUnit>();
+
+        try
+        {
+            return await IndexTables.ReadContentUnitsForFileAsync(db, fileId, cancellationToken).ConfigureAwait(false);
+        }
+        finally
+        {
+            await IndexDatabase.CloseQuietlyAsync(db).ConfigureAwait(false);
+        }
+    }
+
+    public async Task<IReadOnlyList<ContentUnit>> GetNeighboringUnitsAsync(
+        long contentUnitId,
+        int before,
+        int after,
+        CancellationToken cancellationToken)
+    {
+        ArgumentOutOfRangeException.ThrowIfNegativeOrZero(contentUnitId);
+        ArgumentOutOfRangeException.ThrowIfNegative(before);
+        ArgumentOutOfRangeException.ThrowIfNegative(after);
+
+        var db = await _database.OpenExistingAsync(cancellationToken).ConfigureAwait(false);
+        if (db is null)
+            return Array.Empty<ContentUnit>();
+
+        try
+        {
+            return await IndexTables.ReadNeighboringContentUnitsAsync(
+                    db,
+                    contentUnitId,
+                    before,
+                    after,
+                    cancellationToken)
+                .ConfigureAwait(false);
+        }
+        finally
+        {
+            await IndexDatabase.CloseQuietlyAsync(db).ConfigureAwait(false);
+        }
+    }
+
+    public async Task<string?> GetFilePathAsync(long fileId, CancellationToken cancellationToken)
+    {
+        ArgumentOutOfRangeException.ThrowIfNegativeOrZero(fileId);
+
+        var db = await _database.OpenExistingAsync(cancellationToken).ConfigureAwait(false);
+        if (db is null)
+            return null;
+
+        try
+        {
+            return await IndexTables.ReadFilePathAsync(db, fileId, cancellationToken).ConfigureAwait(false);
+        }
+        finally
+        {
+            await IndexDatabase.CloseQuietlyAsync(db).ConfigureAwait(false);
+        }
+    }
+
+    public async Task<long?> GetFileIdAsync(
+        string root,
+        string path,
+        CancellationToken cancellationToken)
+    {
+        if (string.IsNullOrWhiteSpace(root) || string.IsNullOrWhiteSpace(path))
+            return null;
+
+        var db = await _database.OpenExistingAsync(cancellationToken).ConfigureAwait(false);
+        if (db is null)
+            return null;
+
+        try
+        {
+            var rootId = await IndexTables.GetRootIdAsync(db, IndexPath.NormalizeRoot(root), cancellationToken)
+                .ConfigureAwait(false);
+            return rootId is null
+                ? null
+                : await IndexTables.ReadFileIdAsync(
+                        db,
+                        rootId.Value,
+                        IndexPath.NormalizeFile(path),
+                        cancellationToken)
+                    .ConfigureAwait(false);
+        }
+        finally
+        {
+            await IndexDatabase.CloseQuietlyAsync(db).ConfigureAwait(false);
+        }
+    }
+
+    public async Task<IReadOnlyList<long>> GetFileIdsForRootAsync(
+        string root,
+        CancellationToken cancellationToken)
+    {
+        if (string.IsNullOrWhiteSpace(root))
+            return Array.Empty<long>();
+
+        var db = await _database.OpenExistingAsync(cancellationToken).ConfigureAwait(false);
+        if (db is null)
+            return Array.Empty<long>();
+
+        try
+        {
+            var rootId = await IndexTables.GetRootIdAsync(db, IndexPath.NormalizeRoot(root), cancellationToken)
+                .ConfigureAwait(false);
+            return rootId is null
+                ? Array.Empty<long>()
+                : await IndexTables.ReadFileIdsForRootAsync(db, rootId.Value, cancellationToken).ConfigureAwait(false);
+        }
+        finally
+        {
+            await IndexDatabase.CloseQuietlyAsync(db).ConfigureAwait(false);
+        }
+    }
+
+    public async Task<IReadOnlyList<long>> GetContentUnitIdsForRootAsync(
+        string root,
+        CancellationToken cancellationToken)
+    {
+        if (string.IsNullOrWhiteSpace(root))
+            return Array.Empty<long>();
+
+        var db = await _database.OpenExistingAsync(cancellationToken).ConfigureAwait(false);
+        if (db is null)
+            return Array.Empty<long>();
+
+        try
+        {
+            var rootId = await IndexTables.GetRootIdAsync(db, IndexPath.NormalizeRoot(root), cancellationToken)
+                .ConfigureAwait(false);
+            return rootId is null
+                ? Array.Empty<long>()
+                : await IndexTables.ReadContentUnitIdsForRootAsync(db, rootId.Value, cancellationToken)
+                    .ConfigureAwait(false);
+        }
+        finally
+        {
+            await IndexDatabase.CloseQuietlyAsync(db).ConfigureAwait(false);
+        }
+    }
+
     public Task BuildOrRefreshAsync(IndexRequest request, CancellationToken cancellationToken) =>
         RefreshRootAsync(request, IndexRefreshMode.Full, cancellationToken);
 
@@ -1622,7 +1790,9 @@ public sealed class CSharpDbFileIndex : IFileIndex, IIndexReplayWriter, IIndexUs
         {
             await IndexTables.RecordExtractionAttemptAsync(db, fileId, extractorId, extractorVersion, cancellationToken).ConfigureAwait(false);
             var lineIds = new DbIdBlockAllocator(db, "lines", LineInsertBatchSize);
-            var batch = db.PrepareInsertBatch("lines", LineInsertBatchSize);
+            var contentUnitIds = new DbIdBlockAllocator(db, "content_units", LineInsertBatchSize);
+            var lineBatch = db.PrepareInsertBatch("lines", LineInsertBatchSize);
+            var contentUnitBatch = db.PrepareInsertBatch("content_units", LineInsertBatchSize);
 
             var requiresContextualExtraction = extractor is IContextualTextExtractor && options.EnableOcr;
             if (!requiresContextualExtraction && _outOfProcessExtraction?.ShouldUse(extractor) == true)
@@ -1633,10 +1803,18 @@ public sealed class CSharpDbFileIndex : IFileIndex, IIndexReplayWriter, IIndexUs
 
                 foreach (var line in result.Lines)
                 {
-                    AddLineToBatch(batch, await lineIds.NextAsync(cancellationToken).ConfigureAwait(false), fileId, line);
+                    AddLineAndContentUnitToBatches(
+                        lineBatch,
+                        contentUnitBatch,
+                        await lineIds.NextAsync(cancellationToken).ConfigureAwait(false),
+                        await contentUnitIds.NextAsync(cancellationToken).ConfigureAwait(false),
+                        fileId,
+                        line,
+                        extractorId,
+                        extractorVersion);
                     linesIndexed++;
-                    if (batch.Count >= LineInsertBatchSize)
-                        await FlushBatchAsync(batch, cancellationToken).ConfigureAwait(false);
+                    if (lineBatch.Count >= LineInsertBatchSize)
+                        await FlushLineBatchesAsync(contentUnitBatch, lineBatch, cancellationToken).ConfigureAwait(false);
                 }
             }
             else
@@ -1650,14 +1828,22 @@ public sealed class CSharpDbFileIndex : IFileIndex, IIndexReplayWriter, IIndexUs
 
                 await foreach (var line in lines.ConfigureAwait(false))
                 {
-                    AddLineToBatch(batch, await lineIds.NextAsync(cancellationToken).ConfigureAwait(false), fileId, line);
+                    AddLineAndContentUnitToBatches(
+                        lineBatch,
+                        contentUnitBatch,
+                        await lineIds.NextAsync(cancellationToken).ConfigureAwait(false),
+                        await contentUnitIds.NextAsync(cancellationToken).ConfigureAwait(false),
+                        fileId,
+                        line,
+                        extractorId,
+                        extractorVersion);
                     linesIndexed++;
-                    if (batch.Count >= LineInsertBatchSize)
-                        await FlushBatchAsync(batch, cancellationToken).ConfigureAwait(false);
+                    if (lineBatch.Count >= LineInsertBatchSize)
+                        await FlushLineBatchesAsync(contentUnitBatch, lineBatch, cancellationToken).ConfigureAwait(false);
                 }
             }
 
-            await FlushBatchAsync(batch, cancellationToken).ConfigureAwait(false);
+            await FlushLineBatchesAsync(contentUnitBatch, lineBatch, cancellationToken).ConfigureAwait(false);
             if (linesIndexed == 0)
             {
                 var fallbackLines = await TryIndexWithWindowsIFilterAsync(
@@ -1765,7 +1951,14 @@ public sealed class CSharpDbFileIndex : IFileIndex, IIndexReplayWriter, IIndexUs
             return 0;
         }
 
-        var linesIndexed = await InsertLinesAsync(db, fileId, result.Lines, cancellationToken).ConfigureAwait(false);
+        var linesIndexed = await InsertLinesAsync(
+                db,
+                fileId,
+                result.Lines,
+                fallback.ExtractorId,
+                fallback.ExtractorVersion,
+                cancellationToken)
+            .ConfigureAwait(false);
         await IndexTables.SetFileStatusAsync(db, fileId, FileStatus.Ok, null, cancellationToken).ConfigureAwait(false);
         return linesIndexed;
     }
@@ -1788,31 +1981,79 @@ public sealed class CSharpDbFileIndex : IFileIndex, IIndexReplayWriter, IIndexUs
         Database db,
         long fileId,
         IReadOnlyList<TextLine> lines,
+        string extractorId,
+        string extractorVersion,
         CancellationToken cancellationToken)
     {
         if (lines.Count == 0)
             return 0;
 
         var nextLineId = await IndexTables.AllocateIdsAsync(db, "lines", lines.Count, cancellationToken).ConfigureAwait(false);
-        var batch = db.PrepareInsertBatch("lines", LineInsertBatchSize);
+        var nextContentUnitId = await IndexTables.AllocateIdsAsync(db, "content_units", lines.Count, cancellationToken).ConfigureAwait(false);
+        var lineBatch = db.PrepareInsertBatch("lines", LineInsertBatchSize);
+        var contentUnitBatch = db.PrepareInsertBatch("content_units", LineInsertBatchSize);
         long linesIndexed = 0;
         foreach (var line in lines)
         {
-            AddLineToBatch(batch, nextLineId++, fileId, line);
+            AddLineAndContentUnitToBatches(
+                lineBatch,
+                contentUnitBatch,
+                nextLineId++,
+                nextContentUnitId++,
+                fileId,
+                line,
+                extractorId,
+                extractorVersion);
             linesIndexed++;
-            if (batch.Count >= LineInsertBatchSize)
-                await FlushBatchAsync(batch, cancellationToken).ConfigureAwait(false);
+            if (lineBatch.Count >= LineInsertBatchSize)
+                await FlushLineBatchesAsync(contentUnitBatch, lineBatch, cancellationToken).ConfigureAwait(false);
         }
 
-        await FlushBatchAsync(batch, cancellationToken).ConfigureAwait(false);
+        await FlushLineBatchesAsync(contentUnitBatch, lineBatch, cancellationToken).ConfigureAwait(false);
         return linesIndexed;
     }
 
-    private static void AddLineToBatch(InsertBatch batch, long lineId, long fileId, TextLine line)
+    private static void AddLineAndContentUnitToBatches(
+        InsertBatch lineBatch,
+        InsertBatch contentUnitBatch,
+        long lineId,
+        long contentUnitId,
+        long fileId,
+        TextLine line,
+        string extractorId,
+        string extractorVersion)
+    {
+        AddContentUnitToBatch(contentUnitBatch, contentUnitId, fileId, line, extractorId, extractorVersion);
+        AddLineToBatch(lineBatch, lineId, fileId, contentUnitId, line);
+    }
+
+    private static void AddContentUnitToBatch(
+        InsertBatch batch,
+        long contentUnitId,
+        long fileId,
+        TextLine line,
+        string extractorId,
+        string extractorVersion)
+    {
+        var unit = ContentUnit.FromTextLine(contentUnitId, fileId, line, extractorId, extractorVersion);
+        batch.AddRow(
+            DbValue.FromInteger(unit.Id),
+            DbValue.FromInteger(unit.FileId),
+            DbValue.FromText(unit.Kind.ToString()),
+            IndexTables.SerializeLocator(unit.Locator),
+            DbValue.FromText(unit.Text),
+            DbValue.FromText(unit.ContentHash),
+            DbValue.FromText(unit.Language),
+            DbValue.FromText(unit.ExtractorId),
+            DbValue.FromText(unit.ExtractorVersion));
+    }
+
+    private static void AddLineToBatch(InsertBatch batch, long lineId, long fileId, long contentUnitId, TextLine line)
     {
         batch.AddRow(
             DbValue.FromInteger(lineId),
             DbValue.FromInteger(fileId),
+            DbValue.FromInteger(contentUnitId),
             DbValue.FromInteger(line.Number),
             DbValue.FromText(line.Content),
             IndexTables.SerializeAnchor(line.Anchor));
@@ -2151,8 +2392,19 @@ public sealed class CSharpDbFileIndex : IFileIndex, IIndexReplayWriter, IIndexUs
             line.Content,
             highlightBuffer.ToArray(),
             Route: HitRoute.Indexed,
-            Anchor: line.Anchor);
+            Anchor: line.Anchor,
+            ContentUnitId: line.ContentUnitId,
+            Locator: line.Locator);
         return true;
+    }
+
+    private static async Task FlushLineBatchesAsync(
+        InsertBatch contentUnitBatch,
+        InsertBatch lineBatch,
+        CancellationToken cancellationToken)
+    {
+        await FlushBatchAsync(contentUnitBatch, cancellationToken).ConfigureAwait(false);
+        await FlushBatchAsync(lineBatch, cancellationToken).ConfigureAwait(false);
     }
 
     private static async Task FlushBatchAsync(InsertBatch batch, CancellationToken cancellationToken)

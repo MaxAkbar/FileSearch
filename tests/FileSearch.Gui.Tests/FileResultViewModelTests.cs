@@ -26,6 +26,33 @@ public sealed class FileResultViewModelTests
     }
 
     [Fact]
+    public void BuildStoredHitPreviewPrefersStructuredSnippet()
+    {
+        var locator = new SourceLocator(Page: 2, StartLine: 8, EndLine: 8);
+        var snippet = new SearchSnippet(
+            "before context\nneedle appears here\nafter context",
+            locator: locator,
+            contentUnitId: 99,
+            contentUnitIds: new long[] { 98, 99, 100 });
+        var result = new FileResultViewModel(@"C:\docs\report.pdf", new FakeFileLauncher());
+        result.AddHit(new Hit(
+            @"C:\docs\report.pdf",
+            8,
+            "needle appears here",
+            Array.Empty<MatchSpan>(),
+            HitKind.Content,
+            Locator: locator,
+            Snippet: snippet));
+
+        var preview = result.BuildStoredHitPreview();
+
+        Assert.True(result.HasStructuredSnippets);
+        Assert.Contains("[page 2, line 8]", preview);
+        Assert.Contains("before context", preview);
+        Assert.Contains("after context", preview);
+    }
+
+    [Fact]
     public async Task OpenImageOcrPreviewCommandLaunchesPreviewWhenAnchorIsAvailable()
     {
         var path = Path.Combine(Path.GetTempPath(), $"{Guid.NewGuid():N}.png");
@@ -57,5 +84,42 @@ public sealed class FileResultViewModelTests
         {
             File.Delete(path);
         }
+    }
+
+    [Fact]
+    public async Task OpenCommandUsesSourceAwareLauncherWhenAvailable()
+    {
+        var launcher = new FakeFileLauncher { OpenAtLocationResult = true };
+        var result = new FileResultViewModel(@"C:\docs\report.cs", launcher);
+        result.AddHit(new Hit(
+            @"C:\docs\report.cs",
+            12,
+            "needle",
+            Array.Empty<MatchSpan>(),
+            Locator: new SourceLocator(StartLine: 12, EndLine: 12)));
+
+        await result.OpenCommand.ExecuteAsync(null);
+
+        Assert.Equal(@"C:\docs\report.cs", launcher.LastOpenedAtPath);
+        Assert.NotNull(launcher.LastOpenedAtHit);
+        Assert.Null(launcher.LastOpenedPath);
+    }
+
+    [Fact]
+    public async Task OpenCommandFallsBackToFileOpenWhenSourceTargetUnavailable()
+    {
+        var launcher = new FakeFileLauncher { OpenAtLocationResult = false };
+        var result = new FileResultViewModel(@"C:\docs\report.cs", launcher);
+        result.AddHit(new Hit(
+            @"C:\docs\report.cs",
+            12,
+            "needle",
+            Array.Empty<MatchSpan>(),
+            Locator: new SourceLocator(StartLine: 12, EndLine: 12)));
+
+        await result.OpenCommand.ExecuteAsync(null);
+
+        Assert.Equal(@"C:\docs\report.cs", launcher.LastOpenedAtPath);
+        Assert.Equal(@"C:\docs\report.cs", launcher.LastOpenedPath);
     }
 }

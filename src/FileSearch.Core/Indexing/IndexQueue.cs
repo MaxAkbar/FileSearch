@@ -72,7 +72,7 @@ public sealed class IndexQueue : IIndexQueue, IDisposable
             _items[key] = normalized;
             persist = normalized.Persisted &&
                 !alreadyPersisted &&
-                (normalized.Kind == IndexChangeKind.RefreshRoot || normalized.Path is not null);
+                (IsRootLevelChange(normalized.Kind) || normalized.Path is not null);
         }
 
         if (persist)
@@ -218,13 +218,13 @@ public sealed class IndexQueue : IIndexQueue, IDisposable
         {
             if (!locations.TryGetValue(IndexPath.NormalizeRoot(change.Root), out var location))
                 continue;
-            if (change.Kind != IndexChangeKind.RefreshRoot && change.Path is null)
+            if (!IsRootLevelChange(change.Kind) && change.Path is null)
                 continue;
 
             await EnqueueAsync(
                 new IndexQueueItem(
                     location.Root,
-                    change.Kind == IndexChangeKind.RefreshRoot ? null : change.Path,
+                    IsRootLevelChange(change.Kind) ? null : change.Path,
                     location.WalkerOptions,
                     change.Kind,
                     IndexQueuePriority.Normal,
@@ -247,9 +247,15 @@ public sealed class IndexQueue : IIndexQueue, IDisposable
     }
 
     private static string BuildKey(IndexQueueItem item) =>
-        item.Kind == IndexChangeKind.RefreshRoot
-            ? RefreshKey(item.Root)
-            : $"F|{item.Root}|{item.Path}";
+        item.Kind switch
+        {
+            IndexChangeKind.RefreshRoot => RefreshKey(item.Root),
+            IndexChangeKind.RefreshSemanticRoot => $"S|{item.Root}",
+            _ => $"F|{item.Root}|{item.Path}",
+        };
 
     private static string RefreshKey(string root) => $"R|{root}";
+
+    private static bool IsRootLevelChange(IndexChangeKind kind) =>
+        kind is IndexChangeKind.RefreshRoot or IndexChangeKind.RefreshSemanticRoot;
 }

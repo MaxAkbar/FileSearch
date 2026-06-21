@@ -294,6 +294,15 @@ public sealed partial class QuickSearchViewModel : ObservableObject, IDisposable
             ImageOcrPreview = await ImageOcrPreviewViewModel
                 .TryCreateAsync(result.FullPath, result.Hits, token)
                 .ConfigureAwait(true);
+            var storedPreview = result.HasStructuredSnippets
+                ? result.BuildStoredHitPreview()
+                : string.Empty;
+            if (!string.IsNullOrWhiteSpace(storedPreview))
+            {
+                PreviewContent = storedPreview;
+                return;
+            }
+
             var lines = result.Hits
                 .Where(hit => hit.Kind == HitKind.Content && hit.LineNumber > 0)
                 .Select(hit => hit.LineNumber)
@@ -303,12 +312,12 @@ public sealed partial class QuickSearchViewModel : ObservableObject, IDisposable
                 .ConfigureAwait(true);
             if (!token.IsCancellationRequested)
             {
-                var storedPreview = string.IsNullOrWhiteSpace(preview)
+                var previewText = string.IsNullOrWhiteSpace(preview)
                     ? result.BuildStoredHitPreview()
                     : preview;
-                PreviewContent = string.IsNullOrWhiteSpace(storedPreview)
+                PreviewContent = string.IsNullOrWhiteSpace(previewText)
                     ? "(no extractable preview)"
-                    : storedPreview;
+                    : previewText;
             }
         }
         catch (OperationCanceledException)

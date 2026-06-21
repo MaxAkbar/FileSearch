@@ -1,3 +1,4 @@
+using FileSearch.Core.Engine;
 using FileSearch.Core.Extractors;
 
 namespace FileSearch.Gui.ViewModels;
@@ -103,4 +104,7 @@ public sealed record ExportHit(
     int LineNumber,
     string Kind,
     string Line,
-    SourceAnchor? Anchor);
+    string Location,
+    SourceAnchor? Anchor,
+    SourceLocator? Locator,
+    SearchSnippet? Snippet);

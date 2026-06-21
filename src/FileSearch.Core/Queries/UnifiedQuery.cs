@@ -81,9 +81,10 @@ public sealed class UnifiedQuery : Query
     public UnifiedQueryFilters Filters { get; }
     public IReadOnlyList<UnifiedQueryChip> Chips { get; }
     public bool HasContentCriteria => ContentQuery is not MatchAllQuery;
-    public bool HasUnavailableSemantic => Filters.SemanticTerms.Count > 0;
+    public bool HasSemantic => Filters.SemanticTerms.Count > 0;
+    public bool HasUnavailableSemantic => HasSemantic;
     public const string SemanticUnavailableMessage =
-        "Semantic search is not available yet. Configure a local semantic index or remove the semantic chip.";
+        "Semantic search requires an installed local Smart Search model pack.";
 
     public override bool IsMatch(string line) => ContentQuery.IsMatch(line);
 
@@ -1209,14 +1210,7 @@ public sealed partial class UnifiedQueryParser
             Chips.Add(new UnifiedQueryChip(field, value, rawText, position, length));
 
         public void AddUnavailableSemanticChip(string field, string value, string rawText, int position, int length) =>
-            Chips.Add(new UnifiedQueryChip(
-                field,
-                value,
-                rawText,
-                position,
-                length,
-                IsEnabled: false,
-                UnifiedQuery.SemanticUnavailableMessage));
+            AddChip(field, value, rawText, position, length);
 
         public UnifiedQueryFilters Build() => new(
             NameTerms.Distinct(StringComparer.OrdinalIgnoreCase).ToArray(),

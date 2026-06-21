@@ -13,17 +13,20 @@ public abstract class IndexedCandidateProvider : IRoutedCandidateProvider
     private readonly IIndexSearch _index;
     private readonly IndexCoverageService _coverageService;
     private readonly string _providerId;
+    private readonly ISnippetGenerator? _snippetGenerator;
 
     protected IndexedCandidateProvider(
         IIndexSearch index,
         IndexCoverageService coverageService,
         CandidateProviderKind provider,
-        string providerId)
+        string providerId,
+        ISnippetGenerator? snippetGenerator = null)
     {
         _index = index ?? throw new ArgumentNullException(nameof(index));
         _coverageService = coverageService ?? throw new ArgumentNullException(nameof(coverageService));
         Provider = provider;
         _providerId = string.IsNullOrWhiteSpace(providerId) ? provider.ToString() : providerId;
+        _snippetGenerator = snippetGenerator;
     }
 
     public CandidateProviderKind Provider { get; }
@@ -68,12 +71,25 @@ public abstract class IndexedCandidateProvider : IRoutedCandidateProvider
 
         await foreach (var hit in _index.SearchAsync(request, cancellationToken).ConfigureAwait(false))
         {
+            var enrichedHit = await EnrichHitAsync(request, hit, cancellationToken).ConfigureAwait(false);
             yield return SearchCandidate.FromHit(
-                hit,
+                enrichedHit,
                 Provider,
                 _providerId,
-                CreateExplanations(hit));
+                CreateExplanations(enrichedHit));
         }
+    }
+
+    private async Task<Hit> EnrichHitAsync(
+        SearchRequest request,
+        Hit hit,
+        CancellationToken cancellationToken)
+    {
+        if (_snippetGenerator is null || hit.Snippet is not null)
+            return hit;
+
+        var snippet = await _snippetGenerator.GenerateAsync(request, hit, cancellationToken).ConfigureAwait(false);
+        return hit with { Snippet = snippet };
     }
 
     protected abstract SearchRequest? CreateRequest(SearchPlan plan);

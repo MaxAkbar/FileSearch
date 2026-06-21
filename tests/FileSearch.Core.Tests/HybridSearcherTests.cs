@@ -12,6 +12,8 @@ public sealed class HybridSearcherTests
     public async Task SearchAsync_EmitsBestCandidateForEachRankedResult()
     {
         var anchor = new SourceAnchor(SourceAnchorKind.Text, "line 7", Line: 7, Column: 3);
+        var locator = SourceLocator.FromAnchor(anchor, 7);
+        var snippet = new SearchSnippet("before\ncontent match\nafter", contentUnitId: 123);
         var modifiedUtc = new DateTime(2026, 6, 20, 12, 0, 0, DateTimeKind.Utc);
         var pipeline = new StubHybridRetrievalPipeline(new[]
         {
@@ -40,7 +42,10 @@ public sealed class HybridSearcherTests
                         sizeBytes: 1024,
                         modifiedUtc: modifiedUtc,
                         route: HitRoute.Indexed,
-                        anchor: anchor),
+                        anchor: anchor,
+                        locator: locator,
+                        contentUnitId: 123,
+                        snippet: snippet),
                 }),
             new RankedSearchResult(
                 2,
@@ -65,6 +70,9 @@ public sealed class HybridSearcherTests
         Assert.Equal(1024, hits[0].SizeBytes);
         Assert.Equal(modifiedUtc, hits[0].ModifiedUtc);
         Assert.Equal(anchor, hits[0].Anchor);
+        Assert.Equal(locator, hits[0].Locator);
+        Assert.Equal(123, hits[0].ContentUnitId);
+        Assert.Same(snippet, hits[0].Snippet);
         Assert.Single(hits[0].Highlights);
         Assert.Equal("a.txt", hits[1].Path);
         Assert.Equal(25, hits[1].Score);

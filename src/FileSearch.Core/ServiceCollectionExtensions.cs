@@ -26,6 +26,24 @@ public static class ServiceCollectionExtensions
         services.TryAddSingleton<IQueryParser>(_ => new QueryParser());
         services.TryAddSingleton<IQueryFactory, QueryFactory>();
         services.TryAddSingleton<IQueryPlanner, QueryPlanner>();
+        services.TryAddSingleton<LocalRerankerOptions>();
+        services.TryAddSingleton<ISnippetGenerator, ContentUnitSnippetGenerator>();
+        services.TryAddSingleton<IGroundedAnswerBuilder, GroundedAnswerBuilder>();
+        services.TryAddSingleton<IContentChunker, ContentUnitChunker>();
+        services.TryAddSingleton<EmbeddingModelPackOptions>();
+        services.TryAddSingleton<IEmbeddingModelPackCatalog, EmbeddingModelPackCatalog>();
+        services.TryAddSingleton<IEmbeddingModelPackStore, EmbeddingModelPackStore>();
+        services.TryAddSingleton<IEmbeddingModelPackValidator, OnnxEmbeddingModelPackValidator>();
+        services.TryAddSingleton<IEmbeddingModelPackInstaller, EmbeddingModelPackInstaller>();
+        services.TryAddSingleton(sp => new VectorIndexOptions
+        {
+            IndexPath = VectorIndexOptions.GetDefaultIndexPath(sp.GetService<FileIndexOptions>()?.DatabasePath),
+        });
+        services.TryAddSingleton<IVectorIndex, FileVectorIndex>();
+        services.TryAddSingleton<ITextEmbedder, OnnxTextEmbedder>();
+        services.TryAddSingleton<ISemanticIndexBuilder, SemanticIndexBuilder>();
+        services.TryAddSingleton<ISemanticIndexingCoordinator, SemanticIndexingCoordinator>();
+        services.TryAddSingleton<ISemanticIndexStatusService, SemanticIndexStatusService>();
         services.TryAddSingleton<IEmbeddedImageOcrService, NullEmbeddedImageOcrService>();
 
         services.AddSingleton<ITextExtractor, PlainTextExtractor>();
@@ -71,6 +89,7 @@ public static class ServiceCollectionExtensions
         // Role-interface slices of the index, so consumers can depend on the
         // narrowest contract they need (ISP).
         services.TryAddSingleton<IIndexSearch>(sp => sp.GetRequiredService<IFileIndex>());
+        services.TryAddSingleton<IContentUnitReader>(sp => sp.GetRequiredService<IFileIndex>());
         services.TryAddSingleton<IIndexWriter>(sp => sp.GetRequiredService<IFileIndex>());
         services.TryAddSingleton<IIndexMaintenance>(sp => sp.GetRequiredService<IFileIndex>());
         services.TryAddSingleton<IPendingChangeStore>(sp => sp.GetRequiredService<IFileIndex>());
@@ -103,8 +122,9 @@ public static class ServiceCollectionExtensions
         services.TryAddEnumerable(ServiceDescriptor.Singleton<ICandidateProvider, IndexedLexicalCandidateProvider>());
         services.TryAddEnumerable(ServiceDescriptor.Singleton<ICandidateProvider, IndexedRegexCandidateProvider>());
         services.TryAddEnumerable(ServiceDescriptor.Singleton<ICandidateProvider, IndexedFuzzyCandidateProvider>());
+        services.TryAddEnumerable(ServiceDescriptor.Singleton<ICandidateProvider, SemanticCandidateProvider>());
         services.TryAddSingleton<IResultFusion, WeightedResultFusion>();
-        services.TryAddSingleton<IReranker, PassthroughReranker>();
+        services.TryAddSingleton<IReranker, LocalHeuristicReranker>();
         services.TryAddSingleton<IHybridRetrievalPipeline, HybridRetrievalPipeline>();
         services.TryAddSingleton<IHybridSearcher, HybridSearcher>();
 

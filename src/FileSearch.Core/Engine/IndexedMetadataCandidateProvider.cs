@@ -7,8 +7,9 @@ public sealed class IndexedMetadataCandidateProvider : IndexedCandidateProvider
 {
     public IndexedMetadataCandidateProvider(
         IIndexSearch index,
-        IndexCoverageService coverageService)
-        : base(index, coverageService, CandidateProviderKind.Metadata, "indexed-metadata")
+        IndexCoverageService coverageService,
+        ISnippetGenerator? snippetGenerator = null)
+        : base(index, coverageService, CandidateProviderKind.Metadata, "indexed-metadata", snippetGenerator)
     {
     }
 

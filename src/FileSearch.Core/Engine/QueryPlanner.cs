@@ -23,18 +23,16 @@ public sealed class QueryPlanner : IQueryPlanner
             if (!unified.HasContentCriteria)
                 contentExpression = MatchAllQuery.Instance;
 
-            if (unified.HasUnavailableSemantic)
+            if (unified.HasSemantic)
             {
                 AddProvider(
                     providers,
                     CandidateProviderKind.Semantic,
-                    RetrievalLayer.Smart,
-                    isEnabled: false,
-                    UnifiedQuery.SemanticUnavailableMessage);
+                    RetrievalLayer.Smart);
                 explanations.Add(new SearchPlanExplanation(
-                    "semantic-unavailable",
-                    UnifiedQuery.SemanticUnavailableMessage,
-                    SearchExplanationSeverity.Disabled,
+                    "semantic-requested",
+                    "Semantic provider requested by the query.",
+                    SearchExplanationSeverity.Info,
                     CandidateProviderKind.Semantic,
                     RetrievalLayer.Smart));
             }
@@ -108,7 +106,7 @@ public sealed class QueryPlanner : IQueryPlanner
 
             case UnifiedQuery unified:
                 var providers = CollectContentProviders(unified.ContentQuery);
-                if (unified.HasUnavailableSemantic)
+                if (unified.HasSemantic)
                     providers |= CandidateProviderKind.Semantic;
                 return providers;
 

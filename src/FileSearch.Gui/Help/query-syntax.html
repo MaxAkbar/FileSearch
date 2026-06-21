@@ -35,7 +35,7 @@
                 <div class="eyebrow">Search Expressions</div>
                 <h1>Use one query for text and file filters.</h1>
                 <p class="lead">Unified mode is the default for the full search window. It combines normal text search with fields such as <code>type:</code>, <code>name:</code>, <code>modified:</code>, and <code>size:</code>.</p>
-                <p>AI is optional. FileSearch can interpret simple natural-language queries with built-in rules, and <code>semantic:</code> records semantic intent as an explained chip. Real semantic matching requires a future local semantic index; FileSearch does not call paid embedding services.</p>
+                <p>AI is optional. FileSearch can interpret simple natural-language queries with built-in rules, and <code>semantic:</code> records semantic intent as an explained chip. Real semantic matching requires an installed local Smart Search model pack; FileSearch does not call paid embedding services.</p>
             </section>
 
             <h2>Modes</h2>
@@ -103,7 +103,7 @@
                         <tr>
                             <td><code>semantic:</code></td>
                             <td><code>semantic:"authentication migration"</code></td>
-                            <td>Records semantic intent as a disabled explained chip until a local semantic index is configured. FileSearch does not call paid embedding services.</td>
+                            <td>Uses the local semantic index when a Smart Search model pack is installed. Otherwise the chip is shown as unavailable instead of being ignored.</td>
                         </tr>
                         <tr>
                             <td><code>ext:</code>, <code>type:</code></td>
@@ -149,7 +149,7 @@
                         </tr>
                         <tr>
                             <td><code>PDFs about authentication migration modified last year</code></td>
-                            <td>Interprets <code>about authentication migration</code> as a semantic chip and shows it disabled until semantic indexing is available.</td>
+                            <td>Interprets <code>about authentication migration</code> as a semantic chip and uses the local semantic index when a model pack is installed.</td>
                         </tr>
                         <tr>
                             <td><code>name:report path:finance size:&gt;5mb</code></td>

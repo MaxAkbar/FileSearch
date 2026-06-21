@@ -27,6 +27,7 @@ public enum BackgroundIndexerCommand
     CompactDatabase = 12,
     QueueRootRefresh = 13,
     ValidateRoot = 14,
+    RefreshSemanticRoot = 15,
 }
 
 public sealed record BackgroundIndexedLocation(

@@ -4,6 +4,7 @@ using System.Diagnostics;
 using System.IO;
 using System.Threading;
 using System.Threading.Tasks;
+using FileSearch.Core.Engine;
 using FileSearch.Core.Walker;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
@@ -20,6 +21,7 @@ public sealed class IndexingService : IIndexingService
     private readonly IIndexWatcherService _watchers;
     private readonly IIndexStartupCatchUpService? _startupCatchUp;
     private readonly IIndexerRuntimeCondition _runtimeCondition;
+    private readonly ISemanticIndexingCoordinator? _semanticIndexing;
     private readonly IndexingServiceOptions _options;
     private readonly object _sync = new();
     private readonly Dictionary<string, IndexedLocation> _locations = new(StringComparer.OrdinalIgnoreCase);
@@ -53,13 +55,15 @@ public sealed class IndexingService : IIndexingService
         ILogger<IndexingService>? logger = null,
         IIndexStartupCatchUpService? startupCatchUp = null,
         IIndexerRuntimeCondition? runtimeCondition = null,
-        IndexingServiceOptions? options = null)
+        IndexingServiceOptions? options = null,
+        ISemanticIndexingCoordinator? semanticIndexing = null)
     {
         _index = index;
         _queue = queue;
         _watchers = watchers;
         _startupCatchUp = startupCatchUp;
         _runtimeCondition = runtimeCondition ?? new WindowsIndexerRuntimeCondition();
+        _semanticIndexing = semanticIndexing;
         _options = (options ?? new IndexingServiceOptions()).Normalize();
         _logger = logger ?? NullLogger<IndexingService>.Instance;
     }
@@ -232,6 +236,7 @@ public sealed class IndexingService : IIndexingService
             _lastRemovableCheckUtc.Remove(normalizedRoot);
             _unavailableRoots.Remove(normalizedRoot);
         }
+        await DeleteSemanticRootAsync(normalizedRoot, cancellationToken).ConfigureAwait(false);
         await _index.ClearAsync(normalizedRoot, cancellationToken).ConfigureAwait(false);
         Publish(false, $"Removed indexed location: {normalizedRoot}", force: true);
     }
@@ -246,6 +251,21 @@ public sealed class IndexingService : IIndexingService
             null,
             options,
             IndexChangeKind.RefreshRoot,
+            priority,
+            DateTime.UtcNow.AddSeconds(priority == IndexQueuePriority.High ? 0 : 3),
+            Persisted: true),
+            cancellationToken);
+
+    public Task EnqueueSemanticRootRefreshAsync(
+        string root,
+        WalkerOptions options,
+        IndexQueuePriority priority,
+        CancellationToken cancellationToken) =>
+        EnqueueAsync(new IndexQueueItem(
+            root,
+            null,
+            options,
+            IndexChangeKind.RefreshSemanticRoot,
             priority,
             DateTime.UtcNow.AddSeconds(priority == IndexQueuePriority.High ? 0 : 3),
             Persisted: true),
@@ -649,7 +669,7 @@ public sealed class IndexingService : IIndexingService
             return;
         }
 
-        if (_foregroundSearchActive && item.Kind == IndexChangeKind.RefreshRoot)
+        if (_foregroundSearchActive && IsForegroundYieldableRootWork(item.Kind))
         {
             await EnqueueAsync(
                 item with { DueUtc = DateTime.UtcNow.Add(ForegroundRefreshDelay), Persisted = false },
@@ -733,6 +753,7 @@ public sealed class IndexingService : IIndexingService
             {
                 case IndexChangeKind.RefreshRoot:
                     SetRootStatusDetail(item.Root, "Snapshot scan running");
+                    await DeleteSemanticRootAsync(item.Root, cancellationToken).ConfigureAwait(false);
                     await _index.RefreshRootAsync(
                         new IndexRequest(
                             item.Root,
@@ -741,15 +762,25 @@ public sealed class IndexingService : IIndexingService
                             IndexingResourcePolicy.For(_resourceProfile, _runtimeOptions).Throttle),
                         IndexRefreshMode.Incremental,
                         cancellationToken).ConfigureAwait(false);
+                    await UpsertSemanticRootAsync(item.Root, cancellationToken).ConfigureAwait(false);
                     await _index.RemovePendingChangeAsync(item.Root, null, item.Kind, cancellationToken)
                         .ConfigureAwait(false);
                     SetRootStatusDetail(item.Root, "Snapshot scan complete");
                     break;
+                case IndexChangeKind.RefreshSemanticRoot:
+                    SetRootStatusDetail(item.Root, "Smart Search vectors running");
+                    await DeleteSemanticRootAsync(item.Root, cancellationToken).ConfigureAwait(false);
+                    await UpsertSemanticRootAsync(item.Root, cancellationToken).ConfigureAwait(false);
+                    await _index.RemovePendingChangeAsync(item.Root, null, item.Kind, cancellationToken)
+                        .ConfigureAwait(false);
+                    break;
                 case IndexChangeKind.UpsertFile:
                     if (item.Path is not null)
                     {
+                        await DeleteSemanticFileAsync(item.Root, item.Path, cancellationToken).ConfigureAwait(false);
                         await _index.UpsertFileAsync(item.Root, item.Path, item.WalkerOptions, cancellationToken)
                             .ConfigureAwait(false);
+                        await UpsertSemanticFileAsync(item.Root, item.Path, cancellationToken).ConfigureAwait(false);
                         await _index.RemovePendingChangeAsync(item.Root, item.Path, item.Kind, cancellationToken)
                             .ConfigureAwait(false);
                     }
@@ -757,6 +788,7 @@ public sealed class IndexingService : IIndexingService
                 case IndexChangeKind.DeleteFile:
                     if (item.Path is not null)
                     {
+                        await DeleteSemanticFileAsync(item.Root, item.Path, cancellationToken).ConfigureAwait(false);
                         await _index.DeleteFileAsync(item.Root, item.Path, cancellationToken).ConfigureAwait(false);
                         await _index.RemovePendingChangeAsync(item.Root, item.Path, item.Kind, cancellationToken)
                             .ConfigureAwait(false);
@@ -778,6 +810,90 @@ public sealed class IndexingService : IIndexingService
         }
     }
 
+    private async Task DeleteSemanticFileAsync(string root, string path, CancellationToken cancellationToken)
+    {
+        if (_semanticIndexing is null)
+            return;
+
+        try
+        {
+            await _semanticIndexing.DeleteFileAsync(root, path, cancellationToken).ConfigureAwait(false);
+        }
+        catch (OperationCanceledException)
+        {
+            throw;
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Semantic vector cleanup failed for {Path}.", path);
+        }
+    }
+
+    private async Task UpsertSemanticFileAsync(string root, string path, CancellationToken cancellationToken)
+    {
+        if (_semanticIndexing is null)
+            return;
+
+        try
+        {
+            await _semanticIndexing.UpsertFileAsync(root, path, cancellationToken).ConfigureAwait(false);
+        }
+        catch (OperationCanceledException)
+        {
+            throw;
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Semantic vector indexing failed for {Path}.", path);
+        }
+    }
+
+    private async Task DeleteSemanticRootAsync(string root, CancellationToken cancellationToken)
+    {
+        if (_semanticIndexing is null)
+            return;
+
+        try
+        {
+            await _semanticIndexing.DeleteRootAsync(root, cancellationToken).ConfigureAwait(false);
+        }
+        catch (OperationCanceledException)
+        {
+            throw;
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Semantic vector cleanup failed for root {Root}.", root);
+        }
+    }
+
+    private async Task UpsertSemanticRootAsync(string root, CancellationToken cancellationToken)
+    {
+        if (_semanticIndexing is null)
+        {
+            SetRootStatusDetail(root, "Smart Search unavailable: semantic indexing is not configured.");
+            return;
+        }
+
+        try
+        {
+            var result = await _semanticIndexing.UpsertRootAsync(root, cancellationToken).ConfigureAwait(false);
+            SetRootStatusDetail(
+                root,
+                result.IsAvailable
+                    ? $"Smart Search vectors complete: {result.VectorCount:n0} chunk(s)"
+                    : $"Smart Search unavailable: {result.Message}");
+        }
+        catch (OperationCanceledException)
+        {
+            throw;
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Semantic vector indexing failed for root {Root}.", root);
+        }
+    }
+
     private List<IndexedLocation> SnapshotLocations()
     {
         lock (_sync)
@@ -788,8 +904,12 @@ public sealed class IndexingService : IIndexingService
     {
         lock (_sync)
         {
-            if (_currentItem is not { Kind: IndexChangeKind.RefreshRoot } || _currentItemCts is null)
+            if (_currentItem is null ||
+                !IsForegroundYieldableRootWork(_currentItem.Kind) ||
+                _currentItemCts is null)
+            {
                 return;
+            }
 
             _foregroundRefreshYieldRequested = true;
             _currentItemCts.Cancel();
@@ -812,8 +932,11 @@ public sealed class IndexingService : IIndexingService
     private bool WasRefreshYieldRequested(IndexQueueItem item)
     {
         lock (_sync)
-            return item.Kind == IndexChangeKind.RefreshRoot && _foregroundRefreshYieldRequested;
+            return IsForegroundYieldableRootWork(item.Kind) && _foregroundRefreshYieldRequested;
     }
+
+    private static bool IsForegroundYieldableRootWork(IndexChangeKind kind) =>
+        kind is IndexChangeKind.RefreshRoot or IndexChangeKind.RefreshSemanticRoot;
 
     private bool WasRemovalRequested(out string? root)
     {
@@ -989,6 +1112,7 @@ public sealed class IndexingService : IIndexingService
         item.Kind switch
         {
             IndexChangeKind.RefreshRoot => $"Index updating in background: {item.Root}",
+            IndexChangeKind.RefreshSemanticRoot => $"Smart Search indexing in background: {item.Root}",
             IndexChangeKind.UpsertFile => $"Indexing changed file: {Path.GetFileName(item.Path)}",
             IndexChangeKind.DeleteFile => $"Removing deleted file from index: {Path.GetFileName(item.Path)}",
             _ => "Indexing...",

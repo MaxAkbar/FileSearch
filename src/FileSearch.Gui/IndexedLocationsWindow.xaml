@@ -232,6 +232,37 @@
 
                         <Border Height="1" Background="{DynamicResource Atlas.LineBrush}" Margin="0,0,0,18"/>
 
+                        <TextBlock Text="Smart Search" Style="{StaticResource FieldLabelStyle}"/>
+                        <TextBlock Text="{Binding Index.SelectedSemanticIndexStatusText}"
+                                   Style="{StaticResource MetaValueStyle}"
+                                   TextAlignment="Left"
+                                   TextWrapping="Wrap"
+                                   Margin="0,2,0,10"/>
+                        <WrapPanel Margin="0,0,0,18">
+                            <Button Command="{Binding Index.RebuildSelectedSemanticIndexCommand}"
+                                    Style="{StaticResource SecondaryButtonStyle}"
+                                    Height="34"
+                                    MinWidth="152"
+                                    Margin="0,0,8,8">
+                                <StackPanel Orientation="Horizontal">
+                                    <ui:FontIcon Glyph="&#xE90F;" FontSize="13" Margin="0,0,7,0"/>
+                                    <TextBlock Text="{Binding Index.RebuildSemanticIndexActionText}"/>
+                                </StackPanel>
+                            </Button>
+                            <Button Command="{Binding Index.RefreshSelectedSemanticIndexStatusCommand}"
+                                    Style="{StaticResource SecondaryButtonStyle}"
+                                    Height="34"
+                                    MinWidth="116"
+                                    Margin="0,0,8,8">
+                                <StackPanel Orientation="Horizontal">
+                                    <ui:FontIcon Glyph="&#xE72C;" FontSize="13" Margin="0,0,7,0"/>
+                                    <TextBlock Text="Refresh status"/>
+                                </StackPanel>
+                            </Button>
+                        </WrapPanel>
+
+                        <Border Height="1" Background="{DynamicResource Atlas.LineBrush}" Margin="0,0,0,18"/>
+
                         <TextBlock Text="Database" Style="{StaticResource FieldLabelStyle}"/>
                         <Grid Margin="0,6,0,18">
                             <Grid.ColumnDefinitions>

@@ -9,6 +9,7 @@ using System.Threading.Tasks;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 using FileSearch.Core;
+using FileSearch.Core.Engine;
 using FileSearch.Core.Indexing;
 using FileSearch.Gui.Services;
 using FileSearch.Gui.Settings;
@@ -36,6 +37,7 @@ public sealed partial class IndexViewModel : ObservableObject, IDisposable
     private readonly StatusBarViewModel _status;
     private readonly IBackgroundIndexerProcessService? _backgroundIndexer;
     private readonly IIndexHealthService _indexHealthService;
+    private readonly ISemanticIndexStatusService? _semanticIndexStatusService;
 
     private string? _pendingStatsRoot;
     private bool _isIndexingOperationActive;
@@ -57,7 +59,8 @@ public sealed partial class IndexViewModel : ObservableObject, IDisposable
         StatusBarViewModel status,
         IBackgroundIndexerProcessService? backgroundIndexer = null,
         IFileSavePicker? fileSavePicker = null,
-        IIndexHealthService? indexHealthService = null)
+        IIndexHealthService? indexHealthService = null,
+        ISemanticIndexStatusService? semanticIndexStatusService = null)
     {
         _fileIndex = fileIndex;
         _indexingService = indexingService;
@@ -70,6 +73,7 @@ public sealed partial class IndexViewModel : ObservableObject, IDisposable
         _status = status;
         _backgroundIndexer = backgroundIndexer;
         _indexHealthService = indexHealthService ?? new IndexHealthService(fileIndex);
+        _semanticIndexStatusService = semanticIndexStatusService;
         _lastIndexingStatus = _indexingService.CurrentStatus;
         _indexingService.SetResourceProfile(_applicationSettings.IndexerResourceProfile);
         _indexingService.SetRuntimeOptions(BuildRuntimeOptions());
@@ -130,6 +134,9 @@ public sealed partial class IndexViewModel : ObservableObject, IDisposable
     [ObservableProperty] private string _indexDatabaseDiagnosticsText = "No extraction diagnostics";
     [ObservableProperty] private string _indexDatabaseLastIndexedText = "Never indexed";
     [ObservableProperty] private string _indexHealthSummaryText = "Health unavailable";
+    [ObservableProperty] private string _selectedSemanticIndexStatusText = "Select an indexed location to view Smart Search status";
+    [ObservableProperty] private bool _isRefreshingSemanticIndexStatus;
+    [ObservableProperty] private bool _isRebuildingSemanticIndex;
     [ObservableProperty] private long _indexDatabaseFailedFileCount;
     [ObservableProperty] private bool _newIndexRecursive = true;
     [ObservableProperty] private bool _newIndexIncludeHidden;
@@ -174,6 +181,9 @@ public sealed partial class IndexViewModel : ObservableObject, IDisposable
             : IsIndexing || _search.IsSearching
                 ? "Compact when idle"
                 : "Compact database";
+
+    public string RebuildSemanticIndexActionText =>
+        IsRebuildingSemanticIndex ? "Smart Search queued" : "Rebuild Smart Search";
 
     // ----- commands -----
 
@@ -362,6 +372,61 @@ public sealed partial class IndexViewModel : ObservableObject, IDisposable
     }
 
     private bool CanRebuildSelectedHealthRoot() => SelectedIndexHealthRoot is not null;
+
+    [RelayCommand(CanExecute = nameof(CanRefreshSelectedSemanticIndexStatus))]
+    private async Task RefreshSelectedSemanticIndexStatusAsync()
+    {
+        await RefreshSelectedSemanticIndexStatusCoreAsync(updateStatusBar: true).ConfigureAwait(true);
+    }
+
+    private bool CanRefreshSelectedSemanticIndexStatus() =>
+        SelectedIndexedLocation is not null &&
+        !IsRefreshingSemanticIndexStatus;
+
+    [RelayCommand(CanExecute = nameof(CanRebuildSelectedSemanticIndex))]
+    private async Task RebuildSelectedSemanticIndexAsync()
+    {
+        var location = SelectedIndexedLocation;
+        if (location is null)
+            return;
+
+        IsRebuildingSemanticIndex = true;
+        try
+        {
+            var indexedLocation = ToIndexedLocation(location);
+            if (UseBackgroundIndexerMode && _backgroundIndexer is not null)
+            {
+                if (!await _backgroundIndexer.RefreshSemanticRootAsync(indexedLocation, CancellationToken.None).ConfigureAwait(true))
+                {
+                    _status.Text = "Couldn't queue the Smart Search rebuild.";
+                    return;
+                }
+            }
+            else
+            {
+                await _indexingService.EnqueueSemanticRootRefreshAsync(
+                    location.Root,
+                    indexedLocation.WalkerOptions,
+                    IndexQueuePriority.High,
+                    CancellationToken.None).ConfigureAwait(true);
+            }
+
+            SelectedSemanticIndexStatusText = "Smart Search rebuild queued.";
+            _status.Text = "Smart Search rebuild queued.";
+        }
+        catch (Exception ex)
+        {
+            _status.Text = $"Couldn't queue Smart Search rebuild: {ex.Message}";
+        }
+        finally
+        {
+            IsRebuildingSemanticIndex = false;
+        }
+    }
+
+    private bool CanRebuildSelectedSemanticIndex() =>
+        SelectedIndexedLocation is not null &&
+        !IsRebuildingSemanticIndex;
 
     [RelayCommand(CanExecute = nameof(CanValidateSelectedIndex))]
     private async Task ValidateSelectedIndexAsync()
@@ -726,6 +791,12 @@ public sealed partial class IndexViewModel : ObservableObject, IDisposable
         {
             _ = ApplyRuntimeOptionsAsync();
         }
+        else if (e.PropertyName is
+                 nameof(ApplicationSettingsViewModel.SemanticModelPack) or
+                 nameof(ApplicationSettingsViewModel.SemanticModelPacksDirectory))
+        {
+            _ = RefreshSelectedSemanticIndexStatusCoreAsync(updateStatusBar: false);
+        }
     }
 
     private bool UseBackgroundIndexerMode =>
@@ -957,6 +1028,7 @@ public sealed partial class IndexViewModel : ObservableObject, IDisposable
         ActiveIndexingRoot = status.ActiveRoot ?? string.Empty;
         ApplyIndexingRuntimeStatus(status);
         ApplyActiveIndexProgressStats(status);
+        ApplySelectedSemanticIndexRuntimeStatus(status);
         RequestIndexHealthRefresh();
 
         if (!_search.IsSearching)
@@ -974,6 +1046,11 @@ public sealed partial class IndexViewModel : ObservableObject, IDisposable
             _pendingStatsRoot = null;
             _ = RefreshIndexedLocationStatsAsync(completedRoot);
             _ = RefreshIndexDatabaseInfoAsync();
+            if (SelectedIndexedLocation is not null &&
+                string.Equals(SelectedIndexedLocation.Root, completedRoot, StringComparison.OrdinalIgnoreCase))
+            {
+                _ = RefreshSelectedSemanticIndexStatusCoreAsync(updateStatusBar: false);
+            }
         }
 
         RunQueuedIndexDatabaseCompactionIfReady();
@@ -1007,6 +1084,33 @@ public sealed partial class IndexViewModel : ObservableObject, IDisposable
             suffix: " (scanning)");
     }
 
+    private void ApplySelectedSemanticIndexRuntimeStatus(IndexingStatus status)
+    {
+        var selected = SelectedIndexedLocation;
+        if (selected is null)
+            return;
+
+        var isSelectedRoot = !string.IsNullOrWhiteSpace(status.ActiveRoot) &&
+            string.Equals(selected.Root, status.ActiveRoot, StringComparison.OrdinalIgnoreCase);
+        if (status.IsProcessing &&
+            isSelectedRoot &&
+            status.ActiveKind == IndexChangeKind.RefreshSemanticRoot)
+        {
+            SelectedSemanticIndexStatusText = "Building Smart Search vectors.";
+            return;
+        }
+
+        var details = status.RootStatusDetails;
+        if (details is null ||
+            !details.TryGetValue(selected.Root, out var detail) ||
+            !detail.StartsWith("Smart Search", StringComparison.OrdinalIgnoreCase))
+        {
+            return;
+        }
+
+        SelectedSemanticIndexStatusText = detail;
+    }
+
     private async Task RefreshIndexedLocationStatsAsync(string root)
     {
         IndexStats stats;
@@ -1028,6 +1132,43 @@ public sealed partial class IndexViewModel : ObservableObject, IDisposable
         location.LineCount = stats.LineCount;
         location.LastIndexedUtcTicks = stats.IndexedUtc?.Ticks ?? 0;
         SaveLocations();
+    }
+
+    private async Task RefreshSelectedSemanticIndexStatusCoreAsync(bool updateStatusBar)
+    {
+        var location = SelectedIndexedLocation;
+        if (location is null)
+        {
+            SelectedSemanticIndexStatusText = "Select an indexed location to view Smart Search status.";
+            return;
+        }
+
+        if (_semanticIndexStatusService is null)
+        {
+            SelectedSemanticIndexStatusText = "Smart Search status is unavailable in this process.";
+            return;
+        }
+
+        IsRefreshingSemanticIndexStatus = true;
+        try
+        {
+            var status = await _semanticIndexStatusService
+                .GetRootStatusAsync(location.Root, CancellationToken.None)
+                .ConfigureAwait(true);
+            SelectedSemanticIndexStatusText = FormatSemanticIndexStatus(status);
+            if (updateStatusBar)
+                _status.Text = status.Message;
+        }
+        catch (Exception ex)
+        {
+            SelectedSemanticIndexStatusText = $"Smart Search status unavailable: {ex.Message}";
+            if (updateStatusBar)
+                _status.Text = SelectedSemanticIndexStatusText;
+        }
+        finally
+        {
+            IsRefreshingSemanticIndexStatus = false;
+        }
     }
 
     private async Task RefreshIndexDatabaseInfoAsync()
@@ -1283,7 +1424,10 @@ public sealed partial class IndexViewModel : ObservableObject, IDisposable
         RebuildSelectedIndexCommand.NotifyCanExecuteChanged();
         RemoveSelectedIndexCommand.NotifyCanExecuteChanged();
         ValidateSelectedIndexCommand.NotifyCanExecuteChanged();
+        RefreshSelectedSemanticIndexStatusCommand.NotifyCanExecuteChanged();
+        RebuildSelectedSemanticIndexCommand.NotifyCanExecuteChanged();
         SelectHealthRoot(value?.Root);
+        _ = RefreshSelectedSemanticIndexStatusCoreAsync(updateStatusBar: false);
     }
 
     partial void OnSelectedIndexHealthRootChanged(IndexRootHealthInfo? value)
@@ -1346,6 +1490,15 @@ public sealed partial class IndexViewModel : ObservableObject, IDisposable
     partial void OnIsValidatingSelectedIndexChanged(bool value) =>
         ValidateSelectedIndexCommand.NotifyCanExecuteChanged();
 
+    partial void OnIsRefreshingSemanticIndexStatusChanged(bool value) =>
+        RefreshSelectedSemanticIndexStatusCommand.NotifyCanExecuteChanged();
+
+    partial void OnIsRebuildingSemanticIndexChanged(bool value)
+    {
+        RebuildSelectedSemanticIndexCommand.NotifyCanExecuteChanged();
+        OnPropertyChanged(nameof(RebuildSemanticIndexActionText));
+    }
+
     partial void OnIsIndexDatabaseCompactionQueuedChanged(bool value)
     {
         CompactIndexDatabaseCommand.NotifyCanExecuteChanged();
@@ -1364,6 +1517,8 @@ public sealed partial class IndexViewModel : ObservableObject, IDisposable
         BuildOrRefreshIndexCommand.NotifyCanExecuteChanged();
         ClearIndexForCurrentFolderCommand.NotifyCanExecuteChanged();
         RebuildSelectedHealthRootCommand.NotifyCanExecuteChanged();
+        RefreshSelectedSemanticIndexStatusCommand.NotifyCanExecuteChanged();
+        RebuildSelectedSemanticIndexCommand.NotifyCanExecuteChanged();
     }
 
     private void ApplyIndexingRuntimeStatus(IndexingStatus status)
@@ -1399,10 +1554,25 @@ public sealed partial class IndexViewModel : ObservableObject, IDisposable
         return status.ActiveKind switch
         {
             IndexChangeKind.RefreshRoot => "Scanning files",
+            IndexChangeKind.RefreshSemanticRoot => "Building Smart Search vectors",
             IndexChangeKind.UpsertFile => status.Message,
             IndexChangeKind.DeleteFile => status.Message,
             _ => "Indexing now",
         };
+    }
+
+    private static string FormatSemanticIndexStatus(SemanticIndexRootStatus status)
+    {
+        if (!status.IsModelAvailable)
+            return status.Message;
+
+        var model = string.IsNullOrWhiteSpace(status.ModelDisplayName)
+            ? status.ModelId
+            : status.ModelDisplayName;
+        if (status.ContentUnitCount <= 0)
+            return $"{status.Message} Model: {model}.";
+
+        return $"{status.Message} Model: {model}. {status.VectorCount:n0} vectors cover {status.CoveredContentUnitCount:n0}/{status.ContentUnitCount:n0} content units across {status.IndexedFileCount:n0} files.";
     }
 
     private static string FormatDatabaseStatus(IndexDatabaseInfo info)

@@ -185,7 +185,7 @@ public sealed class SearchViewModelTests
     }
 
     [Fact]
-    public void SemanticQueryTextBuildsDisabledExplainedChip()
+    public void SemanticQueryTextBuildsEditableChip()
     {
         RunWithPump((pump, vm, history, status, settings) =>
         {
@@ -195,14 +195,14 @@ public sealed class SearchViewModelTests
             var chip = Assert.Single(vm.QueryChips);
             Assert.Equal("Semantic", chip.Field);
             Assert.Equal("authentication migration", chip.Value);
-            Assert.False(chip.IsEnabled);
-            Assert.True(chip.IsDisabled);
-            Assert.Equal(UnifiedQuery.SemanticUnavailableMessage, chip.Explanation);
+            Assert.True(chip.IsEnabled);
+            Assert.False(chip.IsDisabled);
+            Assert.True(string.IsNullOrEmpty(chip.Explanation));
         });
     }
 
     [Fact]
-    public void SemanticUnavailableSearchDoesNotStartAndReportsStatus()
+    public void SemanticSearchStartsAndDelegatesAvailabilityToSearcher()
     {
         var searcher = new RecordingSearcher();
         RunWithPump((pump, vm, history, status, settings) =>
@@ -214,9 +214,9 @@ public sealed class SearchViewModelTests
             var task = vm.SearchCommand.ExecuteAsync(null);
             pump.PumpUntil(() => task.IsCompleted, TimeSpan.FromSeconds(10));
 
-            Assert.Equal(UnifiedQuery.SemanticUnavailableMessage, status.Text);
             Assert.False(vm.IsSearching);
-            Assert.Equal(0, searcher.RequestCount);
+            Assert.Equal(1, searcher.RequestCount);
+            Assert.IsType<UnifiedQuery>(searcher.Request?.Expression);
         }, searcher);
     }
 
@@ -590,6 +590,62 @@ public sealed class SearchViewModelTests
             if (File.Exists(exportPath))
                 File.Delete(exportPath);
         }
+    }
+
+    [Fact]
+    public void ExportResultsWritesStructuredSnippetFields()
+    {
+        var exportPath = Path.Combine(Path.GetTempPath(), $"{Guid.NewGuid():N}.jsonl");
+        var savePicker = new FakeFileSavePicker { PathToReturn = exportPath };
+        try
+        {
+            RunWithPump((pump, vm, history, status, settings) =>
+            {
+                vm.QueryText = "needle";
+                vm.SearchPath = Path.GetTempPath();
+
+                var search = vm.SearchCommand.ExecuteAsync(null);
+                pump.PumpUntil(() => search.IsCompleted, TimeSpan.FromSeconds(10));
+
+                var export = vm.ExportResultsCommand.ExecuteAsync("jsonl");
+                pump.PumpUntil(() => export.IsCompleted, TimeSpan.FromSeconds(10));
+
+                var line = Assert.Single(File.ReadAllLines(exportPath));
+                Assert.Contains("\"Location\":\"page 2, line 8\"", line);
+                Assert.Contains("\"Locator\":", line);
+                Assert.Contains("\"Snippet\":", line);
+                Assert.Contains("before context", line);
+            }, new StructuredSnippetSearcher(), savePicker);
+        }
+        finally
+        {
+            if (File.Exists(exportPath))
+                File.Delete(exportPath);
+        }
+    }
+
+    [Fact]
+    public void CopyGroundedAnswerCopiesCitationBackedMarkdown()
+    {
+        var launcher = new FakeFileLauncher();
+        RunWithPump((pump, vm, history, status, settings) =>
+        {
+            vm.QueryText = "needle";
+            vm.SearchPath = Path.GetTempPath();
+
+            var search = vm.SearchCommand.ExecuteAsync(null);
+            pump.PumpUntil(() => search.IsCompleted, TimeSpan.FromSeconds(10));
+
+            Assert.True(vm.CopyGroundedAnswerCommand.CanExecute(null));
+            vm.CopyGroundedAnswerCommand.Execute(null);
+
+            Assert.NotNull(launcher.LastClipboardText);
+            Assert.Contains("# Grounded Answer Draft", launcher.LastClipboardText, StringComparison.Ordinal);
+            Assert.Contains(@"C:\results\structured.pdf", launcher.LastClipboardText, StringComparison.Ordinal);
+            Assert.Contains("page 2, line 8", launcher.LastClipboardText, StringComparison.Ordinal);
+            Assert.Contains("before context", launcher.LastClipboardText, StringComparison.Ordinal);
+            Assert.StartsWith("Copied grounded answer draft", status.Text, StringComparison.Ordinal);
+        }, new StructuredSnippetSearcher(), fileLauncher: launcher);
     }
 
     [Fact]
@@ -1001,6 +1057,29 @@ public sealed class SearchViewModelTests
                 Score: 0.3,
                 SizeBytes: 20 * 1024,
                 ModifiedUtc: DateTime.UtcNow);
+        }
+    }
+
+    private sealed class StructuredSnippetSearcher : ISearcher
+    {
+        public async IAsyncEnumerable<Hit> SearchAsync(
+            SearchRequest request,
+            [EnumeratorCancellation] CancellationToken cancellationToken)
+        {
+            await Task.Yield();
+            var locator = new SourceLocator(Page: 2, StartLine: 8, EndLine: 8);
+            yield return new Hit(
+                @"C:\results\structured.pdf",
+                8,
+                "needle appears here",
+                Array.Empty<MatchSpan>(),
+                HitKind.Content,
+                Locator: locator,
+                Snippet: new SearchSnippet(
+                    "before context\nneedle appears here\nafter context",
+                    locator: locator,
+                    contentUnitId: 77,
+                    contentUnitIds: new long[] { 76, 77, 78 }));
         }
     }
 

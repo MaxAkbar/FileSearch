@@ -48,6 +48,12 @@ public sealed class AppSettings
 
     public int OcrMaxPdfPages { get; set; } = 50;
 
+    public string SemanticModelPackId { get; set; } = string.Empty;
+
+    public string SemanticModelPacksDirectory { get; set; } = string.Empty;
+
+    public bool EnableLocalReranker { get; set; } = true;
+
     public bool UseIndex { get; set; }
 
     public QuickSearchHotkey QuickSearchHotkey { get; set; } = QuickSearchHotkey.WinShiftF;

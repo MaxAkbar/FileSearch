@@ -40,6 +40,28 @@ public sealed class ConfigurableSearcherTests
     }
 
     [Fact]
+    public async Task SearchAsync_UsesHybridSearcherForSemanticQueries()
+    {
+        var legacy = new StubSearcher(new Hit("legacy.txt", 1, "legacy", Array.Empty<MatchSpan>()));
+        var hybrid = new StubHybridSearcher(new Hit("hybrid.txt", 1, "hybrid", Array.Empty<MatchSpan>()));
+        var searcher = new ConfigurableSearcher(legacy, hybrid);
+
+        var query = new UnifiedQuery(
+            MatchAllQuery.Instance,
+            UnifiedQueryFilters.Empty with { SemanticTerms = new[] { "authentication migration" } },
+            Array.Empty<UnifiedQueryChip>());
+        var request = new SearchRequest(query, new[] { @"C:\docs" }, new WalkerOptions());
+        var hits = new List<Hit>();
+        await foreach (var hit in searcher.SearchAsync(request, TestContext.Current.CancellationToken))
+            hits.Add(hit);
+
+        var result = Assert.Single(hits);
+        Assert.Equal("hybrid.txt", result.Path);
+        Assert.False(legacy.WasCalled);
+        Assert.True(hybrid.WasCalled);
+    }
+
+    [Fact]
     public void SearchOptions_DefaultsToLegacyEngine()
     {
         Assert.Equal(SearchEngineMode.Legacy, new SearchOptions().EngineMode);

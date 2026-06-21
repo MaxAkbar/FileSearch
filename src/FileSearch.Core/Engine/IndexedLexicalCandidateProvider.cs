@@ -6,8 +6,9 @@ public sealed class IndexedLexicalCandidateProvider : IndexedCandidateProvider
 {
     public IndexedLexicalCandidateProvider(
         IIndexSearch index,
-        IndexCoverageService coverageService)
-        : base(index, coverageService, CandidateProviderKind.Lexical, "indexed-lexical")
+        IndexCoverageService coverageService,
+        ISnippetGenerator? snippetGenerator = null)
+        : base(index, coverageService, CandidateProviderKind.Lexical, "indexed-lexical", snippetGenerator)
     {
     }
 

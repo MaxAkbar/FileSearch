@@ -6,8 +6,9 @@ public sealed class IndexedFuzzyCandidateProvider : IndexedCandidateProvider
 {
     public IndexedFuzzyCandidateProvider(
         IIndexSearch index,
-        IndexCoverageService coverageService)
-        : base(index, coverageService, CandidateProviderKind.Fuzzy, "indexed-fuzzy")
+        IndexCoverageService coverageService,
+        ISnippetGenerator? snippetGenerator = null)
+        : base(index, coverageService, CandidateProviderKind.Fuzzy, "indexed-fuzzy", snippetGenerator)
     {
     }
 

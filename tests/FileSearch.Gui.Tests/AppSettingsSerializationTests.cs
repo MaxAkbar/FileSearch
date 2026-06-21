@@ -34,6 +34,9 @@ public sealed class AppSettingsSerializationTests
             EnableImageOcr = true,
             OcrLanguageTag = "en-US",
             OcrMaxPdfPages = 100,
+            SemanticModelPackId = "bge-small-en-v1.5-onnx",
+            SemanticModelPacksDirectory = @"C:\FileSearch\Models",
+            EnableLocalReranker = false,
             QuickSearchIncludeContent = false,
             QuickSearchFolderPath = @"C:\Quick",
             Shortcuts = new AppShortcutSettings
@@ -189,6 +192,9 @@ public sealed class AppSettingsSerializationTests
         Assert.True(loaded.EnableImageOcr);
         Assert.Equal("en-US", loaded.OcrLanguageTag);
         Assert.Equal(100, loaded.OcrMaxPdfPages);
+        Assert.Equal("bge-small-en-v1.5-onnx", loaded.SemanticModelPackId);
+        Assert.Equal(@"C:\FileSearch\Models", loaded.SemanticModelPacksDirectory);
+        Assert.False(loaded.EnableLocalReranker);
         Assert.False(loaded.QuickSearchIncludeContent);
         Assert.Equal(@"C:\Quick", loaded.QuickSearchFolderPath);
         Assert.Equal(AppShortcutGesture.CtrlL, loaded.Shortcuts.FocusQuery);

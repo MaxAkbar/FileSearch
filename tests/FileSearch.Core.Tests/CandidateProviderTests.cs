@@ -135,6 +135,28 @@ public sealed class CandidateProviderTests : IDisposable
     }
 
     [Fact]
+    public async Task IndexedLexicalProvider_AttachesGeneratedSnippet()
+    {
+        var cancellationToken = TestContext.Current.CancellationToken;
+        var snippet = new SearchSnippet("before\nneedle\nafter", contentUnitId: 15, contentUnitIds: new long[] { 14, 15, 16 });
+        var index = new StubIndexSearch(
+            covered: true,
+            new Hit("indexed.txt", 3, "needle", Array.Empty<MatchSpan>(), Route: HitRoute.Indexed, ContentUnitId: 15));
+        var provider = new IndexedLexicalCandidateProvider(
+            index,
+            new IndexCoverageService(index),
+            new StubSnippetGenerator(snippet));
+
+        var candidate = Assert.Single(await CollectAsync(
+            provider,
+            CreatePlan(new TermQuery("needle"), useIndex: true),
+            cancellationToken));
+
+        Assert.Same(snippet, candidate.Snippet);
+        Assert.Equal(15, candidate.ContentUnitId);
+    }
+
+    [Fact]
     public async Task IndexedLexicalProvider_SkipsWhenCoverageIsMissing()
     {
         var cancellationToken = TestContext.Current.CancellationToken;
@@ -150,6 +172,167 @@ public sealed class CandidateProviderTests : IDisposable
 
         Assert.Empty(candidates);
         Assert.False(index.SearchWasUsed);
+    }
+
+    [Fact]
+    public async Task SemanticProvider_ReportsUnavailableWhenNoEmbedderIsConfigured()
+    {
+        var provider = new SemanticCandidateProvider(
+            new UnavailableTextEmbedder(),
+            new InMemoryVectorIndex(),
+            new StubContentUnitReader());
+
+        var availability = await provider.GetAvailabilityAsync(
+            CreateSemanticPlan(),
+            TestContext.Current.CancellationToken);
+
+        Assert.False(availability.IsAvailable);
+        Assert.Contains("No local embedding model", availability.Message, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public async Task SemanticProvider_ReturnsVectorCandidatesWhenEmbedderIsAvailable()
+    {
+        var cancellationToken = TestContext.Current.CancellationToken;
+        var model = new EmbeddingModelInfo("test-embedding", "1", 2);
+        var locator = new SourceLocator(StartLine: 8, EndLine: 8, DisplayText: "line 8");
+        var vectorIndex = new InMemoryVectorIndex();
+        await vectorIndex.UpsertAsync(
+            new[]
+            {
+                new VectorDocument(
+                    "chunk-auth",
+                    VectorDocumentKind.ContentChunk,
+                    fileId: 42,
+                    new long[] { 7 },
+                    new float[] { 1, 0 },
+                    model,
+                    ContentUnitChunker.ChunkerVersion,
+                    "checksum",
+                    locator),
+            },
+            cancellationToken);
+        var provider = new SemanticCandidateProvider(
+            new StubTextEmbedder(model, new float[] { 1, 0 }),
+            vectorIndex,
+            new StubContentUnitReader(
+                new Dictionary<long, string> { [42] = @"C:\docs\auth.md" },
+                new ContentUnit(
+                    7,
+                    42,
+                    ContentUnitKind.Text,
+                    locator,
+                    "authentication migration plan",
+                    "hash",
+                    "en",
+                    "plain",
+                    "1")));
+
+        var candidate = Assert.Single(await CollectAsync(
+            provider,
+            CreateSemanticPlan(),
+            cancellationToken));
+
+        Assert.Equal(CandidateProviderKind.Semantic, candidate.Provider);
+        Assert.Equal("semantic-vector", candidate.ProviderId);
+        Assert.Equal(@"C:\docs\auth.md", candidate.Path);
+        Assert.Equal("authentication migration plan", candidate.DisplayText);
+        Assert.Equal(8, candidate.LineNumber);
+        Assert.Equal(7, candidate.ContentUnitId);
+        Assert.Equal(locator, candidate.Locator);
+        Assert.Equal(HitRoute.Indexed, candidate.Route);
+        Assert.Single(candidate.Explanations);
+    }
+
+    [Fact]
+    public async Task SemanticProvider_SearchesChunksWithinBestFileVectorsFirst()
+    {
+        var cancellationToken = TestContext.Current.CancellationToken;
+        var model = new EmbeddingModelInfo("test-embedding", "1", 2);
+        var authLocator = new SourceLocator(StartLine: 4, EndLine: 4, DisplayText: "line 4");
+        var billingLocator = new SourceLocator(StartLine: 9, EndLine: 9, DisplayText: "line 9");
+        var vectorIndex = new InMemoryVectorIndex();
+        await vectorIndex.UpsertAsync(
+            new[]
+            {
+                new VectorDocument(
+                    "file-auth",
+                    VectorDocumentKind.File,
+                    fileId: 1,
+                    new long[] { 11 },
+                    new float[] { 1, 0 },
+                    model,
+                    ContentUnitChunker.ChunkerVersion,
+                    "file-auth-checksum"),
+                new VectorDocument(
+                    "chunk-auth",
+                    VectorDocumentKind.ContentChunk,
+                    fileId: 1,
+                    new long[] { 11 },
+                    new float[] { 0.7f, 0.3f },
+                    model,
+                    ContentUnitChunker.ChunkerVersion,
+                    "chunk-auth-checksum",
+                    authLocator),
+                new VectorDocument(
+                    "file-billing",
+                    VectorDocumentKind.File,
+                    fileId: 2,
+                    new long[] { 22 },
+                    new float[] { 0, 1 },
+                    model,
+                    ContentUnitChunker.ChunkerVersion,
+                    "file-billing-checksum"),
+                new VectorDocument(
+                    "chunk-billing",
+                    VectorDocumentKind.ContentChunk,
+                    fileId: 2,
+                    new long[] { 22 },
+                    new float[] { 1, 0 },
+                    model,
+                    ContentUnitChunker.ChunkerVersion,
+                    "chunk-billing-checksum",
+                    billingLocator),
+            },
+            cancellationToken);
+        var provider = new SemanticCandidateProvider(
+            new StubTextEmbedder(model, new float[] { 1, 0 }),
+            vectorIndex,
+            new StubContentUnitReader(
+                new Dictionary<long, string>
+                {
+                    [1] = @"C:\docs\auth.md",
+                    [2] = @"C:\docs\billing.md",
+                },
+                new ContentUnit(
+                    11,
+                    1,
+                    ContentUnitKind.Text,
+                    authLocator,
+                    "authentication migration plan",
+                    "hash-11",
+                    "en",
+                    "plain",
+                    "1"),
+                new ContentUnit(
+                    22,
+                    2,
+                    ContentUnitKind.Text,
+                    billingLocator,
+                    "billing migration plan",
+                    "hash-22",
+                    "en",
+                    "plain",
+                    "1")));
+
+        var candidate = Assert.Single(await CollectAsync(
+            provider,
+            CreateSemanticPlan(),
+            cancellationToken));
+
+        Assert.Equal(@"C:\docs\auth.md", candidate.Path);
+        Assert.Equal(11, candidate.ContentUnitId);
+        Assert.Equal("authentication migration plan", candidate.DisplayText);
     }
 
     [Fact]
@@ -269,6 +452,14 @@ public sealed class CandidateProviderTests : IDisposable
     private SearchRequest CreateRequest(Query query, bool useIndex = false) =>
         new(query, new[] { _root }, new WalkerOptions(), UseIndex: useIndex);
 
+    private SearchPlan CreateSemanticPlan() =>
+        new(
+            CreateRequest(new UnifiedQueryParser().Parse("semantic:\"authentication migration\""), useIndex: true),
+            new[]
+            {
+                new SearchProviderPlan(CandidateProviderKind.Semantic, RetrievalLayer.Smart),
+            });
+
     private static async Task<IReadOnlyList<SearchCandidate>> CollectAsync(
         ICandidateProvider provider,
         SearchPlan plan,
@@ -359,5 +550,62 @@ public sealed class CandidateProviderTests : IDisposable
             Task.FromResult(_covered
                 ? new IndexCoverage(IndexCoverageStatus.Covered, "stub covered")
                 : new IndexCoverage(IndexCoverageStatus.Missing, "stub missing"));
+    }
+
+    private sealed class StubSnippetGenerator : ISnippetGenerator
+    {
+        private readonly SearchSnippet _snippet;
+
+        public StubSnippetGenerator(SearchSnippet snippet) =>
+            _snippet = snippet;
+
+        public Task<SearchSnippet> GenerateAsync(
+            SearchRequest request,
+            Hit hit,
+            CancellationToken cancellationToken) =>
+            Task.FromResult(_snippet);
+    }
+
+    private sealed class StubTextEmbedder : ITextEmbedder
+    {
+        private readonly EmbeddingModelInfo _model;
+        private readonly float[] _vector;
+
+        public StubTextEmbedder(EmbeddingModelInfo model, float[] vector)
+        {
+            _model = model;
+            _vector = vector;
+        }
+
+        public Task<TextEmbedderAvailability> GetAvailabilityAsync(CancellationToken cancellationToken) =>
+            Task.FromResult(TextEmbedderAvailability.Available);
+
+        public Task<TextEmbedding> EmbedAsync(string text, CancellationToken cancellationToken) =>
+            Task.FromResult(new TextEmbedding(_vector, _model));
+    }
+
+    private sealed class StubContentUnitReader : IContentUnitReader
+    {
+        private readonly IReadOnlyDictionary<long, string> _paths;
+        private readonly IReadOnlyDictionary<long, ContentUnit> _units;
+
+        public StubContentUnitReader()
+            : this(new Dictionary<long, string>(), Array.Empty<ContentUnit>())
+        {
+        }
+
+        public StubContentUnitReader(
+            IReadOnlyDictionary<long, string> paths,
+            params ContentUnit[] units)
+        {
+            _paths = paths;
+            _units = units.ToDictionary(unit => unit.Id);
+        }
+
+        public Task<ContentUnit?> GetContentUnitAsync(long id, CancellationToken cancellationToken) =>
+            Task.FromResult(_units.TryGetValue(id, out var unit) ? unit : null);
+
+        public Task<string?> GetFilePathAsync(long fileId, CancellationToken cancellationToken) =>
+            Task.FromResult(_paths.TryGetValue(fileId, out var path) ? path : null);
     }
 }

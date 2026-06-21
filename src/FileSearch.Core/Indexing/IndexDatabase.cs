@@ -16,7 +16,7 @@ namespace FileSearch.Core.Indexing;
 /// </summary>
 internal sealed class IndexDatabase : IDisposable
 {
-    internal const string CurrentSchemaVersion = "15";
+    internal const string CurrentSchemaVersion = "16";
     internal const string FullTextIndexName = "fts_lines";
 
     private static readonly string[] s_fullTextColumns = { "content" };
@@ -25,7 +25,8 @@ internal sealed class IndexDatabase : IDisposable
         "SELECT drive_kind, last_checked_utc_ticks FROM index_volumes WHERE id = -1",
         "SELECT location_kind, last_full_validation_utc_ticks FROM index_roots WHERE id = -1",
         "SELECT directory_path, file_name_lower, extractor_id, extraction_attempt_count FROM files WHERE id = -1",
-        "SELECT anchor_json FROM lines WHERE id = -1",
+        "SELECT content_unit_id, anchor_json FROM lines WHERE id = -1",
+        "SELECT kind, locator_json, content_hash FROM content_units WHERE id = -1",
         "SELECT member_path, severity FROM extraction_issues WHERE id = -1",
         "SELECT kind, observed_utc_ticks FROM validation_drifts WHERE id = -1",
     };
@@ -286,7 +287,8 @@ internal sealed class IndexDatabase : IDisposable
         await db.ExecuteAsync("CREATE TABLE IF NOT EXISTS extraction_issues (id INTEGER PRIMARY KEY, file_id INTEGER, member_path TEXT, code TEXT, message TEXT, severity TEXT, created_utc_ticks INTEGER)", cancellationToken).ConfigureAwait(false);
         await db.ExecuteAsync("CREATE TABLE IF NOT EXISTS validation_drifts (id INTEGER PRIMARY KEY, root_id INTEGER, path TEXT, kind TEXT, message TEXT, observed_utc_ticks INTEGER)", cancellationToken).ConfigureAwait(false);
         await db.ExecuteAsync("CREATE TABLE IF NOT EXISTS file_metadata_tokens (id INTEGER PRIMARY KEY, root_id INTEGER, file_id INTEGER, token TEXT)", cancellationToken).ConfigureAwait(false);
-        await db.ExecuteAsync("CREATE TABLE IF NOT EXISTS lines (id INTEGER PRIMARY KEY, file_id INTEGER, line_number INTEGER, content TEXT, anchor_json TEXT)", cancellationToken).ConfigureAwait(false);
+        await db.ExecuteAsync("CREATE TABLE IF NOT EXISTS content_units (id INTEGER PRIMARY KEY, file_id INTEGER, kind TEXT, locator_json TEXT, unit_text TEXT, content_hash TEXT, language TEXT, extractor_id TEXT, extractor_version TEXT)", cancellationToken).ConfigureAwait(false);
+        await db.ExecuteAsync("CREATE TABLE IF NOT EXISTS lines (id INTEGER PRIMARY KEY, file_id INTEGER, content_unit_id INTEGER, line_number INTEGER, content TEXT, anchor_json TEXT)", cancellationToken).ConfigureAwait(false);
         await db.ExecuteAsync("CREATE TABLE IF NOT EXISTS pending_changes (id INTEGER PRIMARY KEY, root_path TEXT, path TEXT, kind INTEGER, queued_utc_ticks INTEGER)", cancellationToken).ConfigureAwait(false);
         await db.ExecuteAsync("CREATE TABLE IF NOT EXISTS index_sequences (name TEXT PRIMARY KEY, next_id INTEGER)", cancellationToken).ConfigureAwait(false);
 
@@ -307,6 +309,7 @@ internal sealed class IndexDatabase : IDisposable
         await TryExecuteAsync(db, "CREATE INDEX IF NOT EXISTS idx_files_status ON files(status)", cancellationToken).ConfigureAwait(false);
         await TryExecuteAsync(db, "CREATE INDEX IF NOT EXISTS idx_extraction_issues_file ON extraction_issues(file_id)", cancellationToken).ConfigureAwait(false);
         await TryExecuteAsync(db, "CREATE INDEX IF NOT EXISTS idx_validation_drifts_root_kind ON validation_drifts(root_id, kind)", cancellationToken).ConfigureAwait(false);
+        await TryExecuteAsync(db, "CREATE INDEX IF NOT EXISTS idx_content_units_file ON content_units(file_id)", cancellationToken).ConfigureAwait(false);
         await TryExecuteAsync(db, "CREATE INDEX IF NOT EXISTS idx_lines_file_line ON lines(file_id, line_number)", cancellationToken).ConfigureAwait(false);
         await TryExecuteAsync(db, "CREATE INDEX IF NOT EXISTS idx_pending_root_path ON pending_changes(root_path, path)", cancellationToken).ConfigureAwait(false);
 

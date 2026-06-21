@@ -30,6 +30,11 @@ public interface IBackgroundIndexerProcessService
         IndexedLocation location,
         CancellationToken cancellationToken);
 
+    Task<bool> RefreshSemanticRootAsync(
+        IndexedLocation location,
+        CancellationToken cancellationToken) =>
+        Task.FromResult(false);
+
     Task<bool> QueueRootRefreshAsync(
         IndexedLocation location,
         IndexQueuePriority priority,

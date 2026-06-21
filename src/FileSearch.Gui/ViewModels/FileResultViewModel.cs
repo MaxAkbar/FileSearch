@@ -70,6 +70,8 @@ public sealed partial class FileResultViewModel : ObservableObject
 
     public bool HasImageOcrPreview => ImageOcrPreviewViewModel.HasPreviewAnchor(_hits);
 
+    public bool HasStructuredSnippets => _hits.Any(hit => hit.Snippet is not null);
+
     [ObservableProperty] private int _hitCount;
     [ObservableProperty] private string _firstMatch = string.Empty;
     [ObservableProperty] private bool _isPinned;
@@ -97,6 +99,10 @@ public sealed partial class FileResultViewModel : ObservableObject
 
     public string BuildStoredHitPreview()
     {
+        var snippetPreview = BuildStructuredSnippetPreview();
+        if (!string.IsNullOrWhiteSpace(snippetPreview))
+            return snippetPreview;
+
         var contentHits = _hits
             .Where(hit => hit.Kind == HitKind.Content && hit.LineNumber > 0)
             .OrderBy(hit => hit.LineNumber)
@@ -124,11 +130,50 @@ public sealed partial class FileResultViewModel : ObservableObject
 
             if (!string.IsNullOrWhiteSpace(hit.Anchor?.DisplayText))
                 sb.Append("  [").Append(hit.Anchor.DisplayText).Append(']');
+            else
+            {
+                var location = SourceLocationFormatter.Format(hit.Anchor, hit.Locator);
+                if (!string.IsNullOrWhiteSpace(location))
+                    sb.Append("  [").Append(location).Append(']');
+            }
 
             sb.AppendLine();
         }
 
         return sb.ToString();
+    }
+
+    private string BuildStructuredSnippetPreview()
+    {
+        var snippetHits = _hits
+            .Where(hit => hit.Snippet is not null)
+            .OrderBy(hit => hit.Snippet?.Locator?.StartLine ?? hit.LineNumber)
+            .ThenBy(hit => hit.Snippet?.ContentUnitId ?? long.MaxValue)
+            .ToList();
+        if (snippetHits.Count == 0)
+            return string.Empty;
+
+        var sb = new StringBuilder();
+        var seen = new HashSet<long>();
+        foreach (var hit in snippetHits)
+        {
+            var snippet = hit.Snippet!;
+            if (snippet.ContentUnitId is { } contentUnitId && !seen.Add(contentUnitId))
+                continue;
+
+            var location = SourceLocationFormatter.Format(hit.Anchor, snippet.Locator ?? hit.Locator);
+            sb.Append('\u25ba').Append(' ');
+            if (!string.IsNullOrWhiteSpace(location))
+                sb.Append('[').Append(location).Append("] ");
+
+            var text = string.IsNullOrWhiteSpace(snippet.Text)
+                ? hit.LineContent
+                : snippet.Text.Trim();
+            sb.AppendLine(text);
+            sb.AppendLine();
+        }
+
+        return sb.ToString().TrimEnd();
     }
 
     public string PinActionText => IsPinned ? "Unpin result" : "Pin result";
@@ -235,6 +280,9 @@ public sealed partial class FileResultViewModel : ObservableObject
             OpenImageOcrPreviewCommand.NotifyCanExecuteChanged();
         }
 
+        if (hit.Snippet is not null)
+            OnPropertyChanged(nameof(HasStructuredSnippets));
+
         OnPropertyChanged(nameof(HasMoreHits));
         OnPropertyChanged(nameof(ExtraHitCount));
         OnPropertyChanged(nameof(MoreText));
@@ -303,7 +351,12 @@ public sealed partial class FileResultViewModel : ObservableObject
     [RelayCommand]
     private async Task OpenAsync()
     {
-        _launcher.Open(FullPath);
+        var hit = GetBestSourceHit();
+        var opened = hit is not null &&
+            await _launcher.OpenAtLocationAsync(FullPath, hit, CancellationToken.None).ConfigureAwait(true);
+        if (!opened)
+            _launcher.Open(FullPath);
+
         if (_recordOpenedAsync is null)
             return;
 
@@ -316,6 +369,19 @@ public sealed partial class FileResultViewModel : ObservableObject
             // Usage tracking should never block opening a result.
         }
     }
+
+    private Hit? GetBestSourceHit() =>
+        _hits
+            .Where(HasSourceLocation)
+            .OrderByDescending(hit => hit.Score)
+            .ThenBy(hit => hit.LineNumber <= 0 ? int.MaxValue : hit.LineNumber)
+            .FirstOrDefault();
+
+    private static bool HasSourceLocation(Hit hit) =>
+        hit.Anchor is not null ||
+        hit.Locator is not null ||
+        hit.Snippet?.Locator is not null ||
+        hit.LineNumber > 0;
 
     [RelayCommand(CanExecute = nameof(CanOpenImageOcrPreview))]
     private async Task OpenImageOcrPreviewAsync()

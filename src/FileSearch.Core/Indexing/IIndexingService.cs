@@ -35,6 +35,13 @@ public interface IIndexingService
         IndexQueuePriority priority,
         CancellationToken cancellationToken);
 
+    Task EnqueueSemanticRootRefreshAsync(
+        string root,
+        WalkerOptions options,
+        IndexQueuePriority priority,
+        CancellationToken cancellationToken) =>
+        EnqueueRootRefreshAsync(root, options, priority, cancellationToken);
+
     void SetForegroundSearchActive(bool isActive);
 
     void SetResourceProfile(IndexerResourceProfile profile);

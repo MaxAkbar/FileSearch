@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Threading;
+using FileSearch.Core.Queries;
 
 namespace FileSearch.Core.Engine;
 
@@ -22,7 +23,8 @@ public sealed class ConfigurableSearcher : ISearcher
 
     public IAsyncEnumerable<Hit> SearchAsync(SearchRequest request, CancellationToken cancellationToken)
     {
-        var selected = _options.EngineMode == SearchEngineMode.Hybrid
+        var selected = _options.EngineMode == SearchEngineMode.Hybrid ||
+            request.Expression is UnifiedQuery { HasSemantic: true }
             ? _hybridSearcher
             : _legacySearcher;
         return selected.SearchAsync(request, cancellationToken);

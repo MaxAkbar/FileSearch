@@ -4,6 +4,7 @@ using System.Collections.ObjectModel;
 using System.Linq;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
+using FileSearch.Core.Engine;
 using FileSearch.Core.Indexing;
 using FileSearch.Gui.Services;
 using FileSearch.Gui.Settings;
@@ -26,6 +27,10 @@ public sealed partial class ApplicationSettingsViewModel : ObservableObject
     private readonly IStartupRegistrationService? _startupRegistration;
     private readonly IThemeService? _themeService;
     private readonly IGlobalHotkeyService? _hotkeyService;
+    private readonly IEmbeddingModelPackCatalog? _semanticModelCatalog;
+    private readonly IEmbeddingModelPackStore? _semanticModelStore;
+    private readonly IEmbeddingModelPackInstaller? _semanticModelInstaller;
+    private readonly EmbeddingModelPackOptions? _semanticModelOptions;
     private readonly StatusBarViewModel _status;
     private readonly bool _isInitialized;
     private int _sidebarPageSize;
@@ -42,6 +47,10 @@ public sealed partial class ApplicationSettingsViewModel : ObservableObject
     private int _indexerDiskPauseMilliseconds;
     private string _ocrLanguageTag = string.Empty;
     private int _ocrMaxPdfPages;
+    private SemanticModelPackOption _semanticModelPack;
+    private string _semanticModelPacksDirectory = string.Empty;
+    private bool _enableLocalReranker;
+    private string _semanticModelInstallStatus = string.Empty;
     private CustomThemeInfo? _selectedCustomTheme;
     private bool _isUpdatingShortcuts;
 
@@ -50,12 +59,20 @@ public sealed partial class ApplicationSettingsViewModel : ObservableObject
         StatusBarViewModel status,
         IStartupRegistrationService? startupRegistration = null,
         IThemeService? themeService = null,
-        IGlobalHotkeyService? hotkeyService = null)
+        IGlobalHotkeyService? hotkeyService = null,
+        IEmbeddingModelPackCatalog? semanticModelCatalog = null,
+        IEmbeddingModelPackStore? semanticModelStore = null,
+        IEmbeddingModelPackInstaller? semanticModelInstaller = null,
+        EmbeddingModelPackOptions? semanticModelOptions = null)
     {
         _settingsService = settingsService;
         _startupRegistration = startupRegistration;
         _themeService = themeService;
         _hotkeyService = hotkeyService;
+        _semanticModelCatalog = semanticModelCatalog;
+        _semanticModelStore = semanticModelStore;
+        _semanticModelInstaller = semanticModelInstaller;
+        _semanticModelOptions = semanticModelOptions;
         _status = status;
         _sidebarPageSize = NormalizeSidebarPageSize(_settingsService.Current.SidebarPageSize);
         _indexerResourceProfile = NormalizeIndexerResourceProfile(_settingsService.Current.IndexerResourceProfile);
@@ -73,6 +90,10 @@ public sealed partial class ApplicationSettingsViewModel : ObservableObject
         _indexerDiskPauseMilliseconds = NormalizeDiskPause(_settingsService.Current.IndexerDiskPauseMilliseconds);
         _ocrLanguageTag = NormalizeOcrLanguageTag(_settingsService.Current.OcrLanguageTag);
         _ocrMaxPdfPages = NormalizeOcrMaxPdfPages(_settingsService.Current.OcrMaxPdfPages);
+        SemanticModelPackOptions = BuildSemanticModelPackOptions(_semanticModelCatalog);
+        _semanticModelPack = FindSemanticModelOption(_settingsService.Current.SemanticModelPackId);
+        _semanticModelPacksDirectory = NormalizeSemanticModelDirectory(_settingsService.Current.SemanticModelPacksDirectory);
+        _enableLocalReranker = _settingsService.Current.EnableLocalReranker;
         ApplyShortcutSettings(NormalizeShortcutSettings(_settingsService.Current.Shortcuts));
         ApplyQuickSearchShortcutSettings(NormalizeQuickSearchShortcutSettings(_settingsService.Current.QuickSearchShortcuts));
         RefreshQuickIndexedLocationSelectionsCore();
@@ -91,6 +112,8 @@ public sealed partial class ApplicationSettingsViewModel : ObservableObject
     public IReadOnlyList<int> IndexerDiskPauseOptions { get; } = [0, 5, 25, 100, 250];
 
     public IReadOnlyList<int> OcrMaxPdfPageOptions { get; } = [0, 10, 25, 50, 100, 250];
+
+    public IReadOnlyList<SemanticModelPackOption> SemanticModelPackOptions { get; }
 
     public IReadOnlyList<QuickSearchHotkeyOption> QuickSearchHotkeyOptions { get; } =
     [
@@ -327,6 +350,75 @@ public sealed partial class ApplicationSettingsViewModel : ObservableObject
             ? "Scanned PDF OCR has no page limit"
             : $"Scanned PDF OCR checks up to {OcrMaxPdfPages:n0} pages without native text";
 
+    public SemanticModelPackOption SemanticModelPack
+    {
+        get => _semanticModelPack;
+        set
+        {
+            if (value is null || !SetProperty(ref _semanticModelPack, value))
+                return;
+
+            OnPropertyChanged(nameof(SemanticModelSummary));
+            OnPropertyChanged(nameof(CanInstallSemanticModel));
+
+            if (_isInitialized)
+                SaveSettings(updateStartupRegistration: false);
+        }
+    }
+
+    public string SemanticModelPacksDirectory
+    {
+        get => _semanticModelPacksDirectory;
+        set
+        {
+            var normalized = NormalizeSemanticModelDirectory(value);
+            if (!SetProperty(ref _semanticModelPacksDirectory, normalized))
+                return;
+
+            OnPropertyChanged(nameof(SemanticModelSummary));
+
+            if (_isInitialized)
+                SaveSettings(updateStartupRegistration: false);
+        }
+    }
+
+    public string SemanticModelSummary
+    {
+        get
+        {
+            if (SemanticModelPack.IsDisabled)
+                return "Smart Search is disabled; exact, indexed content, and OCR search still work.";
+
+            if (!string.IsNullOrWhiteSpace(_semanticModelInstallStatus))
+                return _semanticModelInstallStatus;
+
+            return $"{SemanticModelPack.Description} Install size: {SemanticModelPack.InstallSizeLabel}.";
+        }
+    }
+
+    public bool CanInstallSemanticModel =>
+        !SemanticModelPack.IsDisabled && _semanticModelInstaller is not null;
+
+    public bool EnableLocalReranker
+    {
+        get => _enableLocalReranker;
+        set
+        {
+            if (!SetProperty(ref _enableLocalReranker, value))
+                return;
+
+            OnPropertyChanged(nameof(LocalRerankerSummary));
+
+            if (_isInitialized)
+                SaveSettings(updateStartupRegistration: false);
+        }
+    }
+
+    public string LocalRerankerSummary =>
+        EnableLocalReranker
+            ? "Search results get a local ranking pass after provider fusion"
+            : "Search results keep the raw fused provider order";
+
     public IndexerResourceProfile IndexerResourceProfile
     {
         get => _indexerResourceProfile;
@@ -515,6 +607,68 @@ public sealed partial class ApplicationSettingsViewModel : ObservableObject
     }
 
     [RelayCommand]
+    private async Task InstallSemanticModelAsync()
+    {
+        if (SemanticModelPack.IsDisabled || _semanticModelInstaller is null)
+        {
+            _status.Text = "Choose a Smart Search model before installing.";
+            return;
+        }
+
+        SaveSettings(updateStartupRegistration: false);
+        var progress = new Progress<EmbeddingModelInstallProgress>(item =>
+        {
+            _semanticModelInstallStatus =
+                $"Downloading {SemanticModelPack.DisplayName}: {item.CurrentFile} ({item.CompletedFiles + 1:n0}/{item.TotalFiles:n0}).";
+            OnPropertyChanged(nameof(SemanticModelSummary));
+        });
+
+        try
+        {
+            _semanticModelInstallStatus = $"Downloading {SemanticModelPack.DisplayName}.";
+            OnPropertyChanged(nameof(SemanticModelSummary));
+            var installed = await _semanticModelInstaller.InstallAsync(
+                    SemanticModelPack.Id,
+                    progress,
+                    CancellationToken.None)
+                .ConfigureAwait(true);
+            _semanticModelInstallStatus = installed.IsUsable
+                ? $"Installed {installed.Manifest.DisplayName}. {installed.Status}"
+                : $"Installed files but model is not ready: {installed.Status}";
+            _status.Text = _semanticModelInstallStatus;
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            _semanticModelInstallStatus = $"Smart Search model install failed: {ex.Message}";
+            _status.Text = _semanticModelInstallStatus;
+        }
+        finally
+        {
+            OnPropertyChanged(nameof(SemanticModelSummary));
+        }
+    }
+
+    [RelayCommand]
+    private async Task RefreshSemanticModelsAsync()
+    {
+        if (_semanticModelStore is null)
+        {
+            _semanticModelInstallStatus = "Smart Search model discovery is unavailable.";
+            OnPropertyChanged(nameof(SemanticModelSummary));
+            return;
+        }
+
+        var selected = await _semanticModelStore.GetSelectedPackAsync(CancellationToken.None).ConfigureAwait(true);
+        _semanticModelInstallStatus = selected is null
+            ? "Selected Smart Search model is not installed."
+            : selected.IsUsable
+                ? $"Installed {selected.Manifest.DisplayName}. {selected.Status}"
+                : selected.Status;
+        _status.Text = _semanticModelInstallStatus;
+        OnPropertyChanged(nameof(SemanticModelSummary));
+    }
+
+    [RelayCommand]
     private void UseBuiltInTheme()
     {
         SelectedCustomTheme = null;
@@ -547,10 +701,18 @@ public sealed partial class ApplicationSettingsViewModel : ObservableObject
             settings.IndexerDiskPauseMilliseconds = IndexerDiskPauseMilliseconds;
             settings.OcrLanguageTag = OcrLanguageTag;
             settings.OcrMaxPdfPages = OcrMaxPdfPages;
+            settings.SemanticModelPackId = SemanticModelPack.IsDisabled ? string.Empty : SemanticModelPack.Id;
+            settings.SemanticModelPacksDirectory = SemanticModelPacksDirectory;
+            settings.EnableLocalReranker = EnableLocalReranker;
             settings.Shortcuts = BuildShortcutSettings();
             settings.QuickSearchShortcuts = BuildQuickSearchShortcutSettings();
             settings.RunInBackground = null;
         });
+        if (_semanticModelOptions is not null)
+        {
+            _semanticModelOptions.SelectedModelPackId = SemanticModelPack.IsDisabled ? string.Empty : SemanticModelPack.Id;
+            _semanticModelOptions.ModelPacksDirectory = SemanticModelPacksDirectory;
+        }
 
         if (!updateStartupRegistration)
         {
@@ -599,6 +761,42 @@ public sealed partial class ApplicationSettingsViewModel : ObservableObject
 
     private static int NormalizeDiskPause(int value) =>
         Math.Clamp(value, 0, 1_000);
+
+    private static string NormalizeSemanticModelDirectory(string? value) =>
+        string.IsNullOrWhiteSpace(value)
+            ? EmbeddingModelPackOptions.GetDefaultModelPacksDirectory()
+            : value.Trim();
+
+    private static List<SemanticModelPackOption> BuildSemanticModelPackOptions(
+        IEmbeddingModelPackCatalog? catalog)
+    {
+        var options = new List<SemanticModelPackOption>
+        {
+            SemanticModelPackOption.Disabled,
+        };
+
+        foreach (var entry in catalog?.Entries ?? Array.Empty<EmbeddingModelPackCatalogEntry>())
+        {
+            options.Add(new SemanticModelPackOption(
+                entry.Id,
+                entry.DisplayName,
+                entry.Summary,
+                entry.InstallSizeLabel,
+                IsDisabled: false,
+                entry.IsRecommended));
+        }
+
+        return options;
+    }
+
+    private SemanticModelPackOption FindSemanticModelOption(string? id)
+    {
+        if (string.IsNullOrWhiteSpace(id))
+            return SemanticModelPackOptions[0];
+
+        return SemanticModelPackOptions.FirstOrDefault(option =>
+            string.Equals(option.Id, id, StringComparison.OrdinalIgnoreCase)) ?? SemanticModelPackOptions[0];
+    }
 
     private void ApplyShortcutSettings(AppShortcutSettings settings)
     {
@@ -872,6 +1070,20 @@ public sealed partial class ApplicationSettingsViewModel : ObservableObject
 
 public sealed record QuickSearchHotkeyOption(QuickSearchHotkey Value, string DisplayName)
 {
+    public override string ToString() => DisplayName;
+}
+
+public sealed record SemanticModelPackOption(
+    string Id,
+    string DisplayName,
+    string Description,
+    string InstallSizeLabel,
+    bool IsDisabled,
+    bool IsRecommended)
+{
+    public static SemanticModelPackOption Disabled { get; } =
+        new(string.Empty, "Disabled", "Semantic search is off.", string.Empty, true, false);
+
     public override string ToString() => DisplayName;
 }
 

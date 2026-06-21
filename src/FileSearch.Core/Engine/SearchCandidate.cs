@@ -22,6 +22,8 @@ public sealed record SearchCandidate
         DateTime? modifiedUtc = null,
         HitRoute? route = null,
         SourceAnchor? anchor = null,
+        SourceLocator? locator = null,
+        SearchSnippet? snippet = null,
         IReadOnlyList<SearchResultExplanation>? explanations = null)
     {
         Provider = provider;
@@ -38,6 +40,8 @@ public sealed record SearchCandidate
         ModifiedUtc = modifiedUtc;
         Route = route;
         Anchor = anchor;
+        Locator = locator;
+        Snippet = snippet;
         Explanations = explanations ?? Array.Empty<SearchResultExplanation>();
     }
 
@@ -69,6 +73,10 @@ public sealed record SearchCandidate
 
     public SourceAnchor? Anchor { get; init; }
 
+    public SourceLocator? Locator { get; init; }
+
+    public SearchSnippet? Snippet { get; init; }
+
     public IReadOnlyList<SearchResultExplanation> Explanations { get; init; }
 
     public static SearchCandidate FromHit(
@@ -88,10 +96,13 @@ public sealed record SearchCandidate
             hit.Kind,
             hit.LineNumber > 0 ? hit.LineNumber : null,
             hit.Highlights,
+            contentUnitId: hit.ContentUnitId,
             sizeBytes: hit.SizeBytes,
             modifiedUtc: hit.ModifiedUtc,
             route: hit.Route,
             anchor: hit.Anchor,
+            locator: hit.Locator,
+            snippet: hit.Snippet,
             explanations: explanations);
     }
 }

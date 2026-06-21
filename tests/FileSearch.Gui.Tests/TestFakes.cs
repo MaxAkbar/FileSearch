@@ -27,11 +27,26 @@ internal sealed class FakeFileLauncher : IFileLauncher
 {
     public string? LastOpenedPath { get; private set; }
 
+    public string? LastOpenedAtPath { get; private set; }
+
+    public Hit? LastOpenedAtHit { get; private set; }
+
+    public bool OpenAtLocationResult { get; set; }
+
     public ImageOcrPreviewViewModel? LastImageOcrPreview { get; private set; }
+
+    public string? LastClipboardText { get; private set; }
 
     public void Open(string path)
     {
         LastOpenedPath = path;
+    }
+
+    public Task<bool> OpenAtLocationAsync(string path, Hit hit, CancellationToken cancellationToken)
+    {
+        LastOpenedAtPath = path;
+        LastOpenedAtHit = hit;
+        return Task.FromResult(OpenAtLocationResult);
     }
 
     public void OpenImageOcrPreview(ImageOcrPreviewViewModel preview)
@@ -45,6 +60,7 @@ internal sealed class FakeFileLauncher : IFileLauncher
 
     public void CopyToClipboard(string text)
     {
+        LastClipboardText = text;
     }
 }
 
@@ -228,6 +244,8 @@ internal sealed class FakeBackgroundIndexerProcessService : IBackgroundIndexerPr
 
     public int RefreshCallCount { get; private set; }
 
+    public int RefreshSemanticRootCallCount { get; private set; }
+
     public int PauseCallCount { get; private set; }
 
     public int ResumeCallCount { get; private set; }
@@ -249,6 +267,8 @@ internal sealed class FakeBackgroundIndexerProcessService : IBackgroundIndexerPr
     public List<string> RemovedRoots { get; } = new();
 
     public List<IndexedLocation> RefreshedLocations { get; } = new();
+
+    public List<IndexedLocation> SemanticRefreshedLocations { get; } = new();
 
     public List<IndexedLocation> QueuedRefreshLocations { get; } = new();
 
@@ -318,6 +338,13 @@ internal sealed class FakeBackgroundIndexerProcessService : IBackgroundIndexerPr
         return Task.FromResult(CommandResult);
     }
 
+    public Task<bool> RefreshSemanticRootAsync(IndexedLocation location, CancellationToken cancellationToken)
+    {
+        RefreshSemanticRootCallCount++;
+        SemanticRefreshedLocations.Add(location);
+        return Task.FromResult(CommandResult);
+    }
+
     public Task<bool> QueueRootRefreshAsync(
         IndexedLocation location,
         IndexQueuePriority priority,
@@ -374,6 +401,8 @@ internal sealed class FakeIndexingService : IIndexingService
 
     public int EnqueuedRootRefreshCount { get; private set; }
 
+    public int EnqueuedSemanticRootRefreshCount { get; private set; }
+
     public TaskCompletionSource? RemoveLocationCompletion { get; set; }
 
     public List<string> RemovedLocations { get; } = new();
@@ -399,6 +428,12 @@ internal sealed class FakeIndexingService : IIndexingService
     public Task EnqueueRootRefreshAsync(string root, WalkerOptions options, IndexQueuePriority priority, CancellationToken cancellationToken)
     {
         EnqueuedRootRefreshCount++;
+        return Task.CompletedTask;
+    }
+
+    public Task EnqueueSemanticRootRefreshAsync(string root, WalkerOptions options, IndexQueuePriority priority, CancellationToken cancellationToken)
+    {
+        EnqueuedSemanticRootRefreshCount++;
         return Task.CompletedTask;
     }
 

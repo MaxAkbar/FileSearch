@@ -106,7 +106,7 @@ public sealed class UnifiedQueryParserTests
     }
 
     [Fact]
-    public void Parse_SemanticField_CreatesDisabledSemanticChip()
+    public void Parse_SemanticField_CreatesSemanticChip()
     {
         var query = _parser.Parse("semantic:\"authentication migration\"");
 
@@ -116,8 +116,8 @@ public sealed class UnifiedQueryParserTests
         var chip = Assert.Single(query.Chips);
         Assert.Equal("Semantic", chip.Field);
         Assert.Equal("authentication migration", chip.Value);
-        Assert.False(chip.IsEnabled);
-        Assert.Equal(UnifiedQuery.SemanticUnavailableMessage, chip.Explanation);
+        Assert.True(chip.IsEnabled);
+        Assert.Null(chip.Explanation);
     }
 
     [Fact]

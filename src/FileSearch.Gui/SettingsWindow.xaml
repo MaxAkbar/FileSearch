@@ -309,6 +309,100 @@
                             Background="{DynamicResource Atlas.LineBrush}"
                             Margin="0,18"/>
 
+                    <TextBlock Text="SMART SEARCH" Style="{StaticResource SectionHeaderStyle}"/>
+                    <Grid Margin="0,8,0,0">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="*"/>
+                            <ColumnDefinition Width="Auto"/>
+                        </Grid.ColumnDefinitions>
+
+                        <StackPanel Grid.Column="0" Margin="0,0,20,0">
+                            <TextBlock Text="Local embedding model"
+                                       Style="{StaticResource FieldLabelStyle}"/>
+                            <TextBlock Text="{Binding SemanticModelSummary}"
+                                       Style="{StaticResource MutedValueStyle}"
+                                       TextWrapping="Wrap"
+                                       Margin="0,4,0,0"/>
+                        </StackPanel>
+
+                        <ComboBox Grid.Column="1"
+                                  ItemsSource="{Binding SemanticModelPackOptions}"
+                                  SelectedItem="{Binding SemanticModelPack, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
+                                  DisplayMemberPath="DisplayName"
+                                  MinWidth="230"
+                                  VerticalAlignment="Center"/>
+                    </Grid>
+
+                    <Grid Margin="0,14,0,0">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="*"/>
+                            <ColumnDefinition Width="Auto"/>
+                        </Grid.ColumnDefinitions>
+
+                        <StackPanel Grid.Column="0" Margin="0,0,20,0">
+                            <TextBlock Text="Model folder"
+                                       Style="{StaticResource FieldLabelStyle}"/>
+                            <TextBlock Text="{Binding SemanticModelPacksDirectory}"
+                                       Style="{StaticResource ResultPathStyle}"
+                                       TextWrapping="Wrap"
+                                       Margin="0,4,0,0"/>
+                        </StackPanel>
+
+                        <TextBox Grid.Column="1"
+                                 Text="{Binding SemanticModelPacksDirectory, Mode=TwoWay, UpdateSourceTrigger=LostFocus}"
+                                 MinWidth="230"
+                                 VerticalAlignment="Center"/>
+                    </Grid>
+
+                    <Grid Margin="0,14,0,0">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="*"/>
+                            <ColumnDefinition Width="Auto"/>
+                        </Grid.ColumnDefinitions>
+
+                        <StackPanel Grid.Column="0" Margin="0,0,20,0">
+                            <TextBlock Text="Local reranker"
+                                       Style="{StaticResource FieldLabelStyle}"/>
+                            <TextBlock Text="{Binding LocalRerankerSummary}"
+                                       Style="{StaticResource MutedValueStyle}"
+                                       TextWrapping="Wrap"
+                                       Margin="0,4,0,0"/>
+                        </StackPanel>
+
+                        <CheckBox Grid.Column="1"
+                                  IsChecked="{Binding EnableLocalReranker, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
+                                  VerticalAlignment="Center"/>
+                    </Grid>
+
+                    <StackPanel Orientation="Horizontal"
+                                HorizontalAlignment="Left"
+                                Margin="0,14,0,0">
+                        <Button Command="{Binding InstallSemanticModelCommand}"
+                                IsEnabled="{Binding CanInstallSemanticModel}"
+                                Style="{StaticResource SecondaryButtonStyle}"
+                                Height="34"
+                                MinWidth="120"
+                                Margin="0,0,8,0">
+                            <StackPanel Orientation="Horizontal">
+                                <ui:FontIcon Glyph="&#xE896;" FontSize="12" Margin="0,0,7,0"/>
+                                <TextBlock Text="Install model"/>
+                            </StackPanel>
+                        </Button>
+                        <Button Command="{Binding RefreshSemanticModelsCommand}"
+                                Style="{StaticResource SecondaryButtonStyle}"
+                                Height="34"
+                                MinWidth="96">
+                            <StackPanel Orientation="Horizontal">
+                                <ui:FontIcon Glyph="&#xE72C;" FontSize="12" Margin="0,0,7,0"/>
+                                <TextBlock Text="Refresh"/>
+                            </StackPanel>
+                        </Button>
+                    </StackPanel>
+
+                    <Border Height="1"
+                            Background="{DynamicResource Atlas.LineBrush}"
+                            Margin="0,18"/>
+
                     <TextBlock Text="MAIN WINDOW SHORTCUTS" Style="{StaticResource SectionHeaderStyle}"/>
                     <ItemsControl ItemsSource="{Binding ShortcutBindings}"
                                   Margin="0,8,0,0">

@@ -42,6 +42,9 @@ public sealed class BackgroundIndexerProcessServiceTests
         await service.ValidateRootAsync(
             new IndexedLocation(Path.GetTempPath(), new WalkerOptions(), WatchEnabled: false),
             TestContext.Current.CancellationToken);
+        await service.RefreshSemanticRootAsync(
+            new IndexedLocation(Path.GetTempPath(), new WalkerOptions(), WatchEnabled: false),
+            TestContext.Current.CancellationToken);
 
         Assert.Contains(calls, call =>
             call.Command == BackgroundIndexerCommand.CompactDatabase &&
@@ -49,6 +52,9 @@ public sealed class BackgroundIndexerProcessServiceTests
         Assert.Contains(calls, call =>
             call.Command == BackgroundIndexerCommand.ValidateRoot &&
             call.Timeout == TimeSpan.FromSeconds(90));
+        Assert.Contains(calls, call =>
+            call.Command == BackgroundIndexerCommand.RefreshSemanticRoot &&
+            call.Timeout == TimeSpan.FromSeconds(10));
     }
 
     [Fact]

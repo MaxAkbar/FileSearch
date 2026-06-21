@@ -6,8 +6,8 @@ using System.Windows.Controls;
 using System.Windows.Documents;
 using System.Windows.Media;
 using FileSearch.Core.Engine;
-using FileSearch.Core.Extractors;
 using FileSearch.Core.Queries;
+using FileSearch.Gui.ViewModels;
 using Application = System.Windows.Application;
 using Brush = System.Windows.Media.Brush;
 using Color = System.Windows.Media.Color;
@@ -47,19 +47,17 @@ public static class HitHighlight
         foreach (var run in BuildRuns(hit.LineContent, hit.Highlights))
             textBlock.Inlines.Add(run);
 
-        if (hit.Anchor is not null)
-            AddAnchorRun(textBlock, hit.Anchor);
+        var location = SourceLocationFormatter.Format(hit.Anchor, hit.Locator);
+        if (!string.IsNullOrWhiteSpace(location))
+            AddLocationRun(textBlock, location);
     }
 
-    private static void AddAnchorRun(TextBlock textBlock, SourceAnchor anchor)
+    private static void AddLocationRun(TextBlock textBlock, string location)
     {
-        if (string.IsNullOrWhiteSpace(anchor.DisplayText))
-            return;
-
         var anchorBrush =
             Application.Current?.TryFindResource("Atlas.Ink3Brush") as Brush
             ?? new SolidColorBrush(Color.FromRgb(0x88, 0x88, 0x88));
-        textBlock.Inlines.Add(new Run("  " + anchor.DisplayText)
+        textBlock.Inlines.Add(new Run("  " + location)
         {
             Foreground = anchorBrush,
             FontSize = Math.Max(10, textBlock.FontSize - 1),
