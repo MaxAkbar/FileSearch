@@ -185,14 +185,14 @@ public sealed class LocalHeuristicReranker : IReranker
 
             case AndQuery and:
                 foreach (var child in and.Children)
-                foreach (var term in ExtractTerms(child))
-                    yield return term;
+                    foreach (var term in ExtractTerms(child))
+                        yield return term;
                 break;
 
             case OrQuery or:
                 foreach (var child in or.Children)
-                foreach (var term in ExtractTerms(child))
-                    yield return term;
+                    foreach (var term in ExtractTerms(child))
+                        yield return term;
                 break;
         }
     }

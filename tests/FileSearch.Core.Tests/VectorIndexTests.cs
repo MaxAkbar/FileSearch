@@ -1,5 +1,5 @@
-using FileSearch.Core.Engine;
 using System.Text.Json;
+using FileSearch.Core.Engine;
 using Xunit;
 
 namespace FileSearch.Core.Tests;
