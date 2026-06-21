@@ -12,3 +12,7 @@ public interface ISearcher
 {
     IAsyncEnumerable<Hit> SearchAsync(SearchRequest request, CancellationToken cancellationToken);
 }
+
+public interface IHybridSearcher : ISearcher
+{
+}

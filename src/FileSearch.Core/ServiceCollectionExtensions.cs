@@ -25,6 +25,7 @@ public static class ServiceCollectionExtensions
         services.TryAddSingleton<IFileWalker, FileWalker>();
         services.TryAddSingleton<IQueryParser>(_ => new QueryParser());
         services.TryAddSingleton<IQueryFactory, QueryFactory>();
+        services.TryAddSingleton<IQueryPlanner, QueryPlanner>();
         services.TryAddSingleton<IEmbeddedImageOcrService, NullEmbeddedImageOcrService>();
 
         services.AddSingleton<ITextExtractor, PlainTextExtractor>();
@@ -94,11 +95,28 @@ public static class ServiceCollectionExtensions
             sp.GetService<SearchOptions>(),
             sp.GetService<ILogger<Searcher>>()));
 
-        services.TryAddSingleton<ISearcher>(sp => new IndexedSearcher(
+        services.TryAddEnumerable(ServiceDescriptor.Singleton<ICandidateProvider, MetadataCandidateProvider>());
+        services.TryAddEnumerable(ServiceDescriptor.Singleton<ICandidateProvider, LexicalCandidateProvider>());
+        services.TryAddEnumerable(ServiceDescriptor.Singleton<ICandidateProvider, RegexCandidateProvider>());
+        services.TryAddEnumerable(ServiceDescriptor.Singleton<ICandidateProvider, FuzzyCandidateProvider>());
+        services.TryAddEnumerable(ServiceDescriptor.Singleton<ICandidateProvider, IndexedMetadataCandidateProvider>());
+        services.TryAddEnumerable(ServiceDescriptor.Singleton<ICandidateProvider, IndexedLexicalCandidateProvider>());
+        services.TryAddEnumerable(ServiceDescriptor.Singleton<ICandidateProvider, IndexedRegexCandidateProvider>());
+        services.TryAddEnumerable(ServiceDescriptor.Singleton<ICandidateProvider, IndexedFuzzyCandidateProvider>());
+        services.TryAddSingleton<IResultFusion, WeightedResultFusion>();
+        services.TryAddSingleton<IReranker, PassthroughReranker>();
+        services.TryAddSingleton<IHybridRetrievalPipeline, HybridRetrievalPipeline>();
+        services.TryAddSingleton<IHybridSearcher, HybridSearcher>();
+
+        services.TryAddSingleton(sp => new IndexedSearcher(
             sp.GetRequiredService<Searcher>(),
             sp.GetRequiredService<IFileIndex>(),
             sp.GetRequiredService<IndexCoverageService>(),
             sp.GetService<IIndexingSearchCoordinator>()));
+        services.TryAddSingleton<ISearcher>(sp => new ConfigurableSearcher(
+            sp.GetRequiredService<IndexedSearcher>(),
+            sp.GetRequiredService<IHybridSearcher>(),
+            sp.GetService<SearchOptions>()));
 
         services.TryAddSingleton<IWorkflowStore>(_ => new JsonWorkflowStore());
         services.TryAddSingleton<IWorkflowRunner>(sp => new WorkflowRunner(
