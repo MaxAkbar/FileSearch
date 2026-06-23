@@ -20,6 +20,7 @@ namespace FileSearch.Gui.ViewModels;
 public sealed partial class HistoryViewModel : ObservableObject
 {
     private const int MaxHistoryEntries = 15;
+    private static readonly char[] s_scopePatternSeparators = [';', ','];
 
     private readonly ISettingsService _settingsService;
     private readonly ApplicationSettingsViewModel _applicationSettings;
@@ -27,6 +28,7 @@ public sealed partial class HistoryViewModel : ObservableObject
     private readonly IFileOpenPicker? _fileOpenPicker;
     private readonly IFileSavePicker? _fileSavePicker;
     private readonly ObservableCollection<SidebarScopeItem> _scopeItems = new();
+    private string _activeScopePattern = string.Empty;
 
     public HistoryViewModel(
         ISettingsService settingsService,
@@ -129,6 +131,17 @@ public sealed partial class HistoryViewModel : ObservableObject
     public ObservableCollection<FavoriteResultSettings> FavoriteResults { get; } = new();
 
     public ObservableCollection<WorkspaceSettings> Workspaces { get; } = new();
+
+    public void UpdateActiveScope(string? fileNamePattern)
+    {
+        var normalized = NormalizeScopePattern(fileNamePattern);
+        _activeScopePattern = normalized;
+        foreach (var scope in _scopeItems)
+            scope.IsActive = string.Equals(
+                NormalizeScopePattern(scope.FileNamePattern),
+                normalized,
+                StringComparison.OrdinalIgnoreCase);
+    }
 
     /// <summary>Promotes the attempt into saved searches, both legacy lists, and persists.</summary>
     public void RecordSearch(SavedSearchSettings search)
@@ -694,7 +707,16 @@ public sealed partial class HistoryViewModel : ObservableObject
                 CustomScope = scope,
             });
         }
+
+        UpdateActiveScope(_activeScopePattern);
     }
+
+    private static string NormalizeScopePattern(string? pattern) =>
+        string.Join(
+            ";",
+            (pattern ?? string.Empty)
+                .Split(s_scopePatternSeparators, StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+                .Where(value => !string.IsNullOrWhiteSpace(value)));
 
     private static bool MatchesScope(SidebarScopeItem item, string needle) =>
         Contains(item.Name, needle) || Contains(item.FileNamePattern, needle);

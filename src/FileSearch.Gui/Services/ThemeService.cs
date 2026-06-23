@@ -20,6 +20,7 @@ public sealed class ThemeService : IThemeService
     private static readonly Uri s_visualStudioTheme = new("Themes/VisualStudio.xaml", UriKind.Relative);
 
     private readonly ISettingsService _settingsService;
+    private readonly IStyleService _styleService;
 
     /// <summary>Currently-merged built-in overlay dictionary; tracked so we can swap it.</summary>
     private ResourceDictionary? _activeBaseOverlay;
@@ -30,9 +31,11 @@ public sealed class ThemeService : IThemeService
     /// <summary>True while we're subscribed to OS theme changes (System mode).</summary>
     private bool _listeningToOs;
 
-    public ThemeService(ISettingsService settingsService)
+    public ThemeService(ISettingsService settingsService, IStyleService styleService)
     {
         _settingsService = settingsService;
+        _styleService = styleService;
+        _styleService.EffectiveApplicationThemeChanged += OnEffectiveApplicationThemeChanged;
         CustomThemeFolderPath = Path.Combine(
             Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData),
             "FileSearch",
@@ -66,7 +69,7 @@ public sealed class ThemeService : IThemeService
 
         // Pick the underlying ModernWpf base. Atlas is Light; Dark/VS are Dark;
         // System defers to the OS.
-        ThemeManager.Current.ApplicationTheme = ResolveApplicationTheme(theme);
+        ApplyApplicationTheme(theme);
 
         SetOverlays(ResolveOverlay(theme), customOverlay: null);
 
@@ -113,7 +116,7 @@ public sealed class ThemeService : IThemeService
 
         CurrentTheme = definition.BaseTheme;
         CurrentCustomThemeFileName = safeFileName;
-        ThemeManager.Current.ApplicationTheme = ResolveApplicationTheme(definition.BaseTheme);
+        ApplyApplicationTheme(definition.BaseTheme);
         SetOverlays(ResolveOverlay(definition.BaseTheme), overlay);
         SetOsListening(definition.BaseTheme == AppTheme.System);
 
@@ -124,6 +127,16 @@ public sealed class ThemeService : IThemeService
         });
 
         return true;
+    }
+
+    private void OnEffectiveApplicationThemeChanged(object? sender, EventArgs e) =>
+        ApplyApplicationTheme(CurrentTheme);
+
+    private void ApplyApplicationTheme(AppTheme theme)
+    {
+        ThemeManager.Current.ApplicationTheme = _styleService.RequiresDarkApplicationTheme
+            ? ApplicationTheme.Dark
+            : ResolveApplicationTheme(theme);
     }
 
     private static ApplicationTheme? ResolveApplicationTheme(AppTheme theme) => theme switch
@@ -193,6 +206,9 @@ public sealed class ThemeService : IThemeService
             _activeCustomOverlay = customOverlay;
             resources.Add(_activeCustomOverlay);
         }
+
+        _styleService.RefreshOverlay();
+        ApplyApplicationTheme(CurrentTheme);
     }
 
     private CustomThemeInfo? TryLoadInfo(string path)

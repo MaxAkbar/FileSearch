@@ -510,6 +510,29 @@ public sealed class SearchViewModelTests
     }
 
     [Fact]
+    public void ScopePresetSelectionUpdatesActiveSidebarScope()
+    {
+        RunWithPump((pump, vm, history, status, settings) =>
+        {
+            var allFiles = history.ScopeList.Items.Single(item => item.Name == "All files");
+            var source = history.ScopeList.Items.Single(item => item.Name == "Source and config");
+
+            Assert.True(allFiles.IsActive);
+            Assert.False(source.IsActive);
+
+            vm.ApplyFilePatternPresetCommand.Execute(source.FileNamePattern);
+
+            Assert.False(allFiles.IsActive);
+            Assert.True(source.IsActive);
+
+            vm.ApplyFilePatternPresetCommand.Execute(string.Empty);
+
+            Assert.True(allFiles.IsActive);
+            Assert.False(source.IsActive);
+        });
+    }
+
+    [Fact]
     public void ResultSortAndFacetsFilterCurrentResults()
     {
         RunWithPump((pump, vm, history, status, settings) =>
@@ -532,6 +555,19 @@ public sealed class SearchViewModelTests
             var result = Assert.Single(visible);
             Assert.Equal(@"C:\results\b.md", result.FullPath);
             Assert.Equal(1, vm.FilesVisible);
+
+            var chip = Assert.Single(vm.ActiveResultFacetChips);
+            Assert.True(vm.HasActiveResultFacets);
+            Assert.Equal("type", chip.Key);
+            Assert.Equal("Type", chip.Field);
+            Assert.Equal(".md", chip.Value);
+
+            vm.ClearResultFacetCommand.Execute(chip.Key);
+
+            Assert.False(vm.HasActiveResultFacets);
+            Assert.Empty(vm.ActiveResultFacetChips);
+            Assert.Equal(ResultFacetOption.AllValue, vm.SelectedFileTypeFacet?.Value);
+            Assert.Equal(2, vm.FilesVisible);
         }, new ResultManagementSearcher());
     }
 

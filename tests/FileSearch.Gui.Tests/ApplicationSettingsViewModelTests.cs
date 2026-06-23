@@ -265,4 +265,23 @@ public sealed class ApplicationSettingsViewModelTests
         Assert.Equal(AppStyle.Comfortable, styleService.CurrentStyle);
         Assert.Equal(AppStyle.Comfortable, settings.Current.Style);
     }
+
+    [Fact]
+    public void VelaStyleSelectionLoadsWithSummary()
+    {
+        var settings = new FakeSettingsService();
+        settings.Current.Style = AppStyle.Vela;
+        var appSettings = new ApplicationSettingsViewModel(
+            settings,
+            new StatusBarViewModel(),
+            styleService: new FakeStyleService());
+
+        Assert.Contains(appSettings.StyleOptions, option =>
+            option.Value == AppStyle.Vela &&
+            option.DisplayName == "Vela");
+        Assert.Equal(AppStyle.Vela, appSettings.SelectedStyle.Value);
+        Assert.Equal(
+            "Vela uses the compact concept palette, tighter cards, and denser panels.",
+            appSettings.StyleSummary);
+    }
 }

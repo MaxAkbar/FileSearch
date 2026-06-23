@@ -73,6 +73,13 @@ public sealed class ResultFacetOption
     public string DisplayText => Count >= 0 ? $"{Label} ({Count:n0})" : Label;
 }
 
+public sealed record ResultFacetChip(
+    string Key,
+    string Field,
+    string Value,
+    string ToolTip,
+    string ClearToolTip);
+
 public sealed record SearchResultsExportDocument(
     string Query,
     string SearchPath,

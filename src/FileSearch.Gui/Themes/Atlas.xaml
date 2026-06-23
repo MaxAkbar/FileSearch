@@ -27,6 +27,27 @@
     <SolidColorBrush x:Key="SystemControlBackgroundListMediumBrush" Color="#11000000"/>
 
     <!-- Accent (green) -->
+    <Color x:Key="Atlas.AccentColor">#2F7D57</Color>
+    <Color x:Key="Atlas.Accent2Color">#37926A</Color>
+    <SolidColorBrush x:Key="AppStyle.OmniBarBackground" Color="#FFFDF8"/>
+    <SolidColorBrush x:Key="AppStyle.FilterChipBackground" Color="#FFFDF8"/>
+    <SolidColorBrush x:Key="AppStyle.ThemeMiniButtonSelectedBackground" Color="#1A2F7D57"/>
+    <SolidColorBrush x:Key="AppStyle.ThemeMiniButtonSelectedBorderBrush" Color="#2F7D57"/>
+    <SolidColorBrush x:Key="AppStyle.ThemeMiniButtonSelectedForeground" Color="#2F7D57"/>
+    <SolidColorBrush x:Key="AppStyle.QueryChipBackground" Color="#FAF7F0"/>
+    <SolidColorBrush x:Key="AppStyle.NavSectionBackground" Color="#FFFDF8"/>
+    <SolidColorBrush x:Key="AppStyle.NavSectionHeaderBackground" Color="#FAF7F0"/>
+    <SolidColorBrush x:Key="AppStyle.NavSectionHeaderBorderBrush" Color="#17000000"/>
+    <SolidColorBrush x:Key="AppStyle.PreviewImageBackground" Color="#FAF7F0"/>
+    <CornerRadius x:Key="AppStyle.CommandButtonCornerRadius">9</CornerRadius>
+    <SolidColorBrush x:Key="AppStyle.SecondaryButtonBackground" Color="#FFFDF8"/>
+    <SolidColorBrush x:Key="AppStyle.SecondaryButtonBorderBrush" Color="#29000000"/>
+    <SolidColorBrush x:Key="AppStyle.SecondaryButtonHoverBackground" Color="#FAF7F0"/>
+    <SolidColorBrush x:Key="AppStyle.SecondaryButtonHoverBorderBrush" Color="#2F7D57"/>
+    <SolidColorBrush x:Key="AppStyle.SecondaryButtonHoverForeground" Color="#23261F"/>
+    <SolidColorBrush x:Key="AppStyle.IconButtonHoverBackground" Color="#0A23261F"/>
+    <SolidColorBrush x:Key="AppStyle.IconButtonHoverForeground" Color="#23261F"/>
+    <SolidColorBrush x:Key="AppStyle.PreviewCodeBackground" Color="#FFFDF8"/>
     <SolidColorBrush x:Key="SystemControlBackgroundAccentBrush"       Color="#2F7D57"/>
     <SolidColorBrush x:Key="SystemControlHighlightAccentBrush"        Color="#2F7D57"/>
     <SolidColorBrush x:Key="SystemControlHighlightAltAccentBrush"     Color="#37926A"/>

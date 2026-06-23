@@ -2,6 +2,7 @@ using System;
 using System.Collections;
 using System.Collections.ObjectModel;
 using System.Collections.Specialized;
+using System.Globalization;
 using System.Linq;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
@@ -81,6 +82,10 @@ public sealed class PagedSidebarList<T> : ObservableObject
 
     public bool IsFooterVisible => IsPagerVisible || HasSearchText || _filteredItemCount == 0;
 
+    public int Count => _filteredItemCount;
+
+    public string CountText => _filteredItemCount.ToString("n0", CultureInfo.CurrentCulture);
+
     public string PageSummaryText
     {
         get
@@ -144,6 +149,8 @@ public sealed class PagedSidebarList<T> : ObservableObject
         OnPropertyChanged(nameof(HasItems));
         OnPropertyChanged(nameof(IsPagerVisible));
         OnPropertyChanged(nameof(IsFooterVisible));
+        OnPropertyChanged(nameof(Count));
+        OnPropertyChanged(nameof(CountText));
         OnPropertyChanged(nameof(PageSummaryText));
         PreviousPageCommand.NotifyCanExecuteChanged();
         NextPageCommand.NotifyCanExecuteChanged();

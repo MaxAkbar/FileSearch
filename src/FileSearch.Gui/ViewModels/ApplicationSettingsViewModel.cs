@@ -139,6 +139,7 @@ public sealed partial class ApplicationSettingsViewModel : ObservableObject
     [
         new(AppStyle.Comfortable, "Comfortable", "Uses roomier controls and spacing."),
         new(AppStyle.Compact, "Compact", "Fits more controls and results on screen."),
+        new(AppStyle.Vela, "Vela", "Uses the compact concept palette and denser shell."),
     ];
 
     public ObservableCollection<AppShortcutBindingViewModel> ShortcutBindings { get; } = new();
@@ -247,6 +248,7 @@ public sealed partial class ApplicationSettingsViewModel : ObservableObject
     public string StyleSummary => SelectedStyle.Value switch
     {
         AppStyle.Compact => "Compact uses tighter controls, lists, and panels.",
+        AppStyle.Vela => "Vela uses the compact concept palette, tighter cards, and denser panels.",
         _ => "Comfortable uses the default roomier spacing.",
     };
 

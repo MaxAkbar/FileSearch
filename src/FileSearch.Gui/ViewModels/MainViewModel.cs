@@ -1,4 +1,5 @@
 using System;
+using System.ComponentModel;
 using System.Threading.Tasks;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
@@ -38,6 +39,7 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
         _themeService = themeService;
         _styleService = styleService;
         _shellIntegrationService = shellIntegrationService;
+        Settings.PropertyChanged += OnSettingsPropertyChanged;
     }
 
     public SearchViewModel Search { get; }
@@ -52,11 +54,28 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
 
     public WorkflowsViewModel Workflows { get; }
 
+    public bool IsLightThemeSelected => _themeService.CurrentTheme == AppTheme.Light;
+
+    public bool IsDarkThemeSelected => _themeService.CurrentTheme == AppTheme.Dark;
+
+    public bool IsVisualStudioThemeSelected => _themeService.CurrentTheme == AppTheme.VisualStudio;
+
+    public bool IsSystemThemeSelected => _themeService.CurrentTheme == AppTheme.System;
+
+    public bool IsComfortableStyleSelected => Settings.SelectedStyle.Value == AppStyle.Comfortable;
+
+    public bool IsCompactStyleSelected => Settings.SelectedStyle.Value == AppStyle.Compact;
+
+    public bool IsVelaStyleSelected => Settings.SelectedStyle.Value == AppStyle.Vela;
+
     [RelayCommand]
     private void ApplyTheme(string themeName)
     {
         if (Enum.TryParse<AppTheme>(themeName, out var theme))
+        {
             _themeService.SetTheme(theme);
+            NotifyThemeSelectionChanged();
+        }
     }
 
     [RelayCommand]
@@ -74,6 +93,7 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
             }
 
             _styleService.SetStyle(style);
+            NotifyStyleSelectionChanged();
         }
     }
 
@@ -122,8 +142,30 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
 
     public Task StopBackgroundIndexingAsync() => Index.StopBackgroundIndexingAsync();
 
+    private void OnSettingsPropertyChanged(object? sender, PropertyChangedEventArgs e)
+    {
+        if (e.PropertyName == nameof(ApplicationSettingsViewModel.SelectedStyle))
+            NotifyStyleSelectionChanged();
+    }
+
+    private void NotifyThemeSelectionChanged()
+    {
+        OnPropertyChanged(nameof(IsLightThemeSelected));
+        OnPropertyChanged(nameof(IsDarkThemeSelected));
+        OnPropertyChanged(nameof(IsVisualStudioThemeSelected));
+        OnPropertyChanged(nameof(IsSystemThemeSelected));
+    }
+
+    private void NotifyStyleSelectionChanged()
+    {
+        OnPropertyChanged(nameof(IsComfortableStyleSelected));
+        OnPropertyChanged(nameof(IsCompactStyleSelected));
+        OnPropertyChanged(nameof(IsVelaStyleSelected));
+    }
+
     public void Dispose()
     {
+        Settings.PropertyChanged -= OnSettingsPropertyChanged;
         Search.Dispose();
         Index.Dispose();
         Workflows.Dispose();

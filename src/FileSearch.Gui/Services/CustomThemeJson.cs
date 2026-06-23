@@ -71,6 +71,9 @@ internal static class CustomThemeJson
                 continue;
             }
 
+            if (TryGetAtlasColorCompanionKey(key, out var colorKey) && !dictionary.Contains(colorKey))
+                dictionary[colorKey] = color;
+
             var brush = new SolidColorBrush(color);
             if (brush.CanFreeze)
                 brush.Freeze();
@@ -92,6 +95,20 @@ internal static class CustomThemeJson
     private static bool IsColorKey(string key) =>
         key.EndsWith("Color", StringComparison.Ordinal) &&
         !key.EndsWith("Brush", StringComparison.Ordinal);
+
+    private static bool TryGetAtlasColorCompanionKey(string key, out string colorKey)
+    {
+        const string brushSuffix = "Brush";
+        if (key.StartsWith("Atlas.", StringComparison.Ordinal) &&
+            key.EndsWith(brushSuffix, StringComparison.Ordinal))
+        {
+            colorKey = key[..^brushSuffix.Length] + "Color";
+            return true;
+        }
+
+        colorKey = string.Empty;
+        return false;
+    }
 
     private static Color ParseColor(string value)
     {

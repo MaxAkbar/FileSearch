@@ -186,6 +186,17 @@ internal sealed class FakeStartupRegistrationService : IStartupRegistrationServi
     }
 }
 
+internal sealed class FakeShellIntegrationService : IShellIntegrationService
+{
+    public int InstallCallCount { get; private set; }
+
+    public int RemoveCallCount { get; private set; }
+
+    public void Install() => InstallCallCount++;
+
+    public void Remove() => RemoveCallCount++;
+}
+
 internal sealed class FakeThemeService : IThemeService
 {
     public AppTheme CurrentTheme { get; private set; } = AppTheme.System;
@@ -230,12 +241,23 @@ internal sealed class FakeStyleService : IStyleService
 {
     public AppStyle CurrentStyle { get; private set; } = AppStyle.Comfortable;
 
+    public bool RequiresDarkApplicationTheme => CurrentStyle == AppStyle.Vela;
+
+    public event EventHandler? EffectiveApplicationThemeChanged;
+
     public int SetStyleCallCount { get; private set; }
 
     public void SetStyle(AppStyle style)
     {
+        var previouslyRequiredDarkBase = RequiresDarkApplicationTheme;
         SetStyleCallCount++;
         CurrentStyle = style;
+        if (previouslyRequiredDarkBase != RequiresDarkApplicationTheme)
+            EffectiveApplicationThemeChanged?.Invoke(this, EventArgs.Empty);
+    }
+
+    public void RefreshOverlay()
+    {
     }
 }
 

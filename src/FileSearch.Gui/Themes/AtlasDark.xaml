@@ -10,6 +10,45 @@
     -->
 
     <!-- ===== Our surfaces (Atlas.*) ===== -->
+    <Color x:Key="Atlas.AccentColor">#37926A</Color>
+    <Color x:Key="Atlas.Accent2Color">#43A87B</Color>
+    <Color x:Key="Atlas.PaperColor">#1B1D18</Color>
+    <Color x:Key="Atlas.SurfaceColor">#24261F</Color>
+    <Color x:Key="Atlas.Surface2Color">#2B2D25</Color>
+    <Color x:Key="Atlas.SidebarColor">#201F1A</Color>
+    <Color x:Key="Atlas.InkColor">#ECE9DF</Color>
+    <Color x:Key="Atlas.Ink2Color">#B7B4A7</Color>
+    <Color x:Key="Atlas.Ink3Color">#87897C</Color>
+    <Color x:Key="Atlas.LineColor">#1FFFFFFF</Color>
+    <Color x:Key="Atlas.Line2Color">#33FFFFFF</Color>
+    <Color x:Key="Atlas.HoverColor">#14FFFFFF</Color>
+    <Color x:Key="Atlas.SelColor">#332F7D57</Color>
+    <Color x:Key="Atlas.AccentTintColor">#332F7D57</Color>
+    <Color x:Key="Atlas.AccentSoftColor">#242F7D57</Color>
+    <Color x:Key="Atlas.OnAccentColor">#FFFFFF</Color>
+    <Color x:Key="Atlas.WarmColor">#D98A45</Color>
+    <Color x:Key="Atlas.WarmTintColor">#33C4722E</Color>
+    <Color x:Key="Atlas.HitColor">#99FFCE54</Color>
+    <Color x:Key="Atlas.HitInkColor">#23261F</Color>
+    <SolidColorBrush x:Key="AppStyle.OmniBarBackground" Color="#24261F"/>
+    <SolidColorBrush x:Key="AppStyle.FilterChipBackground" Color="#24261F"/>
+    <SolidColorBrush x:Key="AppStyle.ThemeMiniButtonSelectedBackground" Color="#242F7D57"/>
+    <SolidColorBrush x:Key="AppStyle.ThemeMiniButtonSelectedBorderBrush" Color="#37926A"/>
+    <SolidColorBrush x:Key="AppStyle.ThemeMiniButtonSelectedForeground" Color="#ECE9DF"/>
+    <SolidColorBrush x:Key="AppStyle.QueryChipBackground" Color="#2B2D25"/>
+    <SolidColorBrush x:Key="AppStyle.NavSectionBackground" Color="#24261F"/>
+    <SolidColorBrush x:Key="AppStyle.NavSectionHeaderBackground" Color="#2B2D25"/>
+    <SolidColorBrush x:Key="AppStyle.NavSectionHeaderBorderBrush" Color="#1FFFFFFF"/>
+    <SolidColorBrush x:Key="AppStyle.PreviewImageBackground" Color="#2B2D25"/>
+    <CornerRadius x:Key="AppStyle.CommandButtonCornerRadius">9</CornerRadius>
+    <SolidColorBrush x:Key="AppStyle.SecondaryButtonBackground" Color="#24261F"/>
+    <SolidColorBrush x:Key="AppStyle.SecondaryButtonBorderBrush" Color="#33FFFFFF"/>
+    <SolidColorBrush x:Key="AppStyle.SecondaryButtonHoverBackground" Color="#2B2D25"/>
+    <SolidColorBrush x:Key="AppStyle.SecondaryButtonHoverBorderBrush" Color="#37926A"/>
+    <SolidColorBrush x:Key="AppStyle.SecondaryButtonHoverForeground" Color="#ECE9DF"/>
+    <SolidColorBrush x:Key="AppStyle.IconButtonHoverBackground" Color="#14FFFFFF"/>
+    <SolidColorBrush x:Key="AppStyle.IconButtonHoverForeground" Color="#ECE9DF"/>
+    <SolidColorBrush x:Key="AppStyle.PreviewCodeBackground" Color="#24261F"/>
     <SolidColorBrush x:Key="Atlas.PaperBrush"      Color="#1B1D18"/>
     <SolidColorBrush x:Key="Atlas.SurfaceBrush"    Color="#24261F"/>
     <SolidColorBrush x:Key="Atlas.Surface2Brush"   Color="#2B2D25"/>

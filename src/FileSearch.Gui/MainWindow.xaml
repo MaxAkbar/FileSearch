@@ -34,7 +34,14 @@
         <Border DockPanel.Dock="Top" Style="{StaticResource TitleBarStyle}">
             <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
                 <Image Source="Assets/FileSearch-256.png" Width="18" Height="18" Margin="2,0,8,0"/>
-                <TextBlock Text="FileSearch" Style="{StaticResource TitleTextStyle}" Margin="0,0,18,0"/>
+                <StackPanel Orientation="Horizontal" Margin="0,0,16,0">
+                    <TextBlock Text="{DynamicResource AppStyle.BrandName}" Style="{StaticResource TitleTextStyle}"/>
+                    <TextBlock Text="File Search"
+                               Style="{StaticResource TitleSubtitleStyle}"
+                               Visibility="{DynamicResource AppStyle.TitleSubtitleVisibility}"/>
+                    <Border Style="{StaticResource TitleDividerStyle}"
+                            Visibility="{DynamicResource AppStyle.TitleSubtitleVisibility}"/>
+                </StackPanel>
                 <Menu Style="{StaticResource TitleMenuStyle}">
                     <MenuItem Header="_File">
                         <MenuItem Header="_Install Windows integration"
@@ -66,15 +73,23 @@
                     </MenuItem>
                     <MenuItem Header="_View">
                         <MenuItem Header="Theme">
-                            <MenuItem Header="_Atlas (light)" Command="{Binding ApplyThemeCommand}" CommandParameter="Light"/>
-                            <MenuItem Header="_Dark" Command="{Binding ApplyThemeCommand}" CommandParameter="Dark"/>
-                            <MenuItem Header="Visual _Studio" Command="{Binding ApplyThemeCommand}" CommandParameter="VisualStudio"/>
+                            <MenuItem Header="_Atlas (light)" Command="{Binding ApplyThemeCommand}" CommandParameter="Light"
+                                      IsCheckable="True" IsChecked="{Binding IsLightThemeSelected, Mode=OneWay}"/>
+                            <MenuItem Header="_Dark" Command="{Binding ApplyThemeCommand}" CommandParameter="Dark"
+                                      IsCheckable="True" IsChecked="{Binding IsDarkThemeSelected, Mode=OneWay}"/>
+                            <MenuItem Header="Visual _Studio" Command="{Binding ApplyThemeCommand}" CommandParameter="VisualStudio"
+                                      IsCheckable="True" IsChecked="{Binding IsVisualStudioThemeSelected, Mode=OneWay}"/>
                             <Separator/>
-                            <MenuItem Header="S_ystem" Command="{Binding ApplyThemeCommand}" CommandParameter="System"/>
+                            <MenuItem Header="S_ystem" Command="{Binding ApplyThemeCommand}" CommandParameter="System"
+                                      IsCheckable="True" IsChecked="{Binding IsSystemThemeSelected, Mode=OneWay}"/>
                         </MenuItem>
                         <MenuItem Header="Style">
-                            <MenuItem Header="_Comfortable" Command="{Binding ApplyStyleCommand}" CommandParameter="Comfortable"/>
-                            <MenuItem Header="_Compact" Command="{Binding ApplyStyleCommand}" CommandParameter="Compact"/>
+                            <MenuItem Header="_Comfortable" Command="{Binding ApplyStyleCommand}" CommandParameter="Comfortable"
+                                      IsCheckable="True" IsChecked="{Binding IsComfortableStyleSelected, Mode=OneWay}"/>
+                            <MenuItem Header="_Compact" Command="{Binding ApplyStyleCommand}" CommandParameter="Compact"
+                                      IsCheckable="True" IsChecked="{Binding IsCompactStyleSelected, Mode=OneWay}"/>
+                            <MenuItem Header="_Vela" Command="{Binding ApplyStyleCommand}" CommandParameter="Vela"
+                                      IsCheckable="True" IsChecked="{Binding IsVelaStyleSelected, Mode=OneWay}"/>
                         </MenuItem>
                     </MenuItem>
                     <MenuItem Header="_Help">
@@ -83,6 +98,20 @@
                         <MenuItem Header="_About" Click="OnAboutClick"/>
                     </MenuItem>
                 </Menu>
+                <Border Style="{DynamicResource TitleStatusPillStyle}"
+                        Visibility="{DynamicResource AppStyle.TitleStatusVisibility}">
+                    <StackPanel Orientation="Horizontal">
+                        <Ellipse Width="6" Height="6"
+                                 Fill="{DynamicResource Atlas.Accent2Brush}"
+                                 VerticalAlignment="Center"/>
+                        <TextBlock Style="{StaticResource StatusTextStyle}"
+                                   Foreground="{DynamicResource Atlas.Ink2Brush}"
+                                   Margin="7,0,0,0"
+                                   MaxWidth="260">
+                            <Run Text="{Binding Index.IndexActivityText, Mode=OneWay}"/><Run Text=" · "/><Run Text="{Binding Index.IndexedLocationCountText, Mode=OneWay}"/>
+                        </TextBlock>
+                    </StackPanel>
+                </Border>
             </StackPanel>
         </Border>
 
@@ -101,24 +130,31 @@
                          Fill="{DynamicResource Atlas.AccentBrush}"
                          VerticalAlignment="Center" Margin="0,0,9,0"/>
                 <TextBlock Grid.Column="1" Text="{Binding Status.Text}" Style="{StaticResource StatusTextStyle}"/>
-                <TextBlock Grid.Column="3" Style="{StaticResource StatusStrongStyle}" Margin="16,0,0,0">
-                    <Run Text="{Binding Search.FilesMatched, Mode=OneWay}"/><Run Text=" files · "/><Run Text="{Binding Search.TotalHits, Mode=OneWay}"/><Run Text=" hits"/>
-                </TextBlock>
-                <TextBlock Grid.Column="4" Style="{StaticResource StatusTextStyle}" Margin="16,0,0,0">
-                    <Run Text="elapsed "/><Run Text="{Binding Search.ElapsedText, Mode=OneWay}"/>
-                </TextBlock>
-                <TextBlock Grid.Column="5" Text="{Binding Index.IndexActivityText}"
-                           Style="{StaticResource StatusTextStyle}" Margin="16,0,0,0"/>
+                <Border Grid.Column="3" Style="{DynamicResource StatusPillStyle}">
+                    <TextBlock Style="{StaticResource StatusStrongStyle}">
+                        <Run Text="{Binding Search.FilesMatched, Mode=OneWay}"/><Run Text=" files · "/><Run Text="{Binding Search.TotalHits, Mode=OneWay}"/><Run Text=" hits"/>
+                    </TextBlock>
+                </Border>
+                <Border Grid.Column="4" Style="{DynamicResource StatusPillStyle}">
+                    <TextBlock Style="{StaticResource StatusTextStyle}">
+                        <Run Text="elapsed "/><Run Text="{Binding Search.ElapsedText, Mode=OneWay}"/>
+                    </TextBlock>
+                </Border>
+                <Border Grid.Column="5" Style="{DynamicResource StatusPillStyle}">
+                    <TextBlock Style="{StaticResource StatusTextStyle}">
+                        <Run Text="{Binding Index.IndexActivityText, Mode=OneWay}"/><Run Text=" · "/><Run Text="{Binding Index.IndexedLocationCountText, Mode=OneWay}"/>
+                    </TextBlock>
+                </Border>
             </Grid>
         </Border>
 
         <!-- ===== Center shell ===== -->
         <Grid x:Name="ShellRoot" Style="{StaticResource ShellStyle}">
             <Grid.ColumnDefinitions>
-                <ColumnDefinition Width="240"/>
+                <ColumnDefinition Width="{DynamicResource AppDensity.SidebarColumnWidth}"/>
                 <ColumnDefinition Width="*" MinWidth="500"/>
                 <ColumnDefinition Width="Auto"/>
-                <ColumnDefinition x:Name="PreviewColumn" Width="360" MinWidth="300" MaxWidth="720"/>
+                <ColumnDefinition x:Name="PreviewColumn" Width="{DynamicResource AppDensity.PreviewColumnWidth}" MinWidth="300" MaxWidth="720"/>
             </Grid.ColumnDefinitions>
 
             <!-- ===== Sidebar ===== -->
@@ -129,52 +165,106 @@
                         <Border Width="28" Height="28" CornerRadius="9" Margin="0,0,10,0">
                             <Border.Background>
                                 <LinearGradientBrush StartPoint="0,0" EndPoint="1,1">
-                                    <GradientStop Color="#2F7D57" Offset="0"/>
-                                    <GradientStop Color="#37926A" Offset="1"/>
+                                    <GradientStop Color="{DynamicResource Atlas.AccentColor}" Offset="0"/>
+                                    <GradientStop Color="{DynamicResource Atlas.Accent2Color}" Offset="1"/>
                                 </LinearGradientBrush>
                             </Border.Background>
                             <ui:FontIcon Glyph="&#xE8B7;" FontSize="14" Foreground="#FFFFFF"/>
                         </Border>
-                        <TextBlock Text="FileSearch" Style="{StaticResource LogoTextStyle}"/>
+                        <TextBlock Text="{DynamicResource AppStyle.BrandName}" Style="{StaticResource LogoTextStyle}"/>
                     </StackPanel>
 
                     <!-- Footer -->
                     <StackPanel DockPanel.Dock="Bottom" Margin="0,10,0,0">
-                        <TextBlock Text="THEME" Style="{StaticResource NavSectionLabelStyle}"/>
-                        <UniformGrid Columns="4" Rows="1" Margin="6,0,6,8">
-                            <Button Content="Atlas" Command="{Binding ApplyThemeCommand}" CommandParameter="Light"
-                                    Style="{StaticResource ThemeMiniButtonStyle}" Margin="0,0,5,0"/>
-                            <Button Content="Dark" Command="{Binding ApplyThemeCommand}" CommandParameter="Dark"
-                                    Style="{StaticResource ThemeMiniButtonStyle}" Margin="0,0,5,0"/>
-                            <Button Content="VS" Command="{Binding ApplyThemeCommand}" CommandParameter="VisualStudio"
-                                    Style="{StaticResource ThemeMiniButtonStyle}" Margin="0,0,5,0"/>
-                            <Button Content="Sys" Command="{Binding ApplyThemeCommand}" CommandParameter="System"
-                                    Style="{StaticResource ThemeMiniButtonStyle}"/>
+                        <StackPanel Visibility="{DynamicResource AppStyle.SidebarThemeSwitcherVisibility}">
+                            <TextBlock Text="THEME" Style="{StaticResource NavSectionLabelStyle}"/>
+                            <UniformGrid Columns="4" Rows="1" Margin="6,0,6,8">
+                                <Button Content="Atlas" Command="{Binding ApplyThemeCommand}" CommandParameter="Light"
+                                        Tag="{Binding IsLightThemeSelected}"
+                                        Style="{StaticResource ThemeMiniButtonStyle}" Margin="0,0,5,0"/>
+                                <Button Content="Dark" Command="{Binding ApplyThemeCommand}" CommandParameter="Dark"
+                                        Tag="{Binding IsDarkThemeSelected}"
+                                        Style="{StaticResource ThemeMiniButtonStyle}" Margin="0,0,5,0"/>
+                                <Button Content="VS" Command="{Binding ApplyThemeCommand}" CommandParameter="VisualStudio"
+                                        Tag="{Binding IsVisualStudioThemeSelected}"
+                                        Style="{StaticResource ThemeMiniButtonStyle}" Margin="0,0,5,0"/>
+                                <Button Content="Sys" Command="{Binding ApplyThemeCommand}" CommandParameter="System"
+                                        Tag="{Binding IsSystemThemeSelected}"
+                                        Style="{StaticResource ThemeMiniButtonStyle}"/>
+                            </UniformGrid>
+                        </StackPanel>
+                        <StackPanel Visibility="{DynamicResource AppStyle.SidebarStyleSwitcherVisibility}">
+                            <TextBlock Text="STYLE" Style="{StaticResource NavSectionLabelStyle}"/>
+                            <UniformGrid Columns="3" Rows="1" Margin="6,0,6,8">
+                                <Button Content="Roomy" Command="{Binding ApplyStyleCommand}" CommandParameter="Comfortable"
+                                        Tag="{Binding IsComfortableStyleSelected}"
+                                        Style="{StaticResource ThemeMiniButtonStyle}" Margin="0,0,5,0"/>
+                                <Button Content="Compact" Command="{Binding ApplyStyleCommand}" CommandParameter="Compact"
+                                        Tag="{Binding IsCompactStyleSelected}"
+                                        Style="{StaticResource ThemeMiniButtonStyle}" Margin="0,0,5,0"/>
+                                <Button Content="Vela" Command="{Binding ApplyStyleCommand}" CommandParameter="Vela"
+                                        Tag="{Binding IsVelaStyleSelected}"
+                                        Style="{StaticResource ThemeMiniButtonStyle}"/>
+                            </UniformGrid>
+                        </StackPanel>
+                        <StackPanel Visibility="{DynamicResource AppStyle.SidebarFooterFullActionsVisibility}">
+                            <Button Click="OnWorkflowsClick" Style="{StaticResource NavItemButtonStyle}">
+                                <StackPanel Orientation="Horizontal">
+                                    <ui:FontIcon Glyph="&#xE8F1;" FontSize="14" Margin="0,0,11,0"/>
+                                    <TextBlock Text="Workflows" Style="{StaticResource SidebarCommandTextStyle}"/>
+                                </StackPanel>
+                            </Button>
+                            <Button Click="OnSettingsClick" Style="{StaticResource NavItemButtonStyle}">
+                                <StackPanel Orientation="Horizontal">
+                                    <ui:FontIcon Glyph="&#xE713;" FontSize="14" Margin="0,0,11,0"/>
+                                    <TextBlock Text="Settings" Style="{StaticResource SidebarCommandTextStyle}"/>
+                                </StackPanel>
+                            </Button>
+                            <Button Click="OnHelpClick" Style="{StaticResource NavItemButtonStyle}">
+                                <StackPanel Orientation="Horizontal">
+                                    <ui:FontIcon Glyph="&#xE897;" FontSize="14" Margin="0,0,11,0"/>
+                                    <TextBlock Text="User guide" Style="{StaticResource SidebarCommandTextStyle}"/>
+                                </StackPanel>
+                            </Button>
+                            <Button Click="OnAboutClick" Style="{StaticResource NavItemButtonStyle}">
+                                <StackPanel Orientation="Horizontal">
+                                    <ui:FontIcon Glyph="&#xE946;" FontSize="14" Margin="0,0,11,0"/>
+                                    <TextBlock Text="About" Style="{StaticResource SidebarCommandTextStyle}"/>
+                                </StackPanel>
+                            </Button>
+                        </StackPanel>
+                        <UniformGrid Columns="4" Rows="1"
+                                     Margin="6,2,6,0"
+                                     Visibility="{DynamicResource AppStyle.SidebarFooterCompactActionsVisibility}">
+                            <Button Click="OnWorkflowsClick"
+                                    Style="{StaticResource IconButtonStyle}"
+                                    Width="{DynamicResource AppDensity.IconButtonSize}"
+                                    Height="{DynamicResource AppDensity.IconButtonSize}"
+                                    ToolTip="Workflows">
+                                <ui:FontIcon Glyph="&#xE8F1;" FontSize="14"/>
+                            </Button>
+                            <Button Click="OnSettingsClick"
+                                    Style="{StaticResource IconButtonStyle}"
+                                    Width="{DynamicResource AppDensity.IconButtonSize}"
+                                    Height="{DynamicResource AppDensity.IconButtonSize}"
+                                    ToolTip="Settings">
+                                <ui:FontIcon Glyph="&#xE713;" FontSize="14"/>
+                            </Button>
+                            <Button Click="OnHelpClick"
+                                    Style="{StaticResource IconButtonStyle}"
+                                    Width="{DynamicResource AppDensity.IconButtonSize}"
+                                    Height="{DynamicResource AppDensity.IconButtonSize}"
+                                    ToolTip="User guide">
+                                <ui:FontIcon Glyph="&#xE897;" FontSize="14"/>
+                            </Button>
+                            <Button Click="OnAboutClick"
+                                    Style="{StaticResource IconButtonStyle}"
+                                    Width="{DynamicResource AppDensity.IconButtonSize}"
+                                    Height="{DynamicResource AppDensity.IconButtonSize}"
+                                    ToolTip="About">
+                                <ui:FontIcon Glyph="&#xE946;" FontSize="14"/>
+                            </Button>
                         </UniformGrid>
-                        <Button Click="OnWorkflowsClick" Style="{StaticResource NavItemButtonStyle}">
-                            <StackPanel Orientation="Horizontal">
-                                <ui:FontIcon Glyph="&#xE8F1;" FontSize="14" Margin="0,0,11,0"/>
-                                <TextBlock Text="Workflows" VerticalAlignment="Center"/>
-                            </StackPanel>
-                        </Button>
-                        <Button Click="OnSettingsClick" Style="{StaticResource NavItemButtonStyle}">
-                            <StackPanel Orientation="Horizontal">
-                                <ui:FontIcon Glyph="&#xE713;" FontSize="14" Margin="0,0,11,0"/>
-                                <TextBlock Text="Settings" VerticalAlignment="Center"/>
-                            </StackPanel>
-                        </Button>
-                        <Button Click="OnHelpClick" Style="{StaticResource NavItemButtonStyle}">
-                            <StackPanel Orientation="Horizontal">
-                                <ui:FontIcon Glyph="&#xE897;" FontSize="14" Margin="0,0,11,0"/>
-                                <TextBlock Text="User guide" VerticalAlignment="Center"/>
-                            </StackPanel>
-                        </Button>
-                        <Button Click="OnAboutClick" Style="{StaticResource NavItemButtonStyle}">
-                            <StackPanel Orientation="Horizontal">
-                                <ui:FontIcon Glyph="&#xE946;" FontSize="14" Margin="0,0,11,0"/>
-                                <TextBlock Text="About" VerticalAlignment="Center"/>
-                            </StackPanel>
-                        </Button>
                     </StackPanel>
 
                     <!-- Collapsible sections. Each expanded section's row takes the
@@ -188,7 +278,7 @@
                                   HorizontalScrollBarVisibility="Disabled"
                                   Focusable="False">
                     <Grid MinHeight="{Binding ViewportHeight, RelativeSource={RelativeSource AncestorType=ScrollViewer}}"
-                          Margin="0,0,16,0">
+                          Margin="{DynamicResource AppDensity.SidebarSectionStackMargin}">
                         <Grid.RowDefinitions>
                             <RowDefinition x:Name="ScopesRow" Height="Auto"/>
                             <RowDefinition x:Name="WorkspacesRow" Height="Auto"/>
@@ -198,20 +288,27 @@
                             <RowDefinition x:Name="SavedRow" Height="*"/>
                         </Grid.RowDefinitions>
                             <Expander x:Name="ScopesSection" Grid.Row="0"
-                                      Header="SCOPES" Style="{StaticResource NavSectionExpanderStyle}"
+                                      Style="{StaticResource NavSectionExpanderStyle}"
                                       Expanded="OnNavSectionToggled" Collapsed="OnNavSectionToggled">
+                                <Expander.Header>
+                                    <StackPanel Orientation="Horizontal">
+                                        <TextBlock Text="SCOPES" Style="{StaticResource NavSectionHeaderTextStyle}"/>
+                                        <TextBlock Text="{Binding History.ScopeList.CountText}"
+                                                   Style="{StaticResource NavSectionCountStyle}"/>
+                                    </StackPanel>
+                                </Expander.Header>
                                 <DockPanel>
                                     <StackPanel DockPanel.Dock="Bottom">
                                         <Button Click="OnAddScopeClick" Style="{StaticResource NavItemButtonStyle}">
                                             <StackPanel Orientation="Horizontal">
                                                 <ui:FontIcon Glyph="&#xE710;" FontSize="14" Margin="0,0,11,0"/>
-                                                <TextBlock Text="New scope" VerticalAlignment="Center"/>
+                                                <TextBlock Text="New scope" Style="{StaticResource SidebarCommandTextStyle}"/>
                                             </StackPanel>
                                         </Button>
                                         <Button Command="{Binding History.ClearCustomScopesCommand}" Style="{StaticResource NavItemButtonStyle}">
                                             <StackPanel Orientation="Horizontal">
                                                 <ui:FontIcon Glyph="&#xE74D;" FontSize="14" Margin="0,0,11,0"/>
-                                                <TextBlock Text="Clear scopes" VerticalAlignment="Center"/>
+                                                <TextBlock Text="Clear scopes" Style="{StaticResource SidebarCommandTextStyle}"/>
                                             </StackPanel>
                                         </Button>
                                     </StackPanel>
@@ -274,7 +371,7 @@
                                                     <Button Command="{Binding DataContext.Search.ApplyFilePatternPresetCommand, RelativeSource={RelativeSource AncestorType=ItemsControl}}"
                                                             CommandParameter="{Binding FileNamePattern}"
                                                             HorizontalContentAlignment="Stretch"
-                                                            Style="{StaticResource NavItemButtonStyle}"
+                                                            Style="{StaticResource ScopeNavItemButtonStyle}"
                                                             ToolTip="{Binding Summary}">
                                                         <Grid>
                                                             <Grid.ColumnDefinitions>
@@ -283,8 +380,10 @@
                                                             </Grid.ColumnDefinitions>
                                                             <ui:FontIcon Glyph="{Binding Glyph}" FontSize="14" Margin="0,0,11,0"/>
                                                             <StackPanel Grid.Column="1">
-                                                                <TextBlock Text="{Binding Name}" TextTrimming="CharacterEllipsis"/>
-                                                                <TextBlock Text="{Binding Summary}" Style="{StaticResource MutedValueStyle}"/>
+                                                                <TextBlock Text="{Binding Name}"
+                                                                           Style="{StaticResource SidebarItemTitleTextStyle}"/>
+                                                                <TextBlock Text="{Binding Summary}"
+                                                                           Style="{StaticResource SidebarItemSubtitleTextStyle}"/>
                                                             </StackPanel>
                                                         </Grid>
                                                     </Button>
@@ -308,36 +407,43 @@
                             </Expander>
 
                             <Expander x:Name="WorkspacesSection" Grid.Row="1"
-                                      Header="WORKSPACES" Style="{StaticResource NavSectionExpanderStyle}"
+                                      Style="{StaticResource NavSectionExpanderStyle}"
                                       Expanded="OnNavSectionToggled" Collapsed="OnNavSectionToggled">
+                                <Expander.Header>
+                                    <StackPanel Orientation="Horizontal">
+                                        <TextBlock Text="WORKSPACES" Style="{StaticResource NavSectionHeaderTextStyle}"/>
+                                        <TextBlock Text="{Binding History.WorkspaceList.CountText}"
+                                                   Style="{StaticResource NavSectionCountStyle}"/>
+                                    </StackPanel>
+                                </Expander.Header>
                                 <DockPanel>
                                     <StackPanel DockPanel.Dock="Bottom">
                                         <Button Command="{Binding Search.SaveWorkspaceCommand}"
                                                 Style="{StaticResource NavItemButtonStyle}">
                                             <StackPanel Orientation="Horizontal">
                                                 <ui:FontIcon Glyph="&#xE74E;" FontSize="14" Margin="0,0,11,0"/>
-                                                <TextBlock Text="Save current workspace" VerticalAlignment="Center"/>
+                                                <TextBlock Text="Save current workspace" Style="{StaticResource SidebarCommandTextStyle}"/>
                                             </StackPanel>
                                         </Button>
                                         <Button Command="{Binding History.ImportWorkspaceCommand}"
                                                 Style="{StaticResource NavItemButtonStyle}">
                                             <StackPanel Orientation="Horizontal">
                                                 <ui:FontIcon Glyph="&#xE8B5;" FontSize="14" Margin="0,0,11,0"/>
-                                                <TextBlock Text="Import workspace" VerticalAlignment="Center"/>
+                                                <TextBlock Text="Import workspace" Style="{StaticResource SidebarCommandTextStyle}"/>
                                             </StackPanel>
                                         </Button>
                                         <Button Command="{Binding History.ExportAllWorkspacesCommand}"
                                                 Style="{StaticResource NavItemButtonStyle}">
                                             <StackPanel Orientation="Horizontal">
                                                 <ui:FontIcon Glyph="&#xE8B6;" FontSize="14" Margin="0,0,11,0"/>
-                                                <TextBlock Text="Export workspaces" VerticalAlignment="Center"/>
+                                                <TextBlock Text="Export workspaces" Style="{StaticResource SidebarCommandTextStyle}"/>
                                             </StackPanel>
                                         </Button>
                                         <Button Command="{Binding History.ClearWorkspacesCommand}"
                                                 Style="{StaticResource NavItemButtonStyle}">
                                             <StackPanel Orientation="Horizontal">
                                                 <ui:FontIcon Glyph="&#xE74D;" FontSize="14" Margin="0,0,11,0"/>
-                                                <TextBlock Text="Clear workspaces" VerticalAlignment="Center"/>
+                                                <TextBlock Text="Clear workspaces" Style="{StaticResource SidebarCommandTextStyle}"/>
                                             </StackPanel>
                                         </Button>
                                     </StackPanel>
@@ -395,61 +501,77 @@
                                              ItemContainerStyle="{StaticResource NavListBoxItemStyle}">
                                         <ListBox.ItemTemplate>
                                             <DataTemplate>
-                                                <Grid ToolTip="{Binding Summary}">
-                                                    <Grid.ColumnDefinitions>
-                                                        <ColumnDefinition Width="Auto"/>
-                                                        <ColumnDefinition Width="*"/>
-                                                        <ColumnDefinition Width="Auto"/>
-                                                    </Grid.ColumnDefinitions>
-                                                    <ui:FontIcon Glyph="&#xE8F1;" FontSize="13" Margin="0,0,10,0"
-                                                                 Foreground="{DynamicResource Atlas.AccentBrush}"
-                                                                 VerticalAlignment="Center"/>
-                                                    <StackPanel Grid.Column="1" VerticalAlignment="Center">
-                                                        <TextBlock Text="{Binding DisplayName}" TextTrimming="CharacterEllipsis"/>
-                                                        <TextBlock Text="{Binding Summary}" Style="{StaticResource MutedValueStyle}" TextTrimming="CharacterEllipsis"/>
-                                                        <Border Background="{DynamicResource Atlas.AccentTintBrush}"
-                                                                CornerRadius="4"
-                                                                Padding="5,1"
-                                                                Margin="0,4,0,0"
-                                                                HorizontalAlignment="Left"
-                                                                Visibility="{Binding RunOnLoad, Converter={StaticResource BoolToVisibility}}">
-                                                            <TextBlock Text="Runs on load"
-                                                                       Style="{StaticResource MutedValueStyle}"
-                                                                       FontSize="10.5"
-                                                                       Foreground="{DynamicResource Atlas.AccentBrush}"/>
-                                                        </Border>
-                                                    </StackPanel>
-                                                    <StackPanel Grid.Column="2"
-                                                                Orientation="Horizontal"
-                                                                Margin="4,0,0,0">
-                                                        <Button Command="{Binding DataContext.History.ToggleWorkspaceRunOnLoadCommand, RelativeSource={RelativeSource AncestorType=ListBox}}"
-                                                                CommandParameter="{Binding}"
-                                                                Style="{StaticResource IconButtonStyle}"
-                                                                 Width="{DynamicResource AppDensity.SmallIconButtonSize}"
-                                                                 Height="{DynamicResource AppDensity.SmallIconButtonSize}"
-                                                                ToolTip="{Binding RunOnLoadActionText}">
-                                                            <ui:FontIcon Glyph="{Binding RunOnLoadGlyph}" FontSize="11"/>
-                                                        </Button>
-                                                        <Button Command="{Binding DataContext.History.ExportWorkspaceCommand, RelativeSource={RelativeSource AncestorType=ListBox}}"
-                                                                CommandParameter="{Binding}"
-                                                                Style="{StaticResource IconButtonStyle}"
-                                                                 Width="{DynamicResource AppDensity.SmallIconButtonSize}"
-                                                                 Height="{DynamicResource AppDensity.SmallIconButtonSize}"
-                                                                Margin="2,0,0,0"
-                                                                ToolTip="Export workspace">
-                                                            <ui:FontIcon Glyph="&#xE8B6;" FontSize="11"/>
-                                                        </Button>
-                                                        <Button Command="{Binding DataContext.History.RemoveWorkspaceCommand, RelativeSource={RelativeSource AncestorType=ListBox}}"
-                                                                CommandParameter="{Binding}"
-                                                                Style="{StaticResource IconButtonStyle}"
-                                                                 Width="{DynamicResource AppDensity.SmallIconButtonSize}"
-                                                                 Height="{DynamicResource AppDensity.SmallIconButtonSize}"
-                                                                Margin="2,0,0,0"
-                                                                ToolTip="Remove workspace">
-                                                            <ui:FontIcon Glyph="&#xE74D;" FontSize="11"/>
-                                                        </Button>
-                                                    </StackPanel>
-                                                </Grid>
+                                                <Border Style="{StaticResource WorkspaceSidebarCardStyle}"
+                                                        ToolTip="{Binding Summary}">
+                                                    <Grid>
+                                                        <Grid.ColumnDefinitions>
+                                                            <ColumnDefinition Width="*"/>
+                                                            <ColumnDefinition Width="Auto"/>
+                                                        </Grid.ColumnDefinitions>
+                                                        <StackPanel Grid.Column="0">
+                                                            <DockPanel>
+                                                                <Ellipse Style="{StaticResource WorkspaceRunDotStyle}"/>
+                                                                <TextBlock DockPanel.Dock="Right"
+                                                                           Text="{Binding UpdatedUtc, StringFormat={}{0:MMM d}}"
+                                                                           Style="{StaticResource SidebarItemSubtitleTextStyle}"
+                                                                           FontSize="11"
+                                                                           Margin="8,0,0,0"/>
+                                                                <TextBlock Text="{Binding DisplayName}"
+                                                                           Style="{StaticResource SidebarItemTitleTextStyle}"/>
+                                                            </DockPanel>
+                                                            <DockPanel Margin="0,7,0,0">
+                                                                <TextBlock DockPanel.Dock="Right"
+                                                                           Style="{StaticResource SidebarItemSubtitleTextStyle}"
+                                                                           FontSize="11"
+                                                                           Margin="8,1,0,0">
+                                                                    <Run Text="{Binding FavoriteResults.Count, Mode=OneWay}"/><Run Text=" fav"/>
+                                                                </TextBlock>
+                                                                <Border Style="{StaticResource WorkspaceQueryPillStyle}">
+                                                                    <TextBlock Text="{Binding Search.DisplayName}"
+                                                                               Style="{StaticResource MutedValueStyle}"
+                                                                               Foreground="{DynamicResource Atlas.Accent2Brush}"
+                                                                               FontFamily="{DynamicResource Atlas.MonoFont}"
+                                                                               FontSize="11"
+                                                                               MaxWidth="120"/>
+                                                                </Border>
+                                                            </DockPanel>
+                                                            <TextBlock Text="{Binding Search.SearchPath}"
+                                                                       Style="{StaticResource SidebarItemMonoTextStyle}"
+                                                                       Margin="0,6,0,0"/>
+                                                        </StackPanel>
+                                                        <StackPanel Grid.Column="1"
+                                                                    Orientation="Horizontal"
+                                                                    Margin="6,0,0,0"
+                                                                    VerticalAlignment="Top">
+                                                            <Button Command="{Binding DataContext.History.ToggleWorkspaceRunOnLoadCommand, RelativeSource={RelativeSource AncestorType=ListBox}}"
+                                                                    CommandParameter="{Binding}"
+                                                                    Style="{StaticResource IconButtonStyle}"
+                                                                    Width="{DynamicResource AppDensity.SmallIconButtonSize}"
+                                                                    Height="{DynamicResource AppDensity.SmallIconButtonSize}"
+                                                                    ToolTip="{Binding RunOnLoadActionText}">
+                                                                <ui:FontIcon Glyph="{Binding RunOnLoadGlyph}" FontSize="11"/>
+                                                            </Button>
+                                                            <Button Command="{Binding DataContext.History.ExportWorkspaceCommand, RelativeSource={RelativeSource AncestorType=ListBox}}"
+                                                                    CommandParameter="{Binding}"
+                                                                    Style="{StaticResource IconButtonStyle}"
+                                                                    Width="{DynamicResource AppDensity.SmallIconButtonSize}"
+                                                                    Height="{DynamicResource AppDensity.SmallIconButtonSize}"
+                                                                    Margin="2,0,0,0"
+                                                                    ToolTip="Export workspace">
+                                                                <ui:FontIcon Glyph="&#xE8B6;" FontSize="11"/>
+                                                            </Button>
+                                                            <Button Command="{Binding DataContext.History.RemoveWorkspaceCommand, RelativeSource={RelativeSource AncestorType=ListBox}}"
+                                                                    CommandParameter="{Binding}"
+                                                                    Style="{StaticResource IconButtonStyle}"
+                                                                    Width="{DynamicResource AppDensity.SmallIconButtonSize}"
+                                                                    Height="{DynamicResource AppDensity.SmallIconButtonSize}"
+                                                                    Margin="2,0,0,0"
+                                                                    ToolTip="Remove workspace">
+                                                                <ui:FontIcon Glyph="&#xE74D;" FontSize="11"/>
+                                                            </Button>
+                                                        </StackPanel>
+                                                    </Grid>
+                                                </Border>
                                             </DataTemplate>
                                         </ListBox.ItemTemplate>
                                     </ListBox>
@@ -457,15 +579,22 @@
                             </Expander>
 
                             <Expander x:Name="RecentSection" Grid.Row="2"
-                                      Header="RECENT FOLDERS" Style="{StaticResource NavSectionExpanderStyle}"
+                                      Style="{StaticResource NavSectionExpanderStyle}"
                                       Expanded="OnNavSectionToggled" Collapsed="OnNavSectionToggled">
+                                <Expander.Header>
+                                    <StackPanel Orientation="Horizontal">
+                                        <TextBlock Text="RECENT FOLDERS" Style="{StaticResource NavSectionHeaderTextStyle}"/>
+                                        <TextBlock Text="{Binding History.RecentPathList.CountText}"
+                                                   Style="{StaticResource NavSectionCountStyle}"/>
+                                    </StackPanel>
+                                </Expander.Header>
                                 <DockPanel>
                                     <Button DockPanel.Dock="Bottom"
                                             Command="{Binding History.ClearRecentPathsCommand}"
                                             Style="{StaticResource NavItemButtonStyle}">
                                         <StackPanel Orientation="Horizontal">
                                             <ui:FontIcon Glyph="&#xE74D;" FontSize="14" Margin="0,0,11,0"/>
-                                            <TextBlock Text="Clear recent folders" VerticalAlignment="Center"/>
+                                            <TextBlock Text="Clear recent folders" Style="{StaticResource SidebarCommandTextStyle}"/>
                                         </StackPanel>
                                     </Button>
                                     <Grid DockPanel.Dock="Bottom"
@@ -521,16 +650,25 @@
                                              ItemContainerStyle="{StaticResource NavListBoxItemStyle}">
                                         <ListBox.ItemTemplate>
                                             <DataTemplate>
+                                                <Border Style="{StaticResource SidebarItemCardStyle}"
+                                                        ToolTip="{Binding}">
                                                 <Grid>
                                                     <Grid.ColumnDefinitions>
                                                         <ColumnDefinition Width="Auto"/>
                                                         <ColumnDefinition Width="*"/>
                                                         <ColumnDefinition Width="Auto"/>
                                                     </Grid.ColumnDefinitions>
-                                                    <ui:FontIcon Glyph="&#xE8B7;" FontSize="13" Margin="0,0,10,0"
-                                                                 Foreground="{DynamicResource Atlas.WarmBrush}"
-                                                                 VerticalAlignment="Center"/>
-                                                    <TextBlock Grid.Column="1" Text="{Binding}" TextTrimming="CharacterEllipsis" VerticalAlignment="Center"/>
+                                                    <Border Style="{StaticResource SidebarIconChipStyle}">
+                                                        <ui:FontIcon Glyph="&#xE8B7;" FontSize="13"
+                                                                     Foreground="{DynamicResource Atlas.WarmBrush}"
+                                                                     HorizontalAlignment="Center"
+                                                                     VerticalAlignment="Center"/>
+                                                    </Border>
+                                                    <TextBlock Grid.Column="1"
+                                                               Text="{Binding}"
+                                                               Style="{StaticResource SidebarItemMonoTextStyle}"
+                                                               FontSize="11.5"
+                                                               VerticalAlignment="Center"/>
                                                     <Button Grid.Column="2"
                                                             Command="{Binding DataContext.History.RemoveRecentPathCommand, RelativeSource={RelativeSource AncestorType=ListBox}}"
                                                             CommandParameter="{Binding}"
@@ -542,6 +680,7 @@
                                                         <ui:FontIcon Glyph="&#xE74D;" FontSize="11"/>
                                                     </Button>
                                                 </Grid>
+                                                </Border>
                                             </DataTemplate>
                                         </ListBox.ItemTemplate>
                                     </ListBox>
@@ -549,15 +688,22 @@
                             </Expander>
 
                             <Expander x:Name="FavoritesSection" Grid.Row="3"
-                                      Header="FAVORITES" Style="{StaticResource NavSectionExpanderStyle}"
+                                      Style="{StaticResource NavSectionExpanderStyle}"
                                       Expanded="OnNavSectionToggled" Collapsed="OnNavSectionToggled">
+                                <Expander.Header>
+                                    <StackPanel Orientation="Horizontal">
+                                        <TextBlock Text="FAVORITES" Style="{StaticResource NavSectionHeaderTextStyle}"/>
+                                        <TextBlock Text="{Binding History.FavoriteResultList.CountText}"
+                                                   Style="{StaticResource NavSectionCountStyle}"/>
+                                    </StackPanel>
+                                </Expander.Header>
                                 <DockPanel>
                                     <Button DockPanel.Dock="Bottom"
                                             Command="{Binding History.ClearFavoriteResultsCommand}"
                                             Style="{StaticResource NavItemButtonStyle}">
                                         <StackPanel Orientation="Horizontal">
                                             <ui:FontIcon Glyph="&#xE74D;" FontSize="14" Margin="0,0,11,0"/>
-                                            <TextBlock Text="Clear favorites" VerticalAlignment="Center"/>
+                                            <TextBlock Text="Clear favorites" Style="{StaticResource SidebarCommandTextStyle}"/>
                                         </StackPanel>
                                     </Button>
                                     <Grid DockPanel.Dock="Bottom"
@@ -612,7 +758,9 @@
                                              ItemContainerStyle="{StaticResource NavListBoxItemStyle}">
                                         <ListBox.ItemTemplate>
                                             <DataTemplate>
-                                                <Grid ToolTip="{Binding Path}">
+                                                <Border Style="{StaticResource SidebarItemCardStyle}"
+                                                        ToolTip="{Binding Path}">
+                                                <Grid>
                                                     <Grid.ColumnDefinitions>
                                                         <ColumnDefinition Width="Auto"/>
                                                         <ColumnDefinition Width="*"/>
@@ -622,18 +770,35 @@
                                                             Command="{Binding DataContext.Search.OpenFavoriteResultCommand, RelativeSource={RelativeSource AncestorType=ListBox}}"
                                                             CommandParameter="{Binding}"
                                                             HorizontalContentAlignment="Stretch"
-                                                            Style="{StaticResource NavItemButtonStyle}">
+                                                            Style="{StaticResource SidebarCardActionButtonStyle}">
                                                         <Grid>
                                                             <Grid.ColumnDefinitions>
                                                                 <ColumnDefinition Width="Auto"/>
                                                                 <ColumnDefinition Width="*"/>
                                                             </Grid.ColumnDefinitions>
-                                                            <ui:FontIcon Glyph="&#xE735;" FontSize="13" Margin="0,0,10,0"
-                                                                         Foreground="{DynamicResource Atlas.AccentBrush}"
-                                                                         VerticalAlignment="Center"/>
+                                                            <Border Style="{StaticResource SidebarIconChipStyle}">
+                                                                <ui:FontIcon Glyph="&#xE735;" FontSize="13"
+                                                                             Foreground="{DynamicResource Atlas.AccentBrush}"
+                                                                             HorizontalAlignment="Center"
+                                                                             VerticalAlignment="Center"/>
+                                                            </Border>
                                                             <StackPanel Grid.Column="1" VerticalAlignment="Center">
-                                                                <TextBlock Text="{Binding DisplayName}" TextTrimming="CharacterEllipsis"/>
-                                                                <TextBlock Text="{Binding Folder}" Style="{StaticResource MutedValueStyle}" TextTrimming="CharacterEllipsis"/>
+                                                                <DockPanel>
+                                                                    <TextBlock DockPanel.Dock="Right"
+                                                                               Text="{Binding AddedUtc, StringFormat={}{0:MMM d}}"
+                                                                               Style="{StaticResource SidebarItemSubtitleTextStyle}"
+                                                                               FontSize="11"
+                                                                               Margin="8,0,0,0"/>
+                                                                    <TextBlock Text="{Binding DisplayName}"
+                                                                               Style="{StaticResource SidebarItemTitleTextStyle}"/>
+                                                                </DockPanel>
+                                                                <Border Style="{StaticResource SidebarMetaPillStyle}"
+                                                                        Margin="0,5,0,0">
+                                                                    <TextBlock Text="{Binding Folder}"
+                                                                               Style="{StaticResource SidebarItemMonoTextStyle}"
+                                                                               MaxWidth="145"
+                                                                               FontSize="11"/>
+                                                                </Border>
                                                             </StackPanel>
                                                         </Grid>
                                                     </Button>
@@ -648,6 +813,7 @@
                                                         <ui:FontIcon Glyph="&#xE74D;" FontSize="11"/>
                                                     </Button>
                                                 </Grid>
+                                                </Border>
                                             </DataTemplate>
                                         </ListBox.ItemTemplate>
                                     </ListBox>
@@ -655,15 +821,22 @@
                             </Expander>
 
                             <Expander x:Name="IndexSection" Grid.Row="4"
-                                      Header="INDEXED LOCATIONS" Style="{StaticResource NavSectionExpanderStyle}"
+                                      Style="{StaticResource NavSectionExpanderStyle}"
                                       Expanded="OnNavSectionToggled" Collapsed="OnNavSectionToggled">
+                                <Expander.Header>
+                                    <StackPanel Orientation="Horizontal">
+                                        <TextBlock Text="INDEXED LOCATIONS" Style="{StaticResource NavSectionHeaderTextStyle}"/>
+                                        <TextBlock Text="{Binding Index.IndexedLocationList.CountText}"
+                                                   Style="{StaticResource NavSectionCountStyle}"/>
+                                    </StackPanel>
+                                </Expander.Header>
                                 <DockPanel>
                                     <Button DockPanel.Dock="Bottom"
                                             Click="OnManageIndexesClick"
                                             Style="{StaticResource NavItemButtonStyle}">
                                         <StackPanel Orientation="Horizontal">
                                             <ui:FontIcon Glyph="&#xE713;" FontSize="14" Margin="0,0,11,0"/>
-                                            <TextBlock Text="Manage locations" VerticalAlignment="Center"/>
+                                            <TextBlock Text="Manage locations" Style="{StaticResource SidebarCommandTextStyle}"/>
                                         </StackPanel>
                                     </Button>
                                     <Grid DockPanel.Dock="Bottom"
@@ -719,16 +892,29 @@
                                              ItemContainerStyle="{StaticResource NavListBoxItemStyle}">
                                         <ListBox.ItemTemplate>
                                             <DataTemplate>
-                                                <Grid ToolTip="{Binding Root}">
+                                                <Border Style="{StaticResource SidebarItemCardStyle}"
+                                                        ToolTip="{Binding Root}">
+                                                <Grid>
                                                     <Grid.ColumnDefinitions>
                                                         <ColumnDefinition Width="Auto"/>
                                                         <ColumnDefinition Width="*"/>
                                                     </Grid.ColumnDefinitions>
-                                                    <ui:FontIcon Glyph="&#xE8B7;" FontSize="13" Margin="0,0,10,0"
-                                                                 Foreground="{DynamicResource Atlas.AccentBrush}"
-                                                                 VerticalAlignment="Center"/>
+                                                    <Border Style="{StaticResource SidebarIconChipStyle}">
+                                                        <ui:FontIcon Glyph="&#xE8B7;" FontSize="13"
+                                                                     Foreground="{DynamicResource Atlas.AccentBrush}"
+                                                                     HorizontalAlignment="Center"
+                                                                     VerticalAlignment="Center"/>
+                                                    </Border>
                                                     <StackPanel Grid.Column="1">
-                                                        <TextBlock Text="{Binding DisplayName}" TextTrimming="CharacterEllipsis"/>
+                                                        <DockPanel>
+                                                            <TextBlock DockPanel.Dock="Right"
+                                                                       Text="{Binding LastIndexedSummary}"
+                                                                       Style="{StaticResource SidebarItemSubtitleTextStyle}"
+                                                                       FontSize="11"
+                                                                       Margin="8,0,0,0"/>
+                                                            <TextBlock Text="{Binding DisplayName}"
+                                                                       Style="{StaticResource SidebarItemTitleTextStyle}"/>
+                                                        </DockPanel>
                                                         <WrapPanel>
                                                             <Border Style="{StaticResource IndexStatusBadgeStyle}" Margin="0,3,4,3">
                                                                 <TextBlock Text="{Binding RuntimeStatusSummary}"
@@ -736,12 +922,22 @@
                                                             </Border>
                                                             <Border Style="{StaticResource WatchStatusBadgeStyle}" Margin="0,3,0,3">
                                                                 <TextBlock Text="{Binding WatchSummary}"
-                                                                           Style="{StaticResource IndexStatusBadgeTextStyle}"/>
+                                                                   Style="{StaticResource IndexStatusBadgeTextStyle}"/>
                                                             </Border>
                                                         </WrapPanel>
-                                                        <TextBlock Text="{Binding Summary}" Style="{StaticResource MutedValueStyle}"/>
+                                                        <DockPanel>
+                                                            <TextBlock DockPanel.Dock="Right"
+                                                                       Text="{Binding Summary}"
+                                                                       Style="{StaticResource SidebarItemSubtitleTextStyle}"
+                                                                       FontSize="11"
+                                                                       Margin="8,0,0,0"/>
+                                                            <TextBlock Text="{Binding Root}"
+                                                                       Style="{StaticResource SidebarItemMonoTextStyle}"
+                                                                       FontSize="11"/>
+                                                        </DockPanel>
                                                     </StackPanel>
                                                 </Grid>
+                                                </Border>
                                             </DataTemplate>
                                         </ListBox.ItemTemplate>
                                     </ListBox>
@@ -749,15 +945,22 @@
                             </Expander>
 
                             <Expander x:Name="SavedSection" Grid.Row="5"
-                                      Header="SAVED SEARCHES" Style="{StaticResource NavSectionExpanderStyle}"
+                                      Style="{StaticResource NavSectionExpanderStyle}"
                                       Expanded="OnNavSectionToggled" Collapsed="OnNavSectionToggled">
+                                <Expander.Header>
+                                    <StackPanel Orientation="Horizontal">
+                                        <TextBlock Text="SAVED SEARCHES" Style="{StaticResource NavSectionHeaderTextStyle}"/>
+                                        <TextBlock Text="{Binding History.SavedSearchList.CountText}"
+                                                   Style="{StaticResource NavSectionCountStyle}"/>
+                                    </StackPanel>
+                                </Expander.Header>
                                 <DockPanel>
                                     <Button DockPanel.Dock="Bottom"
                                             Command="{Binding History.ClearSavedSearchesCommand}"
                                             Style="{StaticResource NavItemButtonStyle}">
                                         <StackPanel Orientation="Horizontal">
                                             <ui:FontIcon Glyph="&#xE74D;" FontSize="14" Margin="0,0,11,0"/>
-                                            <TextBlock Text="Clear saved searches" VerticalAlignment="Center"/>
+                                            <TextBlock Text="Clear saved searches" Style="{StaticResource SidebarCommandTextStyle}"/>
                                         </StackPanel>
                                     </Button>
                                     <Grid DockPanel.Dock="Bottom"
@@ -813,20 +1016,30 @@
                                              ItemContainerStyle="{StaticResource NavListBoxItemStyle}">
                                         <ListBox.ItemTemplate>
                                             <DataTemplate>
-                                                <Grid ToolTip="{Binding Summary}">
+                                                <Border Style="{StaticResource SidebarItemCardStyle}"
+                                                        ToolTip="{Binding Summary}">
+                                                <Grid>
                                                     <Grid.ColumnDefinitions>
                                                         <ColumnDefinition Width="Auto"/>
                                                         <ColumnDefinition Width="*"/>
                                                         <ColumnDefinition Width="Auto"/>
                                                     </Grid.ColumnDefinitions>
-                                                    <Ellipse Width="8" Height="8" Fill="{DynamicResource Atlas.AccentBrush}"
-                                                             Margin="1,0,12,0" VerticalAlignment="Center"/>
+                                                    <Border Style="{StaticResource SidebarIconChipStyle}">
+                                                        <ui:FontIcon Glyph="&#xE721;" FontSize="13"
+                                                                     Foreground="{DynamicResource Atlas.AccentBrush}"
+                                                                     HorizontalAlignment="Center"
+                                                                     VerticalAlignment="Center"/>
+                                                    </Border>
                                                     <StackPanel Grid.Column="1" VerticalAlignment="Center">
                                                         <TextBlock Text="{Binding DisplayName}"
-                                                                   TextTrimming="CharacterEllipsis"/>
-                                                        <TextBlock Text="{Binding Summary}"
-                                                                   Style="{StaticResource MutedValueStyle}"
-                                                                   TextTrimming="CharacterEllipsis"/>
+                                                                   Style="{StaticResource SidebarItemTitleTextStyle}"/>
+                                                        <Border Style="{StaticResource SidebarMetaPillStyle}"
+                                                                Margin="0,5,0,0">
+                                                            <TextBlock Text="{Binding Summary}"
+                                                                       Style="{StaticResource SidebarItemMonoTextStyle}"
+                                                                       MaxWidth="150"
+                                                                       FontSize="11"/>
+                                                        </Border>
                                                     </StackPanel>
                                                     <Button Grid.Column="2"
                                                             Command="{Binding DataContext.History.RemoveSavedSearchCommand, RelativeSource={RelativeSource AncestorType=ListBox}}"
@@ -839,6 +1052,7 @@
                                                         <ui:FontIcon Glyph="&#xE74D;" FontSize="11"/>
                                                     </Button>
                                                 </Grid>
+                                                </Border>
                                             </DataTemplate>
                                         </ListBox.ItemTemplate>
                                     </ListBox>
@@ -858,6 +1072,8 @@
                     <RowDefinition Height="*"/>
                 </Grid.RowDefinitions>
 
+                <Border Grid.Row="0" Grid.RowSpan="3" Style="{DynamicResource SearchSurfaceStyle}"/>
+
                 <!-- Omni bar -->
                 <Grid Grid.Row="0">
                     <Grid.ColumnDefinitions>
@@ -869,7 +1085,8 @@
                     </Grid.ColumnDefinitions>
 
                     <Button Grid.Column="0" Command="{Binding Search.BrowseCommand}"
-                            Style="{StaticResource IconButtonStyle}" ToolTip="Choose folder" Margin="0,0,8,0">
+                            Style="{StaticResource IconButtonStyle}" ToolTip="Choose folder"
+                            Margin="{DynamicResource AppDensity.BrowseButtonMargin}">
                         <ui:FontIcon Glyph="&#xE8B7;" FontSize="15"/>
                     </Button>
 
@@ -877,42 +1094,91 @@
                         <Grid>
                             <Grid.ColumnDefinitions>
                                 <ColumnDefinition Width="Auto"/>
-                                <ColumnDefinition Width="0.8*"/>
                                 <ColumnDefinition Width="Auto"/>
-                                <ColumnDefinition Width="1.6*"/>
+                                <ColumnDefinition Width="Auto"/>
+                                <ColumnDefinition Width="{DynamicResource AppDensity.OmniPathColumnWidth}"/>
+                                <ColumnDefinition Width="Auto"/>
+                                <ColumnDefinition Width="{DynamicResource AppDensity.OmniQueryColumnWidth}"/>
+                                <ColumnDefinition Width="Auto"/>
                             </Grid.ColumnDefinitions>
-                            <ui:FontIcon Glyph="&#xE721;" FontSize="15" Margin="0,0,10,0"
-                                         Foreground="{DynamicResource Atlas.Ink3Brush}" VerticalAlignment="Center"/>
-                            <TextBox x:Name="SearchPathBox"
-                                     Grid.Column="1"
-                                     Text="{Binding Search.SearchPath, UpdateSourceTrigger=LostFocus}"
-                                     Style="{StaticResource OmniPathBoxStyle}"
-                                     ui:ControlHelper.PlaceholderText="Folder to search"/>
-                            <Border Grid.Column="2" Style="{StaticResource OmniDividerStyle}"/>
+                            <Button Grid.Column="0"
+                                    Command="{Binding Search.SearchCommand}"
+                                    Style="{StaticResource IconButtonStyle}"
+                                    Visibility="{DynamicResource AppStyle.InlineSearchCommandVisibility}"
+                                    Width="{DynamicResource AppDensity.IconButtonSize}"
+                                    Height="{DynamicResource AppDensity.IconButtonSize}"
+                                    ToolTip="Start search">
+                                <ui:FontIcon Glyph="&#xE768;" FontSize="13"/>
+                            </Button>
+                            <Button Grid.Column="1"
+                                    Command="{Binding Search.CancelCommand}"
+                                    Style="{StaticResource IconButtonStyle}"
+                                    Visibility="{DynamicResource AppStyle.InlineSearchCommandVisibility}"
+                                    Width="{DynamicResource AppDensity.IconButtonSize}"
+                                    Height="{DynamicResource AppDensity.IconButtonSize}"
+                                    ToolTip="Cancel search">
+                                <ui:FontIcon Glyph="&#xE711;" FontSize="13"/>
+                            </Button>
+                            <ui:FontIcon Grid.Column="2"
+                                         Glyph="&#xE721;" FontSize="15" Margin="0,0,10,0"
+                                         Foreground="{DynamicResource Atlas.Ink3Brush}"
+                                         VerticalAlignment="Center"
+                                         Visibility="{DynamicResource AppStyle.OmniDecorativeSearchIconVisibility}"/>
+                            <Border Grid.Column="3" Style="{StaticResource OmniPathChipStyle}">
+                                <TextBox x:Name="SearchPathBox"
+                                         Text="{Binding Search.SearchPath, UpdateSourceTrigger=LostFocus}"
+                                         Style="{StaticResource OmniPathBoxStyle}"
+                                         ui:ControlHelper.PlaceholderText="Folder to search"/>
+                            </Border>
+                            <Border Grid.Column="4" Style="{StaticResource OmniDividerStyle}"/>
                             <TextBox x:Name="QueryBox"
-                                     Grid.Column="3"
+                                     Grid.Column="5"
                                      Text="{Binding Search.QueryText, UpdateSourceTrigger=PropertyChanged}"
                                      Style="{StaticResource OmniQueryBoxStyle}"
                                      ui:ControlHelper.PlaceholderText="{Binding Search.QueryPlaceholderText}"/>
+                            <Border Grid.Column="6"
+                                    Style="{DynamicResource SearchStatusPillStyle}"
+                                    Visibility="{DynamicResource AppStyle.SearchStatusPillVisibility}"
+                                    ToolTip="Elapsed search time">
+                                <StackPanel Orientation="Horizontal">
+                                    <Ellipse Width="6" Height="6"
+                                             Fill="{DynamicResource Atlas.Accent2Brush}"
+                                             VerticalAlignment="Center"/>
+                                    <TextBlock Style="{StaticResource StatusTextStyle}"
+                                               Foreground="{DynamicResource Atlas.Ink2Brush}"
+                                               Margin="6,0,0,0">
+                                        <Run Text="{Binding Search.ElapsedText, Mode=OneWay}"/>
+                                    </TextBlock>
+                                </StackPanel>
+                            </Border>
                         </Grid>
                     </Border>
 
                     <Button Grid.Column="2" Command="{Binding Search.SearchCommand}" IsDefault="True"
-                            Style="{StaticResource PrimaryButtonStyle}" Margin="8,0,0,0">
+                            Style="{StaticResource PrimaryButtonStyle}"
+                            Margin="{DynamicResource AppDensity.CommandButtonMargin}"
+                            Visibility="{DynamicResource AppStyle.ExternalSearchCommandVisibility}"
+                            ToolTip="Start search">
                         <StackPanel Orientation="Horizontal">
-                            <ui:FontIcon Glyph="&#xE768;" FontSize="13" Margin="0,0,8,0"/>
-                            <TextBlock Text="Start"/>
+                            <ui:FontIcon Glyph="&#xE768;" FontSize="13"
+                                         Margin="{DynamicResource AppDensity.CommandIconMargin}"/>
+                            <TextBlock Text="Start" Visibility="{DynamicResource AppStyle.CommandButtonTextVisibility}"/>
                         </StackPanel>
                     </Button>
                     <Button Grid.Column="3" Command="{Binding Search.CancelCommand}" IsCancel="True"
-                            Style="{StaticResource SecondaryButtonStyle}" Margin="8,0,0,0">
+                            Style="{StaticResource SecondaryButtonStyle}"
+                            Margin="{DynamicResource AppDensity.CommandButtonMargin}"
+                            Visibility="{DynamicResource AppStyle.ExternalSearchCommandVisibility}"
+                            ToolTip="Cancel search">
                         <StackPanel Orientation="Horizontal">
-                            <ui:FontIcon Glyph="&#xE711;" FontSize="13" Margin="0,0,8,0"/>
-                            <TextBlock Text="Cancel"/>
+                            <ui:FontIcon Glyph="&#xE711;" FontSize="13"
+                                         Margin="{DynamicResource AppDensity.CommandIconMargin}"/>
+                            <TextBlock Text="Cancel" Visibility="{DynamicResource AppStyle.CommandButtonTextVisibility}"/>
                         </StackPanel>
                     </Button>
                     <Button Grid.Column="4" Command="{Binding Search.TogglePreviewPaneCommand}"
-                            Style="{StaticResource IconButtonStyle}" Margin="8,0,0,0"
+                            Style="{StaticResource IconButtonStyle}"
+                            Margin="{DynamicResource AppDensity.CommandButtonMargin}"
                             ToolTip="Show or hide the preview pane">
                         <ui:FontIcon Glyph="&#xE8A1;" FontSize="15"/>
                     </Button>
@@ -922,7 +1188,7 @@
                 <ItemsControl Grid.Row="1"
                               ItemsSource="{Binding Search.QueryChips}"
                               Visibility="{Binding Search.HasQueryChips, Converter={StaticResource BoolToVisibility}}"
-                              Margin="0,10,0,2">
+                              Margin="{DynamicResource AppDensity.QueryChipsPanelMargin}">
                     <ItemsControl.ItemsPanel>
                         <ItemsPanelTemplate>
                             <WrapPanel/>
@@ -961,20 +1227,26 @@
                 </ItemsControl>
 
                 <!-- Filter chips -->
-                <WrapPanel Grid.Row="2" Margin="0,12,0,0">
+                <WrapPanel Grid.Row="2" Margin="{DynamicResource AppDensity.SearchFiltersPanelMargin}">
+                    <TextBlock Text="FILTERS"
+                               Style="{StaticResource FilterStripLabelStyle}"
+                               Visibility="{DynamicResource AppStyle.SearchFiltersLabelVisibility}"/>
                     <Border Style="{StaticResource FilterChipStyle}">
                         <StackPanel Orientation="Horizontal">
                             <TextBlock Text="Search" Style="{StaticResource ChipLabelStyle}"/>
                             <ComboBox SelectedItem="{Binding Search.SelectedSearchTargetOption}"
                                       ItemsSource="{Binding Search.SearchTargetOptions}"
-                                      MinWidth="154" BorderThickness="0" Background="Transparent"/>
+                                      MinWidth="{DynamicResource AppDensity.FilterSearchTargetMinWidth}"
+                                      BorderThickness="0" Background="Transparent"/>
                         </StackPanel>
                     </Border>
                     <Border Style="{StaticResource FilterChipStyle}">
                         <StackPanel Orientation="Horizontal">
                             <TextBlock Text="Pattern" Style="{StaticResource ChipLabelStyle}"/>
                             <TextBox Text="{Binding Search.FileNamePattern, UpdateSourceTrigger=PropertyChanged}"
-                                     MinWidth="260" MaxWidth="460" BorderThickness="0" Background="Transparent"
+                                     MinWidth="{DynamicResource AppDensity.FilterPatternMinWidth}"
+                                     MaxWidth="{DynamicResource AppDensity.FilterPatternMaxWidth}"
+                                     BorderThickness="0" Background="Transparent"
                                      VerticalContentAlignment="Center"
                                      ToolTip="Glob patterns separated by ; or , — e.g. *.cs;*.md"
                                      ui:ControlHelper.PlaceholderText="All files (e.g. *.cs;*.md)"/>
@@ -984,7 +1256,9 @@
                         <StackPanel Orientation="Horizontal">
                             <TextBlock Text="Exclude" Style="{StaticResource ChipLabelStyle}"/>
                             <TextBox Text="{Binding Search.ExcludeFileNamePattern, UpdateSourceTrigger=PropertyChanged}"
-                                     MinWidth="220" MaxWidth="420" BorderThickness="0" Background="Transparent"
+                                     MinWidth="{DynamicResource AppDensity.FilterExcludeMinWidth}"
+                                     MaxWidth="{DynamicResource AppDensity.FilterExcludeMaxWidth}"
+                                     BorderThickness="0" Background="Transparent"
                                      VerticalContentAlignment="Center"
                                      ToolTip="Exclude glob patterns separated by ; or , — e.g. *.log;*.tmp"
                                      ui:ControlHelper.PlaceholderText="None (e.g. *.log;*.tmp)"/>
@@ -995,7 +1269,8 @@
                             <TextBlock Text="Mode" Style="{StaticResource ChipLabelStyle}"/>
                             <ComboBox SelectedItem="{Binding Search.SearchMode}"
                                       ItemsSource="{Binding Search.AvailableModes}"
-                                      MinWidth="104" BorderThickness="0" Background="Transparent"/>
+                                      MinWidth="{DynamicResource AppDensity.FilterModeMinWidth}"
+                                      BorderThickness="0" Background="Transparent"/>
                         </StackPanel>
                     </Border>
                     <Border Style="{StaticResource FilterChipStyle}">
@@ -1088,7 +1363,7 @@
                 </WrapPanel>
 
                 <!-- Results -->
-                <Border Grid.Row="3" Style="{StaticResource ResultsSurfaceStyle}" Margin="0,12,0,0">
+                <Border Grid.Row="3" Style="{StaticResource ResultsSurfaceStyle}" Margin="{DynamicResource AppDensity.ResultsSurfaceMargin}">
                     <Grid>
                         <Grid.RowDefinitions>
                             <RowDefinition Height="Auto"/>
@@ -1109,6 +1384,39 @@
                                 <TextBlock Text="{Binding Search.ResultsContextText}" Style="{StaticResource CtxTitleStyle}"/>
                                 <TextBlock Grid.Column="1" Text="{Binding Search.ResultsSummaryText}"
                                            Style="{StaticResource MutedValueStyle}" Margin="12,3,0,0"/>
+                                <ItemsControl Grid.Column="2"
+                                              ItemsSource="{Binding Search.ActiveResultFacetChips}"
+                                              Visibility="{Binding Search.HasActiveResultFacets, Converter={StaticResource BoolToVisibility}}"
+                                              HorizontalAlignment="Right"
+                                              VerticalAlignment="Center"
+                                              Margin="10,0,8,0">
+                                    <ItemsControl.ItemsPanel>
+                                        <ItemsPanelTemplate>
+                                            <WrapPanel/>
+                                        </ItemsPanelTemplate>
+                                    </ItemsControl.ItemsPanel>
+                                    <ItemsControl.ItemTemplate>
+                                        <DataTemplate DataType="{x:Type vm:ResultFacetChip}">
+                                            <Border Style="{StaticResource ActiveFacetChipStyle}" ToolTip="{Binding ToolTip}">
+                                                <StackPanel Orientation="Horizontal">
+                                                    <TextBlock Text="{Binding Field}" Style="{StaticResource ActiveFacetFieldStyle}"/>
+                                                    <TextBlock Text=":" Style="{StaticResource ActiveFacetFieldStyle}" Margin="0,0,4,0"/>
+                                                    <TextBlock Text="{Binding Value}" Style="{StaticResource ActiveFacetValueStyle}"/>
+                                                    <Button Command="{Binding DataContext.Search.ClearResultFacetCommand, RelativeSource={RelativeSource AncestorType=ItemsControl}}"
+                                                            CommandParameter="{Binding Key}"
+                                                            Style="{StaticResource IconButtonStyle}"
+                                                            Width="{DynamicResource AppDensity.TinyIconButtonSize}"
+                                                            Height="{DynamicResource AppDensity.TinyIconButtonSize}"
+                                                            Padding="0"
+                                                            Margin="6,0,-2,0"
+                                                            ToolTip="{Binding ClearToolTip}">
+                                                        <ui:FontIcon Glyph="&#xE711;" FontSize="9"/>
+                                                    </Button>
+                                                </StackPanel>
+                                            </Border>
+                                        </DataTemplate>
+                                    </ItemsControl.ItemTemplate>
+                                </ItemsControl>
                                 <Button Grid.Column="3"
                                         Command="{Binding Search.CopyGroundedAnswerCommand}"
                                         Style="{StaticResource SecondaryButtonStyle}"
@@ -1141,7 +1449,7 @@
                                         <ui:FontIcon Glyph="&#xE70D;" FontSize="9" Margin="6,2,0,0"/>
                                     </StackPanel>
                                 </Button>
-                                <Grid Grid.Column="5" Width="210">
+                                <Grid Grid.Column="5" Width="{DynamicResource AppDensity.ResultRefinementWidth}">
                                     <TextBox Text="{Binding Search.RefinementQuery, UpdateSourceTrigger=PropertyChanged, Delay=120}"
                                              ui:ControlHelper.PlaceholderText="Filter results"
                                              Padding="8,4,28,4"/>
@@ -1155,14 +1463,15 @@
                                 </Grid>
                             </Grid>
 
-                            <WrapPanel Margin="0,8,0,0">
+                            <WrapPanel Margin="{DynamicResource AppDensity.ResultFacetsPanelMargin}">
                                 <Border Style="{StaticResource FilterChipStyle}">
                                     <StackPanel Orientation="Horizontal">
                                         <TextBlock Text="Sort" Style="{StaticResource ChipLabelStyle}"/>
                                         <ComboBox ItemsSource="{Binding Search.ResultSortOptions}"
                                                   SelectedItem="{Binding Search.SelectedSortOption}"
                                                   DisplayMemberPath="Label"
-                                                  MinWidth="120" BorderThickness="0" Background="Transparent"/>
+                                                  MinWidth="{DynamicResource AppDensity.ResultSortMinWidth}"
+                                                  BorderThickness="0" Background="Transparent"/>
                                     </StackPanel>
                                 </Border>
                                 <Border Style="{StaticResource FilterChipStyle}">
@@ -1171,7 +1480,8 @@
                                         <ComboBox ItemsSource="{Binding Search.ResultGroupOptions}"
                                                   SelectedItem="{Binding Search.SelectedGroupOption}"
                                                   DisplayMemberPath="Label"
-                                                  MinWidth="120" BorderThickness="0" Background="Transparent"/>
+                                                  MinWidth="{DynamicResource AppDensity.ResultGroupMinWidth}"
+                                                  BorderThickness="0" Background="Transparent"/>
                                     </StackPanel>
                                 </Border>
                                 <Border Style="{StaticResource FilterChipStyle}">
@@ -1180,7 +1490,9 @@
                                         <ComboBox ItemsSource="{Binding Search.FileTypeFacetOptions}"
                                                   SelectedItem="{Binding Search.SelectedFileTypeFacet}"
                                                   DisplayMemberPath="DisplayText"
-                                                  MinWidth="130" MaxWidth="180" BorderThickness="0" Background="Transparent"/>
+                                                  MinWidth="{DynamicResource AppDensity.ResultTypeMinWidth}"
+                                                  MaxWidth="{DynamicResource AppDensity.ResultTypeMaxWidth}"
+                                                  BorderThickness="0" Background="Transparent"/>
                                     </StackPanel>
                                 </Border>
                                 <Border Style="{StaticResource FilterChipStyle}">
@@ -1189,7 +1501,9 @@
                                         <ComboBox ItemsSource="{Binding Search.FolderFacetOptions}"
                                                   SelectedItem="{Binding Search.SelectedFolderFacet}"
                                                   DisplayMemberPath="DisplayText"
-                                                  MinWidth="150" MaxWidth="260" BorderThickness="0" Background="Transparent"/>
+                                                  MinWidth="{DynamicResource AppDensity.ResultFolderMinWidth}"
+                                                  MaxWidth="{DynamicResource AppDensity.ResultFolderMaxWidth}"
+                                                  BorderThickness="0" Background="Transparent"/>
                                     </StackPanel>
                                 </Border>
                                 <Border Style="{StaticResource FilterChipStyle}">
@@ -1198,7 +1512,8 @@
                                         <ComboBox ItemsSource="{Binding Search.ModifiedFacetOptions}"
                                                   SelectedItem="{Binding Search.SelectedModifiedFacet}"
                                                   DisplayMemberPath="DisplayText"
-                                                  MinWidth="130" BorderThickness="0" Background="Transparent"/>
+                                                  MinWidth="{DynamicResource AppDensity.ResultDateMinWidth}"
+                                                  BorderThickness="0" Background="Transparent"/>
                                     </StackPanel>
                                 </Border>
                                 <Border Style="{StaticResource FilterChipStyle}">
@@ -1207,7 +1522,8 @@
                                         <ComboBox ItemsSource="{Binding Search.SourceFacetOptions}"
                                                   SelectedItem="{Binding Search.SelectedSourceFacet}"
                                                   DisplayMemberPath="DisplayText"
-                                                  MinWidth="130" BorderThickness="0" Background="Transparent"/>
+                                                  MinWidth="{DynamicResource AppDensity.ResultSourceMinWidth}"
+                                                  BorderThickness="0" Background="Transparent"/>
                                     </StackPanel>
                                 </Border>
                                 <Border Style="{StaticResource FilterChipStyle}">
@@ -1216,7 +1532,8 @@
                                         <ComboBox ItemsSource="{Binding Search.SizeFacetOptions}"
                                                   SelectedItem="{Binding Search.SelectedSizeFacet}"
                                                   DisplayMemberPath="DisplayText"
-                                                  MinWidth="150" BorderThickness="0" Background="Transparent"/>
+                                                  MinWidth="{DynamicResource AppDensity.ResultSizeMinWidth}"
+                                                  BorderThickness="0" Background="Transparent"/>
                                     </StackPanel>
                                 </Border>
                                 <Button Command="{Binding Search.ClearResultFacetsCommand}"
@@ -1329,26 +1646,50 @@
                                                 <StackPanel Grid.Column="1" Margin="12,0,10,0" VerticalAlignment="Center">
                                                     <TextBlock Text="{Binding FileName}" Style="{StaticResource ResultNameStyle}"/>
                                                     <TextBlock Text="{Binding Directory}" Style="{StaticResource ResultPathStyle}"/>
+                                                    <WrapPanel Visibility="{DynamicResource AppStyle.ResultMetadataVisibility}">
+                                                        <Border Style="{DynamicResource ResultMetaPillStyle}">
+                                                            <StackPanel Orientation="Horizontal">
+                                                                <TextBlock Text="src" Style="{DynamicResource ResultMetaKeyStyle}"/>
+                                                                <TextBlock Text="{Binding SourceGroup}" Style="{DynamicResource ResultMetaValueStyle}"/>
+                                                            </StackPanel>
+                                                        </Border>
+                                                        <Border Style="{DynamicResource ResultMetaPillStyle}">
+                                                            <StackPanel Orientation="Horizontal">
+                                                                <TextBlock Text="mod" Style="{DynamicResource ResultMetaKeyStyle}"/>
+                                                                <TextBlock Text="{Binding ModifiedText}" Style="{DynamicResource ResultMetaValueStyle}"/>
+                                                            </StackPanel>
+                                                        </Border>
+                                                        <Border Style="{DynamicResource ResultMetaPillStyle}">
+                                                            <StackPanel Orientation="Horizontal">
+                                                                <TextBlock Text="size" Style="{DynamicResource ResultMetaKeyStyle}"/>
+                                                                <TextBlock Text="{Binding SizeText}" Style="{DynamicResource ResultMetaValueStyle}"/>
+                                                            </StackPanel>
+                                                        </Border>
+                                                    </WrapPanel>
                                                 </StackPanel>
                                                 <Button Grid.Column="2"
                                                         Command="{Binding DataContext.Search.ToggleFavoriteResultCommand, RelativeSource={RelativeSource AncestorType=ListBox}}"
                                                         CommandParameter="{Binding}"
-                                                        Style="{StaticResource IconButtonStyle}"
+                                                        Tag="{Binding IsFavorite}"
+                                                        Style="{StaticResource ResultToggleIconButtonStyle}"
                                                         Width="{DynamicResource AppDensity.PreviewIconButtonSize}"
                                                         Height="{DynamicResource AppDensity.PreviewIconButtonSize}"
                                                         Margin="0,0,6,0"
                                                         ToolTip="{Binding FavoriteActionText}">
-                                                    <ui:FontIcon Glyph="{Binding FavoriteGlyph}" FontSize="13"/>
+                                                    <ui:FontIcon Glyph="{Binding FavoriteGlyph}" FontSize="13"
+                                                                 Style="{StaticResource FavoriteResultGlyphStyle}"/>
                                                 </Button>
                                                 <Button Grid.Column="3"
                                                         Command="{Binding DataContext.Search.TogglePinResultCommand, RelativeSource={RelativeSource AncestorType=ListBox}}"
                                                         CommandParameter="{Binding}"
-                                                        Style="{StaticResource IconButtonStyle}"
+                                                        Tag="{Binding IsPinned}"
+                                                        Style="{StaticResource ResultToggleIconButtonStyle}"
                                                         Width="{DynamicResource AppDensity.PreviewIconButtonSize}"
                                                         Height="{DynamicResource AppDensity.PreviewIconButtonSize}"
                                                         Margin="0,0,8,0"
                                                         ToolTip="{Binding PinActionText}">
-                                                    <ui:FontIcon Glyph="{Binding PinGlyph}" FontSize="13"/>
+                                                    <ui:FontIcon Glyph="{Binding PinGlyph}" FontSize="13"
+                                                                 Style="{StaticResource PinResultGlyphStyle}"/>
                                                 </Button>
                                                 <Border Grid.Column="4" Style="{StaticResource HitsPillStyle}">
                                                     <TextBlock Style="{StaticResource HitsPillTextStyle}">
@@ -1358,22 +1699,25 @@
                                             </Grid>
 
                                             <!-- matching lines -->
-                                            <Border Height="1" Background="{DynamicResource Atlas.LineBrush}"/>
-                                            <ItemsControl ItemsSource="{Binding VisibleHits}" Margin="0,5,0,5">
-                                                <ItemsControl.ItemTemplate>
-                                                    <DataTemplate>
-                                                        <Grid Margin="0,3,12,3">
-                                                            <Grid.ColumnDefinitions>
-                                                                <ColumnDefinition Width="Auto"/>
-                                                                <ColumnDefinition Width="*"/>
-                                                            </Grid.ColumnDefinitions>
-                                                            <TextBlock Text="{Binding LineNumber}" Style="{StaticResource LineNoStyle}"/>
-                                                            <TextBlock Grid.Column="1" Style="{StaticResource LineTextStyle}"
-                                                                       hl:HitHighlight.Hit="{Binding}"/>
-                                                        </Grid>
-                                                    </DataTemplate>
-                                                </ItemsControl.ItemTemplate>
-                                            </ItemsControl>
+                                            <Border Style="{DynamicResource ResultHitsPanelStyle}">
+                                                <ItemsControl ItemsSource="{Binding VisibleHits}">
+                                                    <ItemsControl.ItemTemplate>
+                                                        <DataTemplate>
+                                                            <Border Style="{DynamicResource MatchLineContainerStyle}">
+                                                                <Grid>
+                                                                    <Grid.ColumnDefinitions>
+                                                                        <ColumnDefinition Width="Auto"/>
+                                                                        <ColumnDefinition Width="*"/>
+                                                                    </Grid.ColumnDefinitions>
+                                                                    <TextBlock Text="{Binding LineNumber}" Style="{StaticResource LineNoStyle}"/>
+                                                                    <TextBlock Grid.Column="1" Style="{StaticResource LineTextStyle}"
+                                                                               hl:HitHighlight.Hit="{Binding}"/>
+                                                                </Grid>
+                                                            </Border>
+                                                        </DataTemplate>
+                                                    </ItemsControl.ItemTemplate>
+                                                </ItemsControl>
+                                            </Border>
 
                                             <!-- expand / collapse -->
                                             <Border Height="1" Background="{DynamicResource Atlas.LineBrush}"
@@ -1520,42 +1864,76 @@
                             </StackPanel>
 
                             <StackPanel Grid.Row="1" Margin="0,0,0,12">
-                                <Border BorderBrush="{DynamicResource Atlas.LineBrush}" BorderThickness="0,1,0,0" Padding="0,10,0,0">
+                                <Border Style="{DynamicResource PreviewMetadataCardStyle}">
                                     <StackPanel>
-                                        <Grid Margin="0,0,0,6">
-                                            <Grid.ColumnDefinitions>
-                                                <ColumnDefinition Width="Auto"/>
-                                                <ColumnDefinition Width="*"/>
-                                            </Grid.ColumnDefinitions>
-                                            <TextBlock Text="Location" Style="{StaticResource MetaKeyStyle}"/>
-                                            <TextBlock Grid.Column="1" Text="{Binding Search.SelectedFile.Directory}" Style="{StaticResource MetaValueStyle}" Margin="10,0,0,0"/>
-                                        </Grid>
-                                        <Grid Margin="0,0,0,6">
-                                            <Grid.ColumnDefinitions>
-                                                <ColumnDefinition Width="Auto"/>
-                                                <ColumnDefinition Width="*"/>
-                                            </Grid.ColumnDefinitions>
-                                            <TextBlock Text="Type" Style="{StaticResource MetaKeyStyle}"/>
-                                            <TextBlock Grid.Column="1" Style="{StaticResource MetaValueStyle}" Margin="10,0,0,0">
-                                                <Run Text="."/><Run Text="{Binding Search.SelectedFile.Extension, Mode=OneWay}"/>
-                                            </TextBlock>
-                                        </Grid>
-                                        <Grid Margin="0,0,0,6">
-                                            <Grid.ColumnDefinitions>
-                                                <ColumnDefinition Width="Auto"/>
-                                                <ColumnDefinition Width="*"/>
-                                            </Grid.ColumnDefinitions>
-                                            <TextBlock Text="Size" Style="{StaticResource MetaKeyStyle}"/>
-                                            <TextBlock Grid.Column="1" Text="{Binding Search.SelectedFile.SizeText}" Style="{StaticResource MetaValueStyle}" Margin="10,0,0,0"/>
-                                        </Grid>
-                                        <Grid>
-                                            <Grid.ColumnDefinitions>
-                                                <ColumnDefinition Width="Auto"/>
-                                                <ColumnDefinition Width="*"/>
-                                            </Grid.ColumnDefinitions>
-                                            <TextBlock Text="Modified" Style="{StaticResource MetaKeyStyle}"/>
-                                            <TextBlock Grid.Column="1" Text="{Binding Search.SelectedFile.ModifiedText}" Style="{StaticResource MetaValueStyle}" Margin="10,0,0,0"/>
-                                        </Grid>
+                                        <WrapPanel Visibility="{DynamicResource AppStyle.PreviewMetadataPillsVisibility}">
+                                            <Border Style="{DynamicResource PreviewMetaPillStyle}">
+                                                <StackPanel Orientation="Horizontal">
+                                                    <TextBlock Text="type" Style="{DynamicResource PreviewMetaKeyStyle}"/>
+                                                    <TextBlock Text="{Binding Search.SelectedFile.FileTypeGroup}" Style="{DynamicResource PreviewMetaValueStyle}"/>
+                                                </StackPanel>
+                                            </Border>
+                                            <Border Style="{DynamicResource PreviewMetaPillStyle}">
+                                                <StackPanel Orientation="Horizontal">
+                                                    <TextBlock Text="size" Style="{DynamicResource PreviewMetaKeyStyle}"/>
+                                                    <TextBlock Text="{Binding Search.SelectedFile.SizeText}" Style="{DynamicResource PreviewMetaValueStyle}"/>
+                                                </StackPanel>
+                                            </Border>
+                                            <Border Style="{DynamicResource PreviewMetaPillStyle}">
+                                                <StackPanel Orientation="Horizontal">
+                                                    <TextBlock Text="mod" Style="{DynamicResource PreviewMetaKeyStyle}"/>
+                                                    <TextBlock Text="{Binding Search.SelectedFile.ModifiedText}" Style="{DynamicResource PreviewMetaValueStyle}"/>
+                                                </StackPanel>
+                                            </Border>
+                                            <Border Style="{DynamicResource PreviewMetaPillStyle}">
+                                                <StackPanel Orientation="Horizontal">
+                                                    <TextBlock Text="src" Style="{DynamicResource PreviewMetaKeyStyle}"/>
+                                                    <TextBlock Text="{Binding Search.SelectedFile.SourceGroup}" Style="{DynamicResource PreviewMetaValueStyle}"/>
+                                                </StackPanel>
+                                            </Border>
+                                            <Border Style="{DynamicResource PreviewMetaPillStyle}">
+                                                <StackPanel Orientation="Horizontal">
+                                                    <TextBlock Text="hits" Style="{DynamicResource PreviewMetaKeyStyle}"/>
+                                                    <TextBlock Text="{Binding Search.SelectedFile.HitCount}" Style="{DynamicResource PreviewMetaValueStyle}"/>
+                                                </StackPanel>
+                                            </Border>
+                                        </WrapPanel>
+                                        <StackPanel Visibility="{DynamicResource AppStyle.PreviewMetadataRowsVisibility}">
+                                            <Grid Margin="0,0,0,6">
+                                                <Grid.ColumnDefinitions>
+                                                    <ColumnDefinition Width="Auto"/>
+                                                    <ColumnDefinition Width="*"/>
+                                                </Grid.ColumnDefinitions>
+                                                <TextBlock Text="Location" Style="{StaticResource MetaKeyStyle}"/>
+                                                <TextBlock Grid.Column="1" Text="{Binding Search.SelectedFile.Directory}" Style="{StaticResource MetaValueStyle}" Margin="10,0,0,0"/>
+                                            </Grid>
+                                            <Grid Margin="0,0,0,6">
+                                                <Grid.ColumnDefinitions>
+                                                    <ColumnDefinition Width="Auto"/>
+                                                    <ColumnDefinition Width="*"/>
+                                                </Grid.ColumnDefinitions>
+                                                <TextBlock Text="Type" Style="{StaticResource MetaKeyStyle}"/>
+                                                <TextBlock Grid.Column="1" Style="{StaticResource MetaValueStyle}" Margin="10,0,0,0">
+                                                    <Run Text="."/><Run Text="{Binding Search.SelectedFile.Extension, Mode=OneWay}"/>
+                                                </TextBlock>
+                                            </Grid>
+                                            <Grid Margin="0,0,0,6">
+                                                <Grid.ColumnDefinitions>
+                                                    <ColumnDefinition Width="Auto"/>
+                                                    <ColumnDefinition Width="*"/>
+                                                </Grid.ColumnDefinitions>
+                                                <TextBlock Text="Size" Style="{StaticResource MetaKeyStyle}"/>
+                                                <TextBlock Grid.Column="1" Text="{Binding Search.SelectedFile.SizeText}" Style="{StaticResource MetaValueStyle}" Margin="10,0,0,0"/>
+                                            </Grid>
+                                            <Grid>
+                                                <Grid.ColumnDefinitions>
+                                                    <ColumnDefinition Width="Auto"/>
+                                                    <ColumnDefinition Width="*"/>
+                                                </Grid.ColumnDefinitions>
+                                                <TextBlock Text="Modified" Style="{StaticResource MetaKeyStyle}"/>
+                                                <TextBlock Grid.Column="1" Text="{Binding Search.SelectedFile.ModifiedText}" Style="{StaticResource MetaValueStyle}" Margin="10,0,0,0"/>
+                                            </Grid>
+                                        </StackPanel>
                                     </StackPanel>
                                 </Border>
                             </StackPanel>
@@ -1563,19 +1941,13 @@
                             <Grid Grid.Row="2">
                                 <Grid.RowDefinitions>
                                     <RowDefinition Height="Auto"/>
+                                    <RowDefinition Height="Auto"/>
                                     <RowDefinition Height="*"/>
                                 </Grid.RowDefinitions>
 
                                 <Border Grid.Row="0"
                                         Visibility="{Binding Search.HasImageOcrPreview, Converter={StaticResource BoolToVisibility}}"
-                                        BorderBrush="{DynamicResource Atlas.LineBrush}"
-                                        BorderThickness="1"
-                                        CornerRadius="6"
-                                        Background="{DynamicResource Atlas.Surface2Brush}"
-                                        Padding="8"
-                                        Margin="0,0,0,10"
-                                        MaxHeight="260"
-                                        ClipToBounds="True">
+                                        Style="{DynamicResource PreviewImageCardStyle}">
                                     <DockPanel LastChildFill="True">
                                         <TextBlock DockPanel.Dock="Bottom"
                                                    Text="{Binding Search.ImageOcrPreview.Label}"
@@ -1601,7 +1973,36 @@
                                     </DockPanel>
                                 </Border>
 
-                                <TextBox Grid.Row="1" Text="{Binding Search.PreviewContent, Mode=OneWay}"
+                                <StackPanel Grid.Row="1"
+                                            Style="{StaticResource PreviewHitsPanelStyle}"
+                                            Visibility="{Binding Search.SelectedFile.HasPreviewHits, Converter={StaticResource BoolToVisibility}}">
+                                    <TextBlock Text="MATCHING LINES"
+                                               Style="{StaticResource UpperPanelLabelStyle}"
+                                               Margin="0,0,0,8"/>
+                                    <ItemsControl ItemsSource="{Binding Search.SelectedFile.PreviewHits}">
+                                        <ItemsControl.ItemTemplate>
+                                            <DataTemplate>
+                                                <Border Style="{StaticResource PreviewHitLineStyle}">
+                                                    <Grid>
+                                                        <Grid.ColumnDefinitions>
+                                                            <ColumnDefinition Width="Auto"/>
+                                                            <ColumnDefinition Width="*"/>
+                                                        </Grid.ColumnDefinitions>
+                                                        <TextBlock Text="{Binding LineNumber}" Style="{StaticResource LineNoStyle}"/>
+                                                        <TextBlock Grid.Column="1"
+                                                                   Style="{StaticResource LineTextStyle}"
+                                                                   hl:HitHighlight.Hit="{Binding}"/>
+                                                    </Grid>
+                                                </Border>
+                                            </DataTemplate>
+                                        </ItemsControl.ItemTemplate>
+                                    </ItemsControl>
+                                    <TextBlock Text="{Binding Search.SelectedFile.PreviewMoreText}"
+                                               Style="{StaticResource MutedValueStyle}"
+                                               Visibility="{Binding Search.SelectedFile.HasMorePreviewHits, Converter={StaticResource BoolToVisibility}}"/>
+                                </StackPanel>
+
+                                <TextBox Grid.Row="2" Text="{Binding Search.PreviewContent, Mode=OneWay}"
                                          Style="{StaticResource PreviewCodeBoxStyle}"/>
                             </Grid>
                         </Grid>

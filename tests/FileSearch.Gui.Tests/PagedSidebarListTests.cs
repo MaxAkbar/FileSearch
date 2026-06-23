@@ -25,6 +25,8 @@ public sealed class PagedSidebarListTests
             pageSize: 2);
 
         Assert.Equal(new[] { "alpha", "beta" }, list.Items);
+        Assert.Equal(5, list.Count);
+        Assert.Equal("5", list.CountText);
         Assert.Equal("1-2 of 5", list.PageSummaryText);
         Assert.True(list.IsPagerVisible);
         Assert.True(list.NextPageCommand.CanExecute(null));
@@ -37,6 +39,8 @@ public sealed class PagedSidebarListTests
         list.SearchText = "ta";
 
         Assert.Equal(new[] { "beta", "delta" }, list.Items);
+        Assert.Equal(2, list.Count);
+        Assert.Equal("2", list.CountText);
         Assert.Equal("1-2 of 2", list.PageSummaryText);
         Assert.False(list.IsPagerVisible);
         Assert.True(list.HasSearchText);
@@ -79,6 +83,8 @@ public sealed class PagedSidebarListTests
         source.Add("beta");
 
         Assert.Equal(new[] { "alpha", "beta" }, list.Items);
+        Assert.Equal(2, list.Count);
+        Assert.Equal("2", list.CountText);
         Assert.Equal("1-2 of 2", list.PageSummaryText);
     }
 

@@ -53,6 +53,31 @@ public sealed class FileResultViewModelTests
     }
 
     [Fact]
+    public void PreviewHitsAreCappedIndependentlyFromResultCardExpansion()
+    {
+        var result = new FileResultViewModel(@"C:\docs\report.cs", new FakeFileLauncher());
+        for (var i = 1; i <= FileResultViewModel.PreviewHitLimit + 2; i++)
+        {
+            result.AddHit(new Hit(
+                @"C:\docs\report.cs",
+                i,
+                $"needle {i}",
+                Array.Empty<MatchSpan>()));
+        }
+
+        Assert.True(result.HasPreviewHits);
+        Assert.Equal(FileResultViewModel.PreviewHitLimit, result.PreviewHits.Count());
+        Assert.True(result.HasMorePreviewHits);
+        Assert.Equal(2, result.ExtraPreviewHitCount);
+        Assert.Contains("+ 2 more matches", result.PreviewMoreText);
+
+        result.ToggleExpandCommand.Execute(null);
+
+        Assert.True(result.IsExpanded);
+        Assert.Equal(FileResultViewModel.PreviewHitLimit, result.PreviewHits.Count());
+    }
+
+    [Fact]
     public async Task OpenImageOcrPreviewCommandLaunchesPreviewWhenAnchorIsAvailable()
     {
         var path = Path.Combine(Path.GetTempPath(), $"{Guid.NewGuid():N}.png");

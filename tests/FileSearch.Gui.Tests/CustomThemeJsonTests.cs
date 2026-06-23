@@ -49,6 +49,7 @@ public sealed class CustomThemeJsonTests
 
         var paper = Assert.IsType<SolidColorBrush>(resources["Atlas.PaperBrush"]);
         Assert.Equal(Color.FromArgb(0xFF, 0x1E, 0x23, 0x28), paper.Color);
+        Assert.Equal(Color.FromArgb(0xFF, 0x1E, 0x23, 0x28), Assert.IsType<Color>(resources["Atlas.PaperColor"]));
         Assert.Equal(Color.FromArgb(0xFF, 0x88, 0xC0, 0xD0), Assert.IsType<Color>(resources["SystemAccentColor"]));
         Assert.Equal("Cascadia Code", Assert.IsType<FontFamily>(resources["Atlas.MonoFont"]).Source);
     }

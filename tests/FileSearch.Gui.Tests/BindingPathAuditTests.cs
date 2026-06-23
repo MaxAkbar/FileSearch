@@ -52,6 +52,7 @@ public sealed class BindingPathAuditTests
         typeof(AppShortcutBindingViewModel),
         typeof(QuickSearchShortcutBindingViewModel),
         typeof(QueryChipViewModel),
+        typeof(ResultFacetChip),
     };
 
     /// <summary>Window-scope (DataContext) type per file; default is the shell.</summary>
@@ -128,6 +129,9 @@ public sealed class BindingPathAuditTests
 
         // Bindings that target a UI element rather than the DataContext.
         if (site.Expression.Contains("ElementName=", StringComparison.Ordinal))
+            return true;
+
+        if (site.Expression.Contains("Source=", StringComparison.Ordinal))
             return true;
 
         if (site.Expression.Contains("RelativeSource", StringComparison.Ordinal))

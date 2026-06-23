@@ -136,6 +136,7 @@ public sealed partial class SearchViewModel : ObservableObject, IDisposable
             if (_history.RecentQueries.Count > 0) QueryText = _history.RecentQueries[0];
             if (_history.RecentPaths.Count > 0) SearchPath = _history.RecentPaths[0];
         }
+        _history.UpdateActiveScope(FileNamePattern);
 
         _isInitialized = true;
     }
@@ -320,6 +321,29 @@ public sealed partial class SearchViewModel : ObservableObject, IDisposable
         SelectFacetValue(SizeFacetOptions, option => SelectedSizeFacet = option, ResultFacetOption.AllValue);
     }
 
+    [RelayCommand]
+    private void ClearResultFacet(string? key)
+    {
+        switch (key)
+        {
+            case "type":
+                SelectFacetValue(FileTypeFacetOptions, option => SelectedFileTypeFacet = option, ResultFacetOption.AllValue);
+                break;
+            case "folder":
+                SelectFacetValue(FolderFacetOptions, option => SelectedFolderFacet = option, ResultFacetOption.AllValue);
+                break;
+            case "date":
+                SelectFacetValue(ModifiedFacetOptions, option => SelectedModifiedFacet = option, ResultFacetOption.AllValue);
+                break;
+            case "source":
+                SelectFacetValue(SourceFacetOptions, option => SelectedSourceFacet = option, ResultFacetOption.AllValue);
+                break;
+            case "size":
+                SelectFacetValue(SizeFacetOptions, option => SelectedSizeFacet = option, ResultFacetOption.AllValue);
+                break;
+        }
+    }
+
     private bool FilterFiles(object obj)
     {
         if (obj is not FileResultViewModel file) return true;
@@ -367,6 +391,10 @@ public sealed partial class SearchViewModel : ObservableObject, IDisposable
     public bool IsContentSearch => CurrentSearchTarget == SearchTarget.Content;
 
     public string ResultsSummaryText => $"{FilesMatched:n0} {ResultItemNounPlural} · {TotalHits:n0} hits";
+
+    public IReadOnlyList<ResultFacetChip> ActiveResultFacetChips => BuildActiveResultFacetChips();
+
+    public bool HasActiveResultFacets => ActiveResultFacetChips.Count > 0;
 
     /// <summary>Heading above the results list ("Find …" once a query is set).</summary>
     public string ResultsContextText =>
@@ -1132,6 +1160,7 @@ public sealed partial class SearchViewModel : ObservableObject, IDisposable
             return;
 
         RefreshFilesView();
+        NotifyActiveResultFacetChipsChanged();
     }
 
     private void RebuildFacetOptions()
@@ -1204,7 +1233,42 @@ public sealed partial class SearchViewModel : ObservableObject, IDisposable
         finally
         {
             _isRebuildingFacetOptions = false;
+            NotifyActiveResultFacetChipsChanged();
         }
+    }
+
+    private List<ResultFacetChip> BuildActiveResultFacetChips()
+    {
+        var chips = new List<ResultFacetChip>(5);
+        AddActiveFacetChip(chips, "type", "Type", SelectedFileTypeFacet);
+        AddActiveFacetChip(chips, "folder", "Folder", SelectedFolderFacet);
+        AddActiveFacetChip(chips, "date", "Date", SelectedModifiedFacet);
+        AddActiveFacetChip(chips, "source", "Source", SelectedSourceFacet);
+        AddActiveFacetChip(chips, "size", "Size", SelectedSizeFacet);
+        return chips;
+    }
+
+    private static void AddActiveFacetChip(
+        List<ResultFacetChip> chips,
+        string key,
+        string field,
+        ResultFacetOption? facet)
+    {
+        if (facet is null || string.Equals(facet.Value, ResultFacetOption.AllValue, StringComparison.Ordinal))
+            return;
+
+        chips.Add(new ResultFacetChip(
+            key,
+            field,
+            facet.Label,
+            $"{field}: {facet.DisplayText}",
+            $"Clear {field.ToLowerInvariant()} facet"));
+    }
+
+    private void NotifyActiveResultFacetChipsChanged()
+    {
+        OnPropertyChanged(nameof(ActiveResultFacetChips));
+        OnPropertyChanged(nameof(HasActiveResultFacets));
     }
 
     private static IEnumerable<ResultFacetOption> BuildFacetOptions(
@@ -1854,8 +1918,11 @@ public sealed partial class SearchViewModel : ObservableObject, IDisposable
         });
     }
 
-    partial void OnFileNamePatternChanged(string value) =>
+    partial void OnFileNamePatternChanged(string value)
+    {
         OnPropertyChanged(nameof(FilePatternSummary));
+        _history.UpdateActiveScope(value);
+    }
 
     partial void OnExcludeFileNamePatternChanged(string value) =>
         OnPropertyChanged(nameof(ExcludePatternSummary));

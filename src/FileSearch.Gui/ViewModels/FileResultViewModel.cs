@@ -23,6 +23,9 @@ public sealed partial class FileResultViewModel : ObservableObject
     /// <summary>How many hit lines a result card shows before "+N more".</summary>
     public const int CollapsedHitLimit = 3;
 
+    /// <summary>How many hit lines the preview pane shows above the loaded context.</summary>
+    public const int PreviewHitLimit = 5;
+
     private readonly List<Hit> _hits = new();
     private readonly IFileLauncher _launcher;
     private readonly Func<string, CancellationToken, Task>? _recordOpenedAsync;
@@ -87,6 +90,19 @@ public sealed partial class FileResultViewModel : ObservableObject
     /// <summary>The hit lines the card should currently render.</summary>
     public IEnumerable<Hit> VisibleHits =>
         IsExpanded ? _hits : _hits.Take(CollapsedHitLimit);
+
+    public IEnumerable<Hit> PreviewHits => _hits.Take(PreviewHitLimit);
+
+    public bool HasPreviewHits => _hits.Count > 0;
+
+    public int ExtraPreviewHitCount => Math.Max(0, _hits.Count - PreviewHitLimit);
+
+    public bool HasMorePreviewHits => ExtraPreviewHitCount > 0;
+
+    public string PreviewMoreText =>
+        ExtraPreviewHitCount <= 0
+            ? string.Empty
+            : $"+ {ExtraPreviewHitCount} more match{(ExtraPreviewHitCount == 1 ? string.Empty : "es")} in loaded preview";
 
     public bool HasMoreHits => _hits.Count > CollapsedHitLimit;
 
@@ -274,6 +290,8 @@ public sealed partial class FileResultViewModel : ObservableObject
         // collapsed cards freeze at the first few, expanded cards keep growing.
         if (IsExpanded || _hits.Count <= CollapsedHitLimit)
             OnPropertyChanged(nameof(VisibleHits));
+        if (_hits.Count <= PreviewHitLimit + 1)
+            OnPropertyChanged(nameof(PreviewHits));
         if (!hadImageOcrPreview && HasImageOcrPreview)
         {
             OnPropertyChanged(nameof(HasImageOcrPreview));
@@ -286,6 +304,10 @@ public sealed partial class FileResultViewModel : ObservableObject
         OnPropertyChanged(nameof(HasMoreHits));
         OnPropertyChanged(nameof(ExtraHitCount));
         OnPropertyChanged(nameof(MoreText));
+        OnPropertyChanged(nameof(HasPreviewHits));
+        OnPropertyChanged(nameof(ExtraPreviewHitCount));
+        OnPropertyChanged(nameof(HasMorePreviewHits));
+        OnPropertyChanged(nameof(PreviewMoreText));
     }
 
     public void UpdatePath(string fullPath)
@@ -313,6 +335,11 @@ public sealed partial class FileResultViewModel : ObservableObject
         OnPropertyChanged(nameof(ExtensionPattern));
         OnPropertyChanged(nameof(ExcludeExtensionPatternMenuText));
         OnPropertyChanged(nameof(VisibleHits));
+        OnPropertyChanged(nameof(PreviewHits));
+        OnPropertyChanged(nameof(HasPreviewHits));
+        OnPropertyChanged(nameof(ExtraPreviewHitCount));
+        OnPropertyChanged(nameof(HasMorePreviewHits));
+        OnPropertyChanged(nameof(PreviewMoreText));
         OnPropertyChanged(nameof(SizeBytes));
         OnPropertyChanged(nameof(SizeText));
         OnPropertyChanged(nameof(SizeGroup));

@@ -13,26 +13,50 @@
          ===================================================================== -->
 
     <!-- ===== Palette (Light / paper defaults) ===== -->
-    <SolidColorBrush x:Key="Atlas.PaperBrush"      Color="#F4F1EA"/>
-    <SolidColorBrush x:Key="Atlas.SurfaceBrush"    Color="#FFFDF8"/>
-    <SolidColorBrush x:Key="Atlas.Surface2Brush"   Color="#FAF7F0"/>
-    <SolidColorBrush x:Key="Atlas.SidebarBrush"    Color="#EDE8DF"/>
-    <SolidColorBrush x:Key="Atlas.InkBrush"        Color="#23261F"/>
-    <SolidColorBrush x:Key="Atlas.Ink2Brush"       Color="#5B5F54"/>
-    <SolidColorBrush x:Key="Atlas.Ink3Brush"       Color="#8E9286"/>
-    <SolidColorBrush x:Key="Atlas.LineBrush"       Color="#17000000"/>
-    <SolidColorBrush x:Key="Atlas.Line2Brush"      Color="#29000000"/>
-    <SolidColorBrush x:Key="Atlas.HoverBrush"      Color="#0A23261F"/>
-    <SolidColorBrush x:Key="Atlas.SelBrush"        Color="#1F2F7D57"/>
-    <SolidColorBrush x:Key="Atlas.AccentBrush"     Color="#2F7D57"/>
-    <SolidColorBrush x:Key="Atlas.Accent2Brush"    Color="#37926A"/>
-    <SolidColorBrush x:Key="Atlas.AccentTintBrush" Color="#1A2F7D57"/>
-    <SolidColorBrush x:Key="Atlas.AccentSoftBrush" Color="#0F2F7D57"/>
-    <SolidColorBrush x:Key="Atlas.OnAccentBrush"   Color="#FFFFFF"/>
-    <SolidColorBrush x:Key="Atlas.WarmBrush"       Color="#C4722E"/>
-    <SolidColorBrush x:Key="Atlas.WarmTintBrush"   Color="#1FC4722E"/>
-    <SolidColorBrush x:Key="Atlas.HitBrush"        Color="#8CFFCE54"/>
-    <SolidColorBrush x:Key="Atlas.HitInkBrush"     Color="#23261F"/>
+    <Color x:Key="Atlas.AccentColor">#2F7D57</Color>
+    <Color x:Key="Atlas.Accent2Color">#37926A</Color>
+    <Color x:Key="Atlas.PaperColor">#F4F1EA</Color>
+    <Color x:Key="Atlas.SurfaceColor">#FFFDF8</Color>
+    <Color x:Key="Atlas.Surface2Color">#FAF7F0</Color>
+    <Color x:Key="Atlas.SidebarColor">#EDE8DF</Color>
+    <Color x:Key="Atlas.InkColor">#23261F</Color>
+    <Color x:Key="Atlas.Ink2Color">#5B5F54</Color>
+    <Color x:Key="Atlas.Ink3Color">#8E9286</Color>
+    <Color x:Key="Atlas.LineColor">#17000000</Color>
+    <Color x:Key="Atlas.Line2Color">#29000000</Color>
+    <Color x:Key="Atlas.HoverColor">#0A23261F</Color>
+    <Color x:Key="Atlas.SelColor">#1F2F7D57</Color>
+    <Color x:Key="Atlas.AccentTintColor">#1A2F7D57</Color>
+    <Color x:Key="Atlas.AccentSoftColor">#0F2F7D57</Color>
+    <Color x:Key="Atlas.OnAccentColor">#FFFFFF</Color>
+    <Color x:Key="Atlas.WarmColor">#C4722E</Color>
+    <Color x:Key="Atlas.WarmTintColor">#1FC4722E</Color>
+    <Color x:Key="Atlas.HitColor">#8CFFCE54</Color>
+    <Color x:Key="Atlas.HitInkColor">#23261F</Color>
+    <SolidColorBrush x:Key="Atlas.PaperBrush"      Color="{StaticResource Atlas.PaperColor}"/>
+    <SolidColorBrush x:Key="Atlas.SurfaceBrush"    Color="{StaticResource Atlas.SurfaceColor}"/>
+    <SolidColorBrush x:Key="Atlas.Surface2Brush"   Color="{StaticResource Atlas.Surface2Color}"/>
+    <SolidColorBrush x:Key="Atlas.SidebarBrush"    Color="{StaticResource Atlas.SidebarColor}"/>
+    <SolidColorBrush x:Key="Atlas.InkBrush"        Color="{StaticResource Atlas.InkColor}"/>
+    <SolidColorBrush x:Key="Atlas.Ink2Brush"       Color="{StaticResource Atlas.Ink2Color}"/>
+    <SolidColorBrush x:Key="Atlas.Ink3Brush"       Color="{StaticResource Atlas.Ink3Color}"/>
+    <SolidColorBrush x:Key="Atlas.LineBrush"       Color="{StaticResource Atlas.LineColor}"/>
+    <SolidColorBrush x:Key="Atlas.Line2Brush"      Color="{StaticResource Atlas.Line2Color}"/>
+    <SolidColorBrush x:Key="Atlas.HoverBrush"      Color="{StaticResource Atlas.HoverColor}"/>
+    <SolidColorBrush x:Key="Atlas.SelBrush"        Color="{StaticResource Atlas.SelColor}"/>
+    <SolidColorBrush x:Key="Atlas.AccentBrush"     Color="{StaticResource Atlas.AccentColor}"/>
+    <SolidColorBrush x:Key="Atlas.Accent2Brush"    Color="{StaticResource Atlas.Accent2Color}"/>
+    <SolidColorBrush x:Key="Atlas.AccentTintBrush" Color="{StaticResource Atlas.AccentTintColor}"/>
+    <SolidColorBrush x:Key="Atlas.AccentSoftBrush" Color="{StaticResource Atlas.AccentSoftColor}"/>
+    <SolidColorBrush x:Key="Atlas.OnAccentBrush"   Color="{StaticResource Atlas.OnAccentColor}"/>
+    <SolidColorBrush x:Key="Atlas.WarmBrush"       Color="{StaticResource Atlas.WarmColor}"/>
+    <SolidColorBrush x:Key="Atlas.WarmTintBrush"   Color="{StaticResource Atlas.WarmTintColor}"/>
+    <SolidColorBrush x:Key="Atlas.HitBrush"        Color="{StaticResource Atlas.HitColor}"/>
+    <SolidColorBrush x:Key="Atlas.HitInkBrush"     Color="{StaticResource Atlas.HitInkColor}"/>
+    <sys:Boolean x:Key="AppStyle.BooleanTrue">True</sys:Boolean>
+    <sys:String x:Key="AppStyle.BrandName">FileSearch</sys:String>
+    <GridLength x:Key="AppDensity.SidebarColumnWidth">240</GridLength>
+    <GridLength x:Key="AppDensity.PreviewColumnWidth">360</GridLength>
 
     <!-- ===== Typography (Windows fallbacks for the Atlas web fonts) ===== -->
     <FontFamily x:Key="Atlas.SansFont">Segoe UI</FontFamily>
@@ -42,7 +66,13 @@
     <!-- ===== Density tokens (Comfortable defaults) ===== -->
     <Thickness x:Key="AppDensity.TitleBarPadding">12,6</Thickness>
     <sys:Double x:Key="AppDensity.TitleBarMinHeight">44</sys:Double>
+    <Thickness x:Key="AppDensity.TitleMenuItemPadding">14,5</Thickness>
+    <sys:Double x:Key="AppDensity.TitleMenuItemMinHeight">28</sys:Double>
+    <Thickness x:Key="AppDensity.TitleStatusPillPadding">0</Thickness>
+    <Thickness x:Key="AppDensity.TitleStatusPillMargin">16,0,0,0</Thickness>
     <Thickness x:Key="AppDensity.StatusBarPadding">18,5</Thickness>
+    <Thickness x:Key="AppDensity.StatusPillPadding">0</Thickness>
+    <Thickness x:Key="AppDensity.StatusPillMargin">16,0,0,0</Thickness>
     <Thickness x:Key="AppDensity.SidebarPadding">12,14</Thickness>
     <Thickness x:Key="AppDensity.NavSectionLabelMargin">9,14,0,7</Thickness>
     <Thickness x:Key="AppDensity.NavItemPadding">9,8</Thickness>
@@ -50,6 +80,7 @@
     <Thickness x:Key="AppDensity.SidebarSearchBoxPadding">8,4,28,4</Thickness>
     <Thickness x:Key="AppDensity.SidebarSearchBoxMargin">0,2,0,4</Thickness>
     <sys:Double x:Key="AppDensity.SidebarSearchBoxMinHeight">30</sys:Double>
+    <Thickness x:Key="AppDensity.SidebarSectionStackMargin">0,0,16,0</Thickness>
     <Thickness x:Key="AppDensity.BadgePadding">6,2</Thickness>
     <Thickness x:Key="AppDensity.BadgeMargin">0,3,0,3</Thickness>
     <Thickness x:Key="AppDensity.SurfacePadding">20</Thickness>
@@ -59,21 +90,39 @@
     <sys:Double x:Key="AppDensity.ThemeMiniButtonHeight">28</sys:Double>
     <sys:Double x:Key="AppDensity.CommandButtonHeight">36</sys:Double>
     <sys:Double x:Key="AppDensity.DialogButtonHeight">34</sys:Double>
+    <Thickness x:Key="AppDensity.BrowseButtonMargin">0,0,8,0</Thickness>
+    <Thickness x:Key="AppDensity.CommandButtonMargin">8,0,0,0</Thickness>
     <sys:Double x:Key="AppDensity.PrimaryButtonMinWidth">92</sys:Double>
     <sys:Double x:Key="AppDensity.SecondaryButtonMinWidth">80</sys:Double>
     <Thickness x:Key="AppDensity.PrimaryButtonPadding">16,0</Thickness>
     <Thickness x:Key="AppDensity.SecondaryButtonPadding">14,0</Thickness>
+    <Thickness x:Key="AppDensity.CommandIconMargin">0,0,8,0</Thickness>
     <sys:Double x:Key="AppDensity.ButtonFontSize">13</sys:Double>
     <sys:Double x:Key="AppDensity.IconButtonSize">34</sys:Double>
     <sys:Double x:Key="AppDensity.SmallIconButtonSize">24</sys:Double>
     <sys:Double x:Key="AppDensity.TinyIconButtonSize">22</sys:Double>
     <sys:Double x:Key="AppDensity.PreviewIconButtonSize">28</sys:Double>
+    <Thickness x:Key="AppDensity.SearchSurfaceMargin">0</Thickness>
     <sys:Double x:Key="AppDensity.OmniBarHeight">38</sys:Double>
     <Thickness x:Key="AppDensity.OmniBarPadding">12,0</Thickness>
     <Thickness x:Key="AppDensity.OmniDividerMargin">10,0</Thickness>
+    <Thickness x:Key="AppDensity.OmniPathChipPadding">0</Thickness>
+    <Thickness x:Key="AppDensity.OmniPathChipMargin">0</Thickness>
+    <Thickness x:Key="AppDensity.SearchStatusPillPadding">0</Thickness>
+    <Thickness x:Key="AppDensity.SearchStatusPillMargin">0</Thickness>
+    <GridLength x:Key="AppDensity.OmniPathColumnWidth">0.8*</GridLength>
+    <GridLength x:Key="AppDensity.OmniQueryColumnWidth">1.6*</GridLength>
+    <Thickness x:Key="AppDensity.QueryChipsPanelMargin">0,10,0,2</Thickness>
+    <Thickness x:Key="AppDensity.SearchFiltersPanelMargin">0,12,0,0</Thickness>
     <Thickness x:Key="AppDensity.FilterChipPadding">11,6</Thickness>
     <Thickness x:Key="AppDensity.FilterChipMargin">0,0,8,8</Thickness>
     <sys:Double x:Key="AppDensity.FilterChipMinHeight">34</sys:Double>
+    <sys:Double x:Key="AppDensity.FilterSearchTargetMinWidth">154</sys:Double>
+    <sys:Double x:Key="AppDensity.FilterPatternMinWidth">260</sys:Double>
+    <sys:Double x:Key="AppDensity.FilterPatternMaxWidth">460</sys:Double>
+    <sys:Double x:Key="AppDensity.FilterExcludeMinWidth">220</sys:Double>
+    <sys:Double x:Key="AppDensity.FilterExcludeMaxWidth">420</sys:Double>
+    <sys:Double x:Key="AppDensity.FilterModeMinWidth">104</sys:Double>
     <Thickness x:Key="AppDensity.QueryChipPadding">9,4</Thickness>
     <Thickness x:Key="AppDensity.QueryChipMargin">0,0,7,7</Thickness>
     <sys:Double x:Key="AppDensity.QueryChipMinHeight">30</sys:Double>
@@ -82,13 +131,20 @@
     <Thickness x:Key="AppDensity.FieldLabelMargin">0,0,0,4</Thickness>
     <Thickness x:Key="AppDensity.HintLabelMargin">0,4,0,0</Thickness>
     <Thickness x:Key="AppDensity.ResultsListPadding">0,2,4,8</Thickness>
+    <Thickness x:Key="AppDensity.ResultsSurfaceMargin">0,12,0,0</Thickness>
+    <Thickness x:Key="AppDensity.ResultFacetsPanelMargin">0,8,0,0</Thickness>
     <Thickness x:Key="AppDensity.ResultCardMargin">0,0,0,8</Thickness>
     <CornerRadius x:Key="AppDensity.ResultCardCornerRadius">12</CornerRadius>
     <sys:Double x:Key="AppDensity.TypeBadgeSize">30</sys:Double>
     <CornerRadius x:Key="AppDensity.TypeBadgeCornerRadius">8</CornerRadius>
+    <Thickness x:Key="AppDensity.ResultMetaPillPadding">6,2</Thickness>
+    <Thickness x:Key="AppDensity.ResultMetaPillMargin">0,6,6,0</Thickness>
     <Thickness x:Key="AppDensity.HitsPillPadding">10,3</Thickness>
     <sys:Double x:Key="AppDensity.LineNoWidth">46</sys:Double>
     <Thickness x:Key="AppDensity.LineNoMargin">0,0,14,0</Thickness>
+    <Thickness x:Key="AppDensity.MatchLineMargin">0,3,12,3</Thickness>
+    <Thickness x:Key="AppDensity.MatchLinePadding">0</Thickness>
+    <Thickness x:Key="AppDensity.ResultHitsPanelPadding">0,5,0,5</Thickness>
     <Thickness x:Key="AppDensity.MoreLinkPadding">15,7</Thickness>
     <sys:Double x:Key="AppDensity.PreviewBadgeSize">60</sys:Double>
     <CornerRadius x:Key="AppDensity.PreviewBadgeCornerRadius">14</CornerRadius>
@@ -98,15 +154,101 @@
     <Thickness x:Key="AppDensity.SettingsSurfacePadding">20</Thickness>
     <Thickness x:Key="AppDensity.MainContentMargin">14,14,8,12</Thickness>
     <Thickness x:Key="AppDensity.ResultHeaderMargin">2,0,2,10</Thickness>
+    <sys:Double x:Key="AppDensity.ResultRefinementWidth">210</sys:Double>
+    <sys:Double x:Key="AppDensity.ResultSortMinWidth">120</sys:Double>
+    <sys:Double x:Key="AppDensity.ResultGroupMinWidth">120</sys:Double>
+    <sys:Double x:Key="AppDensity.ResultTypeMinWidth">130</sys:Double>
+    <sys:Double x:Key="AppDensity.ResultTypeMaxWidth">180</sys:Double>
+    <sys:Double x:Key="AppDensity.ResultFolderMinWidth">150</sys:Double>
+    <sys:Double x:Key="AppDensity.ResultFolderMaxWidth">260</sys:Double>
+    <sys:Double x:Key="AppDensity.ResultDateMinWidth">130</sys:Double>
+    <sys:Double x:Key="AppDensity.ResultSourceMinWidth">130</sys:Double>
+    <sys:Double x:Key="AppDensity.ResultSizeMinWidth">150</sys:Double>
     <Thickness x:Key="AppDensity.ResultCardInnerMargin">15,12,15,12</Thickness>
     <Thickness x:Key="AppDensity.PreviewHeaderPadding">16,14,14,12</Thickness>
     <Thickness x:Key="AppDensity.PreviewActionMargin">16,12,16,16</Thickness>
     <Thickness x:Key="AppDensity.PreviewBodyMargin">16,16,16,8</Thickness>
+    <Thickness x:Key="AppDensity.PreviewMetadataPadding">0,10,0,0</Thickness>
+    <Thickness x:Key="AppDensity.PreviewMetaPillPadding">6,2</Thickness>
+    <Thickness x:Key="AppDensity.PreviewMetaPillMargin">0,0,6,6</Thickness>
+    <Thickness x:Key="AppDensity.PreviewImagePadding">8</Thickness>
+    <Thickness x:Key="AppDensity.PreviewImageMargin">0,0,0,10</Thickness>
+    <sys:Double x:Key="AppDensity.PreviewImageMaxHeight">260</sys:Double>
+    <Thickness x:Key="AppDensity.PreviewHitsPanelMargin">0,0,0,10</Thickness>
     <Thickness x:Key="AppDensity.QuickSearchPadding">12</Thickness>
     <sys:Double x:Key="AppDensity.QuickSearchOmniBarHeight">44</sys:Double>
     <sys:Double x:Key="AppDensity.QuickFolderButtonSize">30</sys:Double>
     <Thickness x:Key="AppDensity.QuickResultCardInnerMargin">12,10</Thickness>
     <sys:Double x:Key="AppDensity.QuickLineNoWidth">34</sys:Double>
+
+    <Visibility x:Key="AppStyle.ResultMetadataVisibility">Collapsed</Visibility>
+    <Visibility x:Key="AppStyle.ResultAccentRailVisibility">Collapsed</Visibility>
+    <Visibility x:Key="AppStyle.SidebarThemeSwitcherVisibility">Visible</Visibility>
+    <Visibility x:Key="AppStyle.SidebarStyleSwitcherVisibility">Collapsed</Visibility>
+    <Visibility x:Key="AppStyle.CommandButtonTextVisibility">Visible</Visibility>
+    <Visibility x:Key="AppStyle.ExternalSearchCommandVisibility">Visible</Visibility>
+    <Visibility x:Key="AppStyle.InlineSearchCommandVisibility">Collapsed</Visibility>
+    <Visibility x:Key="AppStyle.SearchFiltersLabelVisibility">Collapsed</Visibility>
+    <Visibility x:Key="AppStyle.SearchStatusPillVisibility">Collapsed</Visibility>
+    <Visibility x:Key="AppStyle.OmniDecorativeSearchIconVisibility">Visible</Visibility>
+    <Visibility x:Key="AppStyle.PreviewMetadataRowsVisibility">Visible</Visibility>
+    <Visibility x:Key="AppStyle.PreviewMetadataPillsVisibility">Collapsed</Visibility>
+    <Visibility x:Key="AppStyle.TitleSubtitleVisibility">Collapsed</Visibility>
+    <Visibility x:Key="AppStyle.TitleStatusVisibility">Collapsed</Visibility>
+    <Visibility x:Key="AppStyle.SidebarFooterFullActionsVisibility">Visible</Visibility>
+    <Visibility x:Key="AppStyle.SidebarFooterCompactActionsVisibility">Collapsed</Visibility>
+
+    <SolidColorBrush x:Key="AppStyle.TitleMenuBackground" Color="Transparent"/>
+    <SolidColorBrush x:Key="AppStyle.TitleMenuItemBackground" Color="Transparent"/>
+    <SolidColorBrush x:Key="AppStyle.TitleStatusPillBackground" Color="Transparent"/>
+    <SolidColorBrush x:Key="AppStyle.TitleStatusPillBorderBrush" Color="Transparent"/>
+    <Thickness x:Key="AppStyle.TitleStatusPillBorderThickness">0</Thickness>
+    <CornerRadius x:Key="AppStyle.TitleStatusPillCornerRadius">0</CornerRadius>
+    <SolidColorBrush x:Key="AppStyle.StatusPillBackground" Color="Transparent"/>
+    <SolidColorBrush x:Key="AppStyle.StatusPillBorderBrush" Color="Transparent"/>
+    <Thickness x:Key="AppStyle.StatusPillBorderThickness">0</Thickness>
+    <CornerRadius x:Key="AppStyle.StatusPillCornerRadius">0</CornerRadius>
+    <SolidColorBrush x:Key="AppStyle.NavItemBackground" Color="Transparent"/>
+    <SolidColorBrush x:Key="AppStyle.NavItemBorderBrush" Color="Transparent"/>
+    <Thickness x:Key="AppStyle.NavItemBorderThickness">0</Thickness>
+    <CornerRadius x:Key="AppStyle.NavItemCornerRadius">8</CornerRadius>
+    <SolidColorBrush x:Key="AppStyle.NavSectionBackground" Color="#FFFDF8"/>
+    <Thickness x:Key="AppStyle.NavSectionBorderThickness">1</Thickness>
+    <SolidColorBrush x:Key="AppStyle.NavSectionHeaderBackground" Color="#FAF7F0"/>
+    <SolidColorBrush x:Key="AppStyle.NavSectionHeaderBorderBrush" Color="#17000000"/>
+    <SolidColorBrush x:Key="AppStyle.SearchSurfaceBackground" Color="Transparent"/>
+    <SolidColorBrush x:Key="AppStyle.SearchSurfaceBorderBrush" Color="Transparent"/>
+    <Thickness x:Key="AppStyle.SearchSurfaceBorderThickness">0</Thickness>
+    <CornerRadius x:Key="AppStyle.SearchSurfaceCornerRadius">0</CornerRadius>
+    <SolidColorBrush x:Key="AppStyle.SearchStatusPillBackground" Color="Transparent"/>
+    <SolidColorBrush x:Key="AppStyle.SearchStatusPillBorderBrush" Color="Transparent"/>
+    <Thickness x:Key="AppStyle.SearchStatusPillBorderThickness">0</Thickness>
+    <CornerRadius x:Key="AppStyle.SearchStatusPillCornerRadius">0</CornerRadius>
+    <SolidColorBrush x:Key="AppStyle.OmniBarBackground" Color="#FFFDF8"/>
+    <SolidColorBrush x:Key="AppStyle.OmniPathChipBackground" Color="Transparent"/>
+    <SolidColorBrush x:Key="AppStyle.OmniPathChipBorderBrush" Color="Transparent"/>
+    <Thickness x:Key="AppStyle.OmniPathChipBorderThickness">0</Thickness>
+    <CornerRadius x:Key="AppStyle.OmniPathChipCornerRadius">0</CornerRadius>
+    <SolidColorBrush x:Key="AppStyle.FilterChipBackground" Color="#FFFDF8"/>
+    <SolidColorBrush x:Key="AppStyle.ThemeMiniButtonSelectedBackground" Color="#1A2F7D57"/>
+    <SolidColorBrush x:Key="AppStyle.ThemeMiniButtonSelectedBorderBrush" Color="#2F7D57"/>
+    <SolidColorBrush x:Key="AppStyle.ThemeMiniButtonSelectedForeground" Color="#2F7D57"/>
+    <SolidColorBrush x:Key="AppStyle.QueryChipBackground" Color="#FAF7F0"/>
+    <SolidColorBrush x:Key="AppStyle.PreviewMetadataBackground" Color="Transparent"/>
+    <Thickness x:Key="AppStyle.PreviewMetadataBorderThickness">0,1,0,0</Thickness>
+    <CornerRadius x:Key="AppStyle.PreviewMetadataCornerRadius">0</CornerRadius>
+    <SolidColorBrush x:Key="AppStyle.PreviewImageBackground" Color="#FAF7F0"/>
+    <CornerRadius x:Key="AppStyle.CommandButtonCornerRadius">9</CornerRadius>
+    <SolidColorBrush x:Key="AppStyle.SecondaryButtonBackground" Color="#FFFDF8"/>
+    <SolidColorBrush x:Key="AppStyle.SecondaryButtonBorderBrush" Color="#29000000"/>
+    <SolidColorBrush x:Key="AppStyle.SecondaryButtonHoverBackground" Color="#FAF7F0"/>
+    <SolidColorBrush x:Key="AppStyle.SecondaryButtonHoverBorderBrush" Color="#2F7D57"/>
+    <SolidColorBrush x:Key="AppStyle.SecondaryButtonHoverForeground" Color="#23261F"/>
+    <SolidColorBrush x:Key="AppStyle.IconButtonHoverBackground" Color="#0A23261F"/>
+    <SolidColorBrush x:Key="AppStyle.IconButtonHoverForeground" Color="#23261F"/>
+    <SolidColorBrush x:Key="AppStyle.PreviewCodeBackground" Color="#FFFDF8"/>
+    <SolidColorBrush x:Key="AppStyle.ResultHitsPanelBackground" Color="Transparent"/>
+    <Thickness x:Key="AppStyle.ResultHitsPanelBorderThickness">0,1,0,0</Thickness>
 
     <!-- =====================================================================
          Shell
@@ -136,12 +278,46 @@
         <Setter Property="Foreground" Value="{DynamicResource Atlas.Ink2Brush}"/>
     </Style>
 
+    <Style x:Key="TitleSubtitleStyle" TargetType="TextBlock">
+        <Setter Property="FontSize" Value="11"/>
+        <Setter Property="VerticalAlignment" Value="Center"/>
+        <Setter Property="Foreground" Value="{DynamicResource Atlas.Ink3Brush}"/>
+        <Setter Property="Margin" Value="8,0,0,0"/>
+    </Style>
+
+    <Style x:Key="TitleDividerStyle" TargetType="Border">
+        <Setter Property="Width" Value="1"/>
+        <Setter Property="Height" Value="16"/>
+        <Setter Property="Background" Value="{DynamicResource Atlas.Line2Brush}"/>
+        <Setter Property="Margin" Value="14,0,2,0"/>
+        <Setter Property="VerticalAlignment" Value="Center"/>
+    </Style>
+
+    <Style x:Key="TitleMenuItemStyle" TargetType="MenuItem" BasedOn="{StaticResource {x:Type MenuItem}}">
+        <Setter Property="Background" Value="{DynamicResource AppStyle.TitleMenuItemBackground}"/>
+        <Setter Property="Foreground" Value="{DynamicResource Atlas.Ink2Brush}"/>
+        <Setter Property="Padding" Value="{DynamicResource AppDensity.TitleMenuItemPadding}"/>
+        <Setter Property="MinHeight" Value="{DynamicResource AppDensity.TitleMenuItemMinHeight}"/>
+        <Setter Property="FontSize" Value="13"/>
+    </Style>
+
     <Style x:Key="TitleMenuStyle" TargetType="Menu" BasedOn="{StaticResource {x:Type Menu}}">
-        <Setter Property="Background" Value="Transparent"/>
+        <Setter Property="Background" Value="{DynamicResource AppStyle.TitleMenuBackground}"/>
         <Setter Property="Foreground" Value="{DynamicResource Atlas.Ink2Brush}"/>
         <Setter Property="VerticalAlignment" Value="Center"/>
         <Setter Property="FontSize" Value="13"/>
         <Setter Property="Padding" Value="0"/>
+        <Setter Property="ItemContainerStyle" Value="{StaticResource TitleMenuItemStyle}"/>
+    </Style>
+
+    <Style x:Key="TitleStatusPillStyle" TargetType="Border">
+        <Setter Property="Background" Value="{DynamicResource AppStyle.TitleStatusPillBackground}"/>
+        <Setter Property="BorderBrush" Value="{DynamicResource AppStyle.TitleStatusPillBorderBrush}"/>
+        <Setter Property="BorderThickness" Value="{DynamicResource AppStyle.TitleStatusPillBorderThickness}"/>
+        <Setter Property="CornerRadius" Value="{DynamicResource AppStyle.TitleStatusPillCornerRadius}"/>
+        <Setter Property="Padding" Value="{DynamicResource AppDensity.TitleStatusPillPadding}"/>
+        <Setter Property="Margin" Value="{DynamicResource AppDensity.TitleStatusPillMargin}"/>
+        <Setter Property="VerticalAlignment" Value="Center"/>
     </Style>
 
     <!-- ===== Status bar ===== -->
@@ -165,6 +341,16 @@
         <Setter Property="FontWeight" Value="SemiBold"/>
     </Style>
 
+    <Style x:Key="StatusPillStyle" TargetType="Border">
+        <Setter Property="Background" Value="{DynamicResource AppStyle.StatusPillBackground}"/>
+        <Setter Property="BorderBrush" Value="{DynamicResource AppStyle.StatusPillBorderBrush}"/>
+        <Setter Property="BorderThickness" Value="{DynamicResource AppStyle.StatusPillBorderThickness}"/>
+        <Setter Property="CornerRadius" Value="{DynamicResource AppStyle.StatusPillCornerRadius}"/>
+        <Setter Property="Padding" Value="{DynamicResource AppDensity.StatusPillPadding}"/>
+        <Setter Property="Margin" Value="{DynamicResource AppDensity.StatusPillMargin}"/>
+        <Setter Property="VerticalAlignment" Value="Center"/>
+    </Style>
+
     <!-- =====================================================================
          Sidebar
          ===================================================================== -->
@@ -173,6 +359,7 @@
         <Setter Property="BorderBrush" Value="{DynamicResource Atlas.LineBrush}"/>
         <Setter Property="BorderThickness" Value="0,0,1,0"/>
         <Setter Property="Padding" Value="{DynamicResource AppDensity.SidebarPadding}"/>
+        <Setter Property="TextElement.Foreground" Value="{DynamicResource Atlas.Ink2Brush}"/>
     </Style>
 
     <Style x:Key="LogoTextStyle" TargetType="TextBlock">
@@ -190,11 +377,24 @@
         <Setter Property="Margin" Value="{DynamicResource AppDensity.NavSectionLabelMargin}"/>
     </Style>
 
+    <Style x:Key="NavSectionHeaderTextStyle" TargetType="TextBlock">
+        <Setter Property="FontSize" Value="10.5"/>
+        <Setter Property="FontWeight" Value="Bold"/>
+        <Setter Property="Foreground" Value="{DynamicResource Atlas.Ink3Brush}"/>
+        <Setter Property="VerticalAlignment" Value="Center"/>
+    </Style>
+
+    <Style x:Key="SidebarCommandTextStyle" TargetType="TextBlock">
+        <Setter Property="Foreground" Value="{DynamicResource Atlas.Ink2Brush}"/>
+        <Setter Property="VerticalAlignment" Value="Center"/>
+        <Setter Property="TextTrimming" Value="CharacterEllipsis"/>
+    </Style>
+
     <!-- Sidebar command rows (Scopes presets, footer actions) -->
     <Style x:Key="NavItemButtonStyle" TargetType="Button">
         <Setter Property="HorizontalContentAlignment" Value="Left"/>
         <Setter Property="HorizontalAlignment" Value="Stretch"/>
-        <Setter Property="Background" Value="Transparent"/>
+        <Setter Property="Background" Value="{DynamicResource AppStyle.NavItemBackground}"/>
         <Setter Property="Foreground" Value="{DynamicResource Atlas.Ink2Brush}"/>
         <Setter Property="Padding" Value="{DynamicResource AppDensity.NavItemPadding}"/>
         <Setter Property="Margin" Value="0,1"/>
@@ -204,7 +404,10 @@
         <Setter Property="Template">
             <Setter.Value>
                 <ControlTemplate TargetType="Button">
-                    <Border x:Name="bg" Background="{TemplateBinding Background}" CornerRadius="8"
+                    <Border x:Name="bg" Background="{TemplateBinding Background}"
+                            BorderBrush="{DynamicResource AppStyle.NavItemBorderBrush}"
+                            BorderThickness="{DynamicResource AppStyle.NavItemBorderThickness}"
+                            CornerRadius="{DynamicResource AppStyle.NavItemCornerRadius}"
                             Padding="{TemplateBinding Padding}" SnapsToDevicePixels="True"
                             TextElement.Foreground="{TemplateBinding Foreground}">
                         <ContentPresenter HorizontalAlignment="{TemplateBinding HorizontalContentAlignment}" VerticalAlignment="Center"
@@ -222,6 +425,15 @@
                 </ControlTemplate>
             </Setter.Value>
         </Setter>
+    </Style>
+
+    <Style x:Key="ScopeNavItemButtonStyle" TargetType="Button" BasedOn="{StaticResource NavItemButtonStyle}">
+        <Style.Triggers>
+            <DataTrigger Binding="{Binding IsActive}" Value="True">
+                <Setter Property="Background" Value="{DynamicResource Atlas.AccentSoftBrush}"/>
+                <Setter Property="Foreground" Value="{DynamicResource Atlas.Accent2Brush}"/>
+            </DataTrigger>
+        </Style.Triggers>
     </Style>
 
     <!-- Recent folders / Saved finds lists -->
@@ -255,7 +467,10 @@
         <Setter Property="Template">
             <Setter.Value>
                 <ControlTemplate TargetType="ListBoxItem">
-                    <Border x:Name="bg" Background="{TemplateBinding Background}" CornerRadius="8"
+                    <Border x:Name="bg" Background="{TemplateBinding Background}"
+                            BorderBrush="{DynamicResource AppStyle.NavItemBorderBrush}"
+                            BorderThickness="{DynamicResource AppStyle.NavItemBorderThickness}"
+                            CornerRadius="{DynamicResource AppStyle.NavItemCornerRadius}"
                             Padding="{TemplateBinding Padding}" SnapsToDevicePixels="True"
                             TextElement.Foreground="{TemplateBinding Foreground}">
                         <ContentPresenter HorizontalAlignment="{TemplateBinding HorizontalContentAlignment}"
@@ -276,6 +491,111 @@
         </Setter>
     </Style>
 
+    <Style x:Key="SidebarItemCardStyle" TargetType="Border">
+        <Setter Property="Background" Value="{DynamicResource Atlas.SurfaceBrush}"/>
+        <Setter Property="BorderBrush" Value="{DynamicResource Atlas.LineBrush}"/>
+        <Setter Property="BorderThickness" Value="1"/>
+        <Setter Property="CornerRadius" Value="8"/>
+        <Setter Property="Padding" Value="8,7"/>
+        <Setter Property="Margin" Value="0,2"/>
+    </Style>
+
+    <Style x:Key="WorkspaceSidebarCardStyle" TargetType="Border" BasedOn="{StaticResource SidebarItemCardStyle}"/>
+
+    <Style x:Key="SidebarItemTitleTextStyle" TargetType="TextBlock">
+        <Setter Property="Foreground" Value="{DynamicResource Atlas.InkBrush}"/>
+        <Setter Property="FontWeight" Value="SemiBold"/>
+        <Setter Property="TextTrimming" Value="CharacterEllipsis"/>
+    </Style>
+
+    <Style x:Key="SidebarItemSubtitleTextStyle" TargetType="TextBlock">
+        <Setter Property="Foreground" Value="{DynamicResource Atlas.Ink3Brush}"/>
+        <Setter Property="FontSize" Value="11"/>
+        <Setter Property="TextTrimming" Value="CharacterEllipsis"/>
+    </Style>
+
+    <Style x:Key="SidebarItemMonoTextStyle" TargetType="TextBlock" BasedOn="{StaticResource SidebarItemSubtitleTextStyle}">
+        <Setter Property="FontFamily" Value="{DynamicResource Atlas.MonoFont}"/>
+    </Style>
+
+    <Style x:Key="SidebarAccentPillStyle" TargetType="Border">
+        <Setter Property="Background" Value="{DynamicResource Atlas.AccentSoftBrush}"/>
+        <Setter Property="BorderBrush" Value="{DynamicResource Atlas.AccentTintBrush}"/>
+        <Setter Property="BorderThickness" Value="1"/>
+        <Setter Property="CornerRadius" Value="5"/>
+        <Setter Property="Padding" Value="6,2"/>
+        <Setter Property="HorizontalAlignment" Value="Left"/>
+    </Style>
+
+    <Style x:Key="WorkspaceQueryPillStyle" TargetType="Border" BasedOn="{StaticResource SidebarAccentPillStyle}"/>
+
+    <Style x:Key="SidebarMetaPillStyle" TargetType="Border">
+        <Setter Property="Background" Value="{DynamicResource Atlas.Surface2Brush}"/>
+        <Setter Property="BorderBrush" Value="{DynamicResource Atlas.Line2Brush}"/>
+        <Setter Property="BorderThickness" Value="1"/>
+        <Setter Property="CornerRadius" Value="5"/>
+        <Setter Property="Padding" Value="6,2"/>
+        <Setter Property="HorizontalAlignment" Value="Left"/>
+    </Style>
+
+    <Style x:Key="SidebarIconChipStyle" TargetType="Border">
+        <Setter Property="Width" Value="26"/>
+        <Setter Property="Height" Value="26"/>
+        <Setter Property="CornerRadius" Value="7"/>
+        <Setter Property="Background" Value="{DynamicResource Atlas.AccentSoftBrush}"/>
+        <Setter Property="BorderBrush" Value="{DynamicResource Atlas.AccentTintBrush}"/>
+        <Setter Property="BorderThickness" Value="1"/>
+        <Setter Property="VerticalAlignment" Value="Top"/>
+        <Setter Property="Margin" Value="0,1,9,0"/>
+    </Style>
+
+    <Style x:Key="SidebarCardActionButtonStyle" TargetType="Button">
+        <Setter Property="HorizontalContentAlignment" Value="Stretch"/>
+        <Setter Property="HorizontalAlignment" Value="Stretch"/>
+        <Setter Property="Background" Value="Transparent"/>
+        <Setter Property="Foreground" Value="{DynamicResource Atlas.Ink2Brush}"/>
+        <Setter Property="Padding" Value="0"/>
+        <Setter Property="Margin" Value="0"/>
+        <Setter Property="Cursor" Value="Hand"/>
+        <Setter Property="FocusVisualStyle" Value="{x:Null}"/>
+        <Setter Property="Template">
+            <Setter.Value>
+                <ControlTemplate TargetType="Button">
+                    <Border x:Name="bg"
+                            Background="{TemplateBinding Background}"
+                            CornerRadius="6"
+                            Padding="{TemplateBinding Padding}"
+                            TextElement.Foreground="{TemplateBinding Foreground}">
+                        <ContentPresenter HorizontalAlignment="{TemplateBinding HorizontalContentAlignment}" VerticalAlignment="Center"
+                                          RecognizesAccessKey="True"/>
+                    </Border>
+                    <ControlTemplate.Triggers>
+                        <Trigger Property="IsMouseOver" Value="True">
+                            <Setter TargetName="bg" Property="Background" Value="{DynamicResource Atlas.HoverBrush}"/>
+                            <Setter Property="Foreground" Value="{DynamicResource Atlas.InkBrush}"/>
+                        </Trigger>
+                        <Trigger Property="IsEnabled" Value="False">
+                            <Setter Property="Opacity" Value="0.5"/>
+                        </Trigger>
+                    </ControlTemplate.Triggers>
+                </ControlTemplate>
+            </Setter.Value>
+        </Setter>
+    </Style>
+
+    <Style x:Key="WorkspaceRunDotStyle" TargetType="Ellipse">
+        <Setter Property="Width" Value="7"/>
+        <Setter Property="Height" Value="7"/>
+        <Setter Property="Fill" Value="{DynamicResource Atlas.Ink3Brush}"/>
+        <Setter Property="VerticalAlignment" Value="Center"/>
+        <Setter Property="Margin" Value="0,0,8,0"/>
+        <Style.Triggers>
+            <DataTrigger Binding="{Binding RunOnLoad}" Value="True">
+                <Setter Property="Fill" Value="{DynamicResource Atlas.Accent2Brush}"/>
+            </DataTrigger>
+        </Style.Triggers>
+    </Style>
+
     <Style x:Key="SidebarSearchBoxStyle" TargetType="TextBox" BasedOn="{StaticResource {x:Type TextBox}}">
         <Setter Property="MinHeight" Value="{DynamicResource AppDensity.SidebarSearchBoxMinHeight}"/>
         <Setter Property="Padding" Value="{DynamicResource AppDensity.SidebarSearchBoxPadding}"/>
@@ -293,6 +613,15 @@
         <Setter Property="VerticalAlignment" Value="Center"/>
         <Setter Property="HorizontalAlignment" Value="Center"/>
         <Setter Property="TextTrimming" Value="CharacterEllipsis"/>
+    </Style>
+
+    <Style x:Key="NavSectionCountStyle" TargetType="TextBlock">
+        <Setter Property="FontFamily" Value="{DynamicResource Atlas.MonoFont}"/>
+        <Setter Property="FontSize" Value="10"/>
+        <Setter Property="FontWeight" Value="SemiBold"/>
+        <Setter Property="Foreground" Value="{DynamicResource Atlas.Ink3Brush}"/>
+        <Setter Property="Margin" Value="7,0,0,0"/>
+        <Setter Property="VerticalAlignment" Value="Center"/>
     </Style>
 
     <Style x:Key="IndexStatusBadgeStyle" TargetType="Border">
@@ -370,11 +699,12 @@
             <Setter.Value>
                 <ControlTemplate TargetType="Expander">
                     <Border x:Name="SectionChrome"
-                            Background="{DynamicResource Atlas.SurfaceBrush}"
+                            Background="{DynamicResource AppStyle.NavSectionBackground}"
                             BorderBrush="{DynamicResource Atlas.LineBrush}"
-                            BorderThickness="1"
+                            BorderThickness="{DynamicResource AppStyle.NavSectionBorderThickness}"
                             CornerRadius="8"
-                            SnapsToDevicePixels="True">
+                            SnapsToDevicePixels="True"
+                            TextElement.Foreground="{DynamicResource Atlas.Ink2Brush}">
                         <DockPanel>
                             <ToggleButton x:Name="HeaderToggle"
                                           DockPanel.Dock="Top"
@@ -382,14 +712,15 @@
                                           IsChecked="{Binding IsExpanded, Mode=TwoWay, RelativeSource={RelativeSource TemplatedParent}}"
                                           Focusable="False"
                                           Cursor="Hand"
+                                          Foreground="{DynamicResource Atlas.Ink3Brush}"
                                           HorizontalAlignment="Stretch"
                                           HorizontalContentAlignment="Stretch"
                                           FocusVisualStyle="{x:Null}">
                                 <ToggleButton.Template>
                                     <ControlTemplate TargetType="ToggleButton">
                                         <Border x:Name="HeaderBg"
-                                                Background="{DynamicResource Atlas.Surface2Brush}"
-                                                BorderBrush="{DynamicResource Atlas.LineBrush}"
+                                                Background="{DynamicResource AppStyle.NavSectionHeaderBackground}"
+                                                BorderBrush="{DynamicResource AppStyle.NavSectionHeaderBorderBrush}"
                                                 BorderThickness="0,0,0,1"
                                                 CornerRadius="8,8,0,0"
                                                 Padding="{DynamicResource AppDensity.NavSectionHeaderPadding}"
@@ -422,7 +753,8 @@
                             </ToggleButton>
                             <Border x:Name="SectionContent"
                                      Padding="{DynamicResource AppDensity.NavSectionContentPadding}"
-                                    Visibility="Collapsed">
+                                     Visibility="Collapsed"
+                                     TextElement.Foreground="{DynamicResource Atlas.Ink2Brush}">
                                 <ContentPresenter ContentSource="Content"/>
                             </Border>
                         </DockPanel>
@@ -442,7 +774,7 @@
 
     <Style x:Key="ThemeMiniButtonStyle" TargetType="Button">
         <Setter Property="Height" Value="{DynamicResource AppDensity.ThemeMiniButtonHeight}"/>
-        <Setter Property="Background" Value="{DynamicResource Atlas.SurfaceBrush}"/>
+        <Setter Property="Background" Value="{DynamicResource AppStyle.FilterChipBackground}"/>
         <Setter Property="Foreground" Value="{DynamicResource Atlas.Ink2Brush}"/>
         <Setter Property="FontSize" Value="11"/>
         <Setter Property="Cursor" Value="Hand"/>
@@ -462,6 +794,11 @@
                             <Setter TargetName="bg" Property="BorderBrush" Value="{DynamicResource Atlas.AccentBrush}"/>
                             <Setter Property="Foreground" Value="{DynamicResource Atlas.AccentBrush}"/>
                         </Trigger>
+                        <DataTrigger Binding="{Binding Tag, RelativeSource={RelativeSource TemplatedParent}}" Value="{StaticResource AppStyle.BooleanTrue}">
+                            <Setter TargetName="bg" Property="Background" Value="{DynamicResource AppStyle.ThemeMiniButtonSelectedBackground}"/>
+                            <Setter TargetName="bg" Property="BorderBrush" Value="{DynamicResource AppStyle.ThemeMiniButtonSelectedBorderBrush}"/>
+                            <Setter Property="Foreground" Value="{DynamicResource AppStyle.ThemeMiniButtonSelectedForeground}"/>
+                        </DataTrigger>
                     </ControlTemplate.Triggers>
                 </ControlTemplate>
             </Setter.Value>
@@ -484,7 +821,8 @@
         <Setter Property="Template">
             <Setter.Value>
                 <ControlTemplate TargetType="Button">
-                    <Border x:Name="bg" Background="{TemplateBinding Background}" CornerRadius="9"
+                    <Border x:Name="bg" Background="{TemplateBinding Background}"
+                            CornerRadius="{DynamicResource AppStyle.CommandButtonCornerRadius}"
                             SnapsToDevicePixels="True" TextElement.Foreground="{TemplateBinding Foreground}">
                         <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center"
                                           Margin="{TemplateBinding Padding}" RecognizesAccessKey="True"/>
@@ -509,7 +847,7 @@
         <Setter Property="Height" Value="{DynamicResource AppDensity.CommandButtonHeight}"/>
         <Setter Property="MinWidth" Value="{DynamicResource AppDensity.SecondaryButtonMinWidth}"/>
         <Setter Property="Padding" Value="{DynamicResource AppDensity.SecondaryButtonPadding}"/>
-        <Setter Property="Background" Value="{DynamicResource Atlas.SurfaceBrush}"/>
+        <Setter Property="Background" Value="{DynamicResource AppStyle.SecondaryButtonBackground}"/>
         <Setter Property="Foreground" Value="{DynamicResource Atlas.Ink2Brush}"/>
         <Setter Property="FontSize" Value="{DynamicResource AppDensity.ButtonFontSize}"/>
         <Setter Property="Cursor" Value="Hand"/>
@@ -518,17 +856,17 @@
             <Setter.Value>
                 <ControlTemplate TargetType="Button">
                     <Border x:Name="bg" Background="{TemplateBinding Background}"
-                            BorderBrush="{DynamicResource Atlas.Line2Brush}" BorderThickness="1"
-                            CornerRadius="9" SnapsToDevicePixels="True"
+                            BorderBrush="{DynamicResource AppStyle.SecondaryButtonBorderBrush}" BorderThickness="1"
+                            CornerRadius="{DynamicResource AppStyle.CommandButtonCornerRadius}" SnapsToDevicePixels="True"
                             TextElement.Foreground="{TemplateBinding Foreground}">
                         <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center"
                                           Margin="{TemplateBinding Padding}" RecognizesAccessKey="True"/>
                     </Border>
                     <ControlTemplate.Triggers>
                         <Trigger Property="IsMouseOver" Value="True">
-                            <Setter TargetName="bg" Property="Background" Value="{DynamicResource Atlas.Surface2Brush}"/>
-                            <Setter TargetName="bg" Property="BorderBrush" Value="{DynamicResource Atlas.AccentBrush}"/>
-                            <Setter Property="Foreground" Value="{DynamicResource Atlas.InkBrush}"/>
+                            <Setter TargetName="bg" Property="Background" Value="{DynamicResource AppStyle.SecondaryButtonHoverBackground}"/>
+                            <Setter TargetName="bg" Property="BorderBrush" Value="{DynamicResource AppStyle.SecondaryButtonHoverBorderBrush}"/>
+                            <Setter Property="Foreground" Value="{DynamicResource AppStyle.SecondaryButtonHoverForeground}"/>
                         </Trigger>
                         <Trigger Property="IsEnabled" Value="False">
                             <Setter Property="Opacity" Value="0.45"/>
@@ -555,8 +893,8 @@
                     </Border>
                     <ControlTemplate.Triggers>
                         <Trigger Property="IsMouseOver" Value="True">
-                            <Setter TargetName="bg" Property="Background" Value="{DynamicResource Atlas.HoverBrush}"/>
-                            <Setter Property="Foreground" Value="{DynamicResource Atlas.InkBrush}"/>
+                            <Setter TargetName="bg" Property="Background" Value="{DynamicResource AppStyle.IconButtonHoverBackground}"/>
+                            <Setter Property="Foreground" Value="{DynamicResource AppStyle.IconButtonHoverForeground}"/>
                         </Trigger>
                         <Trigger Property="IsEnabled" Value="False">
                             <Setter Property="Opacity" Value="0.4"/>
@@ -567,11 +905,46 @@
         </Setter>
     </Style>
 
+    <Style x:Key="ResultToggleIconButtonStyle" TargetType="Button" BasedOn="{StaticResource IconButtonStyle}">
+        <Style.Triggers>
+            <DataTrigger Binding="{Binding Tag, RelativeSource={RelativeSource Self}}" Value="{StaticResource AppStyle.BooleanTrue}">
+                <Setter Property="Background" Value="{DynamicResource Atlas.AccentSoftBrush}"/>
+            </DataTrigger>
+        </Style.Triggers>
+    </Style>
+
+    <Style x:Key="FavoriteResultGlyphStyle" TargetType="ui:FontIcon">
+        <Setter Property="Foreground" Value="{DynamicResource Atlas.Ink2Brush}"/>
+        <Style.Triggers>
+            <DataTrigger Binding="{Binding IsFavorite}" Value="True">
+                <Setter Property="Foreground" Value="{DynamicResource Atlas.WarmBrush}"/>
+            </DataTrigger>
+        </Style.Triggers>
+    </Style>
+
+    <Style x:Key="PinResultGlyphStyle" TargetType="ui:FontIcon">
+        <Setter Property="Foreground" Value="{DynamicResource Atlas.Ink2Brush}"/>
+        <Style.Triggers>
+            <DataTrigger Binding="{Binding IsPinned}" Value="True">
+                <Setter Property="Foreground" Value="{DynamicResource Atlas.Accent2Brush}"/>
+            </DataTrigger>
+        </Style.Triggers>
+    </Style>
+
     <!-- =====================================================================
          Omni bar + filters
          ===================================================================== -->
+    <Style x:Key="SearchSurfaceStyle" TargetType="Border">
+        <Setter Property="Background" Value="{DynamicResource AppStyle.SearchSurfaceBackground}"/>
+        <Setter Property="BorderBrush" Value="{DynamicResource AppStyle.SearchSurfaceBorderBrush}"/>
+        <Setter Property="BorderThickness" Value="{DynamicResource AppStyle.SearchSurfaceBorderThickness}"/>
+        <Setter Property="CornerRadius" Value="{DynamicResource AppStyle.SearchSurfaceCornerRadius}"/>
+        <Setter Property="Margin" Value="{DynamicResource AppDensity.SearchSurfaceMargin}"/>
+        <Setter Property="IsHitTestVisible" Value="False"/>
+    </Style>
+
     <Style x:Key="OmniBarStyle" TargetType="Border">
-        <Setter Property="Background" Value="{DynamicResource Atlas.SurfaceBrush}"/>
+        <Setter Property="Background" Value="{DynamicResource AppStyle.OmniBarBackground}"/>
         <Setter Property="BorderBrush" Value="{DynamicResource Atlas.Line2Brush}"/>
         <Setter Property="BorderThickness" Value="1"/>
         <Setter Property="CornerRadius" Value="9"/>
@@ -608,8 +981,28 @@
         <Setter Property="VerticalAlignment" Value="Center"/>
     </Style>
 
+    <Style x:Key="OmniPathChipStyle" TargetType="Border">
+        <Setter Property="Background" Value="{DynamicResource AppStyle.OmniPathChipBackground}"/>
+        <Setter Property="BorderBrush" Value="{DynamicResource AppStyle.OmniPathChipBorderBrush}"/>
+        <Setter Property="BorderThickness" Value="{DynamicResource AppStyle.OmniPathChipBorderThickness}"/>
+        <Setter Property="CornerRadius" Value="{DynamicResource AppStyle.OmniPathChipCornerRadius}"/>
+        <Setter Property="Padding" Value="{DynamicResource AppDensity.OmniPathChipPadding}"/>
+        <Setter Property="Margin" Value="{DynamicResource AppDensity.OmniPathChipMargin}"/>
+        <Setter Property="VerticalAlignment" Value="Center"/>
+    </Style>
+
+    <Style x:Key="SearchStatusPillStyle" TargetType="Border">
+        <Setter Property="Background" Value="{DynamicResource AppStyle.SearchStatusPillBackground}"/>
+        <Setter Property="BorderBrush" Value="{DynamicResource AppStyle.SearchStatusPillBorderBrush}"/>
+        <Setter Property="BorderThickness" Value="{DynamicResource AppStyle.SearchStatusPillBorderThickness}"/>
+        <Setter Property="CornerRadius" Value="{DynamicResource AppStyle.SearchStatusPillCornerRadius}"/>
+        <Setter Property="Padding" Value="{DynamicResource AppDensity.SearchStatusPillPadding}"/>
+        <Setter Property="Margin" Value="{DynamicResource AppDensity.SearchStatusPillMargin}"/>
+        <Setter Property="VerticalAlignment" Value="Center"/>
+    </Style>
+
     <Style x:Key="FilterChipStyle" TargetType="Border">
-        <Setter Property="Background" Value="{DynamicResource Atlas.SurfaceBrush}"/>
+        <Setter Property="Background" Value="{DynamicResource AppStyle.FilterChipBackground}"/>
         <Setter Property="BorderBrush" Value="{DynamicResource Atlas.LineBrush}"/>
         <Setter Property="BorderThickness" Value="1"/>
         <Setter Property="CornerRadius" Value="8"/>
@@ -619,7 +1012,7 @@
     </Style>
 
     <Style x:Key="QueryChipStyle" TargetType="Border">
-        <Setter Property="Background" Value="{DynamicResource Atlas.Surface2Brush}"/>
+        <Setter Property="Background" Value="{DynamicResource AppStyle.QueryChipBackground}"/>
         <Setter Property="BorderBrush" Value="{DynamicResource Atlas.AccentBrush}"/>
         <Setter Property="BorderThickness" Value="1"/>
         <Setter Property="CornerRadius" Value="8"/>
@@ -644,11 +1037,38 @@
         <Setter Property="MaxWidth" Value="220"/>
     </Style>
 
+    <Style x:Key="ActiveFacetChipStyle" TargetType="Border">
+        <Setter Property="Background" Value="{DynamicResource Atlas.AccentTintBrush}"/>
+        <Setter Property="BorderBrush" Value="{DynamicResource Atlas.AccentBrush}"/>
+        <Setter Property="BorderThickness" Value="1"/>
+        <Setter Property="CornerRadius" Value="8"/>
+        <Setter Property="Padding" Value="{DynamicResource AppDensity.QueryChipPadding}"/>
+        <Setter Property="Margin" Value="{DynamicResource AppDensity.QueryChipMargin}"/>
+        <Setter Property="MinHeight" Value="{DynamicResource AppDensity.QueryChipMinHeight}"/>
+    </Style>
+
+    <Style x:Key="ActiveFacetFieldStyle" TargetType="TextBlock" BasedOn="{StaticResource QueryChipFieldStyle}">
+        <Setter Property="Foreground" Value="{DynamicResource Atlas.Accent2Brush}"/>
+    </Style>
+
+    <Style x:Key="ActiveFacetValueStyle" TargetType="TextBlock" BasedOn="{StaticResource QueryChipValueStyle}">
+        <Setter Property="Foreground" Value="{DynamicResource Atlas.InkBrush}"/>
+        <Setter Property="MaxWidth" Value="160"/>
+    </Style>
+
     <Style x:Key="ChipLabelStyle" TargetType="TextBlock">
         <Setter Property="FontSize" Value="12"/>
         <Setter Property="Foreground" Value="{DynamicResource Atlas.Ink3Brush}"/>
         <Setter Property="VerticalAlignment" Value="Center"/>
         <Setter Property="Margin" Value="0,0,8,0"/>
+    </Style>
+
+    <Style x:Key="FilterStripLabelStyle" TargetType="TextBlock">
+        <Setter Property="FontSize" Value="10.5"/>
+        <Setter Property="FontWeight" Value="Bold"/>
+        <Setter Property="Foreground" Value="{DynamicResource Atlas.Ink3Brush}"/>
+        <Setter Property="Margin" Value="2,5,8,0"/>
+        <Setter Property="VerticalAlignment" Value="Center"/>
     </Style>
 
     <Style x:Key="MutedValueStyle" TargetType="TextBlock">
@@ -665,7 +1085,7 @@
     </Style>
 
     <Style x:Key="AdvancedFlyoutCardStyle" TargetType="Border">
-        <Setter Property="Background" Value="{DynamicResource Atlas.SurfaceBrush}"/>
+        <Setter Property="Background" Value="{DynamicResource AppStyle.PreviewCodeBackground}"/>
         <Setter Property="BorderBrush" Value="{DynamicResource Atlas.LineBrush}"/>
         <Setter Property="BorderThickness" Value="1"/>
         <Setter Property="CornerRadius" Value="10"/>
@@ -734,14 +1154,24 @@
                     <Border x:Name="card" Background="{DynamicResource Atlas.SurfaceBrush}"
                             BorderBrush="{DynamicResource Atlas.LineBrush}" BorderThickness="1"
                             CornerRadius="{DynamicResource AppDensity.ResultCardCornerRadius}" SnapsToDevicePixels="True">
-                        <ContentPresenter/>
+                        <Grid>
+                            <Border x:Name="AccentRail"
+                                    Width="3"
+                                    HorizontalAlignment="Left"
+                                    Background="{DynamicResource Atlas.AccentBrush}"
+                                    Visibility="{DynamicResource AppStyle.ResultAccentRailVisibility}"
+                                    Opacity="0"/>
+                            <ContentPresenter/>
+                        </Grid>
                     </Border>
                     <ControlTemplate.Triggers>
                         <Trigger Property="IsMouseOver" Value="True">
                             <Setter TargetName="card" Property="BorderBrush" Value="{DynamicResource Atlas.Line2Brush}"/>
                         </Trigger>
                         <Trigger Property="IsSelected" Value="True">
+                            <Setter TargetName="card" Property="Background" Value="{DynamicResource Atlas.SelBrush}"/>
                             <Setter TargetName="card" Property="BorderBrush" Value="{DynamicResource Atlas.AccentBrush}"/>
+                            <Setter TargetName="AccentRail" Property="Opacity" Value="1"/>
                         </Trigger>
                     </ControlTemplate.Triggers>
                 </ControlTemplate>
@@ -796,6 +1226,32 @@
         <Setter Property="Foreground" Value="{DynamicResource Atlas.AccentBrush}"/>
     </Style>
 
+    <Style x:Key="ResultMetaPillStyle" TargetType="Border">
+        <Setter Property="Background" Value="{DynamicResource Atlas.Surface2Brush}"/>
+        <Setter Property="BorderBrush" Value="{DynamicResource Atlas.LineBrush}"/>
+        <Setter Property="BorderThickness" Value="1"/>
+        <Setter Property="CornerRadius" Value="6"/>
+        <Setter Property="Padding" Value="{DynamicResource AppDensity.ResultMetaPillPadding}"/>
+        <Setter Property="Margin" Value="{DynamicResource AppDensity.ResultMetaPillMargin}"/>
+    </Style>
+
+    <Style x:Key="ResultMetaKeyStyle" TargetType="TextBlock">
+        <Setter Property="FontFamily" Value="{DynamicResource Atlas.MonoFont}"/>
+        <Setter Property="FontSize" Value="10.5"/>
+        <Setter Property="Foreground" Value="{DynamicResource Atlas.Ink3Brush}"/>
+        <Setter Property="VerticalAlignment" Value="Center"/>
+        <Setter Property="Margin" Value="0,0,4,0"/>
+    </Style>
+
+    <Style x:Key="ResultMetaValueStyle" TargetType="TextBlock">
+        <Setter Property="FontFamily" Value="{DynamicResource Atlas.MonoFont}"/>
+        <Setter Property="FontSize" Value="10.5"/>
+        <Setter Property="FontWeight" Value="SemiBold"/>
+        <Setter Property="Foreground" Value="{DynamicResource Atlas.Ink2Brush}"/>
+        <Setter Property="VerticalAlignment" Value="Center"/>
+        <Setter Property="TextTrimming" Value="CharacterEllipsis"/>
+    </Style>
+
     <Style x:Key="LineNoStyle" TargetType="TextBlock">
         <Setter Property="FontFamily" Value="{DynamicResource Atlas.MonoFont}"/>
         <Setter Property="FontSize" Value="12"/>
@@ -811,6 +1267,22 @@
         <Setter Property="Foreground" Value="{DynamicResource Atlas.Ink2Brush}"/>
         <Setter Property="TextWrapping" Value="NoWrap"/>
         <Setter Property="TextTrimming" Value="CharacterEllipsis"/>
+    </Style>
+
+    <Style x:Key="MatchLineContainerStyle" TargetType="Border">
+        <Setter Property="Background" Value="Transparent"/>
+        <Setter Property="BorderBrush" Value="Transparent"/>
+        <Setter Property="BorderThickness" Value="1"/>
+        <Setter Property="CornerRadius" Value="6"/>
+        <Setter Property="Padding" Value="{DynamicResource AppDensity.MatchLinePadding}"/>
+        <Setter Property="Margin" Value="{DynamicResource AppDensity.MatchLineMargin}"/>
+    </Style>
+
+    <Style x:Key="ResultHitsPanelStyle" TargetType="Border">
+        <Setter Property="Background" Value="{DynamicResource AppStyle.ResultHitsPanelBackground}"/>
+        <Setter Property="BorderBrush" Value="{DynamicResource Atlas.LineBrush}"/>
+        <Setter Property="BorderThickness" Value="{DynamicResource AppStyle.ResultHitsPanelBorderThickness}"/>
+        <Setter Property="Padding" Value="{DynamicResource AppDensity.ResultHitsPanelPadding}"/>
     </Style>
 
     <Style x:Key="MoreLinkStyle" TargetType="Button">
@@ -865,6 +1337,49 @@
         <Setter Property="Background" Value="{DynamicResource Atlas.Surface2Brush}"/>
         <Setter Property="BorderBrush" Value="{DynamicResource Atlas.LineBrush}"/>
         <Setter Property="BorderThickness" Value="1,0,0,0"/>
+    </Style>
+
+    <Style x:Key="PreviewMetadataCardStyle" TargetType="Border">
+        <Setter Property="Background" Value="{DynamicResource AppStyle.PreviewMetadataBackground}"/>
+        <Setter Property="BorderBrush" Value="{DynamicResource Atlas.LineBrush}"/>
+        <Setter Property="BorderThickness" Value="{DynamicResource AppStyle.PreviewMetadataBorderThickness}"/>
+        <Setter Property="CornerRadius" Value="{DynamicResource AppStyle.PreviewMetadataCornerRadius}"/>
+        <Setter Property="Padding" Value="{DynamicResource AppDensity.PreviewMetadataPadding}"/>
+    </Style>
+
+    <Style x:Key="PreviewMetaPillStyle" TargetType="Border">
+        <Setter Property="Background" Value="{DynamicResource Atlas.Surface2Brush}"/>
+        <Setter Property="BorderBrush" Value="{DynamicResource Atlas.LineBrush}"/>
+        <Setter Property="BorderThickness" Value="1"/>
+        <Setter Property="CornerRadius" Value="6"/>
+        <Setter Property="Padding" Value="{DynamicResource AppDensity.PreviewMetaPillPadding}"/>
+        <Setter Property="Margin" Value="{DynamicResource AppDensity.PreviewMetaPillMargin}"/>
+    </Style>
+
+    <Style x:Key="PreviewMetaKeyStyle" TargetType="TextBlock" BasedOn="{StaticResource ResultMetaKeyStyle}"/>
+
+    <Style x:Key="PreviewMetaValueStyle" TargetType="TextBlock" BasedOn="{StaticResource ResultMetaValueStyle}"/>
+
+    <Style x:Key="PreviewImageCardStyle" TargetType="Border">
+        <Setter Property="BorderBrush" Value="{DynamicResource Atlas.LineBrush}"/>
+        <Setter Property="BorderThickness" Value="1"/>
+        <Setter Property="CornerRadius" Value="6"/>
+        <Setter Property="Background" Value="{DynamicResource AppStyle.PreviewImageBackground}"/>
+        <Setter Property="Padding" Value="{DynamicResource AppDensity.PreviewImagePadding}"/>
+        <Setter Property="Margin" Value="{DynamicResource AppDensity.PreviewImageMargin}"/>
+        <Setter Property="MaxHeight" Value="{DynamicResource AppDensity.PreviewImageMaxHeight}"/>
+        <Setter Property="ClipToBounds" Value="True"/>
+    </Style>
+
+    <Style x:Key="PreviewHitsPanelStyle" TargetType="StackPanel">
+        <Setter Property="Margin" Value="{DynamicResource AppDensity.PreviewHitsPanelMargin}"/>
+    </Style>
+
+    <Style x:Key="PreviewHitLineStyle" TargetType="Border">
+        <Setter Property="BorderBrush" Value="{DynamicResource Atlas.AccentBrush}"/>
+        <Setter Property="BorderThickness" Value="2,0,0,0"/>
+        <Setter Property="Padding" Value="10,1,0,1"/>
+        <Setter Property="Margin" Value="0,0,0,7"/>
     </Style>
 
     <Style x:Key="UpperPanelLabelStyle" TargetType="TextBlock">

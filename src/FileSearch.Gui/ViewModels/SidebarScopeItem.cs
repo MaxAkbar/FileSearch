@@ -1,8 +1,9 @@
+using CommunityToolkit.Mvvm.ComponentModel;
 using FileSearch.Gui.Settings;
 
 namespace FileSearch.Gui.ViewModels;
 
-public sealed class SidebarScopeItem
+public sealed partial class SidebarScopeItem : ObservableObject
 {
     public string Name { get; init; } = string.Empty;
 
@@ -13,6 +14,8 @@ public sealed class SidebarScopeItem
     public bool IsCustom { get; init; }
 
     public SearchScope? CustomScope { get; init; }
+
+    [ObservableProperty] private bool _isActive;
 
     public string Summary =>
         string.IsNullOrWhiteSpace(FileNamePattern) ? "All files" : FileNamePattern;
