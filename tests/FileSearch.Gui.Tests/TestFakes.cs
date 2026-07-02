@@ -241,19 +241,19 @@ internal sealed class FakeStyleService : IStyleService
 {
     public AppStyle CurrentStyle { get; private set; } = AppStyle.Comfortable;
 
-    public bool RequiresDarkApplicationTheme => CurrentStyle == AppStyle.Vela;
+    public bool RequiresDarkApplicationTheme => CurrentStyle == AppStyle.Vela && !PrefersLightPalette;
 
-    public event EventHandler? EffectiveApplicationThemeChanged;
+    public bool PrefersLightPalette { get; set; }
+
+    public event EventHandler? OverlayChanged;
 
     public int SetStyleCallCount { get; private set; }
 
     public void SetStyle(AppStyle style)
     {
-        var previouslyRequiredDarkBase = RequiresDarkApplicationTheme;
         SetStyleCallCount++;
         CurrentStyle = style;
-        if (previouslyRequiredDarkBase != RequiresDarkApplicationTheme)
-            EffectiveApplicationThemeChanged?.Invoke(this, EventArgs.Empty);
+        OverlayChanged?.Invoke(this, EventArgs.Empty);
     }
 
     public void RefreshOverlay()

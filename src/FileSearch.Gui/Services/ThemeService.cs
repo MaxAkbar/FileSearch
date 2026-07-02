@@ -35,7 +35,7 @@ public sealed class ThemeService : IThemeService
     {
         _settingsService = settingsService;
         _styleService = styleService;
-        _styleService.EffectiveApplicationThemeChanged += OnEffectiveApplicationThemeChanged;
+        _styleService.OverlayChanged += OnStyleOverlayChanged;
         CustomThemeFolderPath = Path.Combine(
             Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData),
             "FileSearch",
@@ -129,8 +129,12 @@ public sealed class ThemeService : IThemeService
         return true;
     }
 
-    private void OnEffectiveApplicationThemeChanged(object? sender, EventArgs e) =>
-        ApplyApplicationTheme(CurrentTheme);
+    // Re-merge the theme (and custom) overlays after a style swap so freshly
+    // parsed dictionaries resolve under the new layering, and re-resolve the
+    // dark ModernWpf base for styles that require one (SetOverlays ends with
+    // ApplyApplicationTheme).
+    private void OnStyleOverlayChanged(object? sender, EventArgs e) =>
+        SetOverlays(ResolveOverlay(CurrentTheme), _activeCustomOverlay);
 
     private void ApplyApplicationTheme(AppTheme theme)
     {
@@ -179,6 +183,13 @@ public sealed class ThemeService : IThemeService
 
     private void SetOverlays(Uri? baseSource, ResourceDictionary? customOverlay)
     {
+        // Styles that carry their own palette (Vela) pick their light or dark
+        // token set from this flag, so it must be current before the style
+        // overlay is re-resolved below.
+        _styleService.PrefersLightPalette =
+            CurrentTheme == AppTheme.Light ||
+            (CurrentTheme == AppTheme.System && !IsOsDark());
+
         var resources = Application.Current.Resources.MergedDictionaries;
 
         if (_activeCustomOverlay is not null)

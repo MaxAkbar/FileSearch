@@ -53,6 +53,10 @@ public sealed class BindingPathAuditTests
         typeof(QuickSearchShortcutBindingViewModel),
         typeof(QueryChipViewModel),
         typeof(ResultFacetChip),
+        typeof(ResultFacetOption),
+        typeof(ResultSortOption),
+        typeof(ResultGroupOption),
+        typeof(System.Windows.Data.CollectionViewGroup),
     };
 
     /// <summary>Window-scope (DataContext) type per file; default is the shell.</summary>

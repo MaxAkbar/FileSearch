@@ -10,6 +10,7 @@
         mc:Ignorable="d"
         d:DataContext="{d:DesignInstance Type=vm:MainViewModel}"
         ui:WindowHelper.UseModernWindowStyle="True"
+        ui:TitleBar.ExtendViewIntoTitleBar="True"
         Icon="Assets/FileSearch.ico"
         Background="{DynamicResource Atlas.PaperBrush}"
         Foreground="{DynamicResource Atlas.InkBrush}"
@@ -33,7 +34,12 @@
         <!-- ===== Title bar (menu lives here; caption buttons sit to the right) ===== -->
         <Border DockPanel.Dock="Top" Style="{StaticResource TitleBarStyle}">
             <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
-                <Image Source="Assets/FileSearch-256.png" Width="18" Height="18" Margin="2,0,8,0"/>
+                <Image Source="Assets/FileSearch-256.png" Width="18" Height="18" Margin="2,0,8,0"
+                       Visibility="{DynamicResource AppStyle.TitleIconVisibility}"/>
+                <Border Style="{StaticResource TitleMarkStyle}"
+                        Visibility="{DynamicResource AppStyle.TitleMarkVisibility}">
+                    <Border Style="{StaticResource TitleMarkGlyphStyle}"/>
+                </Border>
                 <StackPanel Orientation="Horizontal" Margin="0,0,16,0">
                     <TextBlock Text="{DynamicResource AppStyle.BrandName}" Style="{StaticResource TitleTextStyle}"/>
                     <TextBlock Text="File Search"
@@ -42,7 +48,8 @@
                     <Border Style="{StaticResource TitleDividerStyle}"
                             Visibility="{DynamicResource AppStyle.TitleSubtitleVisibility}"/>
                 </StackPanel>
-                <Menu Style="{StaticResource TitleMenuStyle}">
+                <Menu Style="{StaticResource TitleMenuStyle}"
+                      WindowChrome.IsHitTestVisibleInChrome="True">
                     <MenuItem Header="_File">
                         <MenuItem Header="_Install Windows integration"
                                   Command="{Binding InstallWindowsIntegrationCommand}"/>
@@ -115,7 +122,7 @@
             </StackPanel>
         </Border>
 
-        <!-- ===== Status bar ===== -->
+        <!-- ===== Status bar (the single status readout) ===== -->
         <Border DockPanel.Dock="Bottom" Style="{StaticResource StatusBarStyle}">
             <Grid>
                 <Grid.ColumnDefinitions>
@@ -125,25 +132,39 @@
                     <ColumnDefinition Width="Auto"/>
                     <ColumnDefinition Width="Auto"/>
                     <ColumnDefinition Width="Auto"/>
+                    <ColumnDefinition Width="Auto"/>
                 </Grid.ColumnDefinitions>
-                <Ellipse Width="7" Height="7"
-                         Fill="{DynamicResource Atlas.AccentBrush}"
-                         VerticalAlignment="Center" Margin="0,0,9,0"/>
+                <Ellipse Style="{StaticResource StatusDotStyle}" Margin="0,0,9,0"/>
                 <TextBlock Grid.Column="1" Text="{Binding Status.Text}" Style="{StaticResource StatusTextStyle}"/>
                 <Border Grid.Column="3" Style="{DynamicResource StatusPillStyle}">
                     <TextBlock Style="{StaticResource StatusStrongStyle}">
-                        <Run Text="{Binding Search.FilesMatched, Mode=OneWay}"/><Run Text=" files · "/><Run Text="{Binding Search.TotalHits, Mode=OneWay}"/><Run Text=" hits"/>
+                        <Run Text="{Binding Search.TotalHits, Mode=OneWay}"/><Run Text=" hits in "/><Run Text="{Binding Search.FilesMatched, Mode=OneWay}"/><Run Text=" files · "/><Run Text="{Binding Search.ElapsedText, Mode=OneWay}"/>
                     </TextBlock>
                 </Border>
                 <Border Grid.Column="4" Style="{DynamicResource StatusPillStyle}">
                     <TextBlock Style="{StaticResource StatusTextStyle}">
-                        <Run Text="elapsed "/><Run Text="{Binding Search.ElapsedText, Mode=OneWay}"/>
-                    </TextBlock>
-                </Border>
-                <Border Grid.Column="5" Style="{DynamicResource StatusPillStyle}">
-                    <TextBlock Style="{StaticResource StatusTextStyle}">
                         <Run Text="{Binding Index.IndexActivityText, Mode=OneWay}"/><Run Text=" · "/><Run Text="{Binding Index.IndexedLocationCountText, Mode=OneWay}"/>
                     </TextBlock>
+                </Border>
+                <Border Grid.Column="5" Width="1" Height="14"
+                        Background="{DynamicResource Atlas.Line2Brush}"
+                        Margin="14,0,0,0" VerticalAlignment="Center"
+                        Visibility="{DynamicResource AppStyle.StatusThemeToggleVisibility}"/>
+                <Border Grid.Column="6" Style="{StaticResource SegmentedControlStyle}"
+                        Margin="14,0,0,0"
+                        Visibility="{DynamicResource AppStyle.StatusThemeToggleVisibility}">
+                    <StackPanel Orientation="Horizontal">
+                        <Button Content="Dark"
+                                Command="{Binding ApplyThemeCommand}" CommandParameter="Dark"
+                                Tag="{Binding IsDarkThemeSelected}"
+                                FontSize="11" Padding="10,2"
+                                Style="{StaticResource SegmentedItemButtonStyle}"/>
+                        <Button Content="Light"
+                                Command="{Binding ApplyThemeCommand}" CommandParameter="Light"
+                                Tag="{Binding IsLightThemeSelected}"
+                                FontSize="11" Padding="10,2"
+                                Style="{StaticResource SegmentedItemButtonStyle}"/>
+                    </StackPanel>
                 </Border>
             </Grid>
         </Border>
@@ -151,9 +172,13 @@
         <!-- ===== Center shell ===== -->
         <Grid x:Name="ShellRoot" Style="{StaticResource ShellStyle}">
             <Grid.ColumnDefinitions>
-                <ColumnDefinition Width="{DynamicResource AppDensity.SidebarColumnWidth}"/>
-                <ColumnDefinition Width="*" MinWidth="500"/>
-                <ColumnDefinition Width="Auto"/>
+                <ColumnDefinition x:Name="SidebarColumn"
+                                  Width="{DynamicResource AppDensity.SidebarColumnWidth}"
+                                  MinWidth="220"
+                                  MaxWidth="440"/>
+                <ColumnDefinition x:Name="SidebarSplitterColumn" Width="Auto"/>
+                <ColumnDefinition x:Name="ContentColumn" Width="*" MinWidth="500"/>
+                <ColumnDefinition x:Name="PreviewSplitterColumn" Width="Auto"/>
                 <ColumnDefinition x:Name="PreviewColumn" Width="{DynamicResource AppDensity.PreviewColumnWidth}" MinWidth="300" MaxWidth="720"/>
             </Grid.ColumnDefinitions>
 
@@ -161,7 +186,8 @@
             <Border Grid.Column="0" Style="{StaticResource SidebarStyle}">
                 <DockPanel>
                     <!-- Brand -->
-                    <StackPanel DockPanel.Dock="Top" Orientation="Horizontal" Margin="4,4,0,14">
+                    <StackPanel DockPanel.Dock="Top" Orientation="Horizontal" Margin="4,4,0,14"
+                                Visibility="{DynamicResource AppStyle.SidebarBrandVisibility}">
                         <Border Width="28" Height="28" CornerRadius="9" Margin="0,0,10,0">
                             <Border.Background>
                                 <LinearGradientBrush StartPoint="0,0" EndPoint="1,1">
@@ -265,6 +291,38 @@
                                 <ui:FontIcon Glyph="&#xE946;" FontSize="14"/>
                             </Button>
                         </UniformGrid>
+                        <!-- Vela rail footer: text links + avatar over a full-width rule. -->
+                        <Border BorderBrush="{DynamicResource Atlas.LineBrush}"
+                                BorderThickness="0,1,0,0"
+                                Margin="-14,8,-14,-8"
+                                Padding="14,10"
+                                Visibility="{DynamicResource AppStyle.SidebarFooterLinkActionsVisibility}">
+                            <Grid>
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="Auto"/>
+                                    <ColumnDefinition Width="Auto"/>
+                                    <ColumnDefinition Width="Auto"/>
+                                    <ColumnDefinition Width="*"/>
+                                    <ColumnDefinition Width="Auto"/>
+                                </Grid.ColumnDefinitions>
+                                <Button Content="Workflows" Click="OnWorkflowsClick"
+                                        Style="{StaticResource LinkButtonStyle}"
+                                        FontSize="12" FontWeight="Normal" Margin="0,0,14,0"/>
+                                <Button Grid.Column="1" Content="Settings" Click="OnSettingsClick"
+                                        Style="{StaticResource LinkButtonStyle}"
+                                        FontSize="12" FontWeight="Normal" Margin="0,0,14,0"/>
+                                <Button Grid.Column="2" Content="Help" Click="OnHelpClick"
+                                        Style="{StaticResource LinkButtonStyle}"
+                                        FontSize="12" FontWeight="Normal"/>
+                                <Button Grid.Column="4" Click="OnAboutClick"
+                                        Style="{StaticResource LinkButtonStyle}"
+                                        Padding="0" ToolTip="About">
+                                    <Border Style="{StaticResource SidebarAvatarStyle}">
+                                        <Border Style="{StaticResource TitleMarkGlyphStyle}" Width="8" Height="8"/>
+                                    </Border>
+                                </Button>
+                            </Grid>
+                        </Border>
                     </StackPanel>
 
                     <!-- Collapsible sections. Each expanded section's row takes the
@@ -292,7 +350,7 @@
                                       Expanded="OnNavSectionToggled" Collapsed="OnNavSectionToggled">
                                 <Expander.Header>
                                     <StackPanel Orientation="Horizontal">
-                                        <TextBlock Text="SCOPES" Style="{StaticResource NavSectionHeaderTextStyle}"/>
+                                        <TextBlock Text="LOCATIONS" Style="{StaticResource NavSectionHeaderTextStyle}"/>
                                         <TextBlock Text="{Binding History.ScopeList.CountText}"
                                                    Style="{StaticResource NavSectionCountStyle}"/>
                                     </StackPanel>
@@ -302,13 +360,13 @@
                                         <Button Click="OnAddScopeClick" Style="{StaticResource NavItemButtonStyle}">
                                             <StackPanel Orientation="Horizontal">
                                                 <ui:FontIcon Glyph="&#xE710;" FontSize="14" Margin="0,0,11,0"/>
-                                                <TextBlock Text="New scope" Style="{StaticResource SidebarCommandTextStyle}"/>
+                                                <TextBlock Text="New location" Style="{StaticResource SidebarCommandTextStyle}"/>
                                             </StackPanel>
                                         </Button>
                                         <Button Command="{Binding History.ClearCustomScopesCommand}" Style="{StaticResource NavItemButtonStyle}">
                                             <StackPanel Orientation="Horizontal">
                                                 <ui:FontIcon Glyph="&#xE74D;" FontSize="14" Margin="0,0,11,0"/>
-                                                <TextBlock Text="Clear scopes" Style="{StaticResource SidebarCommandTextStyle}"/>
+                                                <TextBlock Text="Clear locations" Style="{StaticResource SidebarCommandTextStyle}"/>
                                             </StackPanel>
                                         </Button>
                                     </StackPanel>
@@ -346,7 +404,7 @@
                                     <Grid DockPanel.Dock="Top">
                                         <TextBox Text="{Binding History.ScopeList.SearchText, UpdateSourceTrigger=PropertyChanged}"
                                                  Style="{StaticResource SidebarSearchBoxStyle}"
-                                                 ui:ControlHelper.PlaceholderText="Search scopes"/>
+                                                 ui:ControlHelper.PlaceholderText="Search locations"/>
                                         <Button Command="{Binding History.ScopeList.ClearSearchCommand}"
                                                 Style="{StaticResource IconButtonStyle}"
                                                 Width="{DynamicResource AppDensity.TinyIconButtonSize}"
@@ -378,12 +436,19 @@
                                                                 <ColumnDefinition Width="Auto"/>
                                                                 <ColumnDefinition Width="*"/>
                                                             </Grid.ColumnDefinitions>
-                                                            <ui:FontIcon Glyph="{Binding Glyph}" FontSize="14" Margin="0,0,11,0"/>
-                                                            <StackPanel Grid.Column="1">
+                                                            <Border Style="{StaticResource SidebarIconChipStyle}"
+                                                                    VerticalAlignment="Center"
+                                                                    Margin="0,0,11,0">
+                                                                <ui:FontIcon Glyph="{Binding Glyph}" FontSize="13"
+                                                                             Foreground="{DynamicResource Atlas.Ink2Brush}"
+                                                                             HorizontalAlignment="Center"
+                                                                             VerticalAlignment="Center"/>
+                                                            </Border>
+                                                            <StackPanel Grid.Column="1" VerticalAlignment="Center">
                                                                 <TextBlock Text="{Binding Name}"
                                                                            Style="{StaticResource SidebarItemTitleTextStyle}"/>
                                                                 <TextBlock Text="{Binding Summary}"
-                                                                           Style="{StaticResource SidebarItemSubtitleTextStyle}"/>
+                                                                           Style="{StaticResource SidebarItemMonoTextStyle}"/>
                                                             </StackPanel>
                                                         </Grid>
                                                     </Button>
@@ -1063,8 +1128,11 @@
                 </DockPanel>
             </Border>
 
+            <GridSplitter Grid.Column="1"
+                          Style="{StaticResource SidebarGridSplitterStyle}"/>
+
             <!-- ===== Main column: omni + filters + results ===== -->
-            <Grid Grid.Column="1" Margin="{DynamicResource AppDensity.MainContentMargin}">
+            <Grid Grid.Column="2" Margin="{DynamicResource AppDensity.MainContentMargin}">
                 <Grid.RowDefinitions>
                     <RowDefinition Height="Auto"/>
                     <RowDefinition Height="Auto"/>
@@ -1086,6 +1154,7 @@
 
                     <Button Grid.Column="0" Command="{Binding Search.BrowseCommand}"
                             Style="{StaticResource IconButtonStyle}" ToolTip="Choose folder"
+                            Visibility="{DynamicResource AppStyle.OmniBrowseButtonVisibility}"
                             Margin="{DynamicResource AppDensity.BrowseButtonMargin}">
                         <ui:FontIcon Glyph="&#xE8B7;" FontSize="15"/>
                     </Button>
@@ -1093,50 +1162,75 @@
                     <Border Grid.Column="1" Style="{StaticResource OmniBarStyle}">
                         <Grid>
                             <Grid.ColumnDefinitions>
-                                <ColumnDefinition Width="Auto"/>
-                                <ColumnDefinition Width="Auto"/>
-                                <ColumnDefinition Width="Auto"/>
                                 <ColumnDefinition Width="{DynamicResource AppDensity.OmniPathColumnWidth}"/>
+                                <ColumnDefinition Width="Auto"/>
+                                <ColumnDefinition Width="Auto"/>
                                 <ColumnDefinition Width="Auto"/>
                                 <ColumnDefinition Width="{DynamicResource AppDensity.OmniQueryColumnWidth}"/>
                                 <ColumnDefinition Width="Auto"/>
+                                <ColumnDefinition Width="Auto"/>
+                                <ColumnDefinition Width="Auto"/>
+                                <ColumnDefinition Width="Auto"/>
                             </Grid.ColumnDefinitions>
-                            <Button Grid.Column="0"
+                            <!-- Location chip: folder glyph opens the picker, path stays editable. -->
+                            <Border Grid.Column="0" Style="{StaticResource OmniPathChipStyle}">
+                                <DockPanel LastChildFill="True">
+                                    <Button DockPanel.Dock="Left"
+                                            Command="{Binding Search.BrowseCommand}"
+                                            Style="{StaticResource IconButtonStyle}"
+                                            Width="20" Height="20"
+                                            Margin="0,0,7,0"
+                                            ToolTip="Choose folder">
+                                        <ui:FontIcon Glyph="&#xE8B7;" FontSize="12"
+                                                     Foreground="{DynamicResource Atlas.Ink2Brush}"/>
+                                    </Button>
+                                    <TextBox x:Name="SearchPathBox"
+                                             Text="{Binding Search.SearchPath, UpdateSourceTrigger=LostFocus}"
+                                             Style="{StaticResource OmniPathBoxStyle}"
+                                             ToolTip="Search location — edit or pick a folder"
+                                             ui:ControlHelper.PlaceholderText="Folder to search"/>
+                                </DockPanel>
+                            </Border>
+                            <Border Grid.Column="1" Style="{StaticResource OmniDividerStyle}"
+                                    Visibility="{DynamicResource AppStyle.OmniDividerVisibility}"/>
+                            <Button Grid.Column="2"
                                     Command="{Binding Search.SearchCommand}"
                                     Style="{StaticResource IconButtonStyle}"
                                     Visibility="{DynamicResource AppStyle.InlineSearchCommandVisibility}"
                                     Width="{DynamicResource AppDensity.IconButtonSize}"
                                     Height="{DynamicResource AppDensity.IconButtonSize}"
+                                    Margin="0,0,4,0"
                                     ToolTip="Start search">
-                                <ui:FontIcon Glyph="&#xE768;" FontSize="13"/>
+                                <ui:FontIcon Glyph="&#xE721;" FontSize="15"/>
                             </Button>
-                            <Button Grid.Column="1"
-                                    Command="{Binding Search.CancelCommand}"
-                                    Style="{StaticResource IconButtonStyle}"
-                                    Visibility="{DynamicResource AppStyle.InlineSearchCommandVisibility}"
-                                    Width="{DynamicResource AppDensity.IconButtonSize}"
-                                    Height="{DynamicResource AppDensity.IconButtonSize}"
-                                    ToolTip="Cancel search">
-                                <ui:FontIcon Glyph="&#xE711;" FontSize="13"/>
-                            </Button>
-                            <ui:FontIcon Grid.Column="2"
+                            <ui:FontIcon Grid.Column="3"
                                          Glyph="&#xE721;" FontSize="15" Margin="0,0,10,0"
                                          Foreground="{DynamicResource Atlas.Ink3Brush}"
                                          VerticalAlignment="Center"
                                          Visibility="{DynamicResource AppStyle.OmniDecorativeSearchIconVisibility}"/>
-                            <Border Grid.Column="3" Style="{StaticResource OmniPathChipStyle}">
-                                <TextBox x:Name="SearchPathBox"
-                                         Text="{Binding Search.SearchPath, UpdateSourceTrigger=LostFocus}"
-                                         Style="{StaticResource OmniPathBoxStyle}"
-                                         ui:ControlHelper.PlaceholderText="Folder to search"/>
-                            </Border>
-                            <Border Grid.Column="4" Style="{StaticResource OmniDividerStyle}"/>
                             <TextBox x:Name="QueryBox"
-                                     Grid.Column="5"
+                                     Grid.Column="4"
                                      Text="{Binding Search.QueryText, UpdateSourceTrigger=PropertyChanged}"
                                      Style="{StaticResource OmniQueryBoxStyle}"
                                      ui:ControlHelper.PlaceholderText="{Binding Search.QueryPlaceholderText}"/>
+                            <Border Grid.Column="5" Style="{StaticResource KbdHintStyle}"
+                                    Margin="8,0,0,0"
+                                    ToolTip="Press / to focus the search box">
+                                <TextBlock Text="/" Style="{StaticResource KbdHintTextStyle}"/>
+                            </Border>
                             <Border Grid.Column="6"
+                                    Visibility="{DynamicResource AppStyle.InlineSearchCommandVisibility}">
+                                <Button Command="{Binding Search.CancelCommand}"
+                                        Style="{StaticResource IconButtonStyle}"
+                                        Visibility="{Binding Search.IsSearching, Converter={StaticResource BoolToVisibility}}"
+                                        Width="{DynamicResource AppDensity.IconButtonSize}"
+                                        Height="{DynamicResource AppDensity.IconButtonSize}"
+                                        Margin="4,0,0,0"
+                                        ToolTip="Cancel search">
+                                    <ui:FontIcon Glyph="&#xE711;" FontSize="13"/>
+                                </Button>
+                            </Border>
+                            <Border Grid.Column="7"
                                     Style="{DynamicResource SearchStatusPillStyle}"
                                     Visibility="{DynamicResource AppStyle.SearchStatusPillVisibility}"
                                     ToolTip="Elapsed search time">
@@ -1151,8 +1245,30 @@
                                     </TextBlock>
                                 </StackPanel>
                             </Border>
+                            <ToggleButton Grid.Column="8"
+                                          IsChecked="{Binding Search.IsSearchOptionsVisible, Mode=TwoWay}"
+                                          Style="{StaticResource SearchOptionsToggleButtonStyle}"
+                                          Margin="8,0,0,0"
+                                          ToolTip="How matching works: mode, case, word boundaries">
+                                <StackPanel Orientation="Horizontal">
+                                    <ui:FontIcon Glyph="&#xE713;" FontSize="13" Margin="0,0,7,0"/>
+                                    <TextBlock Text="Options"/>
+                                </StackPanel>
+                            </ToggleButton>
                         </Grid>
                     </Border>
+
+                    <!-- Search-in-flight underline: animates along the omni bar while a search runs. -->
+                    <ProgressBar Grid.Column="1"
+                                 IsIndeterminate="{Binding Search.IsSearching}"
+                                 Visibility="{Binding Search.IsSearching, Converter={StaticResource BoolToVisibility}}"
+                                 Foreground="{DynamicResource Atlas.AccentBrush}"
+                                 Background="Transparent"
+                                 BorderThickness="0"
+                                 Height="3"
+                                 VerticalAlignment="Bottom"
+                                 Margin="10,0,10,1"
+                                 IsHitTestVisible="False"/>
 
                     <Button Grid.Column="2" Command="{Binding Search.SearchCommand}" IsDefault="True"
                             Style="{StaticResource PrimaryButtonStyle}"
@@ -1226,75 +1342,90 @@
                     </ItemsControl.ItemTemplate>
                 </ItemsControl>
 
-                <!-- Filter chips -->
-                <WrapPanel Grid.Row="2" Margin="{DynamicResource AppDensity.SearchFiltersPanelMargin}">
-                    <TextBlock Text="FILTERS"
-                               Style="{StaticResource FilterStripLabelStyle}"
-                               Visibility="{DynamicResource AppStyle.SearchFiltersLabelVisibility}"/>
-                    <Border Style="{StaticResource FilterChipStyle}">
-                        <StackPanel Orientation="Horizontal">
-                            <TextBlock Text="Search" Style="{StaticResource ChipLabelStyle}"/>
-                            <ComboBox SelectedItem="{Binding Search.SelectedSearchTargetOption}"
-                                      ItemsSource="{Binding Search.SearchTargetOptions}"
-                                      MinWidth="{DynamicResource AppDensity.FilterSearchTargetMinWidth}"
-                                      BorderThickness="0" Background="Transparent"/>
-                        </StackPanel>
-                    </Border>
-                    <Border Style="{StaticResource FilterChipStyle}">
-                        <StackPanel Orientation="Horizontal">
-                            <TextBlock Text="Pattern" Style="{StaticResource ChipLabelStyle}"/>
-                            <TextBox Text="{Binding Search.FileNamePattern, UpdateSourceTrigger=PropertyChanged}"
-                                     MinWidth="{DynamicResource AppDensity.FilterPatternMinWidth}"
-                                     MaxWidth="{DynamicResource AppDensity.FilterPatternMaxWidth}"
-                                     BorderThickness="0" Background="Transparent"
-                                     VerticalContentAlignment="Center"
-                                     ToolTip="Glob patterns separated by ; or , — e.g. *.cs;*.md"
-                                     ui:ControlHelper.PlaceholderText="All files (e.g. *.cs;*.md)"/>
-                        </StackPanel>
-                    </Border>
-                    <Border Style="{StaticResource FilterChipStyle}">
-                        <StackPanel Orientation="Horizontal">
-                            <TextBlock Text="Exclude" Style="{StaticResource ChipLabelStyle}"/>
-                            <TextBox Text="{Binding Search.ExcludeFileNamePattern, UpdateSourceTrigger=PropertyChanged}"
-                                     MinWidth="{DynamicResource AppDensity.FilterExcludeMinWidth}"
-                                     MaxWidth="{DynamicResource AppDensity.FilterExcludeMaxWidth}"
-                                     BorderThickness="0" Background="Transparent"
-                                     VerticalContentAlignment="Center"
-                                     ToolTip="Exclude glob patterns separated by ; or , — e.g. *.log;*.tmp"
-                                     ui:ControlHelper.PlaceholderText="None (e.g. *.log;*.tmp)"/>
-                        </StackPanel>
-                    </Border>
-                    <Border Style="{StaticResource FilterChipStyle}">
-                        <StackPanel Orientation="Horizontal">
-                            <TextBlock Text="Mode" Style="{StaticResource ChipLabelStyle}"/>
-                            <ComboBox SelectedItem="{Binding Search.SearchMode}"
-                                      ItemsSource="{Binding Search.AvailableModes}"
-                                      MinWidth="{DynamicResource AppDensity.FilterModeMinWidth}"
-                                      BorderThickness="0" Background="Transparent"/>
-                        </StackPanel>
-                    </Border>
-                    <Border Style="{StaticResource FilterChipStyle}">
-                        <CheckBox Content="{Binding Search.SubfoldersSummary}" IsChecked="{Binding Search.IncludeSubfolders}" VerticalAlignment="Center"/>
-                    </Border>
-                    <Border Style="{StaticResource FilterChipStyle}">
-                        <CheckBox Content="{Binding Search.MatchCaseSummary}" IsChecked="{Binding Search.MatchCase}" VerticalAlignment="Center"/>
-                    </Border>
-                    <Border Style="{StaticResource FilterChipStyle}">
-                        <CheckBox Content="{Binding Search.DocumentExtractionSummary}" IsChecked="{Binding Search.EnableDocumentExtraction}" VerticalAlignment="Center"/>
-                    </Border>
-                    <Border Style="{StaticResource FilterChipStyle}">
-                        <CheckBox Content="{Binding Search.ImageOcrSummary}"
-                                  IsChecked="{Binding Search.EnableImageOcr}"
-                                  ToolTip="Extract text from PNG, JPEG, BMP, and TIFF images."
-                                  VerticalAlignment="Center"/>
-                    </Border>
-                    <Border Style="{StaticResource FilterChipStyle}">
-                        <CheckBox Content="{Binding Search.IndexSummaryText}" IsChecked="{Binding Search.UseIndex}" VerticalAlignment="Center"/>
-                    </Border>
-                    <Border Style="{StaticResource FilterChipStyle}">
-                        <TextBlock Text="{Binding Search.DateSummary}" Style="{StaticResource MutedValueStyle}"/>
-                    </Border>
-                    <Expander Header="Advanced" Style="{StaticResource AdvancedExpanderStyle}">
+                <!-- Search options (SEARCH IN / MATCH pills, REFINE / INCLUDE chips) -->
+                <Border Grid.Row="2"
+                        Style="{StaticResource SearchOptionsPanelStyle}"
+                        Visibility="{Binding Search.IsSearchOptionsVisible, Converter={StaticResource BoolToVisibility}}">
+                    <DockPanel LastChildFill="True">
+                        <Grid DockPanel.Dock="Bottom" Margin="0,12,0,0">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="Auto"/>
+                                <ColumnDefinition Width="*"/>
+                                <ColumnDefinition Width="Auto"/>
+                                <ColumnDefinition Width="Auto"/>
+                            </Grid.ColumnDefinitions>
+                            <Button Content="Reset to defaults"
+                                    Command="{Binding Search.ResetSearchOptionsCommand}"
+                                    Style="{StaticResource LinkButtonStyle}"
+                                    FontSize="12"
+                                    VerticalAlignment="Center"/>
+                            <TextBlock Grid.Column="2"
+                                       Text="Size, date and file-type limits live under Advanced"
+                                       Style="{StaticResource MutedValueStyle}"
+                                       FontSize="11.5"
+                                       Margin="0,0,14,0"/>
+                            <Button Grid.Column="3"
+                                    Command="{Binding Search.HideSearchOptionsCommand}"
+                                    Style="{StaticResource PrimaryButtonStyle}"
+                                    Content="Done"/>
+                        </Grid>
+                        <StackPanel>
+                            <WrapPanel>
+                                <StackPanel Margin="0,0,36,0">
+                                    <TextBlock Text="SEARCH IN" Style="{StaticResource OptionGroupLabelStyle}"/>
+                                    <ListBox ItemsSource="{Binding Search.SearchTargetOptions}"
+                                             SelectedItem="{Binding Search.SelectedSearchTargetOption}"
+                                             Style="{StaticResource ResultOptionPickerStyle}"
+                                             Margin="0,0,0,2"
+                                             ItemContainerStyle="{StaticResource ResultOptionPickerItemStyle}">
+                                        <ListBox.ItemTemplate>
+                                            <DataTemplate DataType="{x:Type vm:SearchTargetOption}">
+                                                <TextBlock Text="{Binding DisplayName}"/>
+                                            </DataTemplate>
+                                        </ListBox.ItemTemplate>
+                                    </ListBox>
+                                </StackPanel>
+                                <StackPanel>
+                                    <TextBlock Text="MATCH" Style="{StaticResource OptionGroupLabelStyle}"/>
+                                    <ListBox ItemsSource="{Binding Search.AvailableModes}"
+                                             SelectedItem="{Binding Search.SearchMode}"
+                                             Style="{StaticResource ResultOptionPickerStyle}"
+                                             Margin="0,0,0,2"
+                                             ItemContainerStyle="{StaticResource ResultOptionPickerItemStyle}">
+                                        <ListBox.ItemTemplate>
+                                            <DataTemplate>
+                                                <TextBlock Text="{Binding}"/>
+                                            </DataTemplate>
+                                        </ListBox.ItemTemplate>
+                                    </ListBox>
+                                </StackPanel>
+                            </WrapPanel>
+
+                            <TextBlock Text="REFINE" Style="{StaticResource OptionGroupLabelStyle}"/>
+                            <WrapPanel>
+                                <CheckBox Content="Match case"
+                                          IsChecked="{Binding Search.MatchCase}"
+                                          Style="{StaticResource CheckChipStyle}"/>
+                            </WrapPanel>
+
+                            <TextBlock Text="INCLUDE" Style="{StaticResource OptionGroupLabelStyle}"/>
+                            <WrapPanel>
+                                <CheckBox Content="Subfolders"
+                                          IsChecked="{Binding Search.IncludeSubfolders}"
+                                          Style="{StaticResource CheckChipStyle}"/>
+                                <CheckBox Content="Office &amp; PDF text"
+                                          IsChecked="{Binding Search.EnableDocumentExtraction}"
+                                          Style="{StaticResource CheckChipStyle}"/>
+                                <CheckBox Content="Text in images (OCR)"
+                                          IsChecked="{Binding Search.EnableImageOcr}"
+                                          ToolTip="Extract text from PNG, JPEG, BMP, and TIFF images."
+                                          Style="{StaticResource CheckChipStyle}"/>
+                                <CheckBox Content="Use index"
+                                          IsChecked="{Binding Search.UseIndex}"
+                                          Style="{StaticResource CheckChipStyle}"/>
+                            </WrapPanel>
+
+                            <Expander Header="Advanced" Style="{StaticResource AdvancedExpanderStyle}" Margin="0,6,8,0">
                         <Border Style="{StaticResource AdvancedFlyoutCardStyle}">
                             <Grid>
                                 <Grid.ColumnDefinitions>
@@ -1359,8 +1490,10 @@
                                 </StackPanel>
                             </Grid>
                         </Border>
-                    </Expander>
-                </WrapPanel>
+                            </Expander>
+                        </StackPanel>
+                    </DockPanel>
+                </Border>
 
                 <!-- Results -->
                 <Border Grid.Row="3" Style="{StaticResource ResultsSurfaceStyle}" Margin="{DynamicResource AppDensity.ResultsSurfaceMargin}">
@@ -1377,19 +1510,406 @@
                                     <ColumnDefinition Width="Auto"/>
                                     <ColumnDefinition Width="Auto"/>
                                     <ColumnDefinition Width="*"/>
-                                    <ColumnDefinition Width="Auto"/>
-                                    <ColumnDefinition Width="Auto"/>
-                                    <ColumnDefinition Width="Auto"/>
                                 </Grid.ColumnDefinitions>
                                 <TextBlock Text="{Binding Search.ResultsContextText}" Style="{StaticResource CtxTitleStyle}"/>
-                                <TextBlock Grid.Column="1" Text="{Binding Search.ResultsSummaryText}"
-                                           Style="{StaticResource MutedValueStyle}" Margin="12,3,0,0"/>
-                                <ItemsControl Grid.Column="2"
-                                              ItemsSource="{Binding Search.ActiveResultFacetChips}"
-                                              Visibility="{Binding Search.HasActiveResultFacets, Converter={StaticResource BoolToVisibility}}"
-                                              HorizontalAlignment="Right"
-                                              VerticalAlignment="Center"
-                                              Margin="10,0,8,0">
+                                <StackPanel Grid.Column="1" Orientation="Horizontal"
+                                            VerticalAlignment="Center" Margin="12,3,0,0">
+                                    <TextBlock Text="{Binding Search.ResultsSummaryText}"
+                                               Style="{StaticResource MutedValueStyle}"/>
+                                    <StackPanel Orientation="Horizontal" Margin="12,0,0,0"
+                                                Visibility="{Binding Search.IsSearching, Converter={StaticResource BoolToVisibility}}">
+                                        <ui:ProgressRing IsActive="{Binding Search.IsSearching}"
+                                                         Width="14" Height="14"
+                                                         MinWidth="14" MinHeight="14"
+                                                         Foreground="{DynamicResource Atlas.AccentBrush}"
+                                                         VerticalAlignment="Center"/>
+                                        <TextBlock Text="Searching…"
+                                                   Style="{StaticResource MutedValueStyle}"
+                                                   Foreground="{DynamicResource Atlas.AccentBrush}"
+                                                   Margin="7,0,0,0"/>
+                                    </StackPanel>
+                                </StackPanel>
+                                <WrapPanel Grid.Column="2"
+                                           HorizontalAlignment="Right"
+                                           VerticalAlignment="Center"
+                                           Margin="10,0,0,0">
+                                <ToggleButton IsChecked="{Binding Search.IsResultSortAndGroupVisible, Mode=TwoWay}"
+                                              Style="{StaticResource SearchOptionsToggleButtonStyle}"
+                                              Margin="0,0,8,6"
+                                              ToolTip="Show result sorting and grouping">
+                                    <StackPanel Orientation="Horizontal">
+                                        <ui:FontIcon Glyph="&#xE8CB;" FontSize="13" Margin="0,0,7,0"/>
+                                        <TextBlock Text="Sort &amp; Group"/>
+                                        <Ellipse Width="6" Height="6"
+                                                 Fill="{DynamicResource Atlas.AccentBrush}"
+                                                 VerticalAlignment="Center"
+                                                 Margin="8,1,0,0"
+                                                 Visibility="{Binding Search.HasCustomResultArrangement, Converter={StaticResource BoolToVisibility}}"/>
+                                        <ui:FontIcon Glyph="&#xE70D;" FontSize="9" Margin="8,2,0,0"/>
+                                    </StackPanel>
+                                </ToggleButton>
+                                <ToggleButton IsChecked="{Binding Search.IsResultFiltersVisible, Mode=TwoWay}"
+                                              Style="{StaticResource SearchOptionsToggleButtonStyle}"
+                                              Margin="0,0,8,6"
+                                              ToolTip="Show result filters">
+                                    <StackPanel Orientation="Horizontal">
+                                        <ui:FontIcon Glyph="&#xE71C;" FontSize="13" Margin="0,0,7,0"/>
+                                        <TextBlock Text="Filters"/>
+                                        <Border Style="{StaticResource ResultFilterBadgeStyle}"
+                                                Visibility="{Binding Search.HasActiveResultFacets, Converter={StaticResource BoolToVisibility}}">
+                                            <TextBlock Text="{Binding Search.ActiveResultFacetCount}"
+                                                       Foreground="{DynamicResource Atlas.OnAccentBrush}"
+                                                       FontSize="11"
+                                                       FontWeight="SemiBold"/>
+                                        </Border>
+                                        <ui:FontIcon Glyph="&#xE70D;" FontSize="9" Margin="8,2,0,0"/>
+                                    </StackPanel>
+                                </ToggleButton>
+                                <Border Style="{StaticResource SegmentedControlStyle}"
+                                        Margin="0,0,8,6">
+                                    <StackPanel Orientation="Horizontal">
+                                        <Button Command="{Binding Search.SetComfortableResultLayoutCommand}"
+                                                Tag="{Binding Search.IsComfortableResultLayout}"
+                                                Style="{StaticResource SegmentedItemButtonStyle}"
+                                                ToolTip="Show matching lines under each result">
+                                            <StackPanel Orientation="Horizontal">
+                                                <ui:FontIcon Glyph="&#xE9E9;" FontSize="12" Margin="0,0,6,0"/>
+                                                <TextBlock Text="Comfortable"/>
+                                            </StackPanel>
+                                        </Button>
+                                        <Button Command="{Binding Search.SetCompactResultLayoutCommand}"
+                                                Tag="{Binding Search.IsCompactResultLayout}"
+                                                Style="{StaticResource SegmentedItemButtonStyle}"
+                                                ToolTip="One line per result">
+                                            <StackPanel Orientation="Horizontal">
+                                                <ui:FontIcon Glyph="&#xE8FD;" FontSize="12" Margin="0,0,6,0"/>
+                                                <TextBlock Text="Compact"/>
+                                            </StackPanel>
+                                        </Button>
+                                    </StackPanel>
+                                </Border>
+                                <Button Command="{Binding Search.CopyGroundedAnswerCommand}"
+                                        Style="{StaticResource SecondaryButtonStyle}"
+                                        Padding="10,5"
+                                        Margin="0,0,8,6"
+                                        ToolTip="Copy grounded answer draft">
+                                    <StackPanel Orientation="Horizontal">
+                                        <ui:FontIcon Glyph="&#xE8A5;" FontSize="12" Margin="0,0,6,0"/>
+                                        <TextBlock Text="Answer"/>
+                                    </StackPanel>
+                                </Button>
+                                <Button Style="{StaticResource SecondaryButtonStyle}"
+                                        Padding="10,5"
+                                        Margin="0,0,8,6"
+                                        Click="OnExportMenuButtonClick"
+                                        ToolTip="Export visible results">
+                                    <Button.ContextMenu>
+                                        <ContextMenu Placement="Bottom"
+                                                     DataContext="{Binding Path=PlacementTarget.DataContext, RelativeSource={RelativeSource Self}}">
+                                            <MenuItem Header="CSV" Command="{Binding Search.ExportResultsCommand}" CommandParameter="csv"/>
+                                            <MenuItem Header="JSON" Command="{Binding Search.ExportResultsCommand}" CommandParameter="json"/>
+                                            <MenuItem Header="JSON Lines" Command="{Binding Search.ExportResultsCommand}" CommandParameter="jsonl"/>
+                                            <MenuItem Header="Markdown" Command="{Binding Search.ExportResultsCommand}" CommandParameter="markdown"/>
+                                        </ContextMenu>
+                                    </Button.ContextMenu>
+                                    <StackPanel Orientation="Horizontal">
+                                        <ui:FontIcon Glyph="&#xEDE1;" FontSize="12" Margin="0,0,6,0"/>
+                                        <TextBlock Text="Export"/>
+                                        <ui:FontIcon Glyph="&#xE70D;" FontSize="9" Margin="6,2,0,0"/>
+                                    </StackPanel>
+                                </Button>
+                                <Grid Width="{DynamicResource AppDensity.ResultRefinementWidth}"
+                                      Margin="0,0,0,6">
+                                    <TextBox Text="{Binding Search.RefinementQuery, UpdateSourceTrigger=PropertyChanged, Delay=120}"
+                                             ui:ControlHelper.PlaceholderText="Filter results"
+                                             Padding="8,4,28,4"/>
+                                    <Button Command="{Binding Search.ClearRefinementCommand}"
+                                            Style="{StaticResource IconButtonStyle}"
+                                            Width="{DynamicResource AppDensity.SmallIconButtonSize}"
+                                            Height="{DynamicResource AppDensity.SmallIconButtonSize}" HorizontalAlignment="Right" Margin="0,0,3,0"
+                                            ToolTip="Clear filter">
+                                        <ui:FontIcon Glyph="&#xE711;" FontSize="11"/>
+                                    </Button>
+                                </Grid>
+                                </WrapPanel>
+                            </Grid>
+
+                            <Border Style="{StaticResource ResultOptionsPanelStyle}"
+                                    Visibility="{Binding Search.IsResultSortAndGroupVisible, Converter={StaticResource BoolToVisibility}}">
+                                <DockPanel LastChildFill="True">
+                                    <Grid DockPanel.Dock="Bottom" Margin="0,6,0,0">
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="*"/>
+                                            <ColumnDefinition Width="Auto"/>
+                                        </Grid.ColumnDefinitions>
+                                        <TextBlock Text="{Binding Search.ResultArrangementSummaryText}"
+                                                   Style="{StaticResource MutedValueStyle}"
+                                                   FontSize="12"/>
+                                        <Button Grid.Column="1"
+                                                Command="{Binding Search.HideResultSortAndGroupCommand}"
+                                                Style="{StaticResource PrimaryButtonStyle}"
+                                                Content="Done"/>
+                                    </Grid>
+                                    <StackPanel>
+                                        <TextBlock Text="SORT BY" Style="{StaticResource OptionGroupLabelStyle}"/>
+                                        <ListBox ItemsSource="{Binding Search.ResultSortOptions}"
+                                                 SelectedItem="{Binding Search.SelectedSortOption}"
+                                                 Style="{StaticResource ResultOptionPickerStyle}"
+                                                 ItemContainerStyle="{StaticResource ResultOptionPickerItemStyle}">
+                                            <ListBox.ItemTemplate>
+                                                <DataTemplate DataType="{x:Type vm:ResultSortOption}">
+                                                    <TextBlock Text="{Binding Label}"/>
+                                                </DataTemplate>
+                                            </ListBox.ItemTemplate>
+                                        </ListBox>
+
+                                        <TextBlock Text="GROUP BY" Style="{StaticResource OptionGroupLabelStyle}"/>
+                                        <ListBox ItemsSource="{Binding Search.ResultGroupOptions}"
+                                                 SelectedItem="{Binding Search.SelectedGroupOption}"
+                                                 Style="{StaticResource ResultOptionPickerStyle}"
+                                                 ItemContainerStyle="{StaticResource ResultOptionPickerItemStyle}">
+                                            <ListBox.ItemTemplate>
+                                                <DataTemplate DataType="{x:Type vm:ResultGroupOption}">
+                                                    <TextBlock Text="{Binding Label}"/>
+                                                </DataTemplate>
+                                            </ListBox.ItemTemplate>
+                                        </ListBox>
+                                    </StackPanel>
+                                </DockPanel>
+                            </Border>
+
+                            <!-- Filters bar: compact dropdowns whose menus overlay the results. -->
+                            <Border Style="{StaticResource ResultOptionsPanelStyle}"
+                                    Padding="10,9"
+                                    Visibility="{Binding Search.IsResultFiltersVisible, Converter={StaticResource BoolToVisibility}}">
+                                <Grid>
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="*"/>
+                                        <ColumnDefinition Width="Auto"/>
+                                    </Grid.ColumnDefinitions>
+                                    <WrapPanel VerticalAlignment="Center">
+                                        <Grid>
+                                            <ToggleButton x:Name="TypeFilterButton"
+                                                          Style="{StaticResource FilterDropButtonStyle}"
+                                                          Tag="{Binding Search.HasFileTypeFacetSelection}">
+                                                <TextBlock Text="{Binding Search.FileTypeFacetButtonText}" MaxWidth="220" TextTrimming="CharacterEllipsis"/>
+                                            </ToggleButton>
+                                            <Popup PlacementTarget="{Binding ElementName=TypeFilterButton}"
+                                                   IsOpen="{Binding IsChecked, ElementName=TypeFilterButton, Mode=TwoWay}"
+                                                   StaysOpen="False" AllowsTransparency="True" Placement="Bottom">
+                                                <Border Style="{StaticResource FilterMenuCardStyle}" Width="230">
+                                                    <ListBox ItemsSource="{Binding Search.FileTypeFacetOptions}"
+                                                             SelectedItem="{Binding Search.SelectedFileTypeFacet}"
+                                                             Style="{StaticResource FilterMenuListBoxStyle}"
+                                                             ItemContainerStyle="{StaticResource FilterMenuItemStyle}">
+                                                        <ListBox.ItemTemplate>
+                                                            <DataTemplate DataType="{x:Type vm:ResultFacetOption}">
+                                                                <Grid>
+                                                                    <Grid.ColumnDefinitions>
+                                                                        <ColumnDefinition Width="*"/>
+                                                                        <ColumnDefinition Width="Auto"/>
+                                                                    </Grid.ColumnDefinitions>
+                                                                    <TextBlock Text="{Binding Label}" Style="{StaticResource FilterMenuOptionLabelStyle}"/>
+                                                                    <TextBlock Grid.Column="1" Text="{Binding Count, StringFormat={}{0:n0}}" Style="{StaticResource FilterMenuOptionCountStyle}"/>
+                                                                </Grid>
+                                                            </DataTemplate>
+                                                        </ListBox.ItemTemplate>
+                                                    </ListBox>
+                                                </Border>
+                                            </Popup>
+                                        </Grid>
+                                        <Grid>
+                                            <ToggleButton x:Name="FolderFilterButton"
+                                                          Style="{StaticResource FilterDropButtonStyle}"
+                                                          Tag="{Binding Search.HasFolderFacetSelection}">
+                                                <TextBlock Text="{Binding Search.FolderFacetButtonText}" MaxWidth="220" TextTrimming="CharacterEllipsis"/>
+                                            </ToggleButton>
+                                            <Popup PlacementTarget="{Binding ElementName=FolderFilterButton}"
+                                                   IsOpen="{Binding IsChecked, ElementName=FolderFilterButton, Mode=TwoWay}"
+                                                   StaysOpen="False" AllowsTransparency="True" Placement="Bottom">
+                                                <Border Style="{StaticResource FilterMenuCardStyle}" Width="290">
+                                                    <DockPanel LastChildFill="True">
+                                                        <Border DockPanel.Dock="Top" Style="{StaticResource FilterMenuInputRowStyle}">
+                                                            <DockPanel LastChildFill="True">
+                                                                <ui:FontIcon DockPanel.Dock="Left" Glyph="&#xE721;" FontSize="11"
+                                                                             Foreground="{DynamicResource Atlas.Ink3Brush}"
+                                                                             Margin="0,0,7,0" VerticalAlignment="Center"/>
+                                                                <TextBox Text="{Binding Search.FolderFacetFilterText, UpdateSourceTrigger=PropertyChanged}"
+                                                                         Style="{StaticResource FilterMenuInputBoxStyle}"
+                                                                         FontFamily="{DynamicResource Atlas.SansFont}"
+                                                                         FontSize="12"
+                                                                         ui:ControlHelper.PlaceholderText="Filter folders…"/>
+                                                            </DockPanel>
+                                                        </Border>
+                                                        <ListBox ItemsSource="{Binding Search.FilteredFolderFacetOptions}"
+                                                                 SelectedItem="{Binding Search.SelectedFolderFacet}"
+                                                                 Style="{StaticResource FilterMenuListBoxStyle}"
+                                                                 ItemContainerStyle="{StaticResource FilterMenuItemStyle}">
+                                                            <ListBox.ItemTemplate>
+                                                                <DataTemplate DataType="{x:Type vm:ResultFacetOption}">
+                                                                    <Grid>
+                                                                        <Grid.ColumnDefinitions>
+                                                                            <ColumnDefinition Width="*"/>
+                                                                            <ColumnDefinition Width="Auto"/>
+                                                                        </Grid.ColumnDefinitions>
+                                                                        <TextBlock Text="{Binding Label}"
+                                                                                   Style="{StaticResource FilterMenuOptionLabelStyle}"
+                                                                                   FontFamily="{DynamicResource Atlas.MonoFont}"
+                                                                                   FontSize="12"/>
+                                                                        <TextBlock Grid.Column="1" Text="{Binding Count, StringFormat={}{0:n0}}" Style="{StaticResource FilterMenuOptionCountStyle}"/>
+                                                                    </Grid>
+                                                                </DataTemplate>
+                                                            </ListBox.ItemTemplate>
+                                                        </ListBox>
+                                                    </DockPanel>
+                                                </Border>
+                                            </Popup>
+                                        </Grid>
+                                        <Grid>
+                                            <ToggleButton x:Name="DateFilterButton"
+                                                          Style="{StaticResource FilterDropButtonStyle}"
+                                                          Tag="{Binding Search.HasModifiedFacetSelection}">
+                                                <TextBlock Text="{Binding Search.ModifiedFacetButtonText}" MaxWidth="220" TextTrimming="CharacterEllipsis"/>
+                                            </ToggleButton>
+                                            <Popup PlacementTarget="{Binding ElementName=DateFilterButton}"
+                                                   IsOpen="{Binding IsChecked, ElementName=DateFilterButton, Mode=TwoWay}"
+                                                   StaysOpen="False" AllowsTransparency="True" Placement="Bottom">
+                                                <Border Style="{StaticResource FilterMenuCardStyle}" Width="200">
+                                                    <ListBox ItemsSource="{Binding Search.ModifiedFacetOptions}"
+                                                             SelectedItem="{Binding Search.SelectedModifiedFacet}"
+                                                             Style="{StaticResource FilterMenuListBoxStyle}"
+                                                             ItemContainerStyle="{StaticResource FilterMenuItemStyle}">
+                                                        <ListBox.ItemTemplate>
+                                                            <DataTemplate DataType="{x:Type vm:ResultFacetOption}">
+                                                                <Grid>
+                                                                    <Grid.ColumnDefinitions>
+                                                                        <ColumnDefinition Width="*"/>
+                                                                        <ColumnDefinition Width="Auto"/>
+                                                                    </Grid.ColumnDefinitions>
+                                                                    <TextBlock Text="{Binding Label}" Style="{StaticResource FilterMenuOptionLabelStyle}"/>
+                                                                    <TextBlock Grid.Column="1" Text="{Binding Count, StringFormat={}{0:n0}}" Style="{StaticResource FilterMenuOptionCountStyle}"/>
+                                                                </Grid>
+                                                            </DataTemplate>
+                                                        </ListBox.ItemTemplate>
+                                                    </ListBox>
+                                                </Border>
+                                            </Popup>
+                                        </Grid>
+                                        <Grid>
+                                            <ToggleButton x:Name="SizeFilterButton"
+                                                          Style="{StaticResource FilterDropButtonStyle}"
+                                                          Tag="{Binding Search.HasSizeFacetSelection}">
+                                                <TextBlock Text="{Binding Search.SizeFacetButtonText}" MaxWidth="220" TextTrimming="CharacterEllipsis"/>
+                                            </ToggleButton>
+                                            <Popup PlacementTarget="{Binding ElementName=SizeFilterButton}"
+                                                   IsOpen="{Binding IsChecked, ElementName=SizeFilterButton, Mode=TwoWay}"
+                                                   StaysOpen="False" AllowsTransparency="True" Placement="Bottom">
+                                                <Border Style="{StaticResource FilterMenuCardStyle}" Width="210">
+                                                    <ListBox ItemsSource="{Binding Search.SizeFacetOptions}"
+                                                             SelectedItem="{Binding Search.SelectedSizeFacet}"
+                                                             Style="{StaticResource FilterMenuListBoxStyle}"
+                                                             ItemContainerStyle="{StaticResource FilterMenuItemStyle}">
+                                                        <ListBox.ItemTemplate>
+                                                            <DataTemplate DataType="{x:Type vm:ResultFacetOption}">
+                                                                <Grid>
+                                                                    <Grid.ColumnDefinitions>
+                                                                        <ColumnDefinition Width="*"/>
+                                                                        <ColumnDefinition Width="Auto"/>
+                                                                    </Grid.ColumnDefinitions>
+                                                                    <TextBlock Text="{Binding Label}" Style="{StaticResource FilterMenuOptionLabelStyle}"/>
+                                                                    <TextBlock Grid.Column="1" Text="{Binding Count, StringFormat={}{0:n0}}" Style="{StaticResource FilterMenuOptionCountStyle}"/>
+                                                                </Grid>
+                                                            </DataTemplate>
+                                                        </ListBox.ItemTemplate>
+                                                    </ListBox>
+                                                </Border>
+                                            </Popup>
+                                        </Grid>
+                                        <Grid>
+                                            <ToggleButton x:Name="SourceFilterButton"
+                                                          Style="{StaticResource FilterDropButtonStyle}"
+                                                          Tag="{Binding Search.HasSourceFacetSelection}">
+                                                <TextBlock Text="{Binding Search.SourceFacetButtonText}" MaxWidth="220" TextTrimming="CharacterEllipsis"/>
+                                            </ToggleButton>
+                                            <Popup PlacementTarget="{Binding ElementName=SourceFilterButton}"
+                                                   IsOpen="{Binding IsChecked, ElementName=SourceFilterButton, Mode=TwoWay}"
+                                                   StaysOpen="False" AllowsTransparency="True" Placement="Bottom">
+                                                <Border Style="{StaticResource FilterMenuCardStyle}" Width="190">
+                                                    <ListBox ItemsSource="{Binding Search.SourceFacetOptions}"
+                                                             SelectedItem="{Binding Search.SelectedSourceFacet}"
+                                                             Style="{StaticResource FilterMenuListBoxStyle}"
+                                                             ItemContainerStyle="{StaticResource FilterMenuItemStyle}">
+                                                        <ListBox.ItemTemplate>
+                                                            <DataTemplate DataType="{x:Type vm:ResultFacetOption}">
+                                                                <Grid>
+                                                                    <Grid.ColumnDefinitions>
+                                                                        <ColumnDefinition Width="*"/>
+                                                                        <ColumnDefinition Width="Auto"/>
+                                                                    </Grid.ColumnDefinitions>
+                                                                    <TextBlock Text="{Binding Label}" Style="{StaticResource FilterMenuOptionLabelStyle}"/>
+                                                                    <TextBlock Grid.Column="1" Text="{Binding Count, StringFormat={}{0:n0}}" Style="{StaticResource FilterMenuOptionCountStyle}"/>
+                                                                </Grid>
+                                                            </DataTemplate>
+                                                        </ListBox.ItemTemplate>
+                                                    </ListBox>
+                                                </Border>
+                                            </Popup>
+                                        </Grid>
+                                        <Grid>
+                                            <ToggleButton x:Name="NameFilterButton"
+                                                          Style="{StaticResource FilterDropButtonStyle}"
+                                                          Tag="{Binding Search.HasNameFilterSelection}"
+                                                          ToolTip="Include / exclude file name patterns">
+                                                <TextBlock Text="{Binding Search.NameFilterButtonText}" MaxWidth="260" TextTrimming="CharacterEllipsis"/>
+                                            </ToggleButton>
+                                            <Popup PlacementTarget="{Binding ElementName=NameFilterButton}"
+                                                   IsOpen="{Binding IsChecked, ElementName=NameFilterButton, Mode=TwoWay}"
+                                                   StaysOpen="False" AllowsTransparency="True" Placement="Bottom">
+                                                <Border Style="{StaticResource FilterMenuCardStyle}" Width="290">
+                                                    <StackPanel Margin="4">
+                                                        <Border Style="{StaticResource FilterMenuInputRowStyle}">
+                                                            <DockPanel LastChildFill="True">
+                                                                <TextBlock DockPanel.Dock="Left" Text="Include" Width="48"
+                                                                           FontSize="11" Foreground="{DynamicResource Atlas.Ink3Brush}"
+                                                                           VerticalAlignment="Center"/>
+                                                                <TextBox Text="{Binding Search.FileNamePattern, UpdateSourceTrigger=PropertyChanged}"
+                                                                         Style="{StaticResource FilterMenuInputBoxStyle}"
+                                                                         ui:ControlHelper.PlaceholderText="*.*"/>
+                                                            </DockPanel>
+                                                        </Border>
+                                                        <Border Style="{StaticResource FilterMenuInputRowStyle}">
+                                                            <DockPanel LastChildFill="True">
+                                                                <TextBlock DockPanel.Dock="Left" Text="Exclude" Width="48"
+                                                                           FontSize="11" Foreground="{DynamicResource Atlas.Ink3Brush}"
+                                                                           VerticalAlignment="Center"/>
+                                                                <TextBox Text="{Binding Search.ExcludeFileNamePattern, UpdateSourceTrigger=PropertyChanged}"
+                                                                         Style="{StaticResource FilterMenuInputBoxStyle}"
+                                                                         ui:ControlHelper.PlaceholderText="*.log;*.tmp"/>
+                                                            </DockPanel>
+                                                        </Border>
+                                                        <TextBlock Text="Separate patterns with ;"
+                                                                   FontSize="11"
+                                                                   Foreground="{DynamicResource Atlas.Ink3Brush}"
+                                                                   Margin="2,1,0,0"/>
+                                                    </StackPanel>
+                                                </Border>
+                                            </Popup>
+                                        </Grid>
+                                    </WrapPanel>
+                                    <Button Grid.Column="1"
+                                            Command="{Binding Search.ClearResultFacetsCommand}"
+                                            Style="{StaticResource LinkButtonStyle}"
+                                            FontSize="12"
+                                            VerticalAlignment="Center"
+                                            Margin="10,0,0,0"
+                                            Content="Clear all"/>
+                                </Grid>
+                            </Border>
+
+                            <WrapPanel Margin="{DynamicResource AppDensity.ResultFacetsPanelMargin}"
+                                       Visibility="{Binding Search.HasActiveResultFacets, Converter={StaticResource BoolToVisibility}}">
+                                <TextBlock Text="ACTIVE" Style="{StaticResource FilterStripLabelStyle}"/>
+                                <ItemsControl ItemsSource="{Binding Search.ActiveResultFacetChips}">
                                     <ItemsControl.ItemsPanel>
                                         <ItemsPanelTemplate>
                                             <WrapPanel/>
@@ -1417,132 +1937,10 @@
                                         </DataTemplate>
                                     </ItemsControl.ItemTemplate>
                                 </ItemsControl>
-                                <Button Grid.Column="3"
-                                        Command="{Binding Search.CopyGroundedAnswerCommand}"
-                                        Style="{StaticResource SecondaryButtonStyle}"
-                                        Padding="10,5"
-                                        Margin="0,0,8,0"
-                                        ToolTip="Copy grounded answer draft">
-                                    <StackPanel Orientation="Horizontal">
-                                        <ui:FontIcon Glyph="&#xE8A5;" FontSize="12" Margin="0,0,6,0"/>
-                                        <TextBlock Text="Answer"/>
-                                    </StackPanel>
-                                </Button>
-                                <Button Grid.Column="4"
-                                        Style="{StaticResource SecondaryButtonStyle}"
-                                        Padding="10,5"
-                                        Margin="0,0,8,0"
-                                        Click="OnExportMenuButtonClick"
-                                        ToolTip="Export visible results">
-                                    <Button.ContextMenu>
-                                        <ContextMenu Placement="Bottom"
-                                                     DataContext="{Binding Path=PlacementTarget.DataContext, RelativeSource={RelativeSource Self}}">
-                                            <MenuItem Header="CSV" Command="{Binding Search.ExportResultsCommand}" CommandParameter="csv"/>
-                                            <MenuItem Header="JSON" Command="{Binding Search.ExportResultsCommand}" CommandParameter="json"/>
-                                            <MenuItem Header="JSON Lines" Command="{Binding Search.ExportResultsCommand}" CommandParameter="jsonl"/>
-                                            <MenuItem Header="Markdown" Command="{Binding Search.ExportResultsCommand}" CommandParameter="markdown"/>
-                                        </ContextMenu>
-                                    </Button.ContextMenu>
-                                    <StackPanel Orientation="Horizontal">
-                                        <ui:FontIcon Glyph="&#xEDE1;" FontSize="12" Margin="0,0,6,0"/>
-                                        <TextBlock Text="Export"/>
-                                        <ui:FontIcon Glyph="&#xE70D;" FontSize="9" Margin="6,2,0,0"/>
-                                    </StackPanel>
-                                </Button>
-                                <Grid Grid.Column="5" Width="{DynamicResource AppDensity.ResultRefinementWidth}">
-                                    <TextBox Text="{Binding Search.RefinementQuery, UpdateSourceTrigger=PropertyChanged, Delay=120}"
-                                             ui:ControlHelper.PlaceholderText="Filter results"
-                                             Padding="8,4,28,4"/>
-                                    <Button Command="{Binding Search.ClearRefinementCommand}"
-                                            Style="{StaticResource IconButtonStyle}"
-                                            Width="{DynamicResource AppDensity.SmallIconButtonSize}"
-                                            Height="{DynamicResource AppDensity.SmallIconButtonSize}" HorizontalAlignment="Right" Margin="0,0,3,0"
-                                            ToolTip="Clear filter">
-                                        <ui:FontIcon Glyph="&#xE711;" FontSize="11"/>
-                                    </Button>
-                                </Grid>
-                            </Grid>
-
-                            <WrapPanel Margin="{DynamicResource AppDensity.ResultFacetsPanelMargin}">
-                                <Border Style="{StaticResource FilterChipStyle}">
-                                    <StackPanel Orientation="Horizontal">
-                                        <TextBlock Text="Sort" Style="{StaticResource ChipLabelStyle}"/>
-                                        <ComboBox ItemsSource="{Binding Search.ResultSortOptions}"
-                                                  SelectedItem="{Binding Search.SelectedSortOption}"
-                                                  DisplayMemberPath="Label"
-                                                  MinWidth="{DynamicResource AppDensity.ResultSortMinWidth}"
-                                                  BorderThickness="0" Background="Transparent"/>
-                                    </StackPanel>
-                                </Border>
-                                <Border Style="{StaticResource FilterChipStyle}">
-                                    <StackPanel Orientation="Horizontal">
-                                        <TextBlock Text="Group" Style="{StaticResource ChipLabelStyle}"/>
-                                        <ComboBox ItemsSource="{Binding Search.ResultGroupOptions}"
-                                                  SelectedItem="{Binding Search.SelectedGroupOption}"
-                                                  DisplayMemberPath="Label"
-                                                  MinWidth="{DynamicResource AppDensity.ResultGroupMinWidth}"
-                                                  BorderThickness="0" Background="Transparent"/>
-                                    </StackPanel>
-                                </Border>
-                                <Border Style="{StaticResource FilterChipStyle}">
-                                    <StackPanel Orientation="Horizontal">
-                                        <TextBlock Text="Type" Style="{StaticResource ChipLabelStyle}"/>
-                                        <ComboBox ItemsSource="{Binding Search.FileTypeFacetOptions}"
-                                                  SelectedItem="{Binding Search.SelectedFileTypeFacet}"
-                                                  DisplayMemberPath="DisplayText"
-                                                  MinWidth="{DynamicResource AppDensity.ResultTypeMinWidth}"
-                                                  MaxWidth="{DynamicResource AppDensity.ResultTypeMaxWidth}"
-                                                  BorderThickness="0" Background="Transparent"/>
-                                    </StackPanel>
-                                </Border>
-                                <Border Style="{StaticResource FilterChipStyle}">
-                                    <StackPanel Orientation="Horizontal">
-                                        <TextBlock Text="Folder" Style="{StaticResource ChipLabelStyle}"/>
-                                        <ComboBox ItemsSource="{Binding Search.FolderFacetOptions}"
-                                                  SelectedItem="{Binding Search.SelectedFolderFacet}"
-                                                  DisplayMemberPath="DisplayText"
-                                                  MinWidth="{DynamicResource AppDensity.ResultFolderMinWidth}"
-                                                  MaxWidth="{DynamicResource AppDensity.ResultFolderMaxWidth}"
-                                                  BorderThickness="0" Background="Transparent"/>
-                                    </StackPanel>
-                                </Border>
-                                <Border Style="{StaticResource FilterChipStyle}">
-                                    <StackPanel Orientation="Horizontal">
-                                        <TextBlock Text="Date" Style="{StaticResource ChipLabelStyle}"/>
-                                        <ComboBox ItemsSource="{Binding Search.ModifiedFacetOptions}"
-                                                  SelectedItem="{Binding Search.SelectedModifiedFacet}"
-                                                  DisplayMemberPath="DisplayText"
-                                                  MinWidth="{DynamicResource AppDensity.ResultDateMinWidth}"
-                                                  BorderThickness="0" Background="Transparent"/>
-                                    </StackPanel>
-                                </Border>
-                                <Border Style="{StaticResource FilterChipStyle}">
-                                    <StackPanel Orientation="Horizontal">
-                                        <TextBlock Text="Source" Style="{StaticResource ChipLabelStyle}"/>
-                                        <ComboBox ItemsSource="{Binding Search.SourceFacetOptions}"
-                                                  SelectedItem="{Binding Search.SelectedSourceFacet}"
-                                                  DisplayMemberPath="DisplayText"
-                                                  MinWidth="{DynamicResource AppDensity.ResultSourceMinWidth}"
-                                                  BorderThickness="0" Background="Transparent"/>
-                                    </StackPanel>
-                                </Border>
-                                <Border Style="{StaticResource FilterChipStyle}">
-                                    <StackPanel Orientation="Horizontal">
-                                        <TextBlock Text="Size" Style="{StaticResource ChipLabelStyle}"/>
-                                        <ComboBox ItemsSource="{Binding Search.SizeFacetOptions}"
-                                                  SelectedItem="{Binding Search.SelectedSizeFacet}"
-                                                  DisplayMemberPath="DisplayText"
-                                                  MinWidth="{DynamicResource AppDensity.ResultSizeMinWidth}"
-                                                  BorderThickness="0" Background="Transparent"/>
-                                    </StackPanel>
-                                </Border>
                                 <Button Command="{Binding Search.ClearResultFacetsCommand}"
-                                        Style="{StaticResource IconButtonStyle}"
-                                        Width="{DynamicResource AppDensity.PreviewIconButtonSize}"
-                                        Height="{DynamicResource AppDensity.PreviewIconButtonSize}"
-                                        ToolTip="Clear result facets">
-                                    <ui:FontIcon Glyph="&#xE711;" FontSize="12"/>
-                                </Button>
+                                        Style="{StaticResource SecondaryButtonStyle}"
+                                        Padding="10,5"
+                                        Content="Clear all"/>
                             </WrapPanel>
                         </StackPanel>
 
@@ -1552,18 +1950,36 @@
                                      ItemsSource="{Binding Search.FilesView}"
                                      SelectedItem="{Binding Search.SelectedFile}"
                                      Style="{StaticResource ResultsListStyle}"
+                                     Padding="{DynamicResource AppDensity.SearchResultsListPadding}"
                                      PreviewMouseMove="OnResultsPreviewMouseMove">
                                 <ListBox.GroupStyle>
                                     <GroupStyle>
                                         <GroupStyle.HeaderTemplate>
                                             <DataTemplate>
-                                                <Border Padding="8,6" Margin="0,6,0,2"
-                                                        Background="{DynamicResource Atlas.SurfaceBrush}"
-                                                        BorderBrush="{DynamicResource Atlas.LineBrush}"
-                                                        BorderThickness="0,0,0,1">
-                                                    <TextBlock Style="{StaticResource SectionHeaderStyle}">
-                                                        <Run Text="{Binding Name, Mode=OneWay}"/>
-                                                    </TextBlock>
+                                                <Border Padding="2,7,4,7" Margin="0,6,22,4"
+                                                        Background="{DynamicResource AppStyle.GroupHeaderBackground}">
+                                                    <Grid>
+                                                        <Grid.ColumnDefinitions>
+                                                            <ColumnDefinition Width="Auto"/>
+                                                            <ColumnDefinition Width="Auto"/>
+                                                            <ColumnDefinition Width="*"/>
+                                                        </Grid.ColumnDefinitions>
+                                                        <TextBlock FontSize="13" FontWeight="Bold"
+                                                                   Foreground="{DynamicResource Atlas.InkBrush}"
+                                                                   VerticalAlignment="Center">
+                                                            <Run Text="{Binding Name, Mode=OneWay}"/>
+                                                        </TextBlock>
+                                                        <TextBlock Grid.Column="1" Margin="9,1,0,0"
+                                                                   FontSize="11.5"
+                                                                   Foreground="{DynamicResource Atlas.Ink3Brush}"
+                                                                   VerticalAlignment="Center">
+                                                            <Run Text="{Binding ItemCount, Mode=OneWay}"/><Run Text=" files"/>
+                                                        </TextBlock>
+                                                        <Border Grid.Column="2" Height="1"
+                                                                Background="{DynamicResource Atlas.LineBrush}"
+                                                                Margin="9,1,0,0"
+                                                                VerticalAlignment="Center"/>
+                                                    </Grid>
                                                 </Border>
                                             </DataTemplate>
                                         </GroupStyle.HeaderTemplate>
@@ -1572,6 +1988,7 @@
                                 <ListBox.ItemContainerStyle>
                                     <Style TargetType="ListBoxItem" BasedOn="{StaticResource ResultCardContainerStyle}">
                                         <EventSetter Event="MouseDoubleClick" Handler="OnResultCardDoubleClick"/>
+                                        <Setter Property="Margin" Value="{DynamicResource AppDensity.SearchResultCardMargin}"/>
                                         <Setter Property="Tag" Value="{Binding DataContext.Search, RelativeSource={RelativeSource AncestorType=ListBox}}"/>
                                         <Setter Property="ContextMenu">
                                             <Setter.Value>
@@ -1638,11 +2055,18 @@
                                                     <ColumnDefinition Width="Auto"/>
                                                     <ColumnDefinition Width="Auto"/>
                                                 </Grid.ColumnDefinitions>
-                                                <Border Style="{StaticResource TypeBadgeStyle}"
-                                                        Background="{Binding FileName, Converter={StaticResource TypeBrush}}">
-                                                    <TextBlock Text="{Binding FileName, Converter={StaticResource TypeLabel}}"
-                                                               Style="{StaticResource TypeBadgeTextStyle}"/>
-                                                </Border>
+                                                <Grid VerticalAlignment="Center">
+                                                    <Border Style="{StaticResource TypeBadgeStyle}"
+                                                            Visibility="{DynamicResource AppStyle.TypeBadgeColoredVisibility}"
+                                                            Background="{Binding FileName, Converter={StaticResource TypeBrush}}">
+                                                        <TextBlock Text="{Binding FileName, Converter={StaticResource TypeLabel}}"
+                                                                   Style="{StaticResource TypeBadgeTextStyle}"/>
+                                                    </Border>
+                                                    <Border Style="{StaticResource TypeBadgeNeutralStyle}">
+                                                        <TextBlock Text="{Binding FileName, Converter={StaticResource TypeLabel}}"
+                                                                   Style="{StaticResource TypeBadgeNeutralTextStyle}"/>
+                                                    </Border>
+                                                </Grid>
                                                 <StackPanel Grid.Column="1" Margin="12,0,10,0" VerticalAlignment="Center">
                                                     <TextBlock Text="{Binding FileName}" Style="{StaticResource ResultNameStyle}"/>
                                                     <TextBlock Text="{Binding Directory}" Style="{StaticResource ResultPathStyle}"/>
@@ -1698,34 +2122,36 @@
                                                 </Border>
                                             </Grid>
 
-                                            <!-- matching lines -->
-                                            <Border Style="{DynamicResource ResultHitsPanelStyle}">
-                                                <ItemsControl ItemsSource="{Binding VisibleHits}">
-                                                    <ItemsControl.ItemTemplate>
-                                                        <DataTemplate>
-                                                            <Border Style="{DynamicResource MatchLineContainerStyle}">
-                                                                <Grid>
-                                                                    <Grid.ColumnDefinitions>
-                                                                        <ColumnDefinition Width="Auto"/>
-                                                                        <ColumnDefinition Width="*"/>
-                                                                    </Grid.ColumnDefinitions>
-                                                                    <TextBlock Text="{Binding LineNumber}" Style="{StaticResource LineNoStyle}"/>
-                                                                    <TextBlock Grid.Column="1" Style="{StaticResource LineTextStyle}"
-                                                                               hl:HitHighlight.Hit="{Binding}"/>
-                                                                </Grid>
-                                                            </Border>
-                                                        </DataTemplate>
-                                                    </ItemsControl.ItemTemplate>
-                                                </ItemsControl>
-                                            </Border>
+                                            <!-- matching lines (hidden in the compact result layout) -->
+                                            <StackPanel Visibility="{Binding DataContext.Search.IsComfortableResultLayout, RelativeSource={RelativeSource AncestorType=ListBox}, Converter={StaticResource BoolToVisibility}}">
+                                                <Border Style="{DynamicResource ResultHitsPanelStyle}">
+                                                    <ItemsControl ItemsSource="{Binding VisibleHits}">
+                                                        <ItemsControl.ItemTemplate>
+                                                            <DataTemplate>
+                                                                <Border Style="{DynamicResource MatchLineContainerStyle}">
+                                                                    <Grid>
+                                                                        <Grid.ColumnDefinitions>
+                                                                            <ColumnDefinition Width="Auto"/>
+                                                                            <ColumnDefinition Width="*"/>
+                                                                        </Grid.ColumnDefinitions>
+                                                                        <TextBlock Text="{Binding LineNumber}" Style="{StaticResource LineNoStyle}"/>
+                                                                        <TextBlock Grid.Column="1" Style="{StaticResource LineTextStyle}"
+                                                                                   hl:HitHighlight.Hit="{Binding}"/>
+                                                                    </Grid>
+                                                                </Border>
+                                                            </DataTemplate>
+                                                        </ItemsControl.ItemTemplate>
+                                                    </ItemsControl>
+                                                </Border>
 
-                                            <!-- expand / collapse -->
-                                            <Border Height="1" Background="{DynamicResource Atlas.LineBrush}"
-                                                    Visibility="{Binding HasMoreHits, Converter={StaticResource BoolToVisibility}}"/>
-                                            <Button Command="{Binding ToggleExpandCommand}"
-                                                    Content="{Binding MoreText}"
-                                                    Style="{StaticResource MoreLinkStyle}"
-                                                    Visibility="{Binding HasMoreHits, Converter={StaticResource BoolToVisibility}}"/>
+                                                <!-- expand / collapse -->
+                                                <Border Height="1" Background="{DynamicResource Atlas.LineBrush}"
+                                                        Visibility="{Binding HasMoreHits, Converter={StaticResource BoolToVisibility}}"/>
+                                                <Button Command="{Binding ToggleExpandCommand}"
+                                                        Content="{Binding MoreText}"
+                                                        Style="{StaticResource MoreLinkStyle}"
+                                                        Visibility="{Binding HasMoreHits, Converter={StaticResource BoolToVisibility}}"/>
+                                            </StackPanel>
                                         </StackPanel>
                                     </DataTemplate>
                                 </ListBox.ItemTemplate>
@@ -1753,11 +2179,11 @@
             </Grid>
 
             <!-- ===== Splitter ===== -->
-            <GridSplitter Grid.Column="2" Style="{StaticResource PreviewGridSplitterStyle}"
+            <GridSplitter Grid.Column="3" Style="{StaticResource PreviewGridSplitterStyle}"
                           DragDelta="OnPreviewSplitterDragDelta"/>
 
             <!-- ===== Preview pane ===== -->
-            <Border Grid.Column="3"
+            <Border Grid.Column="4"
                     Visibility="{Binding Search.IsPreviewPaneVisible, Converter={StaticResource BoolToVisibility}}"
                     Style="{StaticResource PreviewPaneStyle}">
                 <DockPanel>
@@ -1854,7 +2280,8 @@
                                 <RowDefinition Height="*"/>
                             </Grid.RowDefinitions>
 
-                            <StackPanel Grid.Row="0" Margin="0,0,0,14">
+                            <StackPanel Grid.Row="0" Margin="0,0,0,14"
+                                        Visibility="{DynamicResource AppStyle.PreviewIdentityStackVisibility}">
                                 <Border Style="{StaticResource PreviewBadgeStyle}"
                                         Background="{Binding Search.SelectedFile.FileName, Converter={StaticResource TypeBrush}}">
                                     <TextBlock Text="{Binding Search.SelectedFile.FileName, Converter={StaticResource TypeLabel}}"
@@ -1862,6 +2289,49 @@
                                 </Border>
                                 <TextBlock Text="{Binding Search.SelectedFile.FileName}" Style="{StaticResource PreviewNameStyle}"/>
                             </StackPanel>
+
+                            <!-- Vela identity row: neutral ext chip, name + path, star. -->
+                            <Grid Grid.Row="0" Margin="0,10,0,13"
+                                  Visibility="{DynamicResource AppStyle.PreviewIdentityRowVisibility}">
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="Auto"/>
+                                    <ColumnDefinition Width="*"/>
+                                    <ColumnDefinition Width="Auto"/>
+                                </Grid.ColumnDefinitions>
+                                <Border Style="{StaticResource TypeBadgeNeutralStyle}"
+                                        Width="{DynamicResource AppDensity.PreviewBadgeSize}"
+                                        Height="{DynamicResource AppDensity.PreviewBadgeSize}"
+                                        Visibility="Visible"
+                                        VerticalAlignment="Top">
+                                    <TextBlock Text="{Binding Search.SelectedFile.FileName, Converter={StaticResource TypeLabel}}"
+                                               Style="{StaticResource TypeBadgeNeutralTextStyle}"/>
+                                </Border>
+                                <StackPanel Grid.Column="1" Margin="11,0,8,0" VerticalAlignment="Center">
+                                    <TextBlock Text="{Binding Search.SelectedFile.FileName}" Style="{StaticResource ResultNameStyle}"/>
+                                    <TextBlock Text="{Binding Search.SelectedFile.Directory}" Style="{StaticResource ResultPathStyle}"/>
+                                </StackPanel>
+                                <Button Grid.Column="2"
+                                        Command="{Binding Search.ToggleFavoriteResultCommand}"
+                                        CommandParameter="{Binding Search.SelectedFile}"
+                                        Style="{StaticResource IconButtonStyle}"
+                                        Width="{DynamicResource AppDensity.PreviewIconButtonSize}"
+                                        Height="{DynamicResource AppDensity.PreviewIconButtonSize}"
+                                        VerticalAlignment="Center"
+                                        ToolTip="{Binding Search.SelectedFile.FavoriteActionText}">
+                                    <ui:FontIcon Glyph="{Binding Search.SelectedFile.FavoriteGlyph}" FontSize="14">
+                                        <ui:FontIcon.Style>
+                                            <Style TargetType="ui:FontIcon">
+                                                <Setter Property="Foreground" Value="{DynamicResource Atlas.Ink3Brush}"/>
+                                                <Style.Triggers>
+                                                    <DataTrigger Binding="{Binding Search.SelectedFile.IsFavorite}" Value="True">
+                                                        <Setter Property="Foreground" Value="{DynamicResource Atlas.WarmBrush}"/>
+                                                    </DataTrigger>
+                                                </Style.Triggers>
+                                            </Style>
+                                        </ui:FontIcon.Style>
+                                    </ui:FontIcon>
+                                </Button>
+                            </Grid>
 
                             <StackPanel Grid.Row="1" Margin="0,0,0,12">
                                 <Border Style="{DynamicResource PreviewMetadataCardStyle}">
@@ -1891,10 +2361,14 @@
                                                     <TextBlock Text="{Binding Search.SelectedFile.SourceGroup}" Style="{DynamicResource PreviewMetaValueStyle}"/>
                                                 </StackPanel>
                                             </Border>
-                                            <Border Style="{DynamicResource PreviewMetaPillStyle}">
+                                            <Border Style="{StaticResource PreviewAccentMetaPillStyle}">
                                                 <StackPanel Orientation="Horizontal">
-                                                    <TextBlock Text="hits" Style="{DynamicResource PreviewMetaKeyStyle}"/>
-                                                    <TextBlock Text="{Binding Search.SelectedFile.HitCount}" Style="{DynamicResource PreviewMetaValueStyle}"/>
+                                                    <TextBlock Text="{Binding Search.SelectedFile.HitCount}"
+                                                               Style="{DynamicResource PreviewMetaValueStyle}"
+                                                               Foreground="{DynamicResource Atlas.Accent2Brush}"/>
+                                                    <TextBlock Text=" hits"
+                                                               Style="{DynamicResource PreviewMetaValueStyle}"
+                                                               Foreground="{DynamicResource Atlas.Accent2Brush}"/>
                                                 </StackPanel>
                                             </Border>
                                         </WrapPanel>

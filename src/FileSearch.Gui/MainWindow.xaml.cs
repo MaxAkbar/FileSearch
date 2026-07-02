@@ -215,6 +215,19 @@ public partial class MainWindow : Window
         if (DataContext is not MainViewModel viewModel)
             return;
 
+        // "/" jumps to the search box (the hint shown in the Vela command bar),
+        // unless the user is already typing in a text input.
+        if (e.Key is Key.OemQuestion or Key.Divide &&
+            Keyboard.Modifiers == ModifierKeys.None &&
+            e.OriginalSource is not System.Windows.Controls.Primitives.TextBoxBase &&
+            e.OriginalSource is not System.Windows.Controls.PasswordBox)
+        {
+            QueryBox.Focus();
+            QueryBox.SelectAll();
+            e.Handled = true;
+            return;
+        }
+
         foreach (var shortcut in viewModel.Settings.ShortcutBindings)
         {
             if (!MatchesShortcut(shortcut.Gesture, e))
@@ -422,6 +435,12 @@ public partial class MainWindow : Window
             return;
         }
 
+        // The list's own scrollbars tunnel through this handler too; starting
+        // an OLE drag would steal the mouse capture from the thumb and freeze
+        // it mid-drag.
+        if (IsWithin<System.Windows.Controls.Primitives.ScrollBar>(e.OriginalSource))
+            return;
+
         var current = e.GetPosition(ResultsList);
         if (Math.Abs(current.X - _resultsDragStartPoint.X) < SystemParameters.MinimumHorizontalDragDistance &&
             Math.Abs(current.Y - _resultsDragStartPoint.Y) < SystemParameters.MinimumVerticalDragDistance)
@@ -503,10 +522,15 @@ public partial class MainWindow : Window
         if (ShellRoot.ActualWidth <= 0)
             return SearchViewModel.MaximumPreviewPaneWidth;
 
-        var navigationWidth = ShellRoot.ColumnDefinitions[0].ActualWidth;
-        var resultsMinWidth = ShellRoot.ColumnDefinitions[1].MinWidth;
-        var splitterWidth = ShellRoot.ColumnDefinitions[2].ActualWidth;
-        var available = ShellRoot.ActualWidth - navigationWidth - resultsMinWidth - splitterWidth;
+        var navigationWidth = SidebarColumn.ActualWidth;
+        var sidebarSplitterWidth = SidebarSplitterColumn.ActualWidth;
+        var resultsMinWidth = ContentColumn.MinWidth;
+        var previewSplitterWidth = PreviewSplitterColumn.ActualWidth;
+        var available = ShellRoot.ActualWidth
+            - navigationWidth
+            - sidebarSplitterWidth
+            - resultsMinWidth
+            - previewSplitterWidth;
 
         return Math.Clamp(available, 0, SearchViewModel.MaximumPreviewPaneWidth);
     }

@@ -6,7 +6,14 @@
 
         Overrides both the ModernWpf SystemControl* keys (for built-in controls)
         and the Atlas.* keys (for our own surfaces, whose Light defaults live in
-        AppStyles.xaml). Removing this overlay restores the Light defaults.
+        AppStyles.xaml).
+
+        Recoloring works by overriding BRUSH keys: elements re-resolve
+        {DynamicResource ...Brush} on every overlay swap. A dictionary-hosted
+        brush that gets its Color from a DynamicResource resolves it once at
+        realization and never re-fires, so a theme must override every brush
+        key it wants recolored — including the AppStyle.* surface brushes
+        below — rather than rely on redefining the color tokens alone.
     -->
 
     <!-- ===== Our surfaces (Atlas.*) ===== -->
@@ -30,6 +37,9 @@
     <Color x:Key="Atlas.WarmTintColor">#33C4722E</Color>
     <Color x:Key="Atlas.HitColor">#99FFCE54</Color>
     <Color x:Key="Atlas.HitInkColor">#23261F</Color>
+    <Color x:Key="Atlas.Surface3Color">#33352C</Color>
+    <Color x:Key="Atlas.OkColor">#43A87B</Color>
+    <Color x:Key="Atlas.AccentBorderColor">#6B37926A</Color>
     <SolidColorBrush x:Key="AppStyle.OmniBarBackground" Color="#24261F"/>
     <SolidColorBrush x:Key="AppStyle.FilterChipBackground" Color="#24261F"/>
     <SolidColorBrush x:Key="AppStyle.ThemeMiniButtonSelectedBackground" Color="#242F7D57"/>
@@ -49,6 +59,15 @@
     <SolidColorBrush x:Key="AppStyle.IconButtonHoverBackground" Color="#14FFFFFF"/>
     <SolidColorBrush x:Key="AppStyle.IconButtonHoverForeground" Color="#ECE9DF"/>
     <SolidColorBrush x:Key="AppStyle.PreviewCodeBackground" Color="#24261F"/>
+    <SolidColorBrush x:Key="AppStyle.StatusBarBackground" Color="#1B1D18"/>
+    <SolidColorBrush x:Key="AppStyle.PreviewPaneBackground" Color="#2B2D25"/>
+    <SolidColorBrush x:Key="AppStyle.TitleTextForeground" Color="#B7B4A7"/>
+    <SolidColorBrush x:Key="AppStyle.HitsPillBackground" Color="#332F7D57"/>
+    <SolidColorBrush x:Key="AppStyle.HitsPillForeground" Color="#37926A"/>
+    <SolidColorBrush x:Key="AppStyle.GroupHeaderBackground" Color="#24261F"/>
+    <SolidColorBrush x:Key="AppStyle.SidebarChipBackground" Color="#242F7D57"/>
+    <SolidColorBrush x:Key="AppStyle.SidebarChipBorderBrush" Color="#332F7D57"/>
+    <SolidColorBrush x:Key="AppStyle.MoreLinkForeground" Color="#37926A"/>
     <SolidColorBrush x:Key="Atlas.PaperBrush"      Color="#1B1D18"/>
     <SolidColorBrush x:Key="Atlas.SurfaceBrush"    Color="#24261F"/>
     <SolidColorBrush x:Key="Atlas.Surface2Brush"   Color="#2B2D25"/>
@@ -69,6 +88,9 @@
     <SolidColorBrush x:Key="Atlas.WarmTintBrush"   Color="#33C4722E"/>
     <SolidColorBrush x:Key="Atlas.HitBrush"        Color="#99FFCE54"/>
     <SolidColorBrush x:Key="Atlas.HitInkBrush"     Color="#23261F"/>
+    <SolidColorBrush x:Key="Atlas.Surface3Brush"   Color="#33352C"/>
+    <SolidColorBrush x:Key="Atlas.OkBrush"         Color="#43A87B"/>
+    <SolidColorBrush x:Key="Atlas.AccentBorderBrush" Color="#6B37926A"/>
 
     <!-- ===== Built-in controls (ModernWpf SystemControl*) ===== -->
     <SolidColorBrush x:Key="ApplicationPageBackgroundThemeBrush" Color="#1B1D18"/>

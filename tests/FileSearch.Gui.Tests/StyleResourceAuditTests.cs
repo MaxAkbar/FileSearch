@@ -86,7 +86,10 @@ public sealed class StyleResourceAuditTests
         {
             if (string.Equals(file, basePath, StringComparison.OrdinalIgnoreCase))
                 continue;
-            if (string.Equals(Path.GetFileName(file), "Vela.xaml", StringComparison.OrdinalIgnoreCase))
+            // Vela owns its palette (dark set in Vela.xaml, light set in
+            // VelaLight.xaml), so both are exempt from the no-palette rule.
+            if (string.Equals(Path.GetFileName(file), "Vela.xaml", StringComparison.OrdinalIgnoreCase) ||
+                string.Equals(Path.GetFileName(file), "VelaLight.xaml", StringComparison.OrdinalIgnoreCase))
                 continue;
 
             var text = File.ReadAllText(file);

@@ -33,6 +33,21 @@
     <Color x:Key="Atlas.WarmTintColor">#1FC4722E</Color>
     <Color x:Key="Atlas.HitColor">#8CFFCE54</Color>
     <Color x:Key="Atlas.HitInkColor">#23261F</Color>
+    <!-- Deeper chip surface (v2 "s3"), success dot, and the softened accent
+         border ("acb") introduced with the Vela v2 skin.
+
+         NOTE: every brush in this dictionary must use StaticResource (or a
+         literal) for its Color. This dictionary is parsed once at startup and
+         never re-merged, and WPF resolves a Color="{DynamicResource ...}"
+         inside a dictionary-hosted brush exactly once — it does NOT re-fire
+         when theme overlays swap, which left these surfaces stuck on the
+         startup palette. Dark themes recolor by overriding the *Brush keys. -->
+    <Color x:Key="Atlas.Surface3Color">#F1EDE4</Color>
+    <Color x:Key="Atlas.OkColor">#2E9E6B</Color>
+    <Color x:Key="Atlas.AccentBorderColor">#6B2F7D57</Color>
+    <SolidColorBrush x:Key="Atlas.Surface3Brush" Color="{StaticResource Atlas.Surface3Color}"/>
+    <SolidColorBrush x:Key="Atlas.OkBrush" Color="{StaticResource Atlas.OkColor}"/>
+    <SolidColorBrush x:Key="Atlas.AccentBorderBrush" Color="{StaticResource Atlas.AccentBorderColor}"/>
     <SolidColorBrush x:Key="Atlas.PaperBrush"      Color="{StaticResource Atlas.PaperColor}"/>
     <SolidColorBrush x:Key="Atlas.SurfaceBrush"    Color="{StaticResource Atlas.SurfaceColor}"/>
     <SolidColorBrush x:Key="Atlas.Surface2Brush"   Color="{StaticResource Atlas.Surface2Color}"/>
@@ -64,6 +79,9 @@
     <FontFamily x:Key="Atlas.MonoFont">Cascadia Code, Consolas, Courier New</FontFamily>
 
     <!-- ===== Density tokens (Comfortable defaults) ===== -->
+    <!-- Caption/drag height for the ModernWpf chrome; the window extends its
+         view into the title bar, so this must track TitleBarMinHeight. -->
+    <sys:Double x:Key="{x:Static ui:TitleBar.HeightKey}">44</sys:Double>
     <Thickness x:Key="AppDensity.TitleBarPadding">12,6</Thickness>
     <sys:Double x:Key="AppDensity.TitleBarMinHeight">44</sys:Double>
     <Thickness x:Key="AppDensity.TitleMenuItemPadding">14,5</Thickness>
@@ -131,9 +149,11 @@
     <Thickness x:Key="AppDensity.FieldLabelMargin">0,0,0,4</Thickness>
     <Thickness x:Key="AppDensity.HintLabelMargin">0,4,0,0</Thickness>
     <Thickness x:Key="AppDensity.ResultsListPadding">0,2,4,8</Thickness>
+    <Thickness x:Key="AppDensity.SearchResultsListPadding">0,2,4,8</Thickness>
     <Thickness x:Key="AppDensity.ResultsSurfaceMargin">0,12,0,0</Thickness>
     <Thickness x:Key="AppDensity.ResultFacetsPanelMargin">0,8,0,0</Thickness>
     <Thickness x:Key="AppDensity.ResultCardMargin">0,0,0,8</Thickness>
+    <Thickness x:Key="AppDensity.SearchResultCardMargin">0,0,24,8</Thickness>
     <CornerRadius x:Key="AppDensity.ResultCardCornerRadius">12</CornerRadius>
     <sys:Double x:Key="AppDensity.TypeBadgeSize">30</sys:Double>
     <CornerRadius x:Key="AppDensity.TypeBadgeCornerRadius">8</CornerRadius>
@@ -180,6 +200,50 @@
     <sys:Double x:Key="AppDensity.QuickFolderButtonSize">30</sys:Double>
     <Thickness x:Key="AppDensity.QuickResultCardInnerMargin">12,10</Thickness>
     <sys:Double x:Key="AppDensity.QuickLineNoWidth">34</sys:Double>
+
+    <!-- ===== Vela v2 parameterization (defaults preserve the classic look) ===== -->
+    <sys:Double x:Key="AppDensity.TitleTextFontSize">13</sys:Double>
+    <FontWeight x:Key="AppStyle.TitleTextFontWeight">SemiBold</FontWeight>
+    <sys:Double x:Key="AppDensity.StatusBarMinHeight">0</sys:Double>
+    <sys:Double x:Key="AppDensity.StatusTextFontSize">11</sys:Double>
+    <FontFamily x:Key="AppStyle.StatusFontFamily">Cascadia Code, Consolas, Courier New</FontFamily>
+    <sys:Double x:Key="AppDensity.CtxTitleFontSize">17</sys:Double>
+    <FontWeight x:Key="AppStyle.CtxTitleFontWeight">SemiBold</FontWeight>
+    <sys:Double x:Key="AppDensity.OmniQueryFontSize">14</sys:Double>
+    <FontWeight x:Key="AppStyle.OmniQueryFontWeight">Normal</FontWeight>
+    <sys:Double x:Key="AppDensity.NavSectionHeaderFontSize">10.5</sys:Double>
+    <sys:Double x:Key="AppDensity.SidebarChipSize">26</sys:Double>
+    <CornerRadius x:Key="AppDensity.SidebarChipCornerRadius">7</CornerRadius>
+    <Thickness x:Key="AppDensity.SidebarCardPadding">8,7</Thickness>
+    <Thickness x:Key="AppDensity.OptionPillPadding">11,6</Thickness>
+    <CornerRadius x:Key="AppStyle.OptionPillCornerRadius">8</CornerRadius>
+    <FontWeight x:Key="AppStyle.OptionPillFontWeight">SemiBold</FontWeight>
+    <Visibility x:Key="AppStyle.TitleMarkVisibility">Collapsed</Visibility>
+    <Visibility x:Key="AppStyle.TitleIconVisibility">Visible</Visibility>
+    <Visibility x:Key="AppStyle.SidebarBrandVisibility">Visible</Visibility>
+    <Visibility x:Key="AppStyle.OmniDividerVisibility">Visible</Visibility>
+    <Visibility x:Key="AppStyle.OmniBrowseButtonVisibility">Visible</Visibility>
+    <Visibility x:Key="AppStyle.StatusThemeToggleVisibility">Collapsed</Visibility>
+    <Visibility x:Key="AppStyle.SearchKbdHintVisibility">Collapsed</Visibility>
+    <Visibility x:Key="AppStyle.NavSectionChevronLeftVisibility">Collapsed</Visibility>
+    <Visibility x:Key="AppStyle.NavSectionChevronRightVisibility">Visible</Visibility>
+    <Visibility x:Key="AppStyle.TypeBadgeColoredVisibility">Visible</Visibility>
+    <Visibility x:Key="AppStyle.TypeBadgeNeutralVisibility">Collapsed</Visibility>
+    <Visibility x:Key="AppStyle.PreviewIdentityRowVisibility">Collapsed</Visibility>
+    <Visibility x:Key="AppStyle.PreviewIdentityStackVisibility">Visible</Visibility>
+    <Visibility x:Key="AppStyle.SidebarFooterLinkActionsVisibility">Collapsed</Visibility>
+    <!-- Light defaults; dark themes override these brush keys directly (see
+         the StaticResource note above the Atlas.*Brush block). -->
+    <SolidColorBrush x:Key="AppStyle.StatusBarBackground" Color="{StaticResource Atlas.PaperColor}"/>
+    <SolidColorBrush x:Key="AppStyle.PreviewPaneBackground" Color="{StaticResource Atlas.Surface2Color}"/>
+    <SolidColorBrush x:Key="AppStyle.TitleTextForeground" Color="{StaticResource Atlas.Ink2Color}"/>
+    <SolidColorBrush x:Key="AppStyle.HitsPillBackground" Color="{StaticResource Atlas.AccentTintColor}"/>
+    <SolidColorBrush x:Key="AppStyle.HitsPillBorderBrush" Color="Transparent"/>
+    <SolidColorBrush x:Key="AppStyle.HitsPillForeground" Color="{StaticResource Atlas.AccentColor}"/>
+    <SolidColorBrush x:Key="AppStyle.GroupHeaderBackground" Color="{StaticResource Atlas.SurfaceColor}"/>
+    <SolidColorBrush x:Key="AppStyle.SidebarChipBackground" Color="{StaticResource Atlas.AccentSoftColor}"/>
+    <SolidColorBrush x:Key="AppStyle.SidebarChipBorderBrush" Color="{StaticResource Atlas.AccentTintColor}"/>
+    <SolidColorBrush x:Key="AppStyle.MoreLinkForeground" Color="{StaticResource Atlas.AccentColor}"/>
 
     <Visibility x:Key="AppStyle.ResultMetadataVisibility">Collapsed</Visibility>
     <Visibility x:Key="AppStyle.ResultAccentRailVisibility">Collapsed</Visibility>
@@ -272,10 +336,36 @@
     </Style>
 
     <Style x:Key="TitleTextStyle" TargetType="TextBlock">
-        <Setter Property="FontSize" Value="13"/>
-        <Setter Property="FontWeight" Value="SemiBold"/>
+        <Setter Property="FontSize" Value="{DynamicResource AppDensity.TitleTextFontSize}"/>
+        <Setter Property="FontWeight" Value="{DynamicResource AppStyle.TitleTextFontWeight}"/>
         <Setter Property="VerticalAlignment" Value="Center"/>
-        <Setter Property="Foreground" Value="{DynamicResource Atlas.Ink2Brush}"/>
+        <Setter Property="Foreground" Value="{DynamicResource AppStyle.TitleTextForeground}"/>
+    </Style>
+
+    <!-- Vela app mark: accent rounded square with a rotated-square glyph. -->
+    <Style x:Key="TitleMarkStyle" TargetType="Border">
+        <Setter Property="Width" Value="25"/>
+        <Setter Property="Height" Value="25"/>
+        <Setter Property="CornerRadius" Value="6"/>
+        <Setter Property="Background" Value="{DynamicResource Atlas.AccentBrush}"/>
+        <Setter Property="VerticalAlignment" Value="Center"/>
+        <Setter Property="Margin" Value="2,0,10,0"/>
+    </Style>
+
+    <Style x:Key="TitleMarkGlyphStyle" TargetType="Border">
+        <Setter Property="Width" Value="9"/>
+        <Setter Property="Height" Value="9"/>
+        <Setter Property="BorderBrush" Value="#FFFFFF"/>
+        <Setter Property="BorderThickness" Value="1.6"/>
+        <Setter Property="CornerRadius" Value="1.5"/>
+        <Setter Property="HorizontalAlignment" Value="Center"/>
+        <Setter Property="VerticalAlignment" Value="Center"/>
+        <Setter Property="RenderTransformOrigin" Value="0.5,0.5"/>
+        <Setter Property="RenderTransform">
+            <Setter.Value>
+                <RotateTransform Angle="45"/>
+            </Setter.Value>
+        </Setter>
     </Style>
 
     <Style x:Key="TitleSubtitleStyle" TargetType="TextBlock">
@@ -322,18 +412,27 @@
 
     <!-- ===== Status bar ===== -->
     <Style x:Key="StatusBarStyle" TargetType="Border">
-        <Setter Property="Background" Value="{DynamicResource Atlas.PaperBrush}"/>
+        <Setter Property="Background" Value="{DynamicResource AppStyle.StatusBarBackground}"/>
         <Setter Property="BorderBrush" Value="{DynamicResource Atlas.LineBrush}"/>
         <Setter Property="BorderThickness" Value="0,1,0,0"/>
         <Setter Property="Padding" Value="{DynamicResource AppDensity.StatusBarPadding}"/>
+        <Setter Property="MinHeight" Value="{DynamicResource AppDensity.StatusBarMinHeight}"/>
     </Style>
 
     <Style x:Key="StatusTextStyle" TargetType="TextBlock">
-        <Setter Property="FontFamily" Value="{DynamicResource Atlas.MonoFont}"/>
-        <Setter Property="FontSize" Value="11"/>
+        <Setter Property="FontFamily" Value="{DynamicResource AppStyle.StatusFontFamily}"/>
+        <Setter Property="FontSize" Value="{DynamicResource AppDensity.StatusTextFontSize}"/>
         <Setter Property="Foreground" Value="{DynamicResource Atlas.Ink3Brush}"/>
         <Setter Property="VerticalAlignment" Value="Center"/>
         <Setter Property="TextTrimming" Value="CharacterEllipsis"/>
+    </Style>
+
+    <!-- Small round status dot (green "ok" in the v2 design). -->
+    <Style x:Key="StatusDotStyle" TargetType="Ellipse">
+        <Setter Property="Width" Value="7"/>
+        <Setter Property="Height" Value="7"/>
+        <Setter Property="Fill" Value="{DynamicResource Atlas.OkBrush}"/>
+        <Setter Property="VerticalAlignment" Value="Center"/>
     </Style>
 
     <Style x:Key="StatusStrongStyle" TargetType="TextBlock" BasedOn="{StaticResource StatusTextStyle}">
@@ -378,7 +477,7 @@
     </Style>
 
     <Style x:Key="NavSectionHeaderTextStyle" TargetType="TextBlock">
-        <Setter Property="FontSize" Value="10.5"/>
+        <Setter Property="FontSize" Value="{DynamicResource AppDensity.NavSectionHeaderFontSize}"/>
         <Setter Property="FontWeight" Value="Bold"/>
         <Setter Property="Foreground" Value="{DynamicResource Atlas.Ink3Brush}"/>
         <Setter Property="VerticalAlignment" Value="Center"/>
@@ -395,6 +494,7 @@
         <Setter Property="HorizontalContentAlignment" Value="Left"/>
         <Setter Property="HorizontalAlignment" Value="Stretch"/>
         <Setter Property="Background" Value="{DynamicResource AppStyle.NavItemBackground}"/>
+        <Setter Property="BorderBrush" Value="{DynamicResource AppStyle.NavItemBorderBrush}"/>
         <Setter Property="Foreground" Value="{DynamicResource Atlas.Ink2Brush}"/>
         <Setter Property="Padding" Value="{DynamicResource AppDensity.NavItemPadding}"/>
         <Setter Property="Margin" Value="0,1"/>
@@ -405,7 +505,7 @@
             <Setter.Value>
                 <ControlTemplate TargetType="Button">
                     <Border x:Name="bg" Background="{TemplateBinding Background}"
-                            BorderBrush="{DynamicResource AppStyle.NavItemBorderBrush}"
+                            BorderBrush="{TemplateBinding BorderBrush}"
                             BorderThickness="{DynamicResource AppStyle.NavItemBorderThickness}"
                             CornerRadius="{DynamicResource AppStyle.NavItemCornerRadius}"
                             Padding="{TemplateBinding Padding}" SnapsToDevicePixels="True"
@@ -431,9 +531,52 @@
         <Style.Triggers>
             <DataTrigger Binding="{Binding IsActive}" Value="True">
                 <Setter Property="Background" Value="{DynamicResource Atlas.AccentSoftBrush}"/>
+                <Setter Property="BorderBrush" Value="{DynamicResource Atlas.AccentBorderBrush}"/>
                 <Setter Property="Foreground" Value="{DynamicResource Atlas.Accent2Brush}"/>
             </DataTrigger>
         </Style.Triggers>
+    </Style>
+
+    <!-- Plain text link ("Import", "Reset to defaults", "Clear all", rail footer). -->
+    <Style x:Key="LinkButtonStyle" TargetType="Button">
+        <Setter Property="Background" Value="Transparent"/>
+        <Setter Property="Foreground" Value="{DynamicResource Atlas.Ink2Brush}"/>
+        <Setter Property="FontSize" Value="11.5"/>
+        <Setter Property="FontWeight" Value="SemiBold"/>
+        <Setter Property="Padding" Value="2,3"/>
+        <Setter Property="Cursor" Value="Hand"/>
+        <Setter Property="FocusVisualStyle" Value="{x:Null}"/>
+        <Setter Property="Template">
+            <Setter.Value>
+                <ControlTemplate TargetType="Button">
+                    <Border Background="{TemplateBinding Background}" Padding="{TemplateBinding Padding}"
+                            SnapsToDevicePixels="True" TextElement.Foreground="{TemplateBinding Foreground}">
+                        <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center" RecognizesAccessKey="True"/>
+                    </Border>
+                    <ControlTemplate.Triggers>
+                        <Trigger Property="IsMouseOver" Value="True">
+                            <Setter Property="Foreground" Value="{DynamicResource Atlas.InkBrush}"/>
+                        </Trigger>
+                        <Trigger Property="IsEnabled" Value="False">
+                            <Setter Property="Opacity" Value="0.45"/>
+                        </Trigger>
+                    </ControlTemplate.Triggers>
+                </ControlTemplate>
+            </Setter.Value>
+        </Setter>
+    </Style>
+
+    <Style x:Key="AccentLinkButtonStyle" TargetType="Button" BasedOn="{StaticResource LinkButtonStyle}">
+        <Setter Property="Foreground" Value="{DynamicResource Atlas.Accent2Brush}"/>
+    </Style>
+
+    <!-- 26px accent avatar circle in the rail footer. -->
+    <Style x:Key="SidebarAvatarStyle" TargetType="Border">
+        <Setter Property="Width" Value="26"/>
+        <Setter Property="Height" Value="26"/>
+        <Setter Property="CornerRadius" Value="13"/>
+        <Setter Property="Background" Value="{DynamicResource Atlas.AccentBrush}"/>
+        <Setter Property="VerticalAlignment" Value="Center"/>
     </Style>
 
     <!-- Recent folders / Saved finds lists -->
@@ -496,8 +639,13 @@
         <Setter Property="BorderBrush" Value="{DynamicResource Atlas.LineBrush}"/>
         <Setter Property="BorderThickness" Value="1"/>
         <Setter Property="CornerRadius" Value="8"/>
-        <Setter Property="Padding" Value="8,7"/>
+        <Setter Property="Padding" Value="{DynamicResource AppDensity.SidebarCardPadding}"/>
         <Setter Property="Margin" Value="0,2"/>
+        <Style.Triggers>
+            <Trigger Property="IsMouseOver" Value="True">
+                <Setter Property="BorderBrush" Value="{DynamicResource Atlas.AccentBorderBrush}"/>
+            </Trigger>
+        </Style.Triggers>
     </Style>
 
     <Style x:Key="WorkspaceSidebarCardStyle" TargetType="Border" BasedOn="{StaticResource SidebarItemCardStyle}"/>
@@ -539,11 +687,11 @@
     </Style>
 
     <Style x:Key="SidebarIconChipStyle" TargetType="Border">
-        <Setter Property="Width" Value="26"/>
-        <Setter Property="Height" Value="26"/>
-        <Setter Property="CornerRadius" Value="7"/>
-        <Setter Property="Background" Value="{DynamicResource Atlas.AccentSoftBrush}"/>
-        <Setter Property="BorderBrush" Value="{DynamicResource Atlas.AccentTintBrush}"/>
+        <Setter Property="Width" Value="{DynamicResource AppDensity.SidebarChipSize}"/>
+        <Setter Property="Height" Value="{DynamicResource AppDensity.SidebarChipSize}"/>
+        <Setter Property="CornerRadius" Value="{DynamicResource AppDensity.SidebarChipCornerRadius}"/>
+        <Setter Property="Background" Value="{DynamicResource AppStyle.SidebarChipBackground}"/>
+        <Setter Property="BorderBrush" Value="{DynamicResource AppStyle.SidebarChipBorderBrush}"/>
         <Setter Property="BorderThickness" Value="1"/>
         <Setter Property="VerticalAlignment" Value="Top"/>
         <Setter Property="Margin" Value="0,1,9,0"/>
@@ -729,12 +877,19 @@
                                                 TextElement.Foreground="{DynamicResource Atlas.Ink3Brush}">
                                             <Grid>
                                                 <Grid.ColumnDefinitions>
+                                                    <ColumnDefinition Width="Auto"/>
                                                     <ColumnDefinition Width="*"/>
                                                     <ColumnDefinition Width="Auto"/>
                                                 </Grid.ColumnDefinitions>
-                                                <ContentPresenter VerticalAlignment="Center"/>
-                                                <ui:FontIcon x:Name="Chevron" Grid.Column="1" Glyph="&#xE70D;"
+                                                <ui:FontIcon x:Name="LeftChevron" Glyph="&#xE70D;"
                                                              FontSize="9" VerticalAlignment="Center"
+                                                             Margin="0,0,7,0"
+                                                             Visibility="{DynamicResource AppStyle.NavSectionChevronLeftVisibility}"
+                                                             Foreground="{DynamicResource Atlas.Ink3Brush}"/>
+                                                <ContentPresenter Grid.Column="1" VerticalAlignment="Center"/>
+                                                <ui:FontIcon x:Name="Chevron" Grid.Column="2" Glyph="&#xE70D;"
+                                                             FontSize="9" VerticalAlignment="Center"
+                                                             Visibility="{DynamicResource AppStyle.NavSectionChevronRightVisibility}"
                                                              Foreground="{DynamicResource Atlas.Ink3Brush}"/>
                                             </Grid>
                                         </Border>
@@ -744,6 +899,7 @@
                                             </Trigger>
                                             <Trigger Property="IsChecked" Value="False">
                                                 <Setter TargetName="Chevron" Property="Glyph" Value="&#xE76C;"/>
+                                                <Setter TargetName="LeftChevron" Property="Glyph" Value="&#xE76C;"/>
                                                 <Setter TargetName="HeaderBg" Property="BorderThickness" Value="0"/>
                                                 <Setter TargetName="HeaderBg" Property="CornerRadius" Value="8"/>
                                             </Trigger>
@@ -877,6 +1033,51 @@
         </Setter>
     </Style>
 
+    <Style x:Key="SearchOptionsToggleButtonStyle" TargetType="ToggleButton">
+        <Setter Property="Height" Value="{DynamicResource AppDensity.CommandButtonHeight}"/>
+        <Setter Property="MinWidth" Value="{DynamicResource AppDensity.SecondaryButtonMinWidth}"/>
+        <Setter Property="Padding" Value="{DynamicResource AppDensity.SecondaryButtonPadding}"/>
+        <Setter Property="Background" Value="{DynamicResource AppStyle.SecondaryButtonBackground}"/>
+        <Setter Property="Foreground" Value="{DynamicResource Atlas.Ink2Brush}"/>
+        <Setter Property="FontSize" Value="{DynamicResource AppDensity.ButtonFontSize}"/>
+        <Setter Property="FontWeight" Value="SemiBold"/>
+        <Setter Property="Cursor" Value="Hand"/>
+        <Setter Property="FocusVisualStyle" Value="{x:Null}"/>
+        <Setter Property="Template">
+            <Setter.Value>
+                <ControlTemplate TargetType="ToggleButton">
+                    <Border x:Name="bg"
+                            Background="{TemplateBinding Background}"
+                            BorderBrush="{DynamicResource AppStyle.SecondaryButtonBorderBrush}"
+                            BorderThickness="1"
+                            CornerRadius="{DynamicResource AppStyle.CommandButtonCornerRadius}"
+                            SnapsToDevicePixels="True"
+                            TextElement.Foreground="{TemplateBinding Foreground}">
+                        <ContentPresenter HorizontalAlignment="Center"
+                                          VerticalAlignment="Center"
+                                          Margin="{TemplateBinding Padding}"
+                                          RecognizesAccessKey="True"/>
+                    </Border>
+                    <ControlTemplate.Triggers>
+                        <Trigger Property="IsMouseOver" Value="True">
+                            <Setter TargetName="bg" Property="Background" Value="{DynamicResource AppStyle.SecondaryButtonHoverBackground}"/>
+                            <Setter TargetName="bg" Property="BorderBrush" Value="{DynamicResource AppStyle.SecondaryButtonHoverBorderBrush}"/>
+                            <Setter Property="Foreground" Value="{DynamicResource AppStyle.SecondaryButtonHoverForeground}"/>
+                        </Trigger>
+                        <Trigger Property="IsChecked" Value="True">
+                            <Setter TargetName="bg" Property="Background" Value="{DynamicResource Atlas.AccentSoftBrush}"/>
+                            <Setter TargetName="bg" Property="BorderBrush" Value="{DynamicResource Atlas.AccentBrush}"/>
+                            <Setter Property="Foreground" Value="{DynamicResource Atlas.Accent2Brush}"/>
+                        </Trigger>
+                        <Trigger Property="IsEnabled" Value="False">
+                            <Setter Property="Opacity" Value="0.45"/>
+                        </Trigger>
+                    </ControlTemplate.Triggers>
+                </ControlTemplate>
+            </Setter.Value>
+        </Setter>
+    </Style>
+
     <Style x:Key="IconButtonStyle" TargetType="Button">
         <Setter Property="Width" Value="{DynamicResource AppDensity.IconButtonSize}"/>
         <Setter Property="Height" Value="{DynamicResource AppDensity.IconButtonSize}"/>
@@ -967,10 +1168,27 @@
         <Setter Property="BorderThickness" Value="0"/>
         <Setter Property="Background" Value="Transparent"/>
         <Setter Property="Foreground" Value="{DynamicResource Atlas.InkBrush}"/>
-        <Setter Property="FontSize" Value="14"/>
+        <Setter Property="FontSize" Value="{DynamicResource AppDensity.OmniQueryFontSize}"/>
+        <Setter Property="FontWeight" Value="{DynamicResource AppStyle.OmniQueryFontWeight}"/>
         <Setter Property="VerticalContentAlignment" Value="Center"/>
         <Setter Property="VerticalAlignment" Value="Center"/>
         <Setter Property="Padding" Value="0"/>
+    </Style>
+
+    <!-- "/" keyboard hint shown inside the Vela command bar. -->
+    <Style x:Key="KbdHintStyle" TargetType="Border">
+        <Setter Property="BorderBrush" Value="{DynamicResource Atlas.Line2Brush}"/>
+        <Setter Property="BorderThickness" Value="1"/>
+        <Setter Property="CornerRadius" Value="4"/>
+        <Setter Property="Padding" Value="7,2"/>
+        <Setter Property="VerticalAlignment" Value="Center"/>
+        <Setter Property="Visibility" Value="{DynamicResource AppStyle.SearchKbdHintVisibility}"/>
+    </Style>
+
+    <Style x:Key="KbdHintTextStyle" TargetType="TextBlock">
+        <Setter Property="FontFamily" Value="{DynamicResource Atlas.MonoFont}"/>
+        <Setter Property="FontSize" Value="11"/>
+        <Setter Property="Foreground" Value="{DynamicResource Atlas.Ink3Brush}"/>
     </Style>
 
     <Style x:Key="OmniDividerStyle" TargetType="Border">
@@ -1011,6 +1229,347 @@
         <Setter Property="MinHeight" Value="{DynamicResource AppDensity.FilterChipMinHeight}"/>
     </Style>
 
+    <Style x:Key="SearchOptionsPanelStyle" TargetType="Border">
+        <Setter Property="Background" Value="{DynamicResource Atlas.Surface2Brush}"/>
+        <Setter Property="BorderBrush" Value="{DynamicResource Atlas.LineBrush}"/>
+        <Setter Property="BorderThickness" Value="1"/>
+        <Setter Property="CornerRadius" Value="10"/>
+        <Setter Property="Padding" Value="{DynamicResource AppDensity.AdvancedFlyoutPadding}"/>
+        <Setter Property="Margin" Value="{DynamicResource AppDensity.SearchFiltersPanelMargin}"/>
+    </Style>
+
+    <Style x:Key="ResultOptionsPanelStyle" TargetType="Border" BasedOn="{StaticResource SearchOptionsPanelStyle}">
+        <Setter Property="Margin" Value="{DynamicResource AppDensity.ResultFacetsPanelMargin}"/>
+    </Style>
+
+    <Style x:Key="ResultOptionPickerStyle" TargetType="ListBox" BasedOn="{StaticResource {x:Type ListBox}}">
+        <Setter Property="Background" Value="Transparent"/>
+        <Setter Property="BorderThickness" Value="0"/>
+        <Setter Property="Padding" Value="0"/>
+        <Setter Property="Margin" Value="0,4,0,10"/>
+        <Setter Property="ScrollViewer.HorizontalScrollBarVisibility" Value="Disabled"/>
+        <Setter Property="ScrollViewer.VerticalScrollBarVisibility" Value="Disabled"/>
+        <Setter Property="ItemsPanel">
+            <Setter.Value>
+                <ItemsPanelTemplate>
+                    <WrapPanel/>
+                </ItemsPanelTemplate>
+            </Setter.Value>
+        </Setter>
+    </Style>
+
+    <Style x:Key="ResultOptionPickerItemStyle" TargetType="ListBoxItem">
+        <Setter Property="Cursor" Value="Hand"/>
+        <Setter Property="FocusVisualStyle" Value="{x:Null}"/>
+        <Setter Property="HorizontalContentAlignment" Value="Center"/>
+        <Setter Property="VerticalContentAlignment" Value="Center"/>
+        <Setter Property="FontSize" Value="{DynamicResource AppDensity.ButtonFontSize}"/>
+        <Setter Property="FontWeight" Value="{DynamicResource AppStyle.OptionPillFontWeight}"/>
+        <Setter Property="Foreground" Value="{DynamicResource Atlas.InkBrush}"/>
+        <Setter Property="Template">
+            <Setter.Value>
+                <ControlTemplate TargetType="ListBoxItem">
+                    <Border x:Name="pill"
+                            Background="{DynamicResource AppStyle.FilterChipBackground}"
+                            BorderBrush="{DynamicResource Atlas.LineBrush}"
+                            BorderThickness="1"
+                            CornerRadius="{DynamicResource AppStyle.OptionPillCornerRadius}"
+                            Padding="{DynamicResource AppDensity.OptionPillPadding}"
+                            Margin="{DynamicResource AppDensity.FilterChipMargin}"
+                            MinHeight="{DynamicResource AppDensity.FilterChipMinHeight}"
+                            SnapsToDevicePixels="True"
+                            TextElement.Foreground="{TemplateBinding Foreground}">
+                        <ContentPresenter HorizontalAlignment="{TemplateBinding HorizontalContentAlignment}"
+                                          VerticalAlignment="{TemplateBinding VerticalContentAlignment}"/>
+                    </Border>
+                    <ControlTemplate.Triggers>
+                        <Trigger Property="IsMouseOver" Value="True">
+                            <Setter TargetName="pill" Property="Background" Value="{DynamicResource AppStyle.SecondaryButtonHoverBackground}"/>
+                            <Setter TargetName="pill" Property="BorderBrush" Value="{DynamicResource AppStyle.SecondaryButtonHoverBorderBrush}"/>
+                        </Trigger>
+                        <Trigger Property="IsSelected" Value="True">
+                            <Setter TargetName="pill" Property="Background" Value="{DynamicResource Atlas.AccentBrush}"/>
+                            <Setter TargetName="pill" Property="BorderBrush" Value="{DynamicResource Atlas.AccentBrush}"/>
+                            <Setter Property="Foreground" Value="{DynamicResource Atlas.OnAccentBrush}"/>
+                        </Trigger>
+                    </ControlTemplate.Triggers>
+                </ControlTemplate>
+            </Setter.Value>
+        </Setter>
+    </Style>
+
+    <Style x:Key="ResultFilterBadgeStyle" TargetType="Border">
+        <Setter Property="Background" Value="{DynamicResource Atlas.AccentBrush}"/>
+        <Setter Property="CornerRadius" Value="10"/>
+        <Setter Property="Padding" Value="6,1"/>
+        <Setter Property="Margin" Value="8,0,0,0"/>
+        <Setter Property="VerticalAlignment" Value="Center"/>
+    </Style>
+
+    <!-- =====================================================================
+         Vela v2 components: segmented toggles, filter dropdowns, check chips
+         ===================================================================== -->
+
+    <!-- Frame around a segmented control (density toggle, Dark/Light switch). -->
+    <Style x:Key="SegmentedControlStyle" TargetType="Border">
+        <Setter Property="Background" Value="{DynamicResource Atlas.Surface2Brush}"/>
+        <Setter Property="BorderBrush" Value="{DynamicResource Atlas.LineBrush}"/>
+        <Setter Property="BorderThickness" Value="1"/>
+        <Setter Property="CornerRadius" Value="6"/>
+        <Setter Property="Padding" Value="2"/>
+        <Setter Property="VerticalAlignment" Value="Center"/>
+    </Style>
+
+    <!-- One segment; Tag carries the "selected" bool (same pattern as
+         ThemeMiniButtonStyle). -->
+    <Style x:Key="SegmentedItemButtonStyle" TargetType="Button">
+        <Setter Property="Background" Value="Transparent"/>
+        <Setter Property="Foreground" Value="{DynamicResource Atlas.Ink2Brush}"/>
+        <Setter Property="FontSize" Value="11.5"/>
+        <Setter Property="FontWeight" Value="SemiBold"/>
+        <Setter Property="Padding" Value="9,4"/>
+        <Setter Property="Cursor" Value="Hand"/>
+        <Setter Property="FocusVisualStyle" Value="{x:Null}"/>
+        <Setter Property="Template">
+            <Setter.Value>
+                <ControlTemplate TargetType="Button">
+                    <Border x:Name="bg" Background="{TemplateBinding Background}"
+                            CornerRadius="4" Padding="{TemplateBinding Padding}"
+                            SnapsToDevicePixels="True"
+                            TextElement.Foreground="{TemplateBinding Foreground}">
+                        <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                    </Border>
+                    <ControlTemplate.Triggers>
+                        <Trigger Property="IsMouseOver" Value="True">
+                            <Setter Property="Foreground" Value="{DynamicResource Atlas.InkBrush}"/>
+                        </Trigger>
+                        <DataTrigger Binding="{Binding Tag, RelativeSource={RelativeSource TemplatedParent}}" Value="{StaticResource AppStyle.BooleanTrue}">
+                            <Setter TargetName="bg" Property="Background" Value="{DynamicResource Atlas.AccentSoftBrush}"/>
+                            <Setter Property="Foreground" Value="{DynamicResource Atlas.Accent2Brush}"/>
+                        </DataTrigger>
+                    </ControlTemplate.Triggers>
+                </ControlTemplate>
+            </Setter.Value>
+        </Setter>
+    </Style>
+
+    <!-- Dropdown button in the filters bar. Tag carries "has a selection";
+         IsChecked means the menu is open. -->
+    <Style x:Key="FilterDropButtonStyle" TargetType="ToggleButton">
+        <Setter Property="Background" Value="{DynamicResource AppStyle.FilterChipBackground}"/>
+        <Setter Property="BorderBrush" Value="{DynamicResource Atlas.LineBrush}"/>
+        <Setter Property="Foreground" Value="{DynamicResource Atlas.Ink3Brush}"/>
+        <Setter Property="FontSize" Value="12.5"/>
+        <Setter Property="FontWeight" Value="SemiBold"/>
+        <Setter Property="Padding" Value="9,6"/>
+        <Setter Property="Margin" Value="0,0,6,0"/>
+        <Setter Property="Cursor" Value="Hand"/>
+        <Setter Property="FocusVisualStyle" Value="{x:Null}"/>
+        <Setter Property="Template">
+            <Setter.Value>
+                <ControlTemplate TargetType="ToggleButton">
+                    <Border x:Name="bg" Background="{TemplateBinding Background}"
+                            BorderBrush="{TemplateBinding BorderBrush}"
+                            BorderThickness="1" CornerRadius="6"
+                            Padding="{TemplateBinding Padding}" SnapsToDevicePixels="True"
+                            TextElement.Foreground="{TemplateBinding Foreground}">
+                        <StackPanel Orientation="Horizontal">
+                            <ContentPresenter VerticalAlignment="Center" RecognizesAccessKey="True"/>
+                            <ui:FontIcon x:Name="Chevron" Glyph="&#xE70D;" FontSize="9"
+                                         Margin="6,1,0,0" Opacity="0.65" VerticalAlignment="Center"/>
+                        </StackPanel>
+                    </Border>
+                    <ControlTemplate.Triggers>
+                        <Trigger Property="IsMouseOver" Value="True">
+                            <Setter TargetName="bg" Property="BorderBrush" Value="{DynamicResource Atlas.Line2Brush}"/>
+                            <Setter Property="Foreground" Value="{DynamicResource Atlas.Ink2Brush}"/>
+                        </Trigger>
+                        <DataTrigger Binding="{Binding Tag, RelativeSource={RelativeSource TemplatedParent}}" Value="{StaticResource AppStyle.BooleanTrue}">
+                            <Setter TargetName="bg" Property="BorderBrush" Value="{DynamicResource Atlas.AccentBorderBrush}"/>
+                            <Setter Property="Foreground" Value="{DynamicResource Atlas.InkBrush}"/>
+                        </DataTrigger>
+                        <Trigger Property="IsChecked" Value="True">
+                            <Setter TargetName="bg" Property="Background" Value="{DynamicResource Atlas.AccentSoftBrush}"/>
+                            <Setter TargetName="bg" Property="BorderBrush" Value="{DynamicResource Atlas.AccentBorderBrush}"/>
+                            <Setter Property="Foreground" Value="{DynamicResource Atlas.Accent2Brush}"/>
+                            <Setter TargetName="Chevron" Property="Glyph" Value="&#xE70E;"/>
+                        </Trigger>
+                    </ControlTemplate.Triggers>
+                </ControlTemplate>
+            </Setter.Value>
+        </Setter>
+    </Style>
+
+    <!-- Overlay card for a filter dropdown menu. -->
+    <Style x:Key="FilterMenuCardStyle" TargetType="Border">
+        <Setter Property="Background" Value="{DynamicResource Atlas.SurfaceBrush}"/>
+        <Setter Property="BorderBrush" Value="{DynamicResource Atlas.Line2Brush}"/>
+        <Setter Property="BorderThickness" Value="1"/>
+        <Setter Property="CornerRadius" Value="8"/>
+        <Setter Property="Padding" Value="6"/>
+        <Setter Property="Margin" Value="0,6,14,18"/>
+        <Setter Property="Effect">
+            <Setter.Value>
+                <DropShadowEffect BlurRadius="24" ShadowDepth="8" Direction="270" Opacity="0.45" Color="#000000"/>
+            </Setter.Value>
+        </Setter>
+    </Style>
+
+    <!-- Option list inside a filter dropdown menu. -->
+    <Style x:Key="FilterMenuListBoxStyle" TargetType="ListBox" BasedOn="{StaticResource {x:Type ListBox}}">
+        <Setter Property="Background" Value="Transparent"/>
+        <Setter Property="BorderThickness" Value="0"/>
+        <Setter Property="Padding" Value="0"/>
+        <Setter Property="MaxHeight" Value="242"/>
+        <Setter Property="ScrollViewer.HorizontalScrollBarVisibility" Value="Disabled"/>
+    </Style>
+
+    <Style x:Key="FilterMenuItemStyle" TargetType="ListBoxItem">
+        <Setter Property="Cursor" Value="Hand"/>
+        <Setter Property="FocusVisualStyle" Value="{x:Null}"/>
+        <Setter Property="HorizontalContentAlignment" Value="Stretch"/>
+        <Setter Property="Foreground" Value="{DynamicResource Atlas.InkBrush}"/>
+        <Setter Property="Template">
+            <Setter.Value>
+                <ControlTemplate TargetType="ListBoxItem">
+                    <Border x:Name="bg" Background="Transparent" CornerRadius="6"
+                            Padding="9,7" Margin="0,0,0,1" SnapsToDevicePixels="True"
+                            TextElement.Foreground="{TemplateBinding Foreground}">
+                        <Grid>
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="*"/>
+                                <ColumnDefinition Width="Auto"/>
+                            </Grid.ColumnDefinitions>
+                            <ContentPresenter VerticalAlignment="Center"/>
+                            <ui:FontIcon x:Name="Check" Grid.Column="1" Glyph="&#xE73E;" FontSize="11"
+                                         Margin="9,0,0,0" VerticalAlignment="Center"
+                                         Foreground="{DynamicResource Atlas.Accent2Brush}"
+                                         Visibility="Collapsed"/>
+                        </Grid>
+                    </Border>
+                    <ControlTemplate.Triggers>
+                        <Trigger Property="IsMouseOver" Value="True">
+                            <Setter TargetName="bg" Property="Background" Value="{DynamicResource Atlas.HoverBrush}"/>
+                        </Trigger>
+                        <Trigger Property="IsSelected" Value="True">
+                            <Setter TargetName="Check" Property="Visibility" Value="Visible"/>
+                        </Trigger>
+                    </ControlTemplate.Triggers>
+                </ControlTemplate>
+            </Setter.Value>
+        </Setter>
+    </Style>
+
+    <Style x:Key="FilterMenuOptionLabelStyle" TargetType="TextBlock">
+        <Setter Property="FontSize" Value="12.5"/>
+        <Setter Property="Foreground" Value="{DynamicResource Atlas.InkBrush}"/>
+        <Setter Property="TextTrimming" Value="CharacterEllipsis"/>
+        <Setter Property="VerticalAlignment" Value="Center"/>
+    </Style>
+
+    <Style x:Key="FilterMenuOptionCountStyle" TargetType="TextBlock">
+        <Setter Property="FontSize" Value="11"/>
+        <Setter Property="Foreground" Value="{DynamicResource Atlas.Ink3Brush}"/>
+        <Setter Property="Margin" Value="10,0,0,0"/>
+        <Setter Property="VerticalAlignment" Value="Center"/>
+    </Style>
+
+    <!-- Inline input row inside a dropdown menu (folder search, glob patterns). -->
+    <Style x:Key="FilterMenuInputRowStyle" TargetType="Border">
+        <Setter Property="Background" Value="{DynamicResource Atlas.SidebarBrush}"/>
+        <Setter Property="BorderBrush" Value="{DynamicResource Atlas.LineBrush}"/>
+        <Setter Property="BorderThickness" Value="1"/>
+        <Setter Property="CornerRadius" Value="6"/>
+        <Setter Property="Padding" Value="9,5"/>
+        <Setter Property="Margin" Value="0,0,0,6"/>
+    </Style>
+
+    <Style x:Key="FilterMenuInputBoxStyle" TargetType="TextBox" BasedOn="{StaticResource {x:Type TextBox}}">
+        <Setter Property="BorderThickness" Value="0"/>
+        <Setter Property="Background" Value="Transparent"/>
+        <Setter Property="Foreground" Value="{DynamicResource Atlas.InkBrush}"/>
+        <Setter Property="FontFamily" Value="{DynamicResource Atlas.MonoFont}"/>
+        <Setter Property="FontSize" Value="12.5"/>
+        <Setter Property="VerticalContentAlignment" Value="Center"/>
+        <Setter Property="Padding" Value="0"/>
+        <Setter Property="MinHeight" Value="0"/>
+    </Style>
+
+    <!-- Checkbox chip (Options panel REFINE / INCLUDE rows): pill container
+         with a small filled box, per the v2 design. -->
+    <Style x:Key="CheckChipStyle" TargetType="CheckBox">
+        <Setter Property="Foreground" Value="{DynamicResource Atlas.InkBrush}"/>
+        <Setter Property="FontSize" Value="12.5"/>
+        <Setter Property="FontWeight" Value="SemiBold"/>
+        <Setter Property="Cursor" Value="Hand"/>
+        <Setter Property="Margin" Value="{DynamicResource AppDensity.FilterChipMargin}"/>
+        <Setter Property="FocusVisualStyle" Value="{x:Null}"/>
+        <Setter Property="Template">
+            <Setter.Value>
+                <ControlTemplate TargetType="CheckBox">
+                    <Border x:Name="chip" Background="{DynamicResource AppStyle.FilterChipBackground}"
+                            BorderBrush="{DynamicResource Atlas.LineBrush}" BorderThickness="1"
+                            CornerRadius="6" Padding="11,6" SnapsToDevicePixels="True"
+                            TextElement.Foreground="{TemplateBinding Foreground}">
+                        <StackPanel Orientation="Horizontal">
+                            <Border x:Name="box" Width="16" Height="16" CornerRadius="4"
+                                    BorderBrush="{DynamicResource Atlas.Line2Brush}" BorderThickness="1.5"
+                                    Background="Transparent" VerticalAlignment="Center" Margin="0,0,8,0">
+                                <ui:FontIcon x:Name="glyph" Glyph="&#xE73E;" FontSize="9"
+                                             Foreground="{DynamicResource Atlas.OnAccentBrush}"
+                                             HorizontalAlignment="Center" VerticalAlignment="Center"
+                                             Visibility="Collapsed"/>
+                            </Border>
+                            <ContentPresenter VerticalAlignment="Center" RecognizesAccessKey="True"/>
+                        </StackPanel>
+                    </Border>
+                    <ControlTemplate.Triggers>
+                        <Trigger Property="IsMouseOver" Value="True">
+                            <Setter TargetName="chip" Property="BorderBrush" Value="{DynamicResource Atlas.Line2Brush}"/>
+                        </Trigger>
+                        <Trigger Property="IsChecked" Value="True">
+                            <Setter TargetName="box" Property="Background" Value="{DynamicResource Atlas.AccentBrush}"/>
+                            <Setter TargetName="box" Property="BorderBrush" Value="{DynamicResource Atlas.AccentBrush}"/>
+                            <Setter TargetName="glyph" Property="Visibility" Value="Visible"/>
+                        </Trigger>
+                        <Trigger Property="IsEnabled" Value="False">
+                            <Setter Property="Opacity" Value="0.45"/>
+                        </Trigger>
+                    </ControlTemplate.Triggers>
+                </ControlTemplate>
+            </Setter.Value>
+        </Setter>
+    </Style>
+
+    <!-- Group label inside the options / sort&group panels ("SEARCH IN", "MATCH"). -->
+    <Style x:Key="OptionGroupLabelStyle" TargetType="TextBlock">
+        <Setter Property="FontSize" Value="11"/>
+        <Setter Property="FontWeight" Value="Bold"/>
+        <Setter Property="Foreground" Value="{DynamicResource Atlas.Ink3Brush}"/>
+        <Setter Property="Margin" Value="2,6,0,7"/>
+    </Style>
+
+    <!-- Neutral extension chip (v2 result cards): mono label on a plain surface. -->
+    <Style x:Key="TypeBadgeNeutralStyle" TargetType="Border">
+        <Setter Property="Width" Value="{DynamicResource AppDensity.TypeBadgeSize}"/>
+        <Setter Property="Height" Value="{DynamicResource AppDensity.TypeBadgeSize}"/>
+        <Setter Property="CornerRadius" Value="6"/>
+        <Setter Property="Background" Value="{DynamicResource Atlas.Surface2Brush}"/>
+        <Setter Property="BorderBrush" Value="{DynamicResource Atlas.LineBrush}"/>
+        <Setter Property="BorderThickness" Value="1"/>
+        <Setter Property="VerticalAlignment" Value="Center"/>
+        <Setter Property="Visibility" Value="{DynamicResource AppStyle.TypeBadgeNeutralVisibility}"/>
+    </Style>
+
+    <Style x:Key="TypeBadgeNeutralTextStyle" TargetType="TextBlock">
+        <Setter Property="FontFamily" Value="{DynamicResource Atlas.MonoFont}"/>
+        <Setter Property="FontSize" Value="10.5"/>
+        <Setter Property="FontWeight" Value="Bold"/>
+        <Setter Property="Foreground" Value="{DynamicResource Atlas.Ink2Brush}"/>
+        <Setter Property="HorizontalAlignment" Value="Center"/>
+        <Setter Property="VerticalAlignment" Value="Center"/>
+    </Style>
+
     <Style x:Key="QueryChipStyle" TargetType="Border">
         <Setter Property="Background" Value="{DynamicResource AppStyle.QueryChipBackground}"/>
         <Setter Property="BorderBrush" Value="{DynamicResource Atlas.AccentBrush}"/>
@@ -1038,10 +1597,10 @@
     </Style>
 
     <Style x:Key="ActiveFacetChipStyle" TargetType="Border">
-        <Setter Property="Background" Value="{DynamicResource Atlas.AccentTintBrush}"/>
-        <Setter Property="BorderBrush" Value="{DynamicResource Atlas.AccentBrush}"/>
+        <Setter Property="Background" Value="{DynamicResource Atlas.AccentSoftBrush}"/>
+        <Setter Property="BorderBrush" Value="{DynamicResource Atlas.AccentBorderBrush}"/>
         <Setter Property="BorderThickness" Value="1"/>
-        <Setter Property="CornerRadius" Value="8"/>
+        <Setter Property="CornerRadius" Value="6"/>
         <Setter Property="Padding" Value="{DynamicResource AppDensity.QueryChipPadding}"/>
         <Setter Property="Margin" Value="{DynamicResource AppDensity.QueryChipMargin}"/>
         <Setter Property="MinHeight" Value="{DynamicResource AppDensity.QueryChipMinHeight}"/>
@@ -1052,7 +1611,7 @@
     </Style>
 
     <Style x:Key="ActiveFacetValueStyle" TargetType="TextBlock" BasedOn="{StaticResource QueryChipValueStyle}">
-        <Setter Property="Foreground" Value="{DynamicResource Atlas.InkBrush}"/>
+        <Setter Property="Foreground" Value="{DynamicResource Atlas.Accent2Brush}"/>
         <Setter Property="MaxWidth" Value="160"/>
     </Style>
 
@@ -1124,8 +1683,8 @@
 
     <Style x:Key="CtxTitleStyle" TargetType="TextBlock">
         <Setter Property="FontFamily" Value="{DynamicResource Atlas.SerifFont}"/>
-        <Setter Property="FontSize" Value="17"/>
-        <Setter Property="FontWeight" Value="SemiBold"/>
+        <Setter Property="FontSize" Value="{DynamicResource AppDensity.CtxTitleFontSize}"/>
+        <Setter Property="FontWeight" Value="{DynamicResource AppStyle.CtxTitleFontWeight}"/>
         <Setter Property="Foreground" Value="{DynamicResource Atlas.InkBrush}"/>
         <Setter Property="VerticalAlignment" Value="Center"/>
         <Setter Property="TextTrimming" Value="CharacterEllipsis"/>
@@ -1170,7 +1729,7 @@
                         </Trigger>
                         <Trigger Property="IsSelected" Value="True">
                             <Setter TargetName="card" Property="Background" Value="{DynamicResource Atlas.SelBrush}"/>
-                            <Setter TargetName="card" Property="BorderBrush" Value="{DynamicResource Atlas.AccentBrush}"/>
+                            <Setter TargetName="card" Property="BorderBrush" Value="{DynamicResource Atlas.AccentBorderBrush}"/>
                             <Setter TargetName="AccentRail" Property="Opacity" Value="1"/>
                         </Trigger>
                     </ControlTemplate.Triggers>
@@ -1213,7 +1772,9 @@
     </Style>
 
     <Style x:Key="HitsPillStyle" TargetType="Border">
-        <Setter Property="Background" Value="{DynamicResource Atlas.AccentTintBrush}"/>
+        <Setter Property="Background" Value="{DynamicResource AppStyle.HitsPillBackground}"/>
+        <Setter Property="BorderBrush" Value="{DynamicResource AppStyle.HitsPillBorderBrush}"/>
+        <Setter Property="BorderThickness" Value="1"/>
         <Setter Property="CornerRadius" Value="20"/>
         <Setter Property="Padding" Value="{DynamicResource AppDensity.HitsPillPadding}"/>
         <Setter Property="VerticalAlignment" Value="Center"/>
@@ -1223,7 +1784,7 @@
         <Setter Property="FontFamily" Value="{DynamicResource Atlas.MonoFont}"/>
         <Setter Property="FontSize" Value="11"/>
         <Setter Property="FontWeight" Value="SemiBold"/>
-        <Setter Property="Foreground" Value="{DynamicResource Atlas.AccentBrush}"/>
+        <Setter Property="Foreground" Value="{DynamicResource AppStyle.HitsPillForeground}"/>
     </Style>
 
     <Style x:Key="ResultMetaPillStyle" TargetType="Border">
@@ -1289,7 +1850,7 @@
         <Setter Property="HorizontalContentAlignment" Value="Left"/>
         <Setter Property="HorizontalAlignment" Value="Stretch"/>
         <Setter Property="Background" Value="Transparent"/>
-        <Setter Property="Foreground" Value="{DynamicResource Atlas.AccentBrush}"/>
+        <Setter Property="Foreground" Value="{DynamicResource AppStyle.MoreLinkForeground}"/>
         <Setter Property="FontSize" Value="11.5"/>
         <Setter Property="Padding" Value="{DynamicResource AppDensity.MoreLinkPadding}"/>
         <Setter Property="Cursor" Value="Hand"/>
@@ -1334,7 +1895,7 @@
          Preview pane
          ===================================================================== -->
     <Style x:Key="PreviewPaneStyle" TargetType="Border">
-        <Setter Property="Background" Value="{DynamicResource Atlas.Surface2Brush}"/>
+        <Setter Property="Background" Value="{DynamicResource AppStyle.PreviewPaneBackground}"/>
         <Setter Property="BorderBrush" Value="{DynamicResource Atlas.LineBrush}"/>
         <Setter Property="BorderThickness" Value="1,0,0,0"/>
     </Style>
@@ -1376,10 +1937,16 @@
     </Style>
 
     <Style x:Key="PreviewHitLineStyle" TargetType="Border">
-        <Setter Property="BorderBrush" Value="{DynamicResource Atlas.AccentBrush}"/>
+        <Setter Property="BorderBrush" Value="{DynamicResource Atlas.AccentBorderBrush}"/>
         <Setter Property="BorderThickness" Value="2,0,0,0"/>
         <Setter Property="Padding" Value="10,1,0,1"/>
         <Setter Property="Margin" Value="0,0,0,7"/>
+    </Style>
+
+    <!-- Accent metadata chip in the preview pane ("12 hits"). -->
+    <Style x:Key="PreviewAccentMetaPillStyle" TargetType="Border" BasedOn="{StaticResource PreviewMetaPillStyle}">
+        <Setter Property="Background" Value="{DynamicResource Atlas.AccentSoftBrush}"/>
+        <Setter Property="BorderBrush" Value="{DynamicResource Atlas.AccentBorderBrush}"/>
     </Style>
 
     <Style x:Key="UpperPanelLabelStyle" TargetType="TextBlock">
@@ -1455,7 +2022,19 @@
         <Setter Property="MinWidth" Value="0"/>
     </Style>
 
-    <!-- ===== Preview splitter ===== -->
+    <!-- ===== Shell splitters ===== -->
+    <Style x:Key="SidebarGridSplitterStyle" TargetType="GridSplitter">
+        <Setter Property="Width" Value="6"/>
+        <Setter Property="HorizontalAlignment" Value="Stretch"/>
+        <Setter Property="VerticalAlignment" Value="Stretch"/>
+        <Setter Property="Background" Value="Transparent"/>
+        <Setter Property="ResizeBehavior" Value="PreviousAndNext"/>
+        <Setter Property="ResizeDirection" Value="Columns"/>
+        <Setter Property="ShowsPreview" Value="False"/>
+        <Setter Property="Cursor" Value="SizeWE"/>
+        <Setter Property="ToolTip" Value="Drag to resize sidebar"/>
+    </Style>
+
     <Style x:Key="PreviewGridSplitterStyle" TargetType="GridSplitter">
         <Setter Property="Width" Value="6"/>
         <Setter Property="HorizontalAlignment" Value="Stretch"/>

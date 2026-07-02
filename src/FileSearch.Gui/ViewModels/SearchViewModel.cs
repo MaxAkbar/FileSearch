@@ -147,6 +147,10 @@ public sealed partial class SearchViewModel : ObservableObject, IDisposable
 
     public ObservableCollection<ResultFacetOption> FolderFacetOptions { get; } = new();
 
+    /// <summary>Folder facet options narrowed by <see cref="FolderFacetFilterText"/> (the
+    /// search field at the top of the Folder filter dropdown).</summary>
+    public ObservableCollection<ResultFacetOption> FilteredFolderFacetOptions { get; } = new();
+
     public ObservableCollection<ResultFacetOption> ModifiedFacetOptions { get; } = new();
 
     public ObservableCollection<ResultFacetOption> SourceFacetOptions { get; } = new();
@@ -161,18 +165,21 @@ public sealed partial class SearchViewModel : ObservableObject, IDisposable
         new[]
         {
             new ResultSortOption(ResultSortMode.Relevance, "Relevance"),
-            new ResultSortOption(ResultSortMode.Recency, "Recency"),
-            new ResultSortOption(ResultSortMode.Filename, "Filename"),
-            new ResultSortOption(ResultSortMode.HitCount, "Hit count"),
+            new ResultSortOption(ResultSortMode.Filename, "Name"),
+            new ResultSortOption(ResultSortMode.Recency, "Modified"),
+            new ResultSortOption(ResultSortMode.Size, "Size"),
+            new ResultSortOption(ResultSortMode.HitCount, "Hits"),
+            new ResultSortOption(ResultSortMode.FileType, "Type"),
         };
 
     public IReadOnlyList<ResultGroupOption> ResultGroupOptions { get; } =
         new[]
         {
-            new ResultGroupOption(ResultGroupMode.File, "File"),
+            new ResultGroupOption(ResultGroupMode.File, "None"),
             new ResultGroupOption(ResultGroupMode.Folder, "Folder"),
-            new ResultGroupOption(ResultGroupMode.FileType, "File type"),
-            new ResultGroupOption(ResultGroupMode.ModifiedDate, "Modified date"),
+            new ResultGroupOption(ResultGroupMode.FileType, "Type"),
+            new ResultGroupOption(ResultGroupMode.ModifiedDate, "Date"),
+            new ResultGroupOption(ResultGroupMode.Source, "Source"),
         };
 
     /// <summary>
@@ -239,6 +246,11 @@ public sealed partial class SearchViewModel : ObservableObject, IDisposable
     [ObservableProperty] private string _previewContent = string.Empty;
     [ObservableProperty] private ImageOcrPreviewViewModel? _imageOcrPreview;
     [ObservableProperty] private bool _isPreviewPaneVisible = true;
+    [ObservableProperty] private bool _isSearchOptionsVisible;
+    [ObservableProperty] private bool _isResultFiltersVisible;
+    [ObservableProperty] private bool _isResultSortAndGroupVisible;
+    [ObservableProperty] private bool _isCompactResultLayout;
+    [ObservableProperty] private string _folderFacetFilterText = string.Empty;
     [ObservableProperty] private double _previewPaneWidth = 360;
     [ObservableProperty] private int _selectedDetailsTabIndex;
     [ObservableProperty] private ResultSortOption? _selectedSortOption;
@@ -396,6 +408,86 @@ public sealed partial class SearchViewModel : ObservableObject, IDisposable
 
     public bool HasActiveResultFacets => ActiveResultFacetChips.Count > 0;
 
+    public int ActiveResultFacetCount => ActiveResultFacetChips.Count;
+
+    public bool IsComfortableResultLayout => !IsCompactResultLayout;
+
+    /// <summary>True when sort or group deviates from the defaults (Relevance / None);
+    /// drives the accent dot on the Sort &amp; Group button.</summary>
+    public bool HasCustomResultArrangement =>
+        (SelectedSortOption?.Value ?? ResultSortMode.Relevance) != ResultSortMode.Relevance ||
+        (SelectedGroupOption?.Value ?? ResultGroupMode.File) != ResultGroupMode.File;
+
+    /// <summary>Summary line in the Sort &amp; Group panel ("Sorted by name · grouped by folder").</summary>
+    public string ResultArrangementSummaryText
+    {
+        get
+        {
+            var sort = SelectedSortOption?.Value ?? ResultSortMode.Relevance;
+            var group = SelectedGroupOption?.Value ?? ResultGroupMode.File;
+            var text = sort == ResultSortMode.Relevance
+                ? "Sorted by relevance"
+                : $"Sorted by {SelectedSortOption?.Label.ToLowerInvariant()}";
+            if (group != ResultGroupMode.File)
+                text += $" · grouped by {SelectedGroupOption?.Label.ToLowerInvariant()}";
+            return text;
+        }
+    }
+
+    public bool HasFileTypeFacetSelection => IsFacetSelection(SelectedFileTypeFacet);
+
+    public bool HasFolderFacetSelection => IsFacetSelection(SelectedFolderFacet);
+
+    public bool HasModifiedFacetSelection => IsFacetSelection(SelectedModifiedFacet);
+
+    public bool HasSourceFacetSelection => IsFacetSelection(SelectedSourceFacet);
+
+    public bool HasSizeFacetSelection => IsFacetSelection(SelectedSizeFacet);
+
+    public bool HasNameFilterSelection =>
+        !string.IsNullOrWhiteSpace(FileNamePattern) || !string.IsNullOrWhiteSpace(ExcludeFileNamePattern);
+
+    public string FileTypeFacetButtonText => FacetButtonText("Type", SelectedFileTypeFacet);
+
+    public string FolderFacetButtonText =>
+        IsFacetSelection(SelectedFolderFacet)
+            ? $"Folder: {FolderLeafName(SelectedFolderFacet!.Label)}"
+            : "Folder";
+
+    public string ModifiedFacetButtonText => FacetButtonText("Date", SelectedModifiedFacet);
+
+    public string SourceFacetButtonText => FacetButtonText("Source", SelectedSourceFacet);
+
+    public string SizeFacetButtonText => FacetButtonText("Size", SelectedSizeFacet);
+
+    public string NameFilterButtonText
+    {
+        get
+        {
+            if (!HasNameFilterSelection)
+                return "Name";
+            var include = string.IsNullOrWhiteSpace(FileNamePattern) ? "*.*" : FileNamePattern.Trim();
+            return string.IsNullOrWhiteSpace(ExcludeFileNamePattern)
+                ? include
+                : $"{include}  −  {ExcludeFileNamePattern.Trim()}";
+        }
+    }
+
+    private static bool IsFacetSelection(ResultFacetOption? facet) =>
+        facet is not null && !string.Equals(facet.Value, ResultFacetOption.AllValue, StringComparison.Ordinal);
+
+    private static string FacetButtonText(string field, ResultFacetOption? facet) =>
+        IsFacetSelection(facet) ? $"{field}: {facet!.Label}" : field;
+
+    private static string FolderLeafName(string path)
+    {
+        var trimmed = path.TrimEnd('\\', '/');
+        var index = trimmed.LastIndexOfAny(s_pathSeparators);
+        return index >= 0 && index < trimmed.Length - 1 ? trimmed[(index + 1)..] : trimmed;
+    }
+
+    private static readonly char[] s_pathSeparators = { '\\', '/' };
+
     /// <summary>Heading above the results list ("Find …" once a query is set).</summary>
     public string ResultsContextText =>
         string.IsNullOrWhiteSpace(QueryText)
@@ -475,6 +567,18 @@ public sealed partial class SearchViewModel : ObservableObject, IDisposable
         OnPropertyChanged(nameof(PreviewPaneToggleText));
     }
 
+    partial void OnIsResultFiltersVisibleChanged(bool value)
+    {
+        if (value)
+            IsResultSortAndGroupVisible = false;
+    }
+
+    partial void OnIsResultSortAndGroupVisibleChanged(bool value)
+    {
+        if (value)
+            IsResultFiltersVisible = false;
+    }
+
     partial void OnPreviewPaneWidthChanged(double value)
     {
         var clamped = Math.Clamp(value, MinimumPreviewPaneWidth, MaximumPreviewPaneWidth);
@@ -484,9 +588,45 @@ public sealed partial class SearchViewModel : ObservableObject, IDisposable
         }
     }
 
-    partial void OnSelectedSortOptionChanged(ResultSortOption? value) => ApplyResultViewShape();
+    partial void OnSelectedSortOptionChanged(ResultSortOption? value)
+    {
+        ApplyResultViewShape();
+        NotifyResultArrangementChanged();
+    }
 
-    partial void OnSelectedGroupOptionChanged(ResultGroupOption? value) => ApplyResultViewShape();
+    partial void OnSelectedGroupOptionChanged(ResultGroupOption? value)
+    {
+        ApplyResultViewShape();
+        NotifyResultArrangementChanged();
+    }
+
+    partial void OnIsCompactResultLayoutChanged(bool value) =>
+        OnPropertyChanged(nameof(IsComfortableResultLayout));
+
+    partial void OnFolderFacetFilterTextChanged(string value) =>
+        RefreshFilteredFolderFacetOptions();
+
+    private void NotifyResultArrangementChanged()
+    {
+        OnPropertyChanged(nameof(HasCustomResultArrangement));
+        OnPropertyChanged(nameof(ResultArrangementSummaryText));
+    }
+
+    private void RefreshFilteredFolderFacetOptions()
+    {
+        var filter = FolderFacetFilterText;
+        FilteredFolderFacetOptions.Clear();
+        foreach (var option in FolderFacetOptions)
+        {
+            var isAllRow = string.Equals(option.Value, ResultFacetOption.AllValue, StringComparison.Ordinal);
+            if (isAllRow ||
+                string.IsNullOrWhiteSpace(filter) ||
+                option.Label.Contains(filter, StringComparison.OrdinalIgnoreCase))
+            {
+                FilteredFolderFacetOptions.Add(option);
+            }
+        }
+    }
 
     partial void OnSelectedFileTypeFacetChanged(ResultFacetOption? value) => OnFacetSelectionChanged();
 
@@ -512,6 +652,35 @@ public sealed partial class SearchViewModel : ObservableObject, IDisposable
 
     [RelayCommand]
     private void TogglePreviewPane() => IsPreviewPaneVisible = !IsPreviewPaneVisible;
+
+    [RelayCommand]
+    private void HideSearchOptions() => IsSearchOptionsVisible = false;
+
+    [RelayCommand]
+    private void SetComfortableResultLayout() => IsCompactResultLayout = false;
+
+    [RelayCommand]
+    private void SetCompactResultLayout() => IsCompactResultLayout = true;
+
+    /// <summary>Restores the matching options to their defaults ("Reset to defaults"
+    /// in the search options panel). Scope, patterns, and facets are left alone.</summary>
+    [RelayCommand]
+    private void ResetSearchOptions()
+    {
+        SelectedSearchTargetOption = SearchTargetOptions[0];
+        SearchMode = QueryMode.Unified;
+        MatchCase = false;
+        IncludeSubfolders = true;
+        EnableDocumentExtraction = true;
+        EnableImageOcr = false;
+        UseIndex = false;
+    }
+
+    [RelayCommand]
+    private void HideResultFilters() => IsResultFiltersVisible = false;
+
+    [RelayCommand]
+    private void HideResultSortAndGroup() => IsResultSortAndGroupVisible = false;
 
     [RelayCommand]
     private void RemoveQueryChip(QueryChipViewModel? chip)
@@ -1110,6 +1279,9 @@ public sealed partial class SearchViewModel : ObservableObject, IDisposable
                 case ResultGroupMode.ModifiedDate:
                     FilesView.GroupDescriptions.Add(new PropertyGroupDescription(nameof(FileResultViewModel.ModifiedDateGroup)));
                     break;
+                case ResultGroupMode.Source:
+                    FilesView.GroupDescriptions.Add(new PropertyGroupDescription(nameof(FileResultViewModel.SourceGroup)));
+                    break;
             }
 
             switch (SelectedSortOption?.Value ?? ResultSortMode.Relevance)
@@ -1125,6 +1297,14 @@ public sealed partial class SearchViewModel : ObservableObject, IDisposable
                 case ResultSortMode.HitCount:
                     FilesView.SortDescriptions.Add(new SortDescription(nameof(FileResultViewModel.HitCount), ListSortDirection.Descending));
                     FilesView.SortDescriptions.Add(new SortDescription(nameof(FileResultViewModel.SearchRank), ListSortDirection.Ascending));
+                    break;
+                case ResultSortMode.Size:
+                    FilesView.SortDescriptions.Add(new SortDescription(nameof(FileResultViewModel.SizeBytes), ListSortDirection.Descending));
+                    FilesView.SortDescriptions.Add(new SortDescription(nameof(FileResultViewModel.SearchRank), ListSortDirection.Ascending));
+                    break;
+                case ResultSortMode.FileType:
+                    FilesView.SortDescriptions.Add(new SortDescription(nameof(FileResultViewModel.FileTypeGroup), ListSortDirection.Ascending));
+                    FilesView.SortDescriptions.Add(new SortDescription(nameof(FileResultViewModel.FileName), ListSortDirection.Ascending));
                     break;
                 default:
                     FilesView.SortDescriptions.Add(new SortDescription(nameof(FileResultViewModel.BestScore), ListSortDirection.Descending));
@@ -1233,6 +1413,7 @@ public sealed partial class SearchViewModel : ObservableObject, IDisposable
         finally
         {
             _isRebuildingFacetOptions = false;
+            RefreshFilteredFolderFacetOptions();
             NotifyActiveResultFacetChipsChanged();
         }
     }
@@ -1269,6 +1450,17 @@ public sealed partial class SearchViewModel : ObservableObject, IDisposable
     {
         OnPropertyChanged(nameof(ActiveResultFacetChips));
         OnPropertyChanged(nameof(HasActiveResultFacets));
+        OnPropertyChanged(nameof(ActiveResultFacetCount));
+        OnPropertyChanged(nameof(HasFileTypeFacetSelection));
+        OnPropertyChanged(nameof(HasFolderFacetSelection));
+        OnPropertyChanged(nameof(HasModifiedFacetSelection));
+        OnPropertyChanged(nameof(HasSourceFacetSelection));
+        OnPropertyChanged(nameof(HasSizeFacetSelection));
+        OnPropertyChanged(nameof(FileTypeFacetButtonText));
+        OnPropertyChanged(nameof(FolderFacetButtonText));
+        OnPropertyChanged(nameof(ModifiedFacetButtonText));
+        OnPropertyChanged(nameof(SourceFacetButtonText));
+        OnPropertyChanged(nameof(SizeFacetButtonText));
     }
 
     private static IEnumerable<ResultFacetOption> BuildFacetOptions(
@@ -1921,11 +2113,17 @@ public sealed partial class SearchViewModel : ObservableObject, IDisposable
     partial void OnFileNamePatternChanged(string value)
     {
         OnPropertyChanged(nameof(FilePatternSummary));
+        OnPropertyChanged(nameof(NameFilterButtonText));
+        OnPropertyChanged(nameof(HasNameFilterSelection));
         _history.UpdateActiveScope(value);
     }
 
-    partial void OnExcludeFileNamePatternChanged(string value) =>
+    partial void OnExcludeFileNamePatternChanged(string value)
+    {
         OnPropertyChanged(nameof(ExcludePatternSummary));
+        OnPropertyChanged(nameof(NameFilterButtonText));
+        OnPropertyChanged(nameof(HasNameFilterSelection));
+    }
 
     partial void OnIncludeSubfoldersChanged(bool value) =>
         OnPropertyChanged(nameof(SubfoldersSummary));

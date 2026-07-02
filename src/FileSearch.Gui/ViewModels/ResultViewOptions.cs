@@ -9,6 +9,8 @@ public enum ResultSortMode
     Recency,
     Filename,
     HitCount,
+    Size,
+    FileType,
 }
 
 public enum ResultGroupMode
@@ -17,6 +19,7 @@ public enum ResultGroupMode
     Folder,
     FileType,
     ModifiedDate,
+    Source,
 }
 
 public enum SearchResultExportFormat

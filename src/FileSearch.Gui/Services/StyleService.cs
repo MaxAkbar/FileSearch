@@ -9,6 +9,7 @@ public sealed class StyleService : IStyleService
 {
     private static readonly Uri s_compactStyle = new("Styles/Compact.xaml", UriKind.Relative);
     private static readonly Uri s_velaStyle = new("Styles/Vela.xaml", UriKind.Relative);
+    private static readonly Uri s_velaLightStyle = new("Styles/VelaLight.xaml", UriKind.Relative);
 
     private readonly ISettingsService _settingsService;
     private ResourceDictionary? _activeStyleOverlay;
@@ -20,31 +21,33 @@ public sealed class StyleService : IStyleService
 
     public AppStyle CurrentStyle { get; private set; } = AppStyle.Comfortable;
 
-    public bool RequiresDarkApplicationTheme => CurrentStyle == AppStyle.Vela;
+    // Vela owns a dark and a light token set; only the dark one needs the
+    // dark ModernWpf base underneath it.
+    public bool RequiresDarkApplicationTheme => CurrentStyle == AppStyle.Vela && !PrefersLightPalette;
 
-    public event EventHandler? EffectiveApplicationThemeChanged;
+    public bool PrefersLightPalette { get; set; }
+
+    public event EventHandler? OverlayChanged;
 
     public void SetStyle(AppStyle style)
     {
         if (!Enum.IsDefined(style))
             style = AppStyle.Comfortable;
 
-        var previouslyRequiredDarkBase = RequiresDarkApplicationTheme;
         CurrentStyle = style;
         SetOverlay(ResolveOverlay(style));
 
         _settingsService.Update(settings => settings.Style = style);
 
-        if (previouslyRequiredDarkBase != RequiresDarkApplicationTheme)
-            EffectiveApplicationThemeChanged?.Invoke(this, EventArgs.Empty);
+        OverlayChanged?.Invoke(this, EventArgs.Empty);
     }
 
     public void RefreshOverlay() => SetOverlay(ResolveOverlay(CurrentStyle));
 
-    private static Uri? ResolveOverlay(AppStyle style) => style switch
+    private Uri? ResolveOverlay(AppStyle style) => style switch
     {
         AppStyle.Compact => s_compactStyle,
-        AppStyle.Vela => s_velaStyle,
+        AppStyle.Vela => PrefersLightPalette ? s_velaLightStyle : s_velaStyle,
         _ => null,
     };
 

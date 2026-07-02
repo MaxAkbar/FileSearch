@@ -1,8 +1,10 @@
 <ResourceDictionary xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
                     xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+                    xmlns:ui="http://schemas.modernwpf.com/2019"
                     xmlns:sys="clr-namespace:System;assembly=mscorlib">
 
     <!-- Compact density overlay. Colors still come from the active theme. -->
+    <sys:Double x:Key="{x:Static ui:TitleBar.HeightKey}">36</sys:Double>
     <Thickness x:Key="AppDensity.TitleBarPadding">10,4</Thickness>
     <sys:Double x:Key="AppDensity.TitleBarMinHeight">36</sys:Double>
     <Thickness x:Key="AppDensity.TitleMenuItemPadding">12,3</Thickness>
@@ -63,9 +65,11 @@
     <Thickness x:Key="AppDensity.FieldLabelMargin">0,0,0,2</Thickness>
     <Thickness x:Key="AppDensity.HintLabelMargin">0,2,0,0</Thickness>
     <Thickness x:Key="AppDensity.ResultsListPadding">0,1,3,6</Thickness>
+    <Thickness x:Key="AppDensity.SearchResultsListPadding">0,1,3,6</Thickness>
     <Thickness x:Key="AppDensity.ResultsSurfaceMargin">0,8,0,0</Thickness>
     <Thickness x:Key="AppDensity.ResultFacetsPanelMargin">0,6,0,0</Thickness>
     <Thickness x:Key="AppDensity.ResultCardMargin">0,0,0,6</Thickness>
+    <Thickness x:Key="AppDensity.SearchResultCardMargin">0,0,22,6</Thickness>
     <CornerRadius x:Key="AppDensity.ResultCardCornerRadius">8</CornerRadius>
     <sys:Double x:Key="AppDensity.TypeBadgeSize">26</sys:Double>
     <CornerRadius x:Key="AppDensity.TypeBadgeCornerRadius">7</CornerRadius>

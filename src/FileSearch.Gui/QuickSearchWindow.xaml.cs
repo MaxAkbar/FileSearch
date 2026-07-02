@@ -109,6 +109,12 @@ public partial class QuickSearchWindow : Window
             return;
         }
 
+        // The list's own scrollbars tunnel through this handler too; starting
+        // an OLE drag would steal the mouse capture from the thumb and freeze
+        // it mid-drag.
+        if (IsWithinScrollBar(e.OriginalSource))
+            return;
+
         var current = e.GetPosition(ResultsList);
         if (Math.Abs(current.X - _dragStartPoint.X) < SystemParameters.MinimumHorizontalDragDistance &&
             Math.Abs(current.Y - _dragStartPoint.Y) < SystemParameters.MinimumVerticalDragDistance)
@@ -122,6 +128,22 @@ public partial class QuickSearchWindow : Window
         var data = new DataObject(System.Windows.DataFormats.FileDrop, new[] { file.FullPath });
         DragDrop.DoDragDrop(ResultsList, data, DragDropEffects.Copy);
         DismissAndHide();
+    }
+
+    private static bool IsWithinScrollBar(object? source)
+    {
+        var current = source as DependencyObject;
+        while (current is not null)
+        {
+            if (current is System.Windows.Controls.Primitives.ScrollBar)
+                return true;
+
+            current = current is FrameworkContentElement contentElement
+                ? contentElement.Parent
+                : System.Windows.Media.VisualTreeHelper.GetParent(current);
+        }
+
+        return false;
     }
 
     private void OnDeactivated(object sender, EventArgs e)

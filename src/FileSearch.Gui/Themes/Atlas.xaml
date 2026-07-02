@@ -6,9 +6,14 @@
 
         This overlay maps the Atlas palette onto ModernWpf's SystemControl*
         brush keys so the built-in controls (ComboBox, DatePicker, CheckBox,
-        ScrollBar, menus, flyouts) pick up the warm look. Our own surfaces are
-        driven by the Atlas.* keys, whose Light defaults live in AppStyles.xaml,
-        so this overlay does not need to redefine them.
+        ScrollBar, menus, flyouts) pick up the warm look.
+
+        It also defines the full Atlas.* color token set (matching the
+        AppStyles.xaml light defaults) so the three built-in themes stay
+        structurally symmetric: anything realized while this theme is active —
+        gradient stops, freshly parsed style overlays, late-realized deferred
+        resources, custom-theme companion lookups — resolves this theme's
+        values instead of whichever theme happened to define the token last.
     -->
 
     <!-- Window / page background -->
@@ -26,9 +31,30 @@
     <SolidColorBrush x:Key="SystemControlBackgroundListLowBrush"    Color="#FAF7F0"/>
     <SolidColorBrush x:Key="SystemControlBackgroundListMediumBrush" Color="#11000000"/>
 
-    <!-- Accent (green) -->
+    <!-- ===== Our surfaces (Atlas.*) — light token set, mirrors AppStyles.xaml ===== -->
     <Color x:Key="Atlas.AccentColor">#2F7D57</Color>
     <Color x:Key="Atlas.Accent2Color">#37926A</Color>
+    <Color x:Key="Atlas.PaperColor">#F4F1EA</Color>
+    <Color x:Key="Atlas.SurfaceColor">#FFFDF8</Color>
+    <Color x:Key="Atlas.Surface2Color">#FAF7F0</Color>
+    <Color x:Key="Atlas.SidebarColor">#EDE8DF</Color>
+    <Color x:Key="Atlas.InkColor">#23261F</Color>
+    <Color x:Key="Atlas.Ink2Color">#5B5F54</Color>
+    <Color x:Key="Atlas.Ink3Color">#8E9286</Color>
+    <Color x:Key="Atlas.LineColor">#17000000</Color>
+    <Color x:Key="Atlas.Line2Color">#29000000</Color>
+    <Color x:Key="Atlas.HoverColor">#0A23261F</Color>
+    <Color x:Key="Atlas.SelColor">#1F2F7D57</Color>
+    <Color x:Key="Atlas.AccentTintColor">#1A2F7D57</Color>
+    <Color x:Key="Atlas.AccentSoftColor">#0F2F7D57</Color>
+    <Color x:Key="Atlas.OnAccentColor">#FFFFFF</Color>
+    <Color x:Key="Atlas.WarmColor">#C4722E</Color>
+    <Color x:Key="Atlas.WarmTintColor">#1FC4722E</Color>
+    <Color x:Key="Atlas.HitColor">#8CFFCE54</Color>
+    <Color x:Key="Atlas.HitInkColor">#23261F</Color>
+    <Color x:Key="Atlas.Surface3Color">#F1EDE4</Color>
+    <Color x:Key="Atlas.OkColor">#2E9E6B</Color>
+    <Color x:Key="Atlas.AccentBorderColor">#6B2F7D57</Color>
     <SolidColorBrush x:Key="AppStyle.OmniBarBackground" Color="#FFFDF8"/>
     <SolidColorBrush x:Key="AppStyle.FilterChipBackground" Color="#FFFDF8"/>
     <SolidColorBrush x:Key="AppStyle.ThemeMiniButtonSelectedBackground" Color="#1A2F7D57"/>
