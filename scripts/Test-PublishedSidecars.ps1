@@ -201,6 +201,114 @@ function Invoke-CliSmoke([string]$CliExe, [string]$PublishPath) {
     Write-SmokeLog "Published CLI smoke test passed."
 }
 
+function Read-McpResponse(
+    [System.IO.StreamReader]$Reader,
+    [int]$ExpectedId,
+    [int]$TimeoutMilliseconds,
+    [string]$Context
+) {
+    # Responses arrive one JSON object per line; skip unrelated
+    # notifications until the reply with the expected id shows up.
+    for ($lineIndex = 0; $lineIndex -lt 10; $lineIndex++) {
+        $readTask = $Reader.ReadLineAsync()
+        if (-not $readTask.Wait($TimeoutMilliseconds)) {
+            throw "Timed out waiting for $Context."
+        }
+
+        $line = $readTask.GetAwaiter().GetResult()
+        if ($null -eq $line) {
+            throw "MCP server closed stdout while waiting for $Context."
+        }
+
+        if ([string]::IsNullOrWhiteSpace($line)) {
+            continue
+        }
+
+        $message = $line | ConvertFrom-Json
+        if ($message.PSObject.Properties.Match("id").Count -gt 0 -and $message.id -eq $ExpectedId) {
+            if ($message.PSObject.Properties.Match("error").Count -gt 0 -and $null -ne $message.error) {
+                throw "$Context failed: $($message.error.message)"
+            }
+
+            return $message
+        }
+    }
+
+    throw "Did not receive $Context within 10 stdout lines."
+}
+
+function Invoke-McpServerSmoke([string]$McpExe, [int]$StartupTimeoutMilliseconds, [int]$ShutdownTimeoutMilliseconds) {
+    Write-SmokeLog "Running published MCP server smoke test..."
+    $scratch = Join-Path ([System.IO.Path]::GetTempPath()) ("filesearch-mcp-smoke-" + [guid]::NewGuid().ToString("N"))
+    $process = $null
+    try {
+        New-Item -ItemType Directory -Force -Path $scratch | Out-Null
+
+        $startInfo = [System.Diagnostics.ProcessStartInfo]::new($McpExe)
+        $startInfo.WorkingDirectory = Split-Path -Parent $McpExe
+        $startInfo.UseShellExecute = $false
+        $startInfo.CreateNoWindow = $true
+        $startInfo.RedirectStandardInput = $true
+        $startInfo.RedirectStandardOutput = $true
+        $startInfo.RedirectStandardError = $true
+        $startInfo.StandardOutputEncoding = [System.Text.UTF8Encoding]::new($false)
+        $startInfo.ArgumentList.Add("--root")
+        $startInfo.ArgumentList.Add($scratch)
+        $startInfo.EnvironmentVariables["APPDATA"] = Join-Path $scratch "Roaming"
+        $startInfo.EnvironmentVariables["LOCALAPPDATA"] = Join-Path $scratch "Local"
+        $startInfo.EnvironmentVariables["FILESEARCH_INDEX_DATABASE_PATH"] = Join-Path $scratch "index\filesearch.db"
+
+        $process = [System.Diagnostics.Process]::Start($startInfo)
+        if ($null -eq $process) {
+            throw "Failed to start $McpExe."
+        }
+
+        $stdErrTask = $process.StandardError.ReadToEndAsync()
+
+        $process.StandardInput.WriteLine('{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-06-18","capabilities":{},"clientInfo":{"name":"release-smoke","version":"1.0"}}}')
+        $process.StandardInput.Flush()
+        $initialize = Read-McpResponse $process.StandardOutput 1 $StartupTimeoutMilliseconds "MCP initialize response"
+        if ($initialize.result.serverInfo.name -ne "filesearch") {
+            throw "MCP initialize returned unexpected server name: $($initialize.result.serverInfo.name)"
+        }
+
+        $process.StandardInput.WriteLine('{"jsonrpc":"2.0","method":"notifications/initialized"}')
+        $process.StandardInput.WriteLine('{"jsonrpc":"2.0","id":2,"method":"tools/list"}')
+        $process.StandardInput.Flush()
+        $toolsResponse = Read-McpResponse $process.StandardOutput 2 $StartupTimeoutMilliseconds "MCP tools/list response"
+        $toolNames = @($toolsResponse.result.tools | ForEach-Object { $_.name })
+        foreach ($expectedTool in @("search_content", "search_index", "extract_text", "index_status", "index_failures")) {
+            if ($toolNames -notcontains $expectedTool) {
+                throw "MCP tools/list is missing '$expectedTool'. Found: $($toolNames -join ', ')"
+            }
+        }
+
+        $process.StandardInput.Close()
+        if (-not $process.WaitForExit($ShutdownTimeoutMilliseconds)) {
+            throw "FileSearch.Mcp.exe did not exit within $ShutdownTimeoutMilliseconds ms after stdin closed."
+        }
+
+        if ($process.ExitCode -ne 0) {
+            $stdErr = ""
+            try { $stdErr = $stdErrTask.GetAwaiter().GetResult() } catch {}
+            throw "FileSearch.Mcp.exe exited with code $($process.ExitCode). stderr: $stdErr"
+        }
+
+        Write-SmokeLog "Published MCP server smoke test passed ($($toolNames.Count) tools)."
+    }
+    finally {
+        if ($null -ne $process) {
+            if (-not $process.HasExited) {
+                try { $process.Kill($true) } catch {}
+            }
+
+            $process.Dispose()
+        }
+
+        Remove-Item -LiteralPath $scratch -Recurse -Force -ErrorAction SilentlyContinue
+    }
+}
+
 $publishPath = [System.IO.Path]::GetFullPath($PublishDirectory)
 if (-not (Test-Path -LiteralPath $publishPath -PathType Container)) {
     throw "Publish directory does not exist: $publishPath"
@@ -218,6 +326,18 @@ Assert-FileExists $extractorHostExe "Published extractor host executable"
 Assert-FileExists $cliExe "Published CLI executable"
 Assert-FileExists $helpIndex "Published help bundle"
 Invoke-CliSmoke $cliExe $publishPath
+
+# The MCP server ships in the portable ZIP and MSI but not the Store MSIX
+# (WindowsApps paths are ACL-restricted and change per version, so MCP
+# client configs cannot point at them). Presence is asserted by the
+# packaging scripts; here we smoke whatever this publish set contains.
+$mcpExe = Join-Path $publishPath "FileSearch.Mcp.exe"
+if (Test-Path -LiteralPath $mcpExe -PathType Leaf) {
+    Invoke-McpServerSmoke $mcpExe ($StartupTimeoutSeconds * 1000) ($ShutdownTimeoutSeconds * 1000)
+}
+else {
+    Write-SmokeLog "FileSearch.Mcp.exe is not part of this publish set; skipping MCP smoke test."
+}
 
 $pipeName = Get-BackgroundIndexerPipeName
 $existing = Invoke-IndexerCommand $pipeName "Ping" 500 -AllowUnavailable

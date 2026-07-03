@@ -1,0 +1,9 @@
+{
+  "mcpServers": {
+    "filesearch": {
+      "type": "stdio",
+      "command": "dotnet",
+      "args": ["run", "--project", "src/FileSearch.Mcp", "--no-build", "--", "--root", "."]
+    }
+  }
+}

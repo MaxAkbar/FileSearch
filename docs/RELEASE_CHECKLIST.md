@@ -12,6 +12,7 @@ Use this checklist before creating a public FileSearch release or Microsoft Stor
 - Smoke test the WPF app.
 - Smoke test the CLI with `help`, `options`, `search`, and `index locations`.
 - Review `README.md`, `README.Indexing.md`, and `README.Roadmap.md` for stale release notes.
+- Review `README.Mcp.md` and `README.McpIntegration.md` when the MCP server's tools, parameters, or response fields changed; the integration reference documents the wire contract integrators depend on.
 
 ## GitHub Actions
 
@@ -28,7 +29,7 @@ Use this checklist before creating a public FileSearch release or Microsoft Stor
   - `WINDOWS_SIGNING_PFX_PASSWORD`
 - Protect the `release-signing` environment with required reviewers before allowing public releases.
 - Create release tags as `v<major>.<minor>.<patch>`, for example `v1.2.3`. The release workflow converts that to MSIX version `1.2.3.0`. Tags may also use four parts, such as `v1.2.3.4`.
-- The **Release** workflow runs Release build/test gates, creates a portable ZIP and MSI, verifies published executables and sidecars, writes `SHA256SUMS-<runtime>.txt`, uploads artifacts, and creates a draft GitHub Release for tag pushes.
+- The **Release** workflow runs Release build/test gates, creates a portable ZIP and MSI, verifies published executables and sidecars (including an MCP server initialize/tools-list handshake against the published `FileSearch.Mcp.exe`), writes `SHA256SUMS-<runtime>.txt`, uploads artifacts, and creates a draft GitHub Release for tag pushes.
 - When signing secrets are configured, the **Release** workflow signs and timestamps the MSI. When they are missing, it still creates an unsigned MSI for validation.
 - When all Store variables and signing secrets are configured, the **Release** workflow also creates and verifies a signed MSIX Store package. When they are missing, it logs a warning and skips only the MSIX artifacts.
 - For Store packages, run the **Store package** workflow manually with the intended version, runtime, package identity, publisher, and publisher display name. The default publisher display name is `Max Akbar`, but confirm it against Partner Center before submitting.
@@ -62,6 +63,7 @@ The Release workflow creates portable ZIP and MSI artifacts without signing secr
 - Confirm the packaged app includes `FileSearch.Cli.exe`.
 - Confirm the packaged app includes `FileSearch.Indexer.exe`.
 - Confirm the packaged app includes `FileSearch.ExtractorHost.exe`.
+- Confirm the portable ZIP and MSI include `FileSearch.Mcp.exe` (the read-only MCP server documented in `README.Mcp.md`). The MSIX Store package intentionally omits it: MCP client configs must point at a stable executable path, and `WindowsApps` package paths are ACL-restricted and change with every version. Store users who want the MCP server should use the portable ZIP or MSI.
 - Confirm the package identity and publisher match the Partner Center reservation for MSIX artifacts.
 - Confirm the MSIX display name exactly matches a reserved app name in Partner Center.
 - Confirm the MSIX publisher display name exactly matches the Partner Center publisher display name.

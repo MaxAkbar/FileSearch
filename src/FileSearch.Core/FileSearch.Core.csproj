@@ -9,6 +9,8 @@
   <ItemGroup>
     <InternalsVisibleTo Include="FileSearch.Benchmarks" />
     <InternalsVisibleTo Include="FileSearch.Core.Tests" />
+    <InternalsVisibleTo Include="FileSearch.Mcp" />
+    <InternalsVisibleTo Include="FileSearch.Mcp.Tests" />
   </ItemGroup>
 
   <ItemGroup>

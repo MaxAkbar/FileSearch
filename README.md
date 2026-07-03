@@ -533,6 +533,7 @@ For sideload testing, pass `-CertificateThumbprint` with a certificate trusted o
 - The core search pipeline is designed around dependency injection so extractors and options can be swapped or extended.
 - Indexed search, tray-indexer lifecycle, USN catch-up, snapshot fallback, and index health behavior are documented in [README.Indexing.md](README.Indexing.md).
 - Workflow search and the workflow JSON file format are documented in [README.Workflows.md](README.Workflows.md).
+- The read-only MCP server for AI assistants (Claude Code, Claude Desktop, LM Studio), its tool surface, and client configuration are documented in [README.Mcp.md](README.Mcp.md). The wire-level reference for integrating it into AI apps and tools — tool schemas, error catalog, OpenAI Codex/VS Code/Cursor setup, and C#/Python client code including the OpenAI Agents SDK — is [README.McpIntegration.md](README.McpIntegration.md).
 - The competitive roadmap refresh is documented in [README.Roadmap.md](README.Roadmap.md).
 - Security and privacy posture are documented in [SECURITY.md](SECURITY.md) and [PRIVACY.md](PRIVACY.md).
 

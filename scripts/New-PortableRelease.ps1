@@ -87,11 +87,13 @@ Publish-Project (Resolve-RepoPath "src\FileSearch.Gui\FileSearch.Gui.csproj") "F
 Publish-Project (Resolve-RepoPath "src\FileSearch.Indexer\FileSearch.Indexer.csproj") "FileSearch.Indexer" $publishDirectory
 Publish-Project (Resolve-RepoPath "src\FileSearch.ExtractorHost\FileSearch.ExtractorHost.csproj") "FileSearch.ExtractorHost" $publishDirectory
 Publish-Project (Resolve-RepoPath "src\FileSearch.Cli\FileSearch.Cli.csproj") "FileSearch.Cli" $publishDirectory
+Publish-Project (Resolve-RepoPath "src\FileSearch.Mcp\FileSearch.Mcp.csproj") "FileSearch.Mcp" $publishDirectory
 
 Assert-FileExists (Join-Path $publishDirectory "FileSearch.Gui.exe") "Published GUI executable"
 Assert-FileExists (Join-Path $publishDirectory "FileSearch.Indexer.exe") "Published background indexer executable"
 Assert-FileExists (Join-Path $publishDirectory "FileSearch.ExtractorHost.exe") "Published extractor host executable"
 Assert-FileExists (Join-Path $publishDirectory "FileSearch.Cli.exe") "Published CLI executable"
+Assert-FileExists (Join-Path $publishDirectory "FileSearch.Mcp.exe") "Published MCP server executable"
 Assert-FileExists (Join-Path $publishDirectory "Help\index.html") "Published help bundle"
 
 $tempArchive = [System.IO.Path]::ChangeExtension($archivePath, ".tmp.zip")
