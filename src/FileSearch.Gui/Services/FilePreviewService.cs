@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Globalization;
+using System.IO;
 using System.Linq;
 using System.Text;
 using System.Threading;
@@ -11,7 +12,12 @@ namespace FileSearch.Gui.Services;
 
 public sealed class FilePreviewService : IFilePreviewService
 {
+    private const int MaxPreviewCacheEntries = 64;
+
     private readonly IExtractorRegistry _extractorRegistry;
+    private readonly object _cacheGate = new();
+    private readonly Dictionary<PreviewCacheKey, LinkedListNode<PreviewCacheEntry>> _previewCache = new();
+    private readonly LinkedList<PreviewCacheEntry> _previewLru = new();
 
     public FilePreviewService(IExtractorRegistry extractorRegistry)
     {
@@ -31,13 +37,22 @@ public sealed class FilePreviewService : IFilePreviewService
         if (extractor is null)
             return Task.FromResult(string.Empty);
 
+        var cacheKey = CreatePreviewCacheKey(path, hitLineNumbers, contextLines);
+        if (cacheKey is not null && TryGetPreview(cacheKey.Value, out var cached))
+            return Task.FromResult(cached);
+
         // Async iterators execute between yields on whichever thread consumes
         // them, so run the whole extraction loop on the thread pool — this
         // service is called from the UI thread, and document parsers
         // (PDF/Excel/Word) do heavy synchronous work per line batch.
-        return Task.Run(
-            () => BuildHitsPreviewAsync(extractor, path, hitLineNumbers, contextLines, cancellationToken),
-            cancellationToken);
+        return Task.Run(async () =>
+        {
+            var preview = await BuildHitsPreviewAsync(extractor, path, hitLineNumbers, contextLines, cancellationToken)
+                .ConfigureAwait(false);
+            if (cacheKey is not null)
+                AddPreview(cacheKey.Value, preview);
+            return preview;
+        }, cancellationToken);
     }
 
     private static async Task<string> BuildHitsPreviewAsync(
@@ -127,4 +142,84 @@ public sealed class FilePreviewService : IFilePreviewService
         }
         return windows;
     }
+
+    private static PreviewCacheKey? CreatePreviewCacheKey(
+        string path,
+        IReadOnlyList<int> hitLineNumbers,
+        int contextLines)
+    {
+        try
+        {
+            var info = new FileInfo(path);
+            if (!info.Exists)
+                return null;
+
+            var linesKey = string.Join(
+                ",",
+                hitLineNumbers
+                    .Where(static line => line > 0)
+                    .Distinct()
+                    .OrderBy(static line => line));
+            return new PreviewCacheKey(
+                Path.GetFullPath(path),
+                info.Length,
+                info.LastWriteTimeUtc.Ticks,
+                linesKey,
+                contextLines);
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or ArgumentException or PathTooLongException or NotSupportedException)
+        {
+            return null;
+        }
+    }
+
+    private bool TryGetPreview(PreviewCacheKey key, out string preview)
+    {
+        lock (_cacheGate)
+        {
+            if (_previewCache.TryGetValue(key, out var node))
+            {
+                _previewLru.Remove(node);
+                _previewLru.AddFirst(node);
+                preview = node.Value.Preview;
+                return true;
+            }
+        }
+
+        preview = string.Empty;
+        return false;
+    }
+
+    private void AddPreview(PreviewCacheKey key, string preview)
+    {
+        lock (_cacheGate)
+        {
+            if (_previewCache.TryGetValue(key, out var existing))
+            {
+                existing.Value = existing.Value with { Preview = preview };
+                _previewLru.Remove(existing);
+                _previewLru.AddFirst(existing);
+                return;
+            }
+
+            var node = new LinkedListNode<PreviewCacheEntry>(new PreviewCacheEntry(key, preview));
+            _previewLru.AddFirst(node);
+            _previewCache[key] = node;
+
+            while (_previewCache.Count > MaxPreviewCacheEntries && _previewLru.Last is { } last)
+            {
+                _previewLru.RemoveLast();
+                _previewCache.Remove(last.Value.Key);
+            }
+        }
+    }
+
+    private readonly record struct PreviewCacheKey(
+        string Path,
+        long SizeBytes,
+        long ModifiedUtcTicks,
+        string LinesKey,
+        int ContextLines);
+
+    private sealed record PreviewCacheEntry(PreviewCacheKey Key, string Preview);
 }

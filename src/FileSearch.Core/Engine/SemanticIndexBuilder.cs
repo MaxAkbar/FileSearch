@@ -1,5 +1,6 @@
 using System.Security.Cryptography;
 using System.Text;
+using System.Numerics.Tensors;
 using FileSearch.Core.Indexing;
 
 namespace FileSearch.Core.Engine;
@@ -182,10 +183,7 @@ public sealed class SemanticIndexBuilder : ISemanticIndexBuilder
 
     private static void Normalize(float[] vector)
     {
-        double sum = 0;
-        foreach (var value in vector)
-            sum += value * value;
-
+        var sum = TensorPrimitives.Dot(vector, vector);
         var norm = Math.Sqrt(sum);
         if (norm <= 0)
             return;

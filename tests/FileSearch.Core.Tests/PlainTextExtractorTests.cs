@@ -89,6 +89,20 @@ public sealed class PlainTextExtractorTests : IDisposable
         Assert.Equal("needle", lines[1].Content);
     }
 
+    [Fact]
+    public async Task ReadsCrLfSplitAcrossBlockBoundary()
+    {
+        var path = Path.Combine(_dir, "split-crlf.txt");
+        var firstLine = new string('x', (64 * 1024) - 1);
+        await File.WriteAllTextAsync(path, firstLine + "\r\nneedle", TestContext.Current.CancellationToken);
+
+        var lines = await ExtractAsync(path);
+
+        Assert.Equal(2, lines.Count);
+        Assert.Equal(firstLine, lines[0].Content);
+        Assert.Equal("needle", lines[1].Content);
+    }
+
     private static async Task<List<TextLine>> ExtractAsync(string path)
     {
         var extractor = new PlainTextExtractor();

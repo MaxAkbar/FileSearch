@@ -24,15 +24,27 @@ public sealed class TermQuery : Query
     public override bool IsMatch(string line) =>
         line.Contains(_term, _comparison);
 
+    public override bool TryCollectHighlights(string line, List<MatchSpan> sink) =>
+        CollectHighlightsCore(line, sink);
+
     public override void CollectHighlights(string line, List<MatchSpan> sink)
     {
+        CollectHighlightsCore(line, sink);
+    }
+
+    private bool CollectHighlightsCore(string line, List<MatchSpan> sink)
+    {
+        var matched = false;
         int index = 0;
         while (index <= line.Length - _term.Length)
         {
             int found = line.IndexOf(_term, index, _comparison);
             if (found < 0) break;
             sink.Add(new MatchSpan(found, _term.Length));
+            matched = true;
             index = found + _term.Length;
         }
+
+        return matched;
     }
 }

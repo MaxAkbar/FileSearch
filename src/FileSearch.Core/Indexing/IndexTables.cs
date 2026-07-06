@@ -102,8 +102,6 @@ internal sealed record IndexedFileMetadata(
     string Status,
     string ExtractorId);
 
-internal sealed record LineTrigramSource(long Id, string Content);
-
 internal sealed record CachedIndexedLine(long Id, long FileId, IndexedLine Line);
 
 internal sealed record FileChangeRow(long Id, string Path, string Status);
@@ -573,10 +571,12 @@ internal static partial class IndexTables
         string extractorVersion,
         long extractionAttemptCount,
         long lastExtractionAttemptUtcTicks,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        bool tombstoneReplacedIdentities = true,
+        long? preallocatedId = null)
     {
         List<string> replacedPaths = [];
-        if (identity is not null)
+        if (tombstoneReplacedIdentities && identity is not null)
         {
             replacedPaths = await InsertIdentityTombstonesAsync(
                     db,
@@ -602,7 +602,8 @@ internal static partial class IndexTables
             extractorVersion,
             extractionAttemptCount,
             lastExtractionAttemptUtcTicks);
-        var id = await InsertFileRowValuesAsync(db, values, cancellationToken).ConfigureAwait(false);
+        var id = preallocatedId ?? await GetNextIdAsync(db, "files", cancellationToken).ConfigureAwait(false);
+        await InsertFileRowValuesAsync(db, id, values, cancellationToken).ConfigureAwait(false);
         if (!IsStaleStatus(status) && !string.Equals(status, FileStatus.Indexing, StringComparison.OrdinalIgnoreCase))
         {
             await InsertMetadataTokensAsync(
@@ -689,13 +690,22 @@ internal static partial class IndexTables
         CancellationToken cancellationToken)
     {
         var id = await GetNextIdAsync(db, "files", cancellationToken).ConfigureAwait(false);
+        await InsertFileRowValuesAsync(db, id, values, cancellationToken).ConfigureAwait(false);
+        return id;
+    }
+
+    private static async Task InsertFileRowValuesAsync(
+        DbExec db,
+        long id,
+        FileRowValues values,
+        CancellationToken cancellationToken)
+    {
         await db.ExecuteAsync(
             Sql.Format(
                 $"INSERT INTO files (id, root_id, path, path_lower, directory_path, directory_path_lower, file_name, file_name_lower, extension, size_bytes, created_utc_ticks, modified_utc_ticks, attributes, file_type_category, indexed_utc_ticks, status, error, volume_id, file_reference_number, parent_file_reference_number, last_observed_usn, content_version, open_count, last_opened_utc_ticks, extractor_id, extractor_version, extraction_attempt_count, last_extraction_attempt_utc_ticks) " +
                 $"VALUES ({id}, {values.RootId}, {values.Path}, {values.PathLower}, {values.DirectoryPath}, {values.DirectoryPathLower}, {values.FileName}, {values.FileNameLower}, {values.Extension}, {values.SizeBytes}, {values.CreatedUtcTicks}, {values.ModifiedUtcTicks}, {values.Attributes}, {values.FileTypeCategory}, {DateTime.UtcNow.Ticks}, {values.Status}, {values.Error}, {values.Identity?.VolumeId}, {values.Identity?.FileReferenceNumber}, " +
                 $"{values.Identity?.ParentFileReferenceNumber}, {values.Identity?.LastObservedUsn}, {IndexContentVersion.Current}, 0, 0, {values.ExtractorId}, {values.ExtractorVersion}, {values.ExtractionAttemptCount}, {values.LastExtractionAttemptUtcTicks})"),
             cancellationToken).ConfigureAwait(false);
-        return id;
     }
 
     private static FileRowValues CreateFileRowValues(
@@ -778,57 +788,6 @@ internal static partial class IndexTables
                 $"file_name = {fileName}, file_name_lower = {fileName.ToLowerInvariant()}, " +
                 $"status = {FileStatus.Stale}, indexed_utc_ticks = {DateTime.UtcNow.Ticks} WHERE id = {fileId}"),
             cancellationToken);
-    }
-
-    public static async Task<List<long>> ReadMetadataCandidateFileIdsAsync(
-        DbExec db,
-        long rootId,
-        IReadOnlyList<string> tokens,
-        bool requireAllTokens,
-        CancellationToken cancellationToken)
-    {
-        if (tokens.Count == 0)
-            return new List<long>();
-
-        HashSet<long>? candidates = null;
-        foreach (var token in tokens)
-        {
-            List<long> matches;
-            try
-            {
-                matches = await ReadIdsAsync(
-                        db,
-                        Sql.Format(
-                            $"SELECT file_id FROM file_metadata_tokens WHERE token = {token} AND root_id = {rootId}"),
-                        cancellationToken)
-                    .ConfigureAwait(false);
-            }
-            catch (CSharpDbException)
-            {
-                // The token table is an accelerator; callers can scan files.
-                return new List<long>();
-            }
-
-            var set = matches.ToHashSet();
-
-            if (candidates is null)
-            {
-                candidates = set;
-            }
-            else if (requireAllTokens)
-            {
-                candidates.IntersectWith(set);
-            }
-            else
-            {
-                candidates.UnionWith(set);
-            }
-
-            if (requireAllTokens && candidates.Count == 0)
-                return new List<long>();
-        }
-
-        return candidates?.ToList() ?? new List<long>();
     }
 
     public static async IAsyncEnumerable<IndexedFileMetadata> ReadFileMetadataAsync(
@@ -1205,7 +1164,7 @@ internal static partial class IndexTables
 
     public static async Task DeleteFilesForRootAsync(DbExec db, long rootId, CancellationToken cancellationToken)
     {
-        await ExecuteAsync(db, Sql.Format($"DELETE FROM line_trigrams WHERE root_id = {rootId}"), cancellationToken)
+        await ExecuteAsync(db, Sql.Format($"DELETE FROM file_trigrams WHERE root_id = {rootId}"), cancellationToken)
             .ConfigureAwait(false);
         await ExecuteAsync(db, Sql.Format($"DELETE FROM file_metadata_tokens WHERE root_id = {rootId}"), cancellationToken)
             .ConfigureAwait(false);
@@ -1255,9 +1214,7 @@ internal static partial class IndexTables
 
     public static async Task DeleteLinesAsync(DbExec db, long fileId, CancellationToken cancellationToken)
     {
-        var lineIds = await ReadIdsAsync(db, Sql.Format($"SELECT id FROM lines WHERE file_id = {fileId}"), cancellationToken)
-            .ConfigureAwait(false);
-        await DeleteLineTrigramsAsync(db, lineIds, cancellationToken).ConfigureAwait(false);
+        await DeleteFileTrigramsAsync(db, [fileId], cancellationToken).ConfigureAwait(false);
         await ExecuteAsync(db, Sql.Format($"DELETE FROM lines WHERE file_id = {fileId}"), cancellationToken)
             .ConfigureAwait(false);
         await DeleteContentUnitsAsync(db, fileId, cancellationToken).ConfigureAwait(false);
@@ -1532,31 +1489,26 @@ internal static partial class IndexTables
         if (ids.Length == 0)
             return;
 
-        var lineIds = await ReadIdsAsync(
-                db,
-                Sql.Format($"SELECT id FROM lines WHERE file_id IN ({new Sql.IdList(ids)})"),
-                cancellationToken)
-            .ConfigureAwait(false);
-        await DeleteLineTrigramsAsync(db, lineIds, cancellationToken).ConfigureAwait(false);
+        await DeleteFileTrigramsAsync(db, ids, cancellationToken).ConfigureAwait(false);
         await ExecuteAsync(db, Sql.Format($"DELETE FROM lines WHERE file_id IN ({new Sql.IdList(ids)})"), cancellationToken)
             .ConfigureAwait(false);
         await ExecuteAsync(db, Sql.Format($"DELETE FROM content_units WHERE file_id IN ({new Sql.IdList(ids)})"), cancellationToken)
             .ConfigureAwait(false);
     }
 
-    private static async Task DeleteLineTrigramsAsync(
+    private static async Task DeleteFileTrigramsAsync(
         DbExec db,
-        List<long> lineIds,
+        long[] fileIds,
         CancellationToken cancellationToken)
     {
-        if (lineIds.Count == 0)
+        if (fileIds.Length == 0)
             return;
 
-        foreach (var batch in lineIds.Chunk(DeleteIdBatchSize))
+        foreach (var batch in fileIds.Chunk(DeleteIdBatchSize))
         {
             await ExecuteAsync(
                     db,
-                    Sql.Format($"DELETE FROM line_trigrams WHERE line_id IN ({new Sql.IdList(batch)})"),
+                    Sql.Format($"DELETE FROM file_trigrams WHERE file_id IN ({new Sql.IdList(batch)})"),
                     cancellationToken)
                 .ConfigureAwait(false);
         }
@@ -1593,37 +1545,15 @@ internal static partial class IndexTables
         Sql.Format($"l.id IN ({new Sql.IdList(lineIds)}) AND f.root_id = {rootId} AND f.status = {FileStatus.Ok}") +
         SelectLinesOrder;
 
-    public static Task<List<long>> ReadLineIdsForTrigramAsync(
+    public static Task<List<long>> ReadFileIdsForTrigramAsync(
         DbExec db,
         long rootId,
         string trigram,
         CancellationToken cancellationToken) =>
         ReadIdsAsync(
             db,
-            Sql.Format($"SELECT line_id FROM line_trigrams WHERE trigram = {trigram} AND root_id = {rootId}"),
+            Sql.Format($"SELECT file_id FROM file_trigrams WHERE trigram_code = {QueryTrigramTerms.EncodeTrigram(trigram)} AND root_id = {rootId}"),
             cancellationToken);
-
-    public static async IAsyncEnumerable<LineTrigramSource> ReadLineTrigramSourcesAsync(
-        DbExec db,
-        long rootId,
-        [EnumeratorCancellation] CancellationToken cancellationToken)
-    {
-        var fileIds = await ReadCurrentFileIdsForRootAsync(db, rootId, IsOkStatus, cancellationToken).ConfigureAwait(false);
-        foreach (var batch in fileIds.Chunk(DeleteIdBatchSize))
-        {
-            await using var result = await db.ExecuteAsync(
-                Sql.Format($"SELECT id, content FROM lines WHERE file_id IN ({new Sql.IdList(batch)})"),
-                cancellationToken).ConfigureAwait(false);
-
-            while (await result.MoveNextAsync(cancellationToken).ConfigureAwait(false))
-            {
-                var row = result.Current;
-                yield return new LineTrigramSource(
-                    row[0].AsInteger,
-                    row[1].AsText);
-            }
-        }
-    }
 
     public static async IAsyncEnumerable<CachedIndexedLine> ReadCachedLinesAsync(
         DbExec db,
@@ -1661,6 +1591,32 @@ internal static partial class IndexTables
             "f.status, f.extractor_id, f.file_type_category, l.line_number, l.content, l.anchor_json, l.content_unit_id " +
             "FROM lines l INNER JOIN files f ON f.id = l.file_id " +
             Sql.Format($"WHERE f.id = {fileId} AND f.status = {FileStatus.Ok}") +
+            SelectLinesOrder,
+            cancellationToken).ConfigureAwait(false);
+
+        while (await result.MoveNextAsync(cancellationToken).ConfigureAwait(false))
+        {
+            yield return new CachedIndexedLine(
+                result.Current[0].AsInteger,
+                result.Current[1].AsInteger,
+                ReadIndexedLine(result.Current, offset: 2));
+        }
+    }
+
+    public static async IAsyncEnumerable<CachedIndexedLine> ReadCachedLinesForFilesAsync(
+        DbExec db,
+        long rootId,
+        IReadOnlyList<long> fileIds,
+        [EnumeratorCancellation] CancellationToken cancellationToken)
+    {
+        if (fileIds.Count == 0)
+            yield break;
+
+        await using var result = await db.ExecuteAsync(
+            "SELECT l.id, f.id, f.path, f.file_name, f.extension, f.size_bytes, f.created_utc_ticks, f.modified_utc_ticks, " +
+            "f.status, f.extractor_id, f.file_type_category, l.line_number, l.content, l.anchor_json, l.content_unit_id " +
+            "FROM lines l INNER JOIN files f ON f.id = l.file_id " +
+            Sql.Format($"WHERE f.id IN ({new Sql.IdList(fileIds)}) AND f.root_id = {rootId} AND f.status = {FileStatus.Ok}") +
             SelectLinesOrder,
             cancellationToken).ConfigureAwait(false);
 

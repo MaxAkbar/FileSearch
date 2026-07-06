@@ -63,7 +63,8 @@ internal sealed class CliState
         var includeExtensions = new HashSet<string>(IncludeExtensions, StringComparer.OrdinalIgnoreCase);
         var excludeExtensions = new HashSet<string>(ExcludeExtensions, StringComparer.OrdinalIgnoreCase);
 
-        if (SearchTarget == SearchTarget.Content)
+        var requiresIndexedContentProfile = SearchTarget == SearchTarget.Content || UseIndex;
+        if (requiresIndexedContentProfile)
         {
             if (SkipUnknownFileTypes && includeExtensions.Count == 0)
             {

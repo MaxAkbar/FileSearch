@@ -2427,7 +2427,7 @@ internal sealed class FileSearchRepl
         table.AddRow("[cyan]exclude[/] GLOB;GLOB", "Set exclude glob filters.");
         table.AddRow("[cyan]ext[/] .cs,.md", "Set included extensions. Use clear to remove.");
         table.AddRow("[cyan]exclude-ext[/] .dll,.exe", "Set excluded extensions. Use clear to remove.");
-        table.AddRow("[cyan]exclude-dir[/] .git;node_modules", "Folders pruned from traversal. Use clear to search everything.");
+        table.AddRow("[cyan]exclude-dir[/] .git;node_modules;bin;obj", "Folders pruned from traversal. Use clear to search everything.");
         table.AddRow("[cyan]plain-ext[/] .log,.cfg", "Treat extra extensions as known plain text when known-only is on.");
         table.AddRow("[cyan]min-size 10kb[/] / [cyan]max-size 50mb[/]", "Set file size filters.");
         table.AddRow("[cyan]after yyyy-mm-dd[/] / [cyan]before yyyy-mm-dd[/]", "Set modified date filters.");

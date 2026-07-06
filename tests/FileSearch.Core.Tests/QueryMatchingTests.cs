@@ -43,6 +43,16 @@ public sealed class QueryMatchingTests
     }
 
     [Fact]
+    public void RegexQuery_TryCollectHighlights_PreservesZeroLengthMatch()
+    {
+        var q = new RegexQuery("^");
+        var spans = new List<MatchSpan>();
+
+        Assert.True(q.TryCollectHighlights("abc", spans));
+        Assert.Empty(spans);
+    }
+
+    [Fact]
     public void AndQuery_RequiresAllChildren()
     {
         var q = new AndQuery(new Query[] { new TermQuery("foo"), new TermQuery("bar") });

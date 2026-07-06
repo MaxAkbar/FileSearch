@@ -30,8 +30,10 @@ namespace FileSearch.Core.Indexing;
 /// </summary>
 public sealed class CSharpDbFileIndex : IFileIndex, IIndexReplayWriter, IIndexUsageStore, IDisposable
 {
-    private const int LineInsertBatchSize = 1_000;
-    private const int LineTrigramInsertBatchSize = 4_096;
+    private const int FileIdAllocationBlockSize = 512;
+    private const int LineIdAllocationBlockSize = 8_192;
+    private const int LineInsertBatchSize = 4_096;
+    private const int FileTrigramInsertBatchSize = 16_384;
     private const int IdQueryBatchSize = 500;
     private const int MetadataHitLimit = 200;
     private const int MaxCachedCandidateLinesPerRoot = 50_000;
@@ -49,7 +51,6 @@ public sealed class CSharpDbFileIndex : IFileIndex, IIndexReplayWriter, IIndexUs
     private readonly IWindowsIFilterExtractionService? _windowsIFilterExtraction;
     private readonly ILogger _logger;
     private readonly MetadataNameCache _metadataNameCache = new();
-    private readonly MetadataCandidateCache _metadataCandidateCache = new();
     private readonly CurrentOkFileIdCache _currentOkFileIdCache = new();
     private readonly LineCandidateCache _lineCandidateCache = new();
     private readonly TrigramPostingCache _trigramPostingCache = new();
@@ -662,12 +663,12 @@ public sealed class CSharpDbFileIndex : IFileIndex, IIndexReplayWriter, IIndexUs
             yield break;
         }
 
-        var seenIds = new HashSet<long>();
-        var batchIds = new List<long>(IdQueryBatchSize);
+        var seenFileIds = new HashSet<long>();
+        var batchFileIds = new List<long>(IdQueryBatchSize);
         HashSet<long>? currentFileIds = null;
         foreach (var clause in trigramClauses)
         {
-            var candidateIds = await ReadCandidateLineIdsForTrigramClauseAsync(
+            var candidateIds = await ReadCandidateFileIdsForTrigramClauseAsync(
                     db,
                     rootId,
                     clause,
@@ -676,23 +677,23 @@ public sealed class CSharpDbFileIndex : IFileIndex, IIndexReplayWriter, IIndexUs
                     cancellationToken)
                 .ConfigureAwait(false);
 
-            foreach (var lineId in candidateIds)
+            currentFileIds ??= await _currentOkFileIdCache.GetOrLoadAsync(
+                    db,
+                    rootId,
+                    databaseGeneration,
+                    cancellationToken)
+                .ConfigureAwait(false);
+            foreach (var fileId in candidateIds)
             {
-                if (!seenIds.Add(lineId))
+                if (!currentFileIds.Contains(fileId) || !seenFileIds.Add(fileId))
                     continue;
 
-                batchIds.Add(lineId);
-                if (batchIds.Count < IdQueryBatchSize)
+                batchFileIds.Add(fileId);
+                if (batchFileIds.Count < IdQueryBatchSize)
                     continue;
 
-                currentFileIds ??= await _currentOkFileIdCache.GetOrLoadAsync(
-                        db,
-                        rootId,
-                        databaseGeneration,
-                        cancellationToken)
-                    .ConfigureAwait(false);
                 await foreach (var hit in ResolveCandidateLinesAsync(
-                        ReadCurrentLineBatchAsync(db, rootId, batchIds, currentFileIds, databaseGeneration, cancellationToken),
+                        ReadCurrentFileLineBatchAsync(db, rootId, batchFileIds, databaseGeneration, cancellationToken),
                         root,
                         request,
                         hitsByPath,
@@ -705,20 +706,14 @@ public sealed class CSharpDbFileIndex : IFileIndex, IIndexReplayWriter, IIndexUs
                     yield return hit;
                 }
 
-                batchIds.Clear();
+                batchFileIds.Clear();
             }
         }
 
-        if (batchIds.Count > 0)
+        if (batchFileIds.Count > 0)
         {
-            currentFileIds ??= await _currentOkFileIdCache.GetOrLoadAsync(
-                    db,
-                    rootId,
-                    databaseGeneration,
-                    cancellationToken)
-                .ConfigureAwait(false);
             await foreach (var hit in ResolveCandidateLinesAsync(
-                    ReadCurrentLineBatchAsync(db, rootId, batchIds, currentFileIds, databaseGeneration, cancellationToken),
+                    ReadCurrentFileLineBatchAsync(db, rootId, batchFileIds, databaseGeneration, cancellationToken),
                     root,
                     request,
                     hitsByPath,
@@ -733,7 +728,7 @@ public sealed class CSharpDbFileIndex : IFileIndex, IIndexReplayWriter, IIndexUs
         }
     }
 
-    private async Task<List<long>> ReadCandidateLineIdsForTrigramClauseAsync(
+    private async Task<List<long>> ReadCandidateFileIdsForTrigramClauseAsync(
         DbExec db,
         long rootId,
         IReadOnlyList<string> trigrams,
@@ -947,6 +942,30 @@ public sealed class CSharpDbFileIndex : IFileIndex, IIndexReplayWriter, IIndexUs
         }
     }
 
+    private async IAsyncEnumerable<IndexedLine> ReadCurrentFileLineBatchAsync(
+        DbExec db,
+        long rootId,
+        List<long> fileIds,
+        long databaseGeneration,
+        [EnumeratorCancellation] CancellationToken cancellationToken)
+    {
+        var lines = new List<IndexedLine>();
+        await foreach (var row in IndexTables.ReadCachedLinesForFilesAsync(db, rootId, fileIds, cancellationToken)
+                           .ConfigureAwait(false))
+        {
+            _lineCandidateCache.Add(rootId, databaseGeneration, row.Id, row.Line);
+            lines.Add(row.Line);
+        }
+
+        foreach (var line in lines
+                     .OrderBy(static line => line.Path, StringComparer.OrdinalIgnoreCase)
+                     .ThenBy(static line => line.LineNumber))
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            yield return line;
+        }
+    }
+
     private async Task<List<Hit>> SearchMetadataAsync(
         DbExec db,
         long rootId,
@@ -959,13 +978,9 @@ public sealed class CSharpDbFileIndex : IFileIndex, IIndexReplayWriter, IIndexUs
     {
         var hits = new List<Hit>();
         var candidateTokens = IndexTables.BuildQueryMetadataTokens(spec.Terms);
-        var candidates = await _metadataCandidateCache.GetOrLoadAsync(
-            db,
-            rootId,
-            databaseGeneration,
-            candidateTokens,
-            spec.RequireAllTerms,
-            cancellationToken).ConfigureAwait(false);
+        var nameIndex = await _metadataNameCache.GetOrLoadAsync(db, rootId, databaseGeneration, cancellationToken)
+            .ConfigureAwait(false);
+        var candidates = nameIndex.FindCandidates(candidateTokens, spec.RequireAllTerms).ToList();
 
         if (candidates.Count == 0)
             return hits;
@@ -1731,8 +1746,12 @@ public sealed class CSharpDbFileIndex : IFileIndex, IIndexReplayWriter, IIndexUs
         }
 
         await IndexTables.MarkRootRefreshedAsync(db, rootId, profile, cancellationToken).ConfigureAwait(false);
-        if (_analyzeAfterBuild)
+        if (_analyzeAfterBuild &&
+            (Interlocked.Read(ref filesIndexed) > 0 || Interlocked.Read(ref filesRemoved) > 0))
+        {
             await TryAnalyzeAsync(db, cancellationToken).ConfigureAwait(false);
+        }
+
         await TryCommitRefreshCheckpointAsync(db, volumeContext, beforeJournal, cancellationToken).ConfigureAwait(false);
         Publish();
     }
@@ -1808,6 +1827,8 @@ public sealed class CSharpDbFileIndex : IFileIndex, IIndexReplayWriter, IIndexUs
             .Select(_ => RunExtractorWorkerAsync(candidates.Reader, results.Writer, walkerOptions, pipelineToken))
             .ToArray();
         var resultCompletion = CompleteResultChannelWhenExtractorsFinishAsync(extractorTasks, results.Writer);
+        var fileIdAllocator = new DbIdBlockAllocator(db, "files", FileIdAllocationBlockSize);
+        var lineIdAllocator = new DbIdBlockAllocator(db, "lines", LineIdAllocationBlockSize);
 
         Exception? writeFailure = null;
         try
@@ -1816,7 +1837,18 @@ public sealed class CSharpDbFileIndex : IFileIndex, IIndexReplayWriter, IIndexUs
             {
                 try
                 {
-                    var indexedLines = await WriteExtractedFileAsync(db, rootId, result, cacheLines: null, cacheRemovedPaths: null, cacheFileIds: null, pipelineToken).ConfigureAwait(false);
+                    var indexedLines = await WriteExtractedFileAsync(
+                            db,
+                            rootId,
+                            result,
+                            cacheLines: null,
+                            cacheRemovedPaths: null,
+                            cacheFileIds: null,
+                            pipelineToken,
+                            tombstoneReplacedIdentities: false,
+                            fileIdAllocator,
+                            lineIdAllocator)
+                        .ConfigureAwait(false);
                     addLinesIndexed(indexedLines);
                     addFilesIndexed(1);
                 }
@@ -2551,11 +2583,17 @@ public sealed class CSharpDbFileIndex : IFileIndex, IIndexReplayWriter, IIndexUs
         List<CachedIndexedLine>? cacheLines,
         List<string>? cacheRemovedPaths,
         List<long>? cacheFileIds,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        bool tombstoneReplacedIdentities = true,
+        DbIdBlockAllocator? fileIdAllocator = null,
+        DbIdBlockAllocator? lineIdAllocator = null)
     {
         var candidate = result.Candidate;
         var finalStatus = ToFileStatus(result.Status);
         var initialMetadata = BuildFinalExtractionMetadata(result, candidate.ExistingExtractionAttemptCount);
+        var fileId = fileIdAllocator is null
+            ? (long?)null
+            : await fileIdAllocator.NextAsync(cancellationToken).ConfigureAwait(false);
         var insertedFile = await IndexTables.InsertFileRowAsync(
             db,
             rootId,
@@ -2568,10 +2606,12 @@ public sealed class CSharpDbFileIndex : IFileIndex, IIndexReplayWriter, IIndexUs
             initialMetadata.ExtractorVersion,
             initialMetadata.AttemptCount,
             initialMetadata.LastAttemptUtcTicks,
-            cancellationToken).ConfigureAwait(false);
-        var fileId = insertedFile.Id;
+            cancellationToken,
+            tombstoneReplacedIdentities,
+            fileId).ConfigureAwait(false);
+        var insertedFileId = insertedFile.Id;
         cacheRemovedPaths?.AddRange(insertedFile.ReplacedPaths);
-        cacheFileIds?.Add(fileId);
+        cacheFileIds?.Add(insertedFileId);
 
         if (result.Status == ExtractedFileStatus.Skipped)
             return 0;
@@ -2579,16 +2619,17 @@ public sealed class CSharpDbFileIndex : IFileIndex, IIndexReplayWriter, IIndexUs
         if (result.Status == ExtractedFileStatus.Error)
             return 0;
 
-        await IndexTables.ReplaceExtractionIssuesAsync(db, fileId, result.Issues, deleteExisting: false, cancellationToken).ConfigureAwait(false);
+        await IndexTables.ReplaceExtractionIssuesAsync(db, insertedFileId, result.Issues, deleteExisting: false, cancellationToken).ConfigureAwait(false);
         var linesIndexed = await InsertLinesAsync(
                 db,
                 rootId,
-                fileId,
+                insertedFileId,
                 candidate.Info,
                 result.Lines,
                 result.LineExtractorId,
                 result.LineExtractorVersion,
                 cacheLines,
+                lineIdAllocator,
                 cancellationToken)
             .ConfigureAwait(false);
         return linesIndexed;
@@ -2696,6 +2737,7 @@ public sealed class CSharpDbFileIndex : IFileIndex, IIndexReplayWriter, IIndexUs
                 result.ExtractorId,
                 result.ExtractorVersion,
                 cacheLines: null,
+                lineIdAllocator: null,
                 cancellationToken)
             .ConfigureAwait(false);
         await IndexTables.SetFileStatusAsync(db, fileId, FileStatus.Ok, null, cancellationToken).ConfigureAwait(false);
@@ -2773,14 +2815,18 @@ public sealed class CSharpDbFileIndex : IFileIndex, IIndexReplayWriter, IIndexUs
         string extractorId,
         string extractorVersion,
         List<CachedIndexedLine>? cacheLines,
+        DbIdBlockAllocator? lineIdAllocator,
         CancellationToken cancellationToken)
     {
         if (lines.Count == 0)
             return 0;
 
-        var nextLineId = await IndexTables.AllocateIdsAsync(db, "lines", lines.Count, cancellationToken).ConfigureAwait(false);
+        var nextLineId = lineIdAllocator is null
+            ? await IndexTables.AllocateIdsAsync(db, "lines", lines.Count, cancellationToken).ConfigureAwait(false)
+            : await lineIdAllocator.NextRangeAsync(lines.Count, cancellationToken).ConfigureAwait(false);
         var lineBatch = db.PrepareInsertBatch("lines", LineInsertBatchSize);
-        var trigramBatch = db.PrepareInsertBatch("line_trigrams", LineTrigramInsertBatchSize);
+        var fileTrigrams = new HashSet<string>(StringComparer.Ordinal);
+        var fileTrigramBatch = db.PrepareInsertBatch("file_trigrams", FileTrigramInsertBatchSize);
         long linesIndexed = 0;
         foreach (var line in lines)
         {
@@ -2790,17 +2836,22 @@ public sealed class CSharpDbFileIndex : IFileIndex, IIndexReplayWriter, IIndexUs
                 lineId,
                 fileId,
                 line);
-            AddLineTrigramsToBatch(trigramBatch, rootId, lineId, line.Content);
+            QueryTrigramTerms.AddLineTrigrams(line.Content, fileTrigrams);
             cacheLines?.Add(CreateCachedLine(lineId, fileId, info, line, extractorId, extractorVersion));
             linesIndexed++;
             if (lineBatch.Count >= LineInsertBatchSize)
                 await FlushBatchAsync(lineBatch, cancellationToken).ConfigureAwait(false);
-            if (trigramBatch.Count >= LineTrigramInsertBatchSize)
-                await FlushBatchAsync(trigramBatch, cancellationToken).ConfigureAwait(false);
+        }
+
+        foreach (var trigram in fileTrigrams)
+        {
+            AddFileTrigramToBatch(fileTrigramBatch, rootId, fileId, trigram);
+            if (fileTrigramBatch.Count >= FileTrigramInsertBatchSize)
+                await FlushBatchAsync(fileTrigramBatch, cancellationToken).ConfigureAwait(false);
         }
 
         await FlushBatchAsync(lineBatch, cancellationToken).ConfigureAwait(false);
-        await FlushBatchAsync(trigramBatch, cancellationToken).ConfigureAwait(false);
+        await FlushBatchAsync(fileTrigramBatch, cancellationToken).ConfigureAwait(false);
         return linesIndexed;
     }
 
@@ -2851,15 +2902,12 @@ public sealed class CSharpDbFileIndex : IFileIndex, IIndexReplayWriter, IIndexUs
             IndexTables.SerializeAnchor(line.Anchor));
     }
 
-    private static void AddLineTrigramsToBatch(InsertBatch batch, long rootId, long lineId, string content)
+    private static void AddFileTrigramToBatch(InsertBatch batch, long rootId, long fileId, string trigram)
     {
-        foreach (var trigram in QueryTrigramTerms.BuildLineTrigrams(content))
-        {
-            batch.AddRow(
-                DbValue.FromInteger(rootId),
-                DbValue.FromText(trigram),
-                DbValue.FromInteger(lineId));
-        }
+        batch.AddRow(
+            DbValue.FromInteger(rootId),
+            DbValue.FromInteger(QueryTrigramTerms.EncodeTrigram(trigram)),
+            DbValue.FromInteger(fileId));
     }
 
     private sealed class DbIdBlockAllocator
@@ -2887,6 +2935,23 @@ public sealed class CSharpDbFileIndex : IFileIndex, IIndexReplayWriter, IIndexUs
 
             _remaining--;
             return _nextId++;
+        }
+
+        public async ValueTask<long> NextRangeAsync(long count, CancellationToken cancellationToken)
+        {
+            ArgumentOutOfRangeException.ThrowIfNegativeOrZero(count);
+
+            if (count > _remaining)
+            {
+                var allocationSize = Math.Max(_blockSize, count);
+                _nextId = await IndexTables.AllocateIdsAsync(_db, _sequenceName, allocationSize, cancellationToken).ConfigureAwait(false);
+                _remaining = allocationSize;
+            }
+
+            var firstId = _nextId;
+            _nextId += count;
+            _remaining -= count;
+            return firstId;
         }
     }
 
@@ -3202,15 +3267,13 @@ public sealed class CSharpDbFileIndex : IFileIndex, IIndexReplayWriter, IIndexUs
         if (!fileAllowed)
             return false;
 
-        if (!query.IsMatch(line.Content))
-            return false;
-
         hitsByPath.TryGetValue(line.Path, out var hitsForFile);
         if (hitsForFile >= _searchOptions.MaxHitsPerFile)
             return false;
 
         highlightBuffer.Clear();
-        query.CollectHighlights(line.Content, highlightBuffer);
+        if (!query.TryCollectHighlights(line.Content, highlightBuffer))
+            return false;
 
         hitsByPath[line.Path] = hitsForFile + 1;
         hit = new Hit(
@@ -3270,70 +3333,6 @@ public sealed class CSharpDbFileIndex : IFileIndex, IIndexReplayWriter, IIndexUs
 
         return 0;
     }
-
-    private sealed class MetadataCandidateCache
-    {
-        private readonly Lock _gate = new();
-        private readonly Dictionary<MetadataCandidateCacheKey, MetadataCandidateCacheEntry> _entries = new();
-
-        public async Task<IReadOnlyList<IndexedFileMetadata>> GetOrLoadAsync(
-            DbExec db,
-            long rootId,
-            long databaseGeneration,
-            IReadOnlyList<string> tokens,
-            bool requireAllTokens,
-            CancellationToken cancellationToken)
-        {
-            var key = MetadataCandidateCacheKey.Create(rootId, requireAllTokens, tokens);
-            lock (_gate)
-            {
-                if (_entries.TryGetValue(key, out var cached) &&
-                    cached.DatabaseGeneration == databaseGeneration)
-                {
-                    return cached.Files;
-                }
-            }
-
-            var candidateIds = await IndexTables.ReadMetadataCandidateFileIdsAsync(
-                    db,
-                    rootId,
-                    tokens,
-                    requireAllTokens,
-                    cancellationToken)
-                .ConfigureAwait(false);
-            var files = new List<IndexedFileMetadata>();
-            if (candidateIds.Count > 0)
-            {
-                await foreach (var file in IndexTables.ReadFileMetadataAsync(db, rootId, candidateIds, cancellationToken)
-                                   .ConfigureAwait(false))
-                {
-                    files.Add(file);
-                }
-            }
-
-            lock (_gate)
-            {
-                _entries[key] = new MetadataCandidateCacheEntry(databaseGeneration, files);
-                return files;
-            }
-        }
-    }
-
-    private readonly record struct MetadataCandidateCacheKey(long RootId, bool RequireAllTokens, string Tokens)
-    {
-        public static MetadataCandidateCacheKey Create(
-            long rootId,
-            bool requireAllTokens,
-            IReadOnlyList<string> tokens)
-        {
-            var ordered = tokens.Order(StringComparer.OrdinalIgnoreCase);
-            return new MetadataCandidateCacheKey(rootId, requireAllTokens, string.Join('\u001F', ordered));
-        }
-    }
-
-    private sealed record MetadataCandidateCacheEntry(
-        long DatabaseGeneration,
-        IReadOnlyList<IndexedFileMetadata> Files);
 
     private sealed class CurrentOkFileIdCache
     {
@@ -3442,7 +3441,7 @@ public sealed class CSharpDbFileIndex : IFileIndex, IIndexReplayWriter, IIndexUs
                 }
             }
 
-            var loaded = await IndexTables.ReadLineIdsForTrigramAsync(db, rootId, trigram, cancellationToken)
+            var loaded = await IndexTables.ReadFileIdsForTrigramAsync(db, rootId, trigram, cancellationToken)
                 .ConfigureAwait(false);
             if (loaded.Count > MaxCachedTrigramPostingIds)
                 return loaded;
@@ -3482,36 +3481,12 @@ public sealed class CSharpDbFileIndex : IFileIndex, IIndexReplayWriter, IIndexUs
             long databaseGeneration,
             CancellationToken cancellationToken)
         {
-            MetadataNameIndex? stale = null;
             lock (_gate)
             {
                 if (_roots.TryGetValue(rootId, out var cached) &&
                     cached.DatabaseGeneration == databaseGeneration)
                 {
                     return cached;
-                }
-
-                stale = cached;
-            }
-
-            if (stale is not null)
-            {
-                var maxFileId = await IndexTables.ReadMaxFileIdForRootAsync(db, rootId, cancellationToken).ConfigureAwait(false);
-                lock (_gate)
-                {
-                    if (_roots.TryGetValue(rootId, out var cached) &&
-                        ReferenceEquals(cached, stale) &&
-                        cached.MaxFileId == maxFileId)
-                    {
-                        cached.AdvanceGeneration(databaseGeneration);
-                        return cached;
-                    }
-
-                    if (_roots.TryGetValue(rootId, out var refreshed) &&
-                        refreshed.DatabaseGeneration == databaseGeneration)
-                    {
-                        return refreshed;
-                    }
                 }
             }
 
@@ -3522,8 +3497,7 @@ public sealed class CSharpDbFileIndex : IFileIndex, IIndexReplayWriter, IIndexUs
                 files.Add(file);
             }
 
-            var loadedMaxFileId = await IndexTables.ReadMaxFileIdForRootAsync(db, rootId, cancellationToken).ConfigureAwait(false);
-            var loaded = MetadataNameIndex.Create(databaseGeneration, loadedMaxFileId, files);
+            var loaded = MetadataNameIndex.Create(databaseGeneration, files);
             lock (_gate)
             {
                 if (_roots.TryGetValue(rootId, out var cached) &&
@@ -3548,27 +3522,20 @@ public sealed class CSharpDbFileIndex : IFileIndex, IIndexReplayWriter, IIndexUs
 
         private MetadataNameIndex(
             long databaseGeneration,
-            long maxFileId,
             IndexedFileMetadata[] files,
             Dictionary<string, int[]> tokenToFileIndexes)
         {
             DatabaseGeneration = databaseGeneration;
-            MaxFileId = maxFileId;
             _files = files;
             _tokenToFileIndexes = tokenToFileIndexes;
         }
 
-        public long DatabaseGeneration { get; private set; }
+        public long DatabaseGeneration { get; }
 
-        public long MaxFileId { get; }
-
-        public void AdvanceGeneration(long databaseGeneration) =>
-            DatabaseGeneration = databaseGeneration;
-
-        public static MetadataNameIndex Create(long databaseGeneration, long maxFileId, List<IndexedFileMetadata> files)
+        public static MetadataNameIndex Create(long databaseGeneration, List<IndexedFileMetadata> files)
         {
             if (files.Count == 0)
-                return new MetadataNameIndex(databaseGeneration, maxFileId, s_emptyFiles, new Dictionary<string, int[]>(StringComparer.OrdinalIgnoreCase));
+                return new MetadataNameIndex(databaseGeneration, s_emptyFiles, new Dictionary<string, int[]>(StringComparer.OrdinalIgnoreCase));
 
             var fileArray = files.ToArray();
             var buckets = new Dictionary<string, List<int>>(StringComparer.OrdinalIgnoreCase);
@@ -3591,7 +3558,7 @@ public sealed class CSharpDbFileIndex : IFileIndex, IIndexReplayWriter, IIndexUs
             foreach (var (token, bucket) in buckets)
                 tokenToFileIndexes[token] = bucket.ToArray();
 
-            return new MetadataNameIndex(databaseGeneration, maxFileId, fileArray, tokenToFileIndexes);
+            return new MetadataNameIndex(databaseGeneration, fileArray, tokenToFileIndexes);
         }
 
         private static HashSet<string> BuildIndexTokens(IndexedFileMetadata file)

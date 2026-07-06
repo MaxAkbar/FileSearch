@@ -12,6 +12,15 @@ public abstract class Query
 {
     public abstract bool IsMatch(string line);
 
+    public virtual bool TryCollectHighlights(string line, List<MatchSpan> sink)
+    {
+        if (!IsMatch(line))
+            return false;
+
+        CollectHighlights(line, sink);
+        return true;
+    }
+
     /// <summary>
     /// For matched lines, append highlight spans to <paramref name="sink"/>.
     /// Negative queries (NOT) contribute nothing.

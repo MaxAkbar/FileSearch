@@ -88,6 +88,9 @@ public sealed class UnifiedQuery : Query
 
     public override bool IsMatch(string line) => ContentQuery.IsMatch(line);
 
+    public override bool TryCollectHighlights(string line, List<MatchSpan> sink) =>
+        ContentQuery.TryCollectHighlights(line, sink);
+
     public override void CollectHighlights(string line, List<MatchSpan> sink) =>
         ContentQuery.CollectHighlights(line, sink);
 

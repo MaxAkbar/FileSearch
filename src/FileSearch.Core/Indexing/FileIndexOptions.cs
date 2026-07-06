@@ -9,7 +9,7 @@ public sealed record FileIndexOptions
 
     public bool UseHybridHotTables { get; init; }
 
-    public bool AnalyzeAfterBuild { get; init; }
+    public bool AnalyzeAfterBuild { get; init; } = true;
 
     private static string GetDefaultDatabasePath()
     {

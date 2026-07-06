@@ -66,6 +66,31 @@ public sealed class FilePreviewServiceTests : IDisposable
     }
 
     [Fact]
+    public async Task LoadHitsPreviewAsync_ReusesCachedPreviewUntilFileChanges()
+    {
+        var extractor = new StubExtractor(new[]
+        {
+            new TextLine(1, "First paragraph."),
+            new TextLine(2, "Second paragraph has needle."),
+        });
+        var registry = new ExtractorRegistry(new[] { extractor });
+        var service = new FilePreviewService(registry);
+
+        var first = await service.LoadHitsPreviewAsync(_path, new[] { 2 }, contextLines: 1, CancellationToken.None);
+        var second = await service.LoadHitsPreviewAsync(_path, new[] { 2 }, contextLines: 1, CancellationToken.None);
+
+        Assert.Equal(first, second);
+        Assert.Equal(1, extractor.ExtractCallCount);
+
+        await File.WriteAllTextAsync(_path, "changed bytes", TestContext.Current.CancellationToken);
+        File.SetLastWriteTimeUtc(_path, DateTime.UtcNow.AddMinutes(1));
+
+        await service.LoadHitsPreviewAsync(_path, new[] { 2 }, contextLines: 1, CancellationToken.None);
+
+        Assert.Equal(2, extractor.ExtractCallCount);
+    }
+
+    [Fact]
     public async Task ExtractionNeverRunsOnCallerSynchronizationContext()
     {
         // Simulates the WPF dispatcher: if any part of the extraction loop
@@ -134,10 +159,13 @@ public sealed class FilePreviewServiceTests : IDisposable
 
         public IReadOnlyCollection<string> SupportedExtensions { get; } = new[] { ".docx" };
 
+        public int ExtractCallCount { get; private set; }
+
         public async IAsyncEnumerable<TextLine> ExtractAsync(
             string path,
             [EnumeratorCancellation] CancellationToken cancellationToken)
         {
+            ExtractCallCount++;
             await Task.Yield();
             foreach (var line in _lines)
             {

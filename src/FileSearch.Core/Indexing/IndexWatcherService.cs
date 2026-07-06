@@ -10,8 +10,10 @@ namespace FileSearch.Core.Indexing;
 
 public sealed class IndexWatcherService : IIndexWatcherService
 {
-    private static readonly TimeSpan FileChangeDebounce = TimeSpan.FromMilliseconds(500);
-    private static readonly TimeSpan RootRefreshDebounce = TimeSpan.FromSeconds(5);
+    private static readonly TimeSpan CreatedFileDebounce = TimeSpan.FromMilliseconds(150);
+    private static readonly TimeSpan ChangedFileDebounce = TimeSpan.FromMilliseconds(350);
+    private static readonly TimeSpan DeletedFileDebounce = TimeSpan.FromMilliseconds(100);
+    private static readonly TimeSpan RootRefreshDebounce = TimeSpan.FromSeconds(2);
 
     private readonly IIndexQueue _queue;
     private readonly object _sync = new();
@@ -145,7 +147,7 @@ public sealed class IndexWatcherService : IIndexWatcherService
             return;
         }
 
-        QueueUpsert(location, path);
+        QueueUpsert(location, path, CreatedFileDebounce);
     }
 
     private void QueueChanged(IndexedLocation location, string path)
@@ -158,10 +160,10 @@ public sealed class IndexWatcherService : IIndexWatcherService
         if (Directory.Exists(path))
             return;
 
-        QueueUpsert(location, path);
+        QueueUpsert(location, path, ChangedFileDebounce);
     }
 
-    private void QueueUpsert(IndexedLocation location, string path)
+    private void QueueUpsert(IndexedLocation location, string path, TimeSpan debounce)
     {
         Enqueue(new IndexQueueItem(
             location.Root,
@@ -169,7 +171,7 @@ public sealed class IndexWatcherService : IIndexWatcherService
             location.WalkerOptions,
             IndexChangeKind.UpsertFile,
             IndexQueuePriority.Normal,
-            DateTime.UtcNow.Add(FileChangeDebounce),
+            DateTime.UtcNow.Add(debounce),
             Persisted: true));
     }
 
@@ -181,7 +183,7 @@ public sealed class IndexWatcherService : IIndexWatcherService
             location.WalkerOptions,
             IndexChangeKind.DeleteFile,
             IndexQueuePriority.Normal,
-            DateTime.UtcNow.Add(FileChangeDebounce),
+            DateTime.UtcNow.Add(DeletedFileDebounce),
             Persisted: true));
     }
 

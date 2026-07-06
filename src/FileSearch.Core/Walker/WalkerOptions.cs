@@ -16,11 +16,10 @@ public sealed record WalkerOptions
     /// <summary>
     /// Directory names whose entire subtrees are pruned from traversal.
     /// Defaults to folders that are huge and almost never the search target;
-    /// pass an empty set to walk everything. Note: bin/obj are deliberately
-    /// not excluded by default — build output can contain files users search.
+    /// pass an empty set to walk everything.
     /// </summary>
     public static IReadOnlySet<string> DefaultExcludeDirectories { get; } =
-        new HashSet<string>(StringComparer.OrdinalIgnoreCase) { ".git", ".vs", "node_modules" };
+        new HashSet<string>(StringComparer.OrdinalIgnoreCase) { ".git", ".vs", "node_modules", "bin", "obj" };
 
     public IReadOnlyList<string> IncludeGlobs { get; init; } = Array.Empty<string>();
     public IReadOnlyList<string> ExcludeGlobs { get; init; } = Array.Empty<string>();

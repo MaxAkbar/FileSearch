@@ -165,6 +165,9 @@ public sealed class IndexConcurrencyTests : IDisposable
                     item.Path.EndsWith("inside.txt", StringComparison.OrdinalIgnoreCase),
                 TimeSpan.FromSeconds(10));
             Assert.NotNull(upsert);
+            Assert.True(
+                upsert.DueUtc <= DateTime.UtcNow.AddSeconds(1),
+                $"File watcher debounce should stay below the freshness target; due at {upsert.DueUtc:O}.");
 
             // Give trailing directory-change echoes time to arrive, then make
             // sure none of them became a full root refresh.
@@ -193,6 +196,9 @@ public sealed class IndexConcurrencyTests : IDisposable
                 item => item.Kind == IndexChangeKind.RefreshRoot,
                 TimeSpan.FromSeconds(10));
             Assert.NotNull(refresh);
+            Assert.True(
+                refresh.DueUtc <= DateTime.UtcNow.AddSeconds(3),
+                $"Root watcher debounce should stay near the freshness target; due at {refresh.DueUtc:O}.");
         }
         finally
         {

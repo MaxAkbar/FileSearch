@@ -22,6 +22,8 @@ public sealed class PlainTextExtractor : ITextExtractor
 
     private const int BinarySniffBytes = 8192;
     private const int ReadBufferChars = 64 * 1024;
+    private static readonly SearchValues<char> LineBreakChars = SearchValues.Create("\r\n");
+    private static readonly SearchValues<byte> NullByte = SearchValues.Create(new byte[] { 0 });
 
     public async IAsyncEnumerable<TextLine> ExtractAsync(
         string path,
@@ -64,6 +66,7 @@ public sealed class PlainTextExtractor : ITextExtractor
 
             var buffer = ArrayPool<char>.Shared.Rent(ReadBufferChars);
             var lineBuilder = new StringBuilder();
+            var completedLines = new List<TextLine>();
             int lineNumber = 0;
             var previousWasCarriageReturn = false;
             try
@@ -74,32 +77,16 @@ public sealed class PlainTextExtractor : ITextExtractor
                     if (read == 0)
                         break;
 
-                    for (var i = 0; i < read; i++)
-                    {
-                        var ch = buffer[i];
-                        if (previousWasCarriageReturn)
-                        {
-                            previousWasCarriageReturn = false;
-                            if (ch == '\n')
-                                continue;
-                        }
+                    AppendCompletedLines(
+                        buffer.AsSpan(0, read),
+                        lineBuilder,
+                        completedLines,
+                        ref lineNumber,
+                        ref previousWasCarriageReturn);
 
-                        if (ch == '\r')
-                        {
-                            yield return new TextLine(++lineNumber, lineBuilder.ToString());
-                            lineBuilder.Clear();
-                            previousWasCarriageReturn = true;
-                        }
-                        else if (ch == '\n')
-                        {
-                            yield return new TextLine(++lineNumber, lineBuilder.ToString());
-                            lineBuilder.Clear();
-                        }
-                        else
-                        {
-                            lineBuilder.Append(ch);
-                        }
-                    }
+                    for (var i = 0; i < completedLines.Count; i++)
+                        yield return completedLines[i];
+                    completedLines.Clear();
                 }
 
                 if (lineBuilder.Length > 0)
@@ -121,9 +108,55 @@ public sealed class PlainTextExtractor : ITextExtractor
         if (HasUtf16OrUtf32Bom(head))
             return false;
 
-        for (int i = 0; i < head.Length; i++)
-            if (head[i] == 0) return true;
-        return false;
+        return head.ContainsAny(NullByte);
+    }
+
+    private static void AppendCompletedLines(
+        ReadOnlySpan<char> buffer,
+        StringBuilder lineBuilder,
+        List<TextLine> completedLines,
+        ref int lineNumber,
+        ref bool previousWasCarriageReturn)
+    {
+        var position = 0;
+        if (previousWasCarriageReturn)
+        {
+            previousWasCarriageReturn = false;
+            if (buffer.Length > 0 && buffer[0] == '\n')
+                position = 1;
+        }
+
+        while (position < buffer.Length)
+        {
+            var remaining = buffer[position..];
+            var breakOffset = remaining.IndexOfAny(LineBreakChars);
+            if (breakOffset < 0)
+            {
+                lineBuilder.Append(remaining);
+                return;
+            }
+
+            if (breakOffset > 0)
+                lineBuilder.Append(remaining[..breakOffset]);
+
+            var breakChar = remaining[breakOffset];
+            completedLines.Add(new TextLine(++lineNumber, lineBuilder.ToString()));
+            lineBuilder.Clear();
+
+            position += breakOffset + 1;
+            if (breakChar != '\r')
+                continue;
+
+            if (position < buffer.Length)
+            {
+                if (buffer[position] == '\n')
+                    position++;
+            }
+            else
+            {
+                previousWasCarriageReturn = true;
+            }
+        }
     }
 
     private static bool HasUtf16OrUtf32Bom(ReadOnlySpan<byte> head)

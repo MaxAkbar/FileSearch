@@ -22,11 +22,31 @@ public sealed partial class NearQuery : Query
 
     public override bool IsMatch(string line)
     {
-        if (!Left.IsMatch(line) || !Right.IsMatch(line))
+        return TryMatch(line, out _, out _);
+    }
+
+    public override bool TryCollectHighlights(string line, List<MatchSpan> sink)
+    {
+        if (!TryMatch(line, out var leftSpans, out var rightSpans))
             return false;
 
-        var leftSpans = CollectSpans(Left, line);
-        var rightSpans = CollectSpans(Right, line);
+        sink.AddRange(leftSpans);
+        sink.AddRange(rightSpans);
+        return true;
+    }
+
+    public override void CollectHighlights(string line, List<MatchSpan> sink)
+    {
+        TryCollectHighlights(line, sink);
+    }
+
+    private bool TryMatch(string line, out List<MatchSpan> leftSpans, out List<MatchSpan> rightSpans)
+    {
+        leftSpans = CollectSpans(Left, line, out var leftMatched);
+        rightSpans = CollectSpans(Right, line, out var rightMatched);
+        if (!leftMatched || !rightMatched)
+            return false;
+
         if (leftSpans.Count == 0 || rightSpans.Count == 0)
             return true;
 
@@ -54,19 +74,10 @@ public sealed partial class NearQuery : Query
         return false;
     }
 
-    public override void CollectHighlights(string line, List<MatchSpan> sink)
-    {
-        if (!IsMatch(line))
-            return;
-
-        Left.CollectHighlights(line, sink);
-        Right.CollectHighlights(line, sink);
-    }
-
-    private static List<MatchSpan> CollectSpans(Query query, string line)
+    private static List<MatchSpan> CollectSpans(Query query, string line, out bool matched)
     {
         var spans = new List<MatchSpan>();
-        query.CollectHighlights(line, spans);
+        matched = query.TryCollectHighlights(line, spans);
         return spans;
     }
 

@@ -21,7 +21,7 @@ namespace FileSearch.Core.Indexing;
 /// </summary>
 internal sealed class IndexDatabase : IDisposable
 {
-    internal const string CurrentSchemaVersion = "23";
+    internal const string CurrentSchemaVersion = "25";
     private static readonly TimeSpan CompactLeaseDrainTimeout = TimeSpan.FromSeconds(5);
 
     /// <summary>
@@ -50,7 +50,7 @@ internal sealed class IndexDatabase : IDisposable
         "SELECT location_kind, last_full_validation_utc_ticks FROM index_roots WHERE id = -1",
         "SELECT directory_path, file_name_lower, extractor_id, extraction_attempt_count FROM files WHERE id = -1",
         "SELECT content_unit_id, anchor_json FROM lines WHERE id = -1",
-        "SELECT root_id, trigram, line_id FROM line_trigrams WHERE line_id = -1",
+        "SELECT root_id, trigram_code, file_id FROM file_trigrams WHERE file_id = -1",
         "SELECT root_id, token, file_id FROM file_metadata_tokens WHERE id = -1",
         "SELECT kind, locator_json, content_hash FROM content_units WHERE id = -1",
         "SELECT member_path, severity FROM extraction_issues WHERE id = -1",
@@ -265,12 +265,24 @@ internal sealed class IndexDatabase : IDisposable
             // handle must go: retire it and give active leases a bounded
             // window to finish (a straggler makes the File.Move below fail,
             // which aborts the compact cleanly).
-            var retired = await RetireCurrentAsync().ConfigureAwait(false);
+            var retired = await RetireCurrentAsync(disposeWhenUnused: false).ConfigureAwait(false);
             if (retired is not null)
             {
                 var deadline = DateTime.UtcNow + CompactLeaseDrainTimeout;
                 while (Volatile.Read(ref retired.Leases) > 0 && DateTime.UtcNow < deadline)
                     await Task.Delay(50, cancellationToken).ConfigureAwait(false);
+
+                if (Volatile.Read(ref retired.Leases) > 0)
+                {
+                    Volatile.Write(ref retired.DisposeWhenUnused, true);
+                    if (Volatile.Read(ref retired.Leases) == 0)
+                        await DisposeRetiredAsync(retired).ConfigureAwait(false);
+
+                    throw new IOException(
+                        $"Cannot compact the index database: '{DatabasePath}' still has active readers.");
+                }
+
+                await DisposeRetiredAsync(retired).ConfigureAwait(false);
             }
 
             if (!File.Exists(DatabasePath))
@@ -310,6 +322,8 @@ internal sealed class IndexDatabase : IDisposable
         public int Leases;
 
         public bool Retired;
+
+        public bool DisposeWhenUnused = true;
 
         public int DisposedFlag;
     }
@@ -388,11 +402,15 @@ internal sealed class IndexDatabase : IDisposable
 
     private void ReleaseLease(SharedHandle handle)
     {
-        if (Interlocked.Decrement(ref handle.Leases) == 0 && Volatile.Read(ref handle.Retired))
+        if (Interlocked.Decrement(ref handle.Leases) == 0 &&
+            Volatile.Read(ref handle.Retired) &&
+            Volatile.Read(ref handle.DisposeWhenUnused))
+        {
             _ = DisposeRetiredAsync(handle);
+        }
     }
 
-    private void RetireCurrentLocked()
+    private void RetireCurrentLocked(bool disposeWhenUnused = true)
     {
         var current = _current;
         if (current is null)
@@ -400,17 +418,18 @@ internal sealed class IndexDatabase : IDisposable
 
         _current = null;
         Volatile.Write(ref current.Retired, true);
-        if (Volatile.Read(ref current.Leases) == 0)
+        Volatile.Write(ref current.DisposeWhenUnused, disposeWhenUnused);
+        if (disposeWhenUnused && Volatile.Read(ref current.Leases) == 0)
             _ = DisposeRetiredAsync(current);
     }
 
-    private async ValueTask<SharedHandle?> RetireCurrentAsync()
+    private async ValueTask<SharedHandle?> RetireCurrentAsync(bool disposeWhenUnused = true)
     {
         await _handleGate.WaitAsync(CancellationToken.None).ConfigureAwait(false);
         try
         {
             var current = _current;
-            RetireCurrentLocked();
+            RetireCurrentLocked(disposeWhenUnused);
             return current;
         }
         finally
@@ -654,7 +673,7 @@ internal sealed class IndexDatabase : IDisposable
         await db.ExecuteAsync("CREATE TABLE IF NOT EXISTS file_metadata_tokens (id INTEGER PRIMARY KEY, root_id INTEGER, file_id INTEGER, token TEXT)", cancellationToken).ConfigureAwait(false);
         await db.ExecuteAsync("CREATE TABLE IF NOT EXISTS content_units (id INTEGER PRIMARY KEY, file_id INTEGER, kind TEXT, locator_json TEXT, unit_text TEXT, content_hash TEXT, language TEXT, extractor_id TEXT, extractor_version TEXT)", cancellationToken).ConfigureAwait(false);
         await db.ExecuteAsync("CREATE TABLE IF NOT EXISTS lines (id INTEGER PRIMARY KEY, file_id INTEGER, content_unit_id INTEGER, line_number INTEGER, content TEXT, anchor_json TEXT)", cancellationToken).ConfigureAwait(false);
-        await db.ExecuteAsync("CREATE TABLE IF NOT EXISTS line_trigrams (root_id INTEGER, trigram TEXT, line_id INTEGER)", cancellationToken).ConfigureAwait(false);
+        await db.ExecuteAsync("CREATE TABLE IF NOT EXISTS file_trigrams (root_id INTEGER, trigram_code INTEGER, file_id INTEGER)", cancellationToken).ConfigureAwait(false);
         await db.ExecuteAsync("CREATE TABLE IF NOT EXISTS pending_changes (id INTEGER PRIMARY KEY, root_path TEXT, path TEXT, kind INTEGER, queued_utc_ticks INTEGER)", cancellationToken).ConfigureAwait(false);
         await db.ExecuteAsync("CREATE TABLE IF NOT EXISTS index_sequences (name TEXT PRIMARY KEY, next_id INTEGER)", cancellationToken).ConfigureAwait(false);
 
@@ -686,8 +705,8 @@ internal sealed class IndexDatabase : IDisposable
         await TryExecuteAsync(db, "CREATE INDEX IF NOT EXISTS idx_content_units_file ON content_units(file_id)", cancellationToken).ConfigureAwait(false);
         await TryExecuteAsync(db, "CREATE INDEX IF NOT EXISTS idx_lines_id ON lines(id)", cancellationToken).ConfigureAwait(false);
         await TryExecuteAsync(db, "CREATE INDEX IF NOT EXISTS idx_lines_file_line ON lines(file_id, line_number)", cancellationToken).ConfigureAwait(false);
-        await TryExecuteAsync(db, "CREATE INDEX IF NOT EXISTS idx_line_trigrams_trigram_root ON line_trigrams(trigram, root_id)", cancellationToken).ConfigureAwait(false);
-        await TryExecuteAsync(db, "CREATE INDEX IF NOT EXISTS idx_line_trigrams_line ON line_trigrams(line_id)", cancellationToken).ConfigureAwait(false);
+        await TryExecuteAsync(db, "CREATE INDEX IF NOT EXISTS idx_file_trigrams_code_root ON file_trigrams(trigram_code, root_id)", cancellationToken).ConfigureAwait(false);
+        await TryExecuteAsync(db, "CREATE INDEX IF NOT EXISTS idx_file_trigrams_file ON file_trigrams(file_id)", cancellationToken).ConfigureAwait(false);
         await TryExecuteAsync(db, "CREATE INDEX IF NOT EXISTS idx_pending_root_path ON pending_changes(root_path, path)", cancellationToken).ConfigureAwait(false);
 
         await db.ExecuteAsync("DELETE FROM meta WHERE name = 'schema_version'", cancellationToken).ConfigureAwait(false);

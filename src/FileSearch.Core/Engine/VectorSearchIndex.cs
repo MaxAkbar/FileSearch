@@ -1,3 +1,5 @@
+using System.Numerics.Tensors;
+
 namespace FileSearch.Core.Engine;
 
 internal sealed record VectorIndexSearchDiagnostics(
@@ -300,27 +302,21 @@ internal sealed class VectorSearchIndex
         if (vector.Count == 0)
             return Array.Empty<float>();
 
-        double sum = 0;
-        for (var i = 0; i < vector.Count; i++)
-            sum += vector[i] * vector[i];
+        var source = vector as float[] ?? vector.ToArray();
+        var sum = TensorPrimitives.Dot(source, source);
 
         var norm = Math.Sqrt(sum);
         if (norm <= 0)
             return Array.Empty<float>();
 
-        var unit = new float[vector.Count];
-        for (var i = 0; i < vector.Count; i++)
-            unit[i] = (float)(vector[i] / norm);
+        var unit = new float[source.Length];
+        for (var i = 0; i < source.Length; i++)
+            unit[i] = (float)(source[i] / norm);
         return unit;
     }
 
-    private static float Dot(IReadOnlyList<float> left, float[] right)
-    {
-        double dot = 0;
-        for (var i = 0; i < left.Count; i++)
-            dot += left[i] * right[i];
-        return (float)dot;
-    }
+    private static float Dot(ReadOnlySpan<float> left, ReadOnlySpan<float> right) =>
+        TensorPrimitives.Dot(left, right);
 
     private static void AddTopCandidate(
         List<ScoredVectorRecord> top,
@@ -432,7 +428,7 @@ internal sealed class VectorSearchIndex
         return planes;
     }
 
-    private static ulong CreateSignature(IReadOnlyList<float> vector, IReadOnlyList<float[]> planes)
+    private static ulong CreateSignature(float[] vector, IReadOnlyList<float[]> planes)
     {
         ulong signature = 0;
         for (var i = 0; i < planes.Count; i++)

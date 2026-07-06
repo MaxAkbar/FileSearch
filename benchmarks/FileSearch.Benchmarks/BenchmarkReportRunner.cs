@@ -504,10 +504,9 @@ internal sealed class BenchmarkReportRunner
             {
                 var marker = string.Create(CultureInfo.InvariantCulture, $"freshness_probe_{runId}_{i:D2}");
 
-                // Root-level file on purpose: a change inside a subfolder
-                // raises a parent-directory event that the watcher maps to a
-                // full root refresh (dropping the per-file upsert), which
-                // would measure rebuild cost instead of the upsert path.
+                // Root-level file on purpose: this keeps the benchmark on
+                // the per-file upsert path and avoids measuring directory
+                // subtree refresh behavior.
                 var filePath = Path.Combine(
                     paths.ContentRoot,
                     string.Create(CultureInfo.InvariantCulture, $"freshness_{runId}_{i:D2}.txt"));

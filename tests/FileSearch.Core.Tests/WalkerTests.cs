@@ -105,7 +105,11 @@ public sealed class WalkerTests : IDisposable
     {
         File.WriteAllText(Path.Combine(_root, "app.txt"), "alpha");
         var modules = Directory.CreateDirectory(Path.Combine(_root, "node_modules", "dep")).FullName;
+        var bin = Directory.CreateDirectory(Path.Combine(_root, "bin")).FullName;
+        var obj = Directory.CreateDirectory(Path.Combine(_root, "obj")).FullName;
         File.WriteAllText(Path.Combine(modules, "index.js"), "bravo");
+        File.WriteAllText(Path.Combine(bin, "generated.dll"), "bravo");
+        File.WriteAllText(Path.Combine(obj, "generated.g.cs"), "bravo");
 
         var walker = new FileWalker();
         var result = walker.Enumerate(new[] { _root }, new WalkerOptions(), CancellationToken.None).ToList();

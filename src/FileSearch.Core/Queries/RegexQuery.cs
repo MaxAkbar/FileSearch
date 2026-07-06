@@ -21,12 +21,24 @@ public sealed class RegexQuery : Query
 
     public override bool IsMatch(string line) => _regex.IsMatch(line);
 
+    public override bool TryCollectHighlights(string line, List<MatchSpan> sink) =>
+        CollectHighlightsCore(line, sink);
+
     public override void CollectHighlights(string line, List<MatchSpan> sink)
     {
+        CollectHighlightsCore(line, sink);
+    }
+
+    private bool CollectHighlightsCore(string line, List<MatchSpan> sink)
+    {
+        var matched = false;
         foreach (Match m in _regex.Matches(line))
         {
+            matched = true;
             if (m.Length > 0)
                 sink.Add(new MatchSpan(m.Index, m.Length));
         }
+
+        return matched;
     }
 }

@@ -35,11 +35,27 @@ public sealed partial class FuzzyQuery : Query
         return false;
     }
 
+    public override bool TryCollectHighlights(string line, List<MatchSpan> sink) =>
+        CollectHighlightsCore(line, sink);
+
     public override void CollectHighlights(string line, List<MatchSpan> sink)
     {
+        CollectHighlightsCore(line, sink);
+    }
+
+    private bool CollectHighlightsCore(string line, List<MatchSpan> sink)
+    {
+        var matched = false;
         foreach (Match match in WordRegex().Matches(line))
+        {
             if (IsFuzzyMatch(match.Value))
+            {
                 sink.Add(new MatchSpan(match.Index, match.Length));
+                matched = true;
+            }
+        }
+
+        return matched;
     }
 
     private bool IsFuzzyMatch(string value)

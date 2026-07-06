@@ -439,27 +439,6 @@ public sealed class FileVectorIndex : IVectorIndex, IDisposable
             matching.SelectMany(document => document.ContentUnitIds).Where(contentUnitIds.Contains).Distinct().Count());
     }
 
-    private static float CosineSimilarity(float[] query, double queryNorm, IReadOnlyList<float> vector)
-    {
-        var vectorNorm = Norm(vector);
-        if (vectorNorm <= 0)
-            return 0;
-
-        double dot = 0;
-        for (var i = 0; i < query.Length; i++)
-            dot += query[i] * vector[i];
-
-        return (float)(dot / (queryNorm * vectorNorm));
-    }
-
-    private static double Norm(IReadOnlyList<float> vector)
-    {
-        double sum = 0;
-        for (var i = 0; i < vector.Count; i++)
-            sum += vector[i] * vector[i];
-        return Math.Sqrt(sum);
-    }
-
     private sealed record ScoredVectorDocument(VectorDocument Document, float Score);
 
     private sealed record VectorIndexStore(

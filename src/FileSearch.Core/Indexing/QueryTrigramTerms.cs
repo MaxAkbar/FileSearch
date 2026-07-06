@@ -26,14 +26,30 @@ internal static class QueryTrigramTerms
         if (content.Length < TrigramLength)
             return Array.Empty<string>();
 
-        var lowered = content.ToLowerInvariant();
         var trigrams = new HashSet<string>(StringComparer.Ordinal);
-        for (var i = 0; i <= lowered.Length - TrigramLength; i++)
-            trigrams.Add(lowered.Substring(i, TrigramLength));
+        AddLineTrigrams(content, trigrams);
 
         return trigrams.Count == 0
             ? Array.Empty<string>()
             : trigrams.ToArray();
+    }
+
+    public static void AddLineTrigrams(string content, ISet<string> trigrams)
+    {
+        if (content.Length < TrigramLength)
+            return;
+
+        var lowered = content.ToLowerInvariant();
+        for (var i = 0; i <= lowered.Length - TrigramLength; i++)
+            trigrams.Add(lowered.Substring(i, TrigramLength));
+    }
+
+    public static long EncodeTrigram(string trigram)
+    {
+        if (trigram.Length != TrigramLength)
+            throw new ArgumentException("A trigram must contain exactly three UTF-16 code units.", nameof(trigram));
+
+        return ((long)trigram[0] << 32) | ((long)trigram[1] << 16) | trigram[2];
     }
 
     private static IReadOnlyList<HashSet<string>> Build(Query query)

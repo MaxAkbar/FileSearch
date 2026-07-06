@@ -2,6 +2,7 @@ using System.Collections.Concurrent;
 using System.ComponentModel;
 using System.Diagnostics;
 using System.Runtime.CompilerServices;
+using System.Threading.Channels;
 using FileSearch.Core.Engine;
 using FileSearch.Core.Indexing;
 using FileSearch.Core.Queries;
@@ -218,13 +219,74 @@ internal sealed class SearchTools
     }
 
     private async IAsyncEnumerable<Hit> SearchCoveredRootsAsync(
-        IReadOnlyList<SearchRequest> coveredRequests,
+        List<SearchRequest> coveredRequests,
         [EnumeratorCancellation] CancellationToken cancellationToken)
     {
-        foreach (var rootRequest in coveredRequests)
+        if (coveredRequests.Count == 0)
+            yield break;
+
+        if (coveredRequests.Count == 1)
         {
+            var rootRequest = coveredRequests[0];
             await foreach (var hit in _indexSearch.SearchAsync(rootRequest, cancellationToken).ConfigureAwait(false))
                 yield return hit;
+            yield break;
+        }
+
+        using var fanoutCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+        var fanoutToken = fanoutCts.Token;
+        var channel = Channel.CreateBounded<Hit>(new BoundedChannelOptions(256)
+        {
+            SingleReader = true,
+            SingleWriter = false,
+            FullMode = BoundedChannelFullMode.Wait,
+        });
+
+        var producer = Task.Run(async () =>
+        {
+            try
+            {
+                await Parallel.ForEachAsync(
+                        coveredRequests,
+                        new ParallelOptions
+                        {
+                            MaxDegreeOfParallelism = Math.Min(coveredRequests.Count, MaxRootsPerCall),
+                            CancellationToken = fanoutToken,
+                        },
+                        async (rootRequest, token) =>
+                        {
+                            await foreach (var hit in _indexSearch.SearchAsync(rootRequest, token).ConfigureAwait(false))
+                                await channel.Writer.WriteAsync(hit, token).ConfigureAwait(false);
+                        })
+                    .ConfigureAwait(false);
+
+                channel.Writer.TryComplete();
+            }
+            catch (OperationCanceledException) when (fanoutToken.IsCancellationRequested)
+            {
+                channel.Writer.TryComplete();
+            }
+            catch (Exception ex)
+            {
+                channel.Writer.TryComplete(ex);
+            }
+        }, CancellationToken.None);
+
+        try
+        {
+            await foreach (var hit in channel.Reader.ReadAllAsync(cancellationToken).ConfigureAwait(false))
+                yield return hit;
+        }
+        finally
+        {
+            await fanoutCts.CancelAsync().ConfigureAwait(false);
+            try
+            {
+                await producer.ConfigureAwait(false);
+            }
+            catch (OperationCanceledException) when (fanoutToken.IsCancellationRequested)
+            {
+            }
         }
     }
 

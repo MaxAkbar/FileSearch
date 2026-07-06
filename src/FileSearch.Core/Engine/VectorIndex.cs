@@ -1,3 +1,5 @@
+using System.Numerics.Tensors;
+
 namespace FileSearch.Core.Engine;
 
 public sealed record VectorIndexOptions
@@ -328,22 +330,18 @@ public sealed class InMemoryVectorIndex : IVectorIndex
 
     private static float CosineSimilarity(float[] query, double queryNorm, IReadOnlyList<float> vector)
     {
-        var vectorNorm = Norm(vector);
+        var vectorArray = vector as float[] ?? vector.ToArray();
+        var vectorNorm = Norm(vectorArray);
         if (vectorNorm <= 0)
             return 0;
 
-        double dot = 0;
-        for (var i = 0; i < query.Length; i++)
-            dot += query[i] * vector[i];
-
+        var dot = TensorPrimitives.Dot(query, vectorArray);
         return (float)(dot / (queryNorm * vectorNorm));
     }
 
-    private static double Norm(IReadOnlyList<float> vector)
+    private static double Norm(ReadOnlySpan<float> vector)
     {
-        double sum = 0;
-        for (var i = 0; i < vector.Count; i++)
-            sum += vector[i] * vector[i];
+        var sum = TensorPrimitives.Dot(vector, vector);
         return Math.Sqrt(sum);
     }
 }

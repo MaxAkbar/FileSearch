@@ -60,7 +60,7 @@ public sealed record SearchFilters
     /// <summary>
     /// Directory names whose subtrees are pruned. Null applies the engine
     /// default (<see cref="WalkerOptions.DefaultExcludeDirectories"/>: .git,
-    /// .vs, node_modules); an empty list walks everything.
+    /// .vs, node_modules, bin, obj); an empty list walks everything.
     /// </summary>
     public IReadOnlyList<string>? ExcludeDirectories { get; init; }
 

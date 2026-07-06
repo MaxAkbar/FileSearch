@@ -639,7 +639,7 @@ public sealed class FileIndexTests : IDisposable
     public async Task CoverageRequiresSearchToExcludeAtLeastIndexedDirectories()
     {
         File.WriteAllText(Path.Combine(_root, "a.txt"), "needle\n");
-        await BuildAsync(); // default excludes (.git, .vs, node_modules)
+        await BuildAsync(); // default excludes (.git, .vs, node_modules, bin, obj)
 
         // A search that wants pruned directories back can't be served by the
         // index — those subtrees were never indexed.
@@ -1461,7 +1461,7 @@ public sealed class FileIndexTests : IDisposable
         var db = await Database.OpenAsync(_dbPath, TestContext.Current.CancellationToken);
         try
         {
-            await db.ExecuteAsync("DELETE FROM line_trigrams", TestContext.Current.CancellationToken);
+            await db.ExecuteAsync("DELETE FROM file_trigrams", TestContext.Current.CancellationToken);
             await db.ExecuteAsync("UPDATE index_roots SET content_version = 'old-content'", TestContext.Current.CancellationToken);
             await db.ExecuteAsync("UPDATE files SET content_version = 'old-content'", TestContext.Current.CancellationToken);
             try
@@ -1497,7 +1497,7 @@ public sealed class FileIndexTests : IDisposable
         var db = await Database.OpenAsync(_dbPath, TestContext.Current.CancellationToken);
         try
         {
-            await db.ExecuteAsync("DELETE FROM line_trigrams", TestContext.Current.CancellationToken);
+            await db.ExecuteAsync("DELETE FROM file_trigrams", TestContext.Current.CancellationToken);
             try
             {
                 await db.CheckpointAsync(TestContext.Current.CancellationToken);

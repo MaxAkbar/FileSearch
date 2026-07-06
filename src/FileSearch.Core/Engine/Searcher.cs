@@ -224,10 +224,9 @@ public sealed class Searcher : ISearcher
 
         await foreach (var line in extractor.ExtractWithContextAsync(path, context, token).ConfigureAwait(false))
         {
-            if (!query.IsMatch(line.Content)) continue;
-
             highlightBuffer.Clear();
-            query.CollectHighlights(line.Content, highlightBuffer);
+            if (!query.TryCollectHighlights(line.Content, highlightBuffer))
+                continue;
 
             var hit = new Hit(
                 path,
