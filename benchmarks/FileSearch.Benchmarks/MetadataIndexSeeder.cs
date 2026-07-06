@@ -1,4 +1,3 @@
-using System.Text.RegularExpressions;
 using CSharpDB.Engine;
 using CSharpDB.Primitives;
 using FileSearch.Core.Indexing;
@@ -9,7 +8,7 @@ namespace FileSearch.Benchmarks;
 internal sealed partial class MetadataIndexSeeder
 {
     private const int FileBatchSize = 2_000;
-    private const int TokenBatchSize = 4_000;
+    private const int TokenBatchFlushSize = 16_384;
 
     public async Task EnsureSeededAsync(BenchmarkPaths paths, CorpusManifest manifest, CancellationToken cancellationToken)
     {
@@ -23,7 +22,7 @@ internal sealed partial class MetadataIndexSeeder
                 .ConfigureAwait(false);
         }
 
-        using var database = new IndexDatabase(paths.DatabasePath, NullLogger.Instance);
+        using var database = new IndexDatabase(new FileIndexOptions { DatabasePath = paths.DatabasePath }, NullLogger.Instance);
         await database.RunExclusiveWriteAsync(
                 db => SeedMetadataRowsAsync(db, paths, manifest, cancellationToken),
                 cancellationToken)
@@ -55,9 +54,7 @@ internal sealed partial class MetadataIndexSeeder
         var now = DateTime.UtcNow.Ticks;
         var created = new DateTime(2026, 1, 1, 0, 0, 0, DateTimeKind.Utc).Ticks;
         var fileBatch = db.PrepareInsertBatch("files", FileBatchSize);
-        var tokenBatch = db.PrepareInsertBatch("file_metadata_tokens", TokenBatchSize);
-        long nextTokenId = 0;
-        long remainingTokenIds = 0;
+        var tokenBatch = IndexTables.PrepareMetadataTokenBatch(db);
 
         for (var i = 0; i < manifest.MetadataOnlyEntryCount; i++)
         {
@@ -101,46 +98,30 @@ internal sealed partial class MetadataIndexSeeder
                 DbValue.FromText("1"),
                 DbValue.FromInteger(1),
                 DbValue.FromInteger(now));
-
-            foreach (var token in BuildSearchTokens(path, directory, fileName))
-            {
-                if (remainingTokenIds == 0)
-                {
-                    nextTokenId = await IndexTables.AllocateIdsAsync(
-                            db,
-                            "file_metadata_tokens",
-                            TokenBatchSize,
-                            cancellationToken)
-                        .ConfigureAwait(false);
-                    remainingTokenIds = TokenBatchSize;
-                }
-
-                tokenBatch.AddRow(
-                    DbValue.FromInteger(nextTokenId++),
-                    DbValue.FromInteger(rootRow.Id),
-                    DbValue.FromInteger(fileId),
-                    DbValue.FromText(token));
-                remainingTokenIds--;
-
-                if (tokenBatch.Count >= TokenBatchSize)
-                {
-                    await tokenBatch.ExecuteAsync(cancellationToken).ConfigureAwait(false);
-                    tokenBatch.Clear();
-                }
-            }
+            IndexTables.AddMetadataTokens(
+                tokenBatch,
+                rootRow.Id,
+                fileId,
+                IndexTables.BuildIndexedMetadataTokens(
+                    path,
+                    directory,
+                    fileName,
+                    ".cs",
+                    FileTypeCategory.ForExtension(".cs")));
 
             if (fileBatch.Count >= FileBatchSize)
             {
                 await fileBatch.ExecuteAsync(cancellationToken).ConfigureAwait(false);
                 fileBatch.Clear();
             }
+
+            if (tokenBatch.Count >= TokenBatchFlushSize)
+                await IndexTables.FlushMetadataTokenBatchAsync(tokenBatch, cancellationToken).ConfigureAwait(false);
         }
 
         if (fileBatch.Count > 0)
             await fileBatch.ExecuteAsync(cancellationToken).ConfigureAwait(false);
-
-        if (tokenBatch.Count > 0)
-            await tokenBatch.ExecuteAsync(cancellationToken).ConfigureAwait(false);
+        await IndexTables.FlushMetadataTokenBatchAsync(tokenBatch, cancellationToken).ConfigureAwait(false);
 
         await IndexTables.MarkRootRefreshedAsync(
                 db,
@@ -149,25 +130,4 @@ internal sealed partial class MetadataIndexSeeder
                 cancellationToken)
             .ConfigureAwait(false);
     }
-
-    private static HashSet<string> BuildSearchTokens(string path, string directory, string fileName)
-    {
-        var tokens = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-        AddTextTokens(tokens, path);
-        AddTextTokens(tokens, directory);
-        AddTextTokens(tokens, fileName);
-        AddTextTokens(tokens, Path.GetFileNameWithoutExtension(fileName));
-        AddTextTokens(tokens, ".cs");
-        AddTextTokens(tokens, "code");
-        return tokens;
-    }
-
-    private static void AddTextTokens(HashSet<string> tokens, string value)
-    {
-        foreach (Match match in MetadataTokenRegex().Matches(value.ToLowerInvariant()))
-            tokens.Add(match.Value);
-    }
-
-    [GeneratedRegex(@"[\p{L}\p{Nd}_]+", RegexOptions.CultureInvariant)]
-    private static partial Regex MetadataTokenRegex();
 }

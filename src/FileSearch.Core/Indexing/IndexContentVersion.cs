@@ -2,5 +2,5 @@ namespace FileSearch.Core.Indexing;
 
 internal static class IndexContentVersion
 {
-    public const string Current = "content-v2";
+    public const string Current = "content-v3";
 }

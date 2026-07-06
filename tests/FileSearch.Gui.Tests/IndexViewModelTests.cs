@@ -95,7 +95,32 @@ public sealed class IndexViewModelTests
         Assert.Equal("Scanning 10; 2 changed, 8 unchanged", location.RuntimeStatusSummary);
         Assert.Equal(10, location.FileCount);
         Assert.Equal(20, location.LineCount);
-        Assert.Equal("1 location, 10 files, 20 lines (scanning)", index.IndexDatabaseContentText);
+        Assert.Equal("1 location, 10 files, 20 lines (scanning 10)", index.IndexDatabaseContentText);
+    }
+
+    [Fact]
+    public async Task RebuildSelectedIndexQueuesFullRebuild()
+    {
+        var root = Path.Combine(Path.GetTempPath(), "filesearch-rebuild-ui-" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(root);
+        var indexingService = new FakeIndexingService();
+        var (_, index) = Build(
+            indexingService: indexingService,
+            configureSettings: settings => settings.IndexedLocations.Add(new() { Root = root }));
+
+        try
+        {
+            index.SelectedIndexedLocation = Assert.Single(index.IndexedLocations);
+
+            await index.RebuildSelectedIndexCommand.ExecuteAsync(null);
+
+            Assert.Equal(1, indexingService.EnqueuedRootRebuildCount);
+            Assert.Equal(0, indexingService.EnqueuedRootRefreshCount);
+        }
+        finally
+        {
+            Directory.Delete(root, recursive: true);
+        }
     }
 
     [Fact]

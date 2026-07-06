@@ -436,6 +436,8 @@ internal sealed class FakeIndexingService : IIndexingService
 
     public int EnqueuedRootRefreshCount { get; private set; }
 
+    public int EnqueuedRootRebuildCount { get; private set; }
+
     public int EnqueuedSemanticRootRefreshCount { get; private set; }
 
     public TaskCompletionSource? RemoveLocationCompletion { get; set; }
@@ -463,6 +465,12 @@ internal sealed class FakeIndexingService : IIndexingService
     public Task EnqueueRootRefreshAsync(string root, WalkerOptions options, IndexQueuePriority priority, CancellationToken cancellationToken)
     {
         EnqueuedRootRefreshCount++;
+        return Task.CompletedTask;
+    }
+
+    public Task EnqueueRootRebuildAsync(string root, WalkerOptions options, IndexQueuePriority priority, CancellationToken cancellationToken)
+    {
+        EnqueuedRootRebuildCount++;
         return Task.CompletedTask;
     }
 

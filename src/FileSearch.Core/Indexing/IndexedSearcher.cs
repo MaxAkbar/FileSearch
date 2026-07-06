@@ -49,61 +49,39 @@ public sealed class IndexedSearcher : ISearcher
             yield break;
         }
 
-        if (_indexingCoordinator is not null)
-            await _indexingCoordinator.SetForegroundSearchActiveAsync(true, cancellationToken).ConfigureAwait(false);
-
-        try
+        if (!request.UseIndex)
         {
-            if (!request.UseIndex)
-            {
-                await foreach (var hit in _liveSearcher.SearchAsync(request, cancellationToken).ConfigureAwait(false))
-                    yield return TagRoute(hit, HitRoute.Live);
-                yield break;
-            }
-
-            if (!CanUseIndexForRequest(request, out var fallbackReason))
-            {
-                request.Status?.Invoke($"{fallbackReason}; using live scan");
-                await foreach (var hit in _liveSearcher.SearchAsync(request with { UseIndex = false }, cancellationToken).ConfigureAwait(false))
-                    yield return TagRoute(hit, HitRoute.Live);
-                yield break;
-            }
-
-            var indexingStatus = _indexingCoordinator is null
-                ? null
-                : await _indexingCoordinator.GetStatusAsync(cancellationToken).ConfigureAwait(false);
-
-            if (indexingStatus?.IsProcessing == true)
-            {
-                // The writer is actively rebuilding; reads could see a
-                // half-built index, so fall back to a live scan and let the
-                // in-flight indexing finish on its own.
-                request.Status?.Invoke("Index updating in background; using live scan");
-                await foreach (var hit in _liveSearcher.SearchAsync(request with { UseIndex = false }, cancellationToken).ConfigureAwait(false))
-                    yield return TagRoute(hit, HitRoute.Live);
-                yield break;
-            }
-
-            if (request.Roots.Count > 1)
-            {
-                foreach (var root in request.Roots)
-                {
-                    var rootRequest = request with { Roots = new[] { root } };
-                    await foreach (var hit in SearchSingleRootAsync(rootRequest, indexingStatus, cancellationToken).ConfigureAwait(false))
-                        yield return hit;
-                }
-
-                yield break;
-            }
-
-            await foreach (var hit in SearchSingleRootAsync(request, indexingStatus, cancellationToken).ConfigureAwait(false))
+            await foreach (var hit in SearchLiveWithForegroundYieldAsync(request, cancellationToken).ConfigureAwait(false))
                 yield return hit;
+            yield break;
         }
-        finally
+
+        if (!CanUseIndexForRequest(request, out var fallbackReason))
         {
-            if (_indexingCoordinator is not null)
-                await _indexingCoordinator.SetForegroundSearchActiveAsync(false, CancellationToken.None).ConfigureAwait(false);
+            request.Status?.Invoke($"{fallbackReason}; using live scan");
+            await foreach (var hit in SearchLiveWithForegroundYieldAsync(request with { UseIndex = false }, cancellationToken).ConfigureAwait(false))
+                yield return hit;
+            yield break;
         }
+
+        var indexingStatus = _indexingCoordinator is null
+            ? null
+            : await _indexingCoordinator.GetStatusAsync(cancellationToken).ConfigureAwait(false);
+
+        if (request.Roots.Count > 1)
+        {
+            foreach (var root in request.Roots)
+            {
+                var rootRequest = request with { Roots = new[] { root } };
+                await foreach (var hit in SearchSingleRootAsync(rootRequest, indexingStatus, cancellationToken).ConfigureAwait(false))
+                    yield return hit;
+            }
+
+            yield break;
+        }
+
+        await foreach (var hit in SearchSingleRootAsync(request, indexingStatus, cancellationToken).ConfigureAwait(false))
+            yield return hit;
     }
 
     private async IAsyncEnumerable<Hit> SearchSingleRootAsync(
@@ -113,14 +91,6 @@ public sealed class IndexedSearcher : ISearcher
     {
         if (request.Roots.Count != 1)
         {
-            await foreach (var hit in _liveSearcher.SearchAsync(request with { UseIndex = false }, cancellationToken).ConfigureAwait(false))
-                yield return TagRoute(hit, HitRoute.Live);
-            yield break;
-        }
-
-        if (HasQueuedWorkForRequestRoot(request, indexingStatus))
-        {
-            request.Status?.Invoke("Index has pending updates; using live scan");
             await foreach (var hit in _liveSearcher.SearchAsync(request with { UseIndex = false }, cancellationToken).ConfigureAwait(false))
                 yield return TagRoute(hit, HitRoute.Live);
             yield break;
@@ -136,14 +106,35 @@ public sealed class IndexedSearcher : ISearcher
             request.Status?.Invoke($"{coverage.Message}; using live scan; indexing scheduled");
             QueueRootRefresh(request);
 
-            await foreach (var hit in _liveSearcher.SearchAsync(request with { UseIndex = false }, cancellationToken).ConfigureAwait(false))
+            await foreach (var hit in SearchLiveWithForegroundYieldAsync(request with { UseIndex = false }, cancellationToken).ConfigureAwait(false))
                 yield return TagRoute(hit, HitRoute.Live);
             yield break;
         }
 
-        request.Status?.Invoke(coverage.Message);
+        request.Status?.Invoke(HasQueuedWorkForRequestRoot(request, indexingStatus)
+            ? $"{coverage.Message}; index updates pending"
+            : coverage.Message);
         await foreach (var hit in _index.SearchAsync(request, cancellationToken).ConfigureAwait(false))
             yield return TagRoute(hit, HitRoute.Indexed);
+    }
+
+    private async IAsyncEnumerable<Hit> SearchLiveWithForegroundYieldAsync(
+        SearchRequest request,
+        [EnumeratorCancellation] CancellationToken cancellationToken)
+    {
+        if (_indexingCoordinator is not null)
+            await _indexingCoordinator.SetForegroundSearchActiveAsync(true, cancellationToken).ConfigureAwait(false);
+
+        try
+        {
+            await foreach (var hit in _liveSearcher.SearchAsync(request, cancellationToken).ConfigureAwait(false))
+                yield return TagRoute(hit, HitRoute.Live);
+        }
+        finally
+        {
+            if (_indexingCoordinator is not null)
+                await _indexingCoordinator.SetForegroundSearchActiveAsync(false, CancellationToken.None).ConfigureAwait(false);
+        }
     }
 
     private static Hit TagRoute(Hit hit, HitRoute route) =>

@@ -256,6 +256,22 @@ public sealed class IndexingService : IIndexingService
             Persisted: true),
             cancellationToken);
 
+    public Task EnqueueRootRebuildAsync(
+        string root,
+        WalkerOptions options,
+        IndexQueuePriority priority,
+        CancellationToken cancellationToken) =>
+        EnqueueAsync(new IndexQueueItem(
+            root,
+            null,
+            options,
+            IndexChangeKind.RefreshRoot,
+            priority,
+            DateTime.UtcNow.AddSeconds(priority == IndexQueuePriority.High ? 0 : 3),
+            Persisted: true,
+            RefreshMode: IndexRefreshMode.Full),
+            cancellationToken);
+
     public Task EnqueueSemanticRootRefreshAsync(
         string root,
         WalkerOptions options,
@@ -760,7 +776,7 @@ public sealed class IndexingService : IIndexingService
                             item.WalkerOptions,
                             progress => Publish(true, FormatProgress(progress), progress: progress),
                             IndexingResourcePolicy.For(_resourceProfile, _runtimeOptions).Throttle),
-                        IndexRefreshMode.Incremental,
+                        item.RefreshMode,
                         cancellationToken).ConfigureAwait(false);
                     await UpsertSemanticRootAsync(item.Root, cancellationToken).ConfigureAwait(false);
                     await _index.RemovePendingChangeAsync(item.Root, null, item.Kind, cancellationToken)
@@ -802,6 +818,18 @@ public sealed class IndexingService : IIndexingService
         catch (OperationCanceledException)
         {
             throw;
+        }
+        catch (IndexWritePersistenceException ex)
+        {
+            // The work ran but its checkpoint could not persist (concurrent
+            // readers held the database). The pending-change row is still in
+            // place because RemovePendingChangeAsync was never reached; retry
+            // shortly instead of waiting for the next scheduled scan.
+            _logger.LogWarning(ex, "Index write for {Root} was not persisted; retrying shortly.", item.Root);
+            await EnqueueAsync(
+                item with { DueUtc = DateTime.UtcNow.AddSeconds(30), Persisted = false },
+                cancellationToken).ConfigureAwait(false);
+            Publish(false, "Index update delayed by concurrent activity; retrying.", force: true);
         }
         catch (Exception ex)
         {
@@ -1111,7 +1139,9 @@ public sealed class IndexingService : IIndexingService
     private static string Describe(IndexQueueItem item) =>
         item.Kind switch
         {
-            IndexChangeKind.RefreshRoot => $"Index updating in background: {item.Root}",
+            IndexChangeKind.RefreshRoot => item.RefreshMode == IndexRefreshMode.Full
+                ? $"Index rebuilding in background: {item.Root}"
+                : $"Index updating in background: {item.Root}",
             IndexChangeKind.RefreshSemanticRoot => $"Smart Search indexing in background: {item.Root}",
             IndexChangeKind.UpsertFile => $"Indexing changed file: {Path.GetFileName(item.Path)}",
             IndexChangeKind.DeleteFile => $"Removing deleted file from index: {Path.GetFileName(item.Path)}",

@@ -1,6 +1,7 @@
 using System.Diagnostics;
 using System.IO;
 using CSharpDB.Engine;
+using CSharpDB.Primitives;
 using FileSearch.Core.Engine;
 using FileSearch.Core.Extractors;
 using FileSearch.Core.Indexing;
@@ -62,6 +63,58 @@ public sealed class FileIndexTests : IDisposable
             new OrQuery(new Query[] { new TermQuery("foo"), new TermQuery("beta") }),
             new TermQuery("match"),
         }));
+    }
+
+    [Fact]
+    public async Task IndexedSearchMatchesLiveSearch_ForMidTokenSubstring()
+    {
+        File.WriteAllText(Path.Combine(_root, "mid-token.txt"), "critical_latency_event happened\n");
+
+        await BuildAsync();
+
+        await AssertSameResultsAsync(new TermQuery("ritical_latency"));
+    }
+
+    [Fact]
+    public async Task IndexedSearchMatchesLiveSearch_ForMixedTokenAndMidTokenOr()
+    {
+        File.WriteAllText(Path.Combine(_root, "mid-token.txt"), "critical_latency_event happened\n");
+        File.WriteAllText(Path.Combine(_root, "token.txt"), "ordinary marker happened\n");
+
+        await BuildAsync();
+
+        await AssertSameResultsAsync(new OrQuery(new Query[]
+        {
+            new TermQuery("ritical_latency"),
+            new TermQuery("ordinary"),
+        }));
+    }
+
+    [Fact]
+    public async Task IndexedSearchMatchesLiveSearch_ForShortSubstring()
+    {
+        File.WriteAllText(Path.Combine(_root, "short.txt"), "critical path\n");
+
+        await BuildAsync();
+
+        await AssertSameResultsAsync(new TermQuery("it"));
+    }
+
+    [Fact]
+    public async Task IndexedRegexSearchUsesTrigramCandidatesForRequiredLiterals()
+    {
+        File.WriteAllText(Path.Combine(_root, "regex.txt"), "critical_latency_event happened\n");
+        File.WriteAllText(Path.Combine(_root, "noise.txt"), "critical latency without the suffix\n");
+
+        await BuildAsync();
+
+        var (hits, timings) = await RawIndexedSearchWithTimingsAsync(new RegexQuery("ritical_.*event"));
+
+        var hit = Assert.Single(hits);
+        Assert.EndsWith("regex.txt", hit.Path);
+        Assert.True(timings.UsedTrigramIndex);
+        Assert.False(timings.UsedFullScan);
+        Assert.True(timings.TrigramLookupTicks > 0);
     }
 
     [Fact]
@@ -1086,12 +1139,13 @@ public sealed class FileIndexTests : IDisposable
     }
 
     [Fact]
-    public async Task IndexedSearcherUsesLiveScanWhileBackgroundIndexingIsProcessing()
+    public async Task IndexedSearcherUsesCoveredIndexWhileBackgroundIndexingIsProcessing()
     {
         File.WriteAllText(Path.Combine(_root, "processing.txt"), "processing needle\n");
-        var index = new ThrowIfUsedFileIndex();
+        await BuildAsync();
+
         var indexingService = new ProcessingIndexingService();
-        var searcher = new IndexedSearcher(_liveSearcher, index, new IndexCoverageService(index), indexingService);
+        var searcher = new IndexedSearcher(_liveSearcher, _index, new IndexCoverageService(_index), indexingService);
         var status = string.Empty;
         var request = new SearchRequest(
             new TermQuery("needle"),
@@ -1106,8 +1160,9 @@ public sealed class FileIndexTests : IDisposable
 
         var found = Assert.Single(hits);
         Assert.EndsWith("processing.txt", found.Path);
-        Assert.Contains("using live scan", status, StringComparison.OrdinalIgnoreCase);
-        Assert.True(indexingService.ForegroundSearchWasSet);
+        Assert.Equal(HitRoute.Indexed, found.Route);
+        Assert.Contains("Using indexed search", status, StringComparison.OrdinalIgnoreCase);
+        Assert.False(indexingService.ForegroundSearchWasSet);
     }
 
     [Fact]
@@ -1367,11 +1422,26 @@ public sealed class FileIndexTests : IDisposable
         File.WriteAllText(Path.Combine(_root, "version.txt"), "version needle\n");
         await BuildAsync();
 
-        await using (var db = await Database.OpenAsync(_dbPath, TestContext.Current.CancellationToken))
+        // Out-of-band edit through a second raw handle, like another process
+        // would: the fixture's shared handle may hold the WAL sidecar, so the
+        // checkpoint and dispose tolerate contention (the edit lives in the
+        // WAL and replays when the fixture detects the change and reopens).
+        var db = await Database.OpenAsync(_dbPath, TestContext.Current.CancellationToken);
+        try
         {
             await db.ExecuteAsync("UPDATE index_roots SET content_version = 'old-content'", TestContext.Current.CancellationToken);
             await db.ExecuteAsync("UPDATE files SET content_version = 'old-content'", TestContext.Current.CancellationToken);
-            await db.CheckpointAsync(TestContext.Current.CancellationToken);
+            try
+            {
+                await db.CheckpointAsync(TestContext.Current.CancellationToken);
+            }
+            catch (CSharpDbException)
+            {
+            }
+        }
+        finally
+        {
+            await SafeDisposeAsync(db);
         }
 
         var coverage = await _index.GetCoverageAsync(
@@ -1380,6 +1450,75 @@ public sealed class FileIndexTests : IDisposable
 
         Assert.Equal(IndexCoverageStatus.Incompatible, coverage.Status);
         Assert.Contains("content version", coverage.Message, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public async Task RefreshReindexesUnchangedFilesWhenContentVersionIsOutOfDate()
+    {
+        File.WriteAllText(Path.Combine(_root, "version-substring.txt"), "critical_latency_event happened\n");
+        await BuildAsync();
+
+        var db = await Database.OpenAsync(_dbPath, TestContext.Current.CancellationToken);
+        try
+        {
+            await db.ExecuteAsync("DELETE FROM line_trigrams", TestContext.Current.CancellationToken);
+            await db.ExecuteAsync("UPDATE index_roots SET content_version = 'old-content'", TestContext.Current.CancellationToken);
+            await db.ExecuteAsync("UPDATE files SET content_version = 'old-content'", TestContext.Current.CancellationToken);
+            try
+            {
+                await db.CheckpointAsync(TestContext.Current.CancellationToken);
+            }
+            catch (CSharpDbException)
+            {
+            }
+        }
+        finally
+        {
+            await SafeDisposeAsync(db);
+        }
+
+        await _index.RefreshRootAsync(
+            new IndexRequest(_root, new WalkerOptions()),
+            IndexRefreshMode.Incremental,
+            TestContext.Current.CancellationToken);
+
+        var hits = await RawIndexedSearchAsync(new TermQuery("ritical_latency"));
+
+        var hit = Assert.Single(hits);
+        Assert.EndsWith("version-substring.txt", hit.Path);
+    }
+
+    [Fact]
+    public async Task FullRefreshReindexesUnchangedFiles()
+    {
+        File.WriteAllText(Path.Combine(_root, "full-substring.txt"), "critical_latency_event happened\n");
+        await BuildAsync();
+
+        var db = await Database.OpenAsync(_dbPath, TestContext.Current.CancellationToken);
+        try
+        {
+            await db.ExecuteAsync("DELETE FROM line_trigrams", TestContext.Current.CancellationToken);
+            try
+            {
+                await db.CheckpointAsync(TestContext.Current.CancellationToken);
+            }
+            catch (CSharpDbException)
+            {
+            }
+        }
+        finally
+        {
+            await SafeDisposeAsync(db);
+        }
+
+        await _index.BuildOrRefreshAsync(
+            new IndexRequest(_root, new WalkerOptions()),
+            TestContext.Current.CancellationToken);
+
+        var hits = await RawIndexedSearchAsync(new TermQuery("ritical_latency"));
+
+        var hit = Assert.Single(hits);
+        Assert.EndsWith("full-substring.txt", hit.Path);
     }
 
     [Fact]
@@ -1719,6 +1858,24 @@ public sealed class FileIndexTests : IDisposable
         await foreach (var hit in _index.SearchAsync(request, TestContext.Current.CancellationToken))
             hits.Add(hit);
         return hits;
+    }
+
+    private async Task<(List<Hit> Hits, IndexSearchTimings Timings)> RawIndexedSearchWithTimingsAsync(Query query)
+    {
+        IndexSearchTimings? timings = null;
+        _index.SearchTimingsCallback = captured => timings = captured;
+        try
+        {
+            var hits = await RawIndexedSearchAsync(query);
+            if (timings is null)
+                throw new InvalidOperationException("Indexed search did not publish timings.");
+
+            return (hits, timings);
+        }
+        finally
+        {
+            _index.SearchTimingsCallback = null;
+        }
     }
 
     private async Task<List<Hit>> RawIndexedSearchAsync(CSharpDbFileIndex index, Query query)

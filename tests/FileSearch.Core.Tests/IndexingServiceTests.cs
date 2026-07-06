@@ -471,6 +471,33 @@ public sealed class IndexingServiceTests
     }
 
     [Fact]
+    public async Task EnqueueRootRebuildUsesFullRefreshMode()
+    {
+        var index = new BlockingFileIndex();
+        var queue = new IndexQueue(index);
+        var service = new IndexingService(index, queue, new IndexWatcherService(queue));
+        var root = Path.Combine(Path.GetTempPath(), "filesearch-full-rebuild-" + Guid.NewGuid().ToString("N"));
+
+        await service.StartAsync(Array.Empty<IndexedLocation>(), TestContext.Current.CancellationToken);
+        try
+        {
+            await service.EnqueueRootRebuildAsync(
+                root,
+                new WalkerOptions(),
+                IndexQueuePriority.High,
+                TestContext.Current.CancellationToken);
+
+            await index.RefreshStarted.Task.WaitAsync(TimeSpan.FromSeconds(5), TestContext.Current.CancellationToken);
+
+            Assert.Equal(IndexRefreshMode.Full, index.RefreshMode);
+        }
+        finally
+        {
+            await service.StopAsync(TestContext.Current.CancellationToken);
+        }
+    }
+
+    [Fact]
     public async Task RefreshSemanticRootQueueItem_RebuildsOnlySemanticRoot()
     {
         var operations = new OperationRecorder();
@@ -908,6 +935,8 @@ public sealed class IndexingServiceTests
 
         public IndexRequest? RefreshRequest { get; private set; }
 
+        public IndexRefreshMode? RefreshMode { get; private set; }
+
         public List<string> ClearedRoots { get; } = new();
 
         public List<string> DeletedPaths { get; } = new();
@@ -964,6 +993,7 @@ public sealed class IndexingServiceTests
         public async Task RefreshRootAsync(IndexRequest request, IndexRefreshMode mode, CancellationToken cancellationToken)
         {
             RefreshRequest = request;
+            RefreshMode = mode;
             OperationRecorder?.Add("index-refresh-root");
             RefreshStarted.TrySetResult();
             if (CompleteRefreshImmediately)

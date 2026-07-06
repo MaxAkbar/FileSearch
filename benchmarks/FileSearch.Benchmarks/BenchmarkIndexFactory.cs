@@ -19,7 +19,22 @@ internal static class BenchmarkIndexFactory
         MaxHitsPerFile = 5,
     };
 
-    public static CSharpDbFileIndex Create(BenchmarkPaths paths)
+    public static CSharpDbFileIndex Create(BenchmarkPaths paths) =>
+        new(
+            new FileIndexOptions { DatabasePath = paths.DatabasePath },
+            new FileWalker(),
+            CreateExtractorRegistry(),
+            SearchOptions);
+
+    /// <summary>
+    /// Live (non-indexed) searcher over the same extractor set and search
+    /// options as the benchmark index, so live and indexed measurements are
+    /// comparable.
+    /// </summary>
+    public static Searcher CreateLiveSearcher() =>
+        new(new FileWalker(), CreateExtractorRegistry(), SearchOptions);
+
+    private static ExtractorRegistry CreateExtractorRegistry()
     {
         var plainText = new PlainTextExtractor();
         var extractors = new ITextExtractor[]
@@ -39,10 +54,6 @@ internal static class BenchmarkIndexFactory
             new ZipExtractor(),
         };
 
-        return new CSharpDbFileIndex(
-            new FileIndexOptions { DatabasePath = paths.DatabasePath },
-            new FileWalker(),
-            new ExtractorRegistry(extractors, plainText),
-            SearchOptions);
+        return new ExtractorRegistry(extractors, plainText);
     }
 }

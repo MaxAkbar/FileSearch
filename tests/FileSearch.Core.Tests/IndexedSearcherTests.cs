@@ -57,7 +57,7 @@ public sealed class IndexedSearcherTests
     }
 
     [Fact]
-    public async Task UsesLiveScanWhenRequestRootHasQueuedIndexWork()
+    public async Task UsesIndexedResultsWhenRequestRootHasQueuedIndexWork()
     {
         var live = new StubSearcher("live.txt");
         var index = new StubIndexSearch(covered: true, "indexed.txt");
@@ -76,8 +76,9 @@ public sealed class IndexedSearcherTests
         var hits = await CollectAsync(searcher, BuildRequest(useIndex: true));
 
         var hit = Assert.Single(hits);
-        Assert.Equal("live.txt", hit.Path);
-        Assert.False(index.SearchWasUsed);
+        Assert.Equal("indexed.txt", hit.Path);
+        Assert.False(live.WasUsed);
+        Assert.True(index.SearchWasUsed);
     }
 
     [Fact]

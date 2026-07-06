@@ -341,7 +341,7 @@ public sealed partial class IndexViewModel : ObservableObject, IDisposable
         }
         else
         {
-            await _indexingService.EnqueueRootRefreshAsync(
+            await _indexingService.EnqueueRootRebuildAsync(
                 location.Root,
                 ToIndexedLocation(location).WalkerOptions,
                 IndexQueuePriority.High,
@@ -1081,7 +1081,7 @@ public sealed partial class IndexViewModel : ObservableObject, IDisposable
             IndexedLocations.Count,
             IndexedLocations.Sum(x => x.FileCount),
             IndexedLocations.Sum(x => x.LineCount),
-            suffix: " (scanning)");
+            suffix: $" (scanning {progress.FilesEnumerated:n0})");
     }
 
     private void ApplySelectedSemanticIndexRuntimeStatus(IndexingStatus status)
@@ -1553,7 +1553,7 @@ public sealed partial class IndexViewModel : ObservableObject, IDisposable
 
         return status.ActiveKind switch
         {
-            IndexChangeKind.RefreshRoot => "Scanning files",
+            IndexChangeKind.RefreshRoot => status.Message,
             IndexChangeKind.RefreshSemanticRoot => "Building Smart Search vectors",
             IndexChangeKind.UpsertFile => status.Message,
             IndexChangeKind.DeleteFile => status.Message,

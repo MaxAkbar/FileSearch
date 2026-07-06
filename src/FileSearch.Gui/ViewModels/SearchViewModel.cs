@@ -994,17 +994,21 @@ public sealed partial class SearchViewModel : ObservableObject, IDisposable
         try
         {
             IProgress<SearchProgress> progress = new Progress<SearchProgress>(UpdateProgressStatus);
+            IProgress<string> routeProgress = new Progress<string>(message =>
+            {
+                if (!IsSearching)
+                    return;
+
+                routeStatus = message;
+                _status.Text = message;
+            });
             var request = new SearchRequest(
                 query,
                 new[] { SearchPath },
                 BuildWalkerOptions(CurrentSearchTarget),
                 progress.Report,
                 UseIndex,
-                message =>
-                {
-                    routeStatus = message;
-                    _status.Text = message;
-                },
+                routeProgress.Report,
                 QueryText,
                 SearchMode,
                 CurrentSearchTarget);
@@ -1024,7 +1028,7 @@ public sealed partial class SearchViewModel : ObservableObject, IDisposable
                 DrainPendingHits(pendingHits);
                 if (consumer.IsCompleted && pendingHits.IsEmpty)
                     break;
-                await Task.Delay(75).ConfigureAwait(true);
+                await Task.Delay(33).ConfigureAwait(true);
             }
 
             await consumer.ConfigureAwait(true); // surface cancellation/errors
@@ -1048,6 +1052,12 @@ public sealed partial class SearchViewModel : ObservableObject, IDisposable
         }
         finally
         {
+            // Streaming refreshes are throttled to once per second; settle
+            // the final sort/facets exactly once however the search ended.
+            _lastResultViewRefreshUtc = DateTime.MinValue;
+            RebuildFacetOptions();
+            RefreshFilesView();
+
             IsSearching = false;
             SearchCommand.NotifyCanExecuteChanged();
             CancelCommand.NotifyCanExecuteChanged();
@@ -1063,7 +1073,10 @@ public sealed partial class SearchViewModel : ObservableObject, IDisposable
     /// </summary>
     private void DrainPendingHits(System.Collections.Concurrent.ConcurrentQueue<Hit> pendingHits)
     {
-        const int maxPerDrain = 2000;
+        const int maxPerDrain = 300;
+        const int minPerDrain = 25;
+        var drainStarted = Stopwatch.GetTimestamp();
+        var drainBudget = TimeSpan.FromMilliseconds(8);
         var total = TotalHits;
         var drained = 0;
 
@@ -1083,12 +1096,24 @@ public sealed partial class SearchViewModel : ObservableObject, IDisposable
                         IsFavorite = _history.IsFavorite(hit.Path),
                     };
                     _filesByPath[hit.Path] = file;
+
+                    // Populate BEFORE publishing: the collection view's filter
+                    // runs the moment the item is added, against the file's
+                    // extension/size/date/source — which come from its hits.
+                    // Adding an empty row first made the filter judge a blank
+                    // and hide it until the next full view refresh.
+                    file.AddHit(hit);
                     Files.Add(file);
                 }
+                else
+                {
+                    file.AddHit(hit);
+                }
 
-                file.AddHit(hit);
                 total++;
                 drained++;
+                if (drained >= minPerDrain && Stopwatch.GetElapsedTime(drainStarted) >= drainBudget)
+                    break;
             }
         }
         finally
@@ -1101,10 +1126,26 @@ public sealed partial class SearchViewModel : ObservableObject, IDisposable
 
         TotalHits = total;
         FilesMatched = Files.Count;
-        RebuildFacetOptions();
-        RefreshFilesView();
+
+        // Rebuilding facets and refreshing the collection view re-sort the
+        // ENTIRE accumulated result set. Doing that on every 75 ms drain tick
+        // froze the UI solid during hit floods (live scans stream tens of
+        // thousands of hits): each tick got costlier as results grew until
+        // the dispatcher did nothing but sort. Refresh at most once per
+        // second while streaming; the search's finally block does a final
+        // refresh so the finished view is never stale.
+        var nowUtc = DateTime.UtcNow;
+        if (nowUtc - _lastResultViewRefreshUtc >= TimeSpan.FromSeconds(1))
+        {
+            _lastResultViewRefreshUtc = nowUtc;
+            RebuildFacetOptions();
+            RefreshFilesView();
+        }
+
         _status.Text = $"Searching... {TotalHits:n0} hits in {FilesMatched:n0} {ResultItemNounPlural}";
     }
+
+    private DateTime _lastResultViewRefreshUtc = DateTime.MinValue;
 
     [RelayCommand(CanExecute = nameof(CanCancel))]
     private void Cancel()

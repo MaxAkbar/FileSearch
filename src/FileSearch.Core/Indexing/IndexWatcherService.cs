@@ -10,6 +10,9 @@ namespace FileSearch.Core.Indexing;
 
 public sealed class IndexWatcherService : IIndexWatcherService
 {
+    private static readonly TimeSpan FileChangeDebounce = TimeSpan.FromMilliseconds(500);
+    private static readonly TimeSpan RootRefreshDebounce = TimeSpan.FromSeconds(5);
+
     private readonly IIndexQueue _queue;
     private readonly object _sync = new();
     private readonly Dictionary<string, FileSystemWatcher> _watchers = new(StringComparer.OrdinalIgnoreCase);
@@ -45,12 +48,12 @@ public sealed class IndexWatcherService : IIndexWatcherService
         watcher.Created += (_, e) =>
         {
             RecordEvent(root);
-            QueueUpsertOrRootRefresh(location, e.FullPath);
+            QueueCreated(location, e.FullPath);
         };
         watcher.Changed += (_, e) =>
         {
             RecordEvent(root);
-            QueueUpsertOrRootRefresh(location, e.FullPath);
+            QueueChanged(location, e.FullPath);
         };
         watcher.Deleted += (_, e) =>
         {
@@ -61,7 +64,7 @@ public sealed class IndexWatcherService : IIndexWatcherService
         {
             RecordEvent(root);
             QueueDelete(location, e.OldFullPath);
-            QueueUpsertOrRootRefresh(location, e.FullPath);
+            QueueCreated(location, e.FullPath);
         };
         watcher.Error += (_, e) =>
         {
@@ -132,21 +135,41 @@ public sealed class IndexWatcherService : IIndexWatcherService
             ? diagnostics
             : new IndexWatcherDiagnosticInfo(root, IsWatching: false, LastEventUtc: null, LastErrorUtc: null, LastError: null);
 
-    private void QueueUpsertOrRootRefresh(IndexedLocation location, string path)
+    private void QueueCreated(IndexedLocation location, string path)
     {
+        // A created (or renamed-in) directory needs a subtree walk: the
+        // children of a moved-in tree do not raise their own events.
         if (Directory.Exists(path))
         {
             QueueRootRefresh(location);
             return;
         }
 
+        QueueUpsert(location, path);
+    }
+
+    private void QueueChanged(IndexedLocation location, string path)
+    {
+        // Changed events for directories are echoes of child activity (the
+        // folder's LastWrite ticks when a child changes); the children raise
+        // their own events. Routing these to a root refresh made every save
+        // inside a subfolder queue a full refresh, which then dropped the
+        // per-file upserts it superseded.
+        if (Directory.Exists(path))
+            return;
+
+        QueueUpsert(location, path);
+    }
+
+    private void QueueUpsert(IndexedLocation location, string path)
+    {
         Enqueue(new IndexQueueItem(
             location.Root,
             path,
             location.WalkerOptions,
             IndexChangeKind.UpsertFile,
             IndexQueuePriority.Normal,
-            DateTime.UtcNow.AddSeconds(2),
+            DateTime.UtcNow.Add(FileChangeDebounce),
             Persisted: true));
     }
 
@@ -158,7 +181,7 @@ public sealed class IndexWatcherService : IIndexWatcherService
             location.WalkerOptions,
             IndexChangeKind.DeleteFile,
             IndexQueuePriority.Normal,
-            DateTime.UtcNow.AddSeconds(2),
+            DateTime.UtcNow.Add(FileChangeDebounce),
             Persisted: true));
     }
 
@@ -170,7 +193,7 @@ public sealed class IndexWatcherService : IIndexWatcherService
             location.WalkerOptions,
             IndexChangeKind.RefreshRoot,
             IndexQueuePriority.Low,
-            DateTime.UtcNow.AddSeconds(5),
+            DateTime.UtcNow.Add(RootRefreshDebounce),
             Persisted: true));
     }
 

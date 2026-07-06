@@ -49,10 +49,10 @@ public sealed class BackgroundIndexerSearchCoordinatorTests
         var hits = await CollectAsync(searcher, BuildRequest(useIndex: true));
 
         var hit = Assert.Single(hits);
-        Assert.Equal("live.txt", hit.Path);
-        Assert.False(index.SearchWasUsed);
+        Assert.Equal("indexed.txt", hit.Path);
+        Assert.True(index.SearchWasUsed);
         Assert.Equal(1, backgroundIndexer.GetStatusCallCount);
-        Assert.Equal(2, backgroundIndexer.SetForegroundSearchActiveCallCount);
+        Assert.Equal(0, backgroundIndexer.SetForegroundSearchActiveCallCount);
     }
 
     [Fact]

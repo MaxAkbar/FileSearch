@@ -11,6 +11,13 @@ public sealed class IndexQueue : IIndexQueue, IDisposable
 {
     private static readonly TimeSpan DefaultDebounce = TimeSpan.FromSeconds(2);
 
+    /// <summary>
+    /// Ceiling on how far coalescing may push an item past its first enqueue.
+    /// Without it, steady events (a log file under append, a busy folder)
+    /// slide the due time forever and the item is never processed.
+    /// </summary>
+    private static readonly TimeSpan MaxDebounceWindow = TimeSpan.FromSeconds(30);
+
     private readonly object _sync = new();
     private readonly Dictionary<string, IndexQueueItem> _items = new(StringComparer.OrdinalIgnoreCase);
     private readonly SemaphoreSlim _signal = new(0);
@@ -42,6 +49,7 @@ public sealed class IndexQueue : IIndexQueue, IDisposable
             Root = IndexPath.NormalizeRoot(item.Root),
             Path = item.Path is null ? null : IndexPath.NormalizeFile(item.Path),
             DueUtc = due,
+            FirstQueuedUtc = item.FirstQueuedUtc == default ? DateTime.UtcNow : item.FirstQueuedUtc,
         };
 
         bool persist;
@@ -52,7 +60,7 @@ public sealed class IndexQueue : IIndexQueue, IDisposable
             // redundant: drop incoming ones and purge queued ones when a
             // refresh arrives. Persisting the root refresh also clears older
             // pending rows for that root.
-            if (normalized.Kind == IndexChangeKind.RefreshRoot)
+            if (IsContentRootRefresh(normalized.Kind))
             {
                 RemoveFileItemsForRootLocked(normalized.Root);
             }
@@ -87,7 +95,7 @@ public sealed class IndexQueue : IIndexQueue, IDisposable
         List<string>? stale = null;
         foreach (var (key, queued) in _items)
         {
-            if (queued.Kind != IndexChangeKind.RefreshRoot &&
+            if (!IsContentRootRefresh(queued.Kind) &&
                 string.Equals(queued.Root, root, StringComparison.OrdinalIgnoreCase))
             {
                 (stale ??= new List<string>()).Add(key);
@@ -199,6 +207,13 @@ public sealed class IndexQueue : IIndexQueue, IDisposable
             _signal.Release();
     }
 
+    /// <summary>Test hook: point-in-time copy of the queued items.</summary>
+    internal IReadOnlyList<IndexQueueItem> SnapshotItems()
+    {
+        lock (_sync)
+            return _items.Values.ToList();
+    }
+
     public IReadOnlyDictionary<string, int> GetQueuedRootCounts()
     {
         lock (_sync)
@@ -236,13 +251,41 @@ public sealed class IndexQueue : IIndexQueue, IDisposable
 
     private static IndexQueueItem Coalesce(IndexQueueItem existing, IndexQueueItem incoming)
     {
-        if (incoming.Kind == IndexChangeKind.RefreshRoot || existing.Kind == IndexChangeKind.RefreshRoot)
-            return incoming.Kind == IndexChangeKind.RefreshRoot ? incoming : existing;
+        var firstQueued = existing.FirstQueuedUtc <= incoming.FirstQueuedUtc
+            ? existing.FirstQueuedUtc
+            : incoming.FirstQueuedUtc;
 
+        if (IsContentRootRefresh(incoming.Kind) || IsContentRootRefresh(existing.Kind))
+        {
+            // A queued refresh keeps its EARLIEST due time. Taking the later
+            // one let every new filesystem event push the refresh further
+            // away, starving it forever under steady activity — while the
+            // per-file changes it supersedes were being dropped.
+            var refresh = incoming.RefreshMode == IndexRefreshMode.Full
+                ? incoming
+                : existing.RefreshMode == IndexRefreshMode.Full
+                    ? existing
+                    : IsContentRootRefresh(incoming.Kind)
+                        ? incoming
+                        : existing;
+            return refresh with
+            {
+                DueUtc = existing.DueUtc <= incoming.DueUtc ? existing.DueUtc : incoming.DueUtc,
+                Priority = incoming.Priority < existing.Priority ? incoming.Priority : existing.Priority,
+                FirstQueuedUtc = firstQueued,
+            };
+        }
+
+        // File items debounce: rapid rewrites extend the due time so one
+        // upsert covers them — but never past MaxDebounceWindow from the
+        // first enqueue, or a file under constant append is never indexed.
+        var slidDue = incoming.DueUtc > existing.DueUtc ? incoming.DueUtc : existing.DueUtc;
+        var dueCeiling = firstQueued.Add(MaxDebounceWindow);
         return incoming with
         {
-            DueUtc = incoming.DueUtc > existing.DueUtc ? incoming.DueUtc : existing.DueUtc,
+            DueUtc = slidDue <= dueCeiling ? slidDue : dueCeiling,
             Priority = incoming.Priority < existing.Priority ? incoming.Priority : existing.Priority,
+            FirstQueuedUtc = firstQueued,
         };
     }
 
@@ -256,6 +299,9 @@ public sealed class IndexQueue : IIndexQueue, IDisposable
 
     private static string RefreshKey(string root) => $"R|{root}";
 
+    private static bool IsContentRootRefresh(IndexChangeKind kind) =>
+        kind is IndexChangeKind.RefreshRoot;
+
     private static bool IsRootLevelChange(IndexChangeKind kind) =>
-        kind is IndexChangeKind.RefreshRoot or IndexChangeKind.RefreshSemanticRoot;
+        IsContentRootRefresh(kind) || kind is IndexChangeKind.RefreshSemanticRoot;
 }

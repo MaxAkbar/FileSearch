@@ -335,7 +335,7 @@ internal sealed class IndexerApplicationContext : Forms.ApplicationContext
                         location,
                         queueInitialRefresh: false,
                         cancellationToken).ConfigureAwait(false);
-                    await _indexingService.EnqueueRootRefreshAsync(
+                    await _indexingService.EnqueueRootRebuildAsync(
                         location.Root,
                         location.WalkerOptions,
                         IndexQueuePriority.High,

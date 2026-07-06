@@ -2,6 +2,7 @@ using System.Buffers;
 using System.Collections.Generic;
 using System.IO;
 using System.Runtime.CompilerServices;
+using System.Text;
 using System.Threading;
 
 namespace FileSearch.Core.Extractors;
@@ -20,6 +21,7 @@ public sealed class PlainTextExtractor : ITextExtractor
     public IReadOnlyCollection<string> SupportedExtensions => TextFileExtensions.All;
 
     private const int BinarySniffBytes = 8192;
+    private const int ReadBufferChars = 64 * 1024;
 
     public async IAsyncEnumerable<TextLine> ExtractAsync(
         string path,
@@ -60,11 +62,52 @@ public sealed class PlainTextExtractor : ITextExtractor
             stream.Position = 0;
             using var reader = new StreamReader(stream, detectEncodingFromByteOrderMarks: true, leaveOpen: true);
 
+            var buffer = ArrayPool<char>.Shared.Rent(ReadBufferChars);
+            var lineBuilder = new StringBuilder();
             int lineNumber = 0;
-            while (await reader.ReadLineAsync(cancellationToken).ConfigureAwait(false) is { } line)
+            var previousWasCarriageReturn = false;
+            try
             {
-                lineNumber++;
-                yield return new TextLine(lineNumber, line);
+                while (true)
+                {
+                    var read = await reader.ReadAsync(buffer.AsMemory(0, ReadBufferChars), cancellationToken).ConfigureAwait(false);
+                    if (read == 0)
+                        break;
+
+                    for (var i = 0; i < read; i++)
+                    {
+                        var ch = buffer[i];
+                        if (previousWasCarriageReturn)
+                        {
+                            previousWasCarriageReturn = false;
+                            if (ch == '\n')
+                                continue;
+                        }
+
+                        if (ch == '\r')
+                        {
+                            yield return new TextLine(++lineNumber, lineBuilder.ToString());
+                            lineBuilder.Clear();
+                            previousWasCarriageReturn = true;
+                        }
+                        else if (ch == '\n')
+                        {
+                            yield return new TextLine(++lineNumber, lineBuilder.ToString());
+                            lineBuilder.Clear();
+                        }
+                        else
+                        {
+                            lineBuilder.Append(ch);
+                        }
+                    }
+                }
+
+                if (lineBuilder.Length > 0)
+                    yield return new TextLine(++lineNumber, lineBuilder.ToString());
+            }
+            finally
+            {
+                ArrayPool<char>.Shared.Return(buffer);
             }
         }
     }

@@ -63,6 +63,32 @@ public sealed class PlainTextExtractorTests : IDisposable
         Assert.Empty(lines);
     }
 
+    [Fact]
+    public async Task ReadsMixedLineEndingsLikeStreamReaderReadLine()
+    {
+        var path = Path.Combine(_dir, "mixed.txt");
+        await File.WriteAllTextAsync(path, "alpha\r\nbeta\rgamma\ndelta", TestContext.Current.CancellationToken);
+
+        var lines = await ExtractAsync(path);
+
+        Assert.Equal(new[] { "alpha", "beta", "gamma", "delta" }, lines.Select(static line => line.Content));
+        Assert.Equal(new[] { 1, 2, 3, 4 }, lines.Select(static line => line.Number));
+    }
+
+    [Fact]
+    public async Task ReadsLongLinesAcrossBlockBoundaries()
+    {
+        var path = Path.Combine(_dir, "long.txt");
+        var longLine = new string('x', 70 * 1024);
+        await File.WriteAllTextAsync(path, longLine + "\nneedle", TestContext.Current.CancellationToken);
+
+        var lines = await ExtractAsync(path);
+
+        Assert.Equal(2, lines.Count);
+        Assert.Equal(longLine, lines[0].Content);
+        Assert.Equal("needle", lines[1].Content);
+    }
+
     private static async Task<List<TextLine>> ExtractAsync(string path)
     {
         var extractor = new PlainTextExtractor();

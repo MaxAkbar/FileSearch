@@ -7,6 +7,10 @@ public sealed record FileIndexOptions
 {
     public string DatabasePath { get; init; } = GetDefaultDatabasePath();
 
+    public bool UseHybridHotTables { get; init; }
+
+    public bool AnalyzeAfterBuild { get; init; }
+
     private static string GetDefaultDatabasePath()
     {
         var overridePath = Environment.GetEnvironmentVariable("FILESEARCH_INDEX_DATABASE_PATH");

@@ -22,6 +22,7 @@ internal static class FileStatus
     public const string Indexing = "indexing";
     public const string Skipped = "skipped";
     public const string Error = "error";
+    public const string Stale = "stale";
 }
 
 internal sealed record ExistingFileRow(
@@ -34,7 +35,10 @@ internal sealed record ExistingFileRow(
     string Status,
     string ContentVersion,
     string ExtractorId,
-    string ExtractorVersion);
+    string ExtractorVersion,
+    long ExtractionAttemptCount);
+
+internal sealed record InsertedFileRow(long Id, IReadOnlyList<string> ReplacedPaths);
 
 internal sealed record RootRow(
     long Id,
@@ -98,6 +102,12 @@ internal sealed record IndexedFileMetadata(
     string Status,
     string ExtractorId);
 
+internal sealed record LineTrigramSource(long Id, string Content);
+
+internal sealed record CachedIndexedLine(long Id, long FileId, IndexedLine Line);
+
+internal sealed record FileChangeRow(long Id, string Path, string Status);
+
 /// <summary>
 /// Every DML statement against the index tables lives here, composed through
 /// <see cref="Sql.Format"/> so values can't reach the SQL text unescaped —
@@ -113,14 +123,15 @@ internal static partial class IndexTables
     private static readonly JsonSerializerOptions s_locatorJsonOptions = new();
 
     private const int MetadataTokenPrefixMinLength = 2;
-    private const int MetadataTokenPrefixMaxLength = 32;
+    private const int MetadataTokenPrefixMaxLength = 8;
+    private const int MetadataTokenInsertBatchSize = 512;
+    private const int DeleteIdBatchSize = 500;
 
     private const string SelectLinesColumns =
         "SELECT f.path, f.file_name, f.extension, f.size_bytes, f.created_utc_ticks, f.modified_utc_ticks, " +
         "f.status, f.extractor_id, f.file_type_category, l.line_number, l.content, l.anchor_json, " +
-        "l.content_unit_id, u.kind, u.locator_json, u.content_hash, u.language, u.extractor_id, u.extractor_version " +
-        "FROM lines l INNER JOIN files f ON f.id = l.file_id " +
-        "LEFT JOIN content_units u ON u.id = l.content_unit_id WHERE ";
+        "l.content_unit_id " +
+        "FROM lines l INNER JOIN files f ON f.id = l.file_id WHERE ";
 
     private const string SelectLinesOrder = " ORDER BY f.path, l.line_number";
 
@@ -130,7 +141,7 @@ internal static partial class IndexTables
 
     // ----- index_roots -----
 
-    public static async Task<long> EnsureRootAsync(Database db, string root, string profile, CancellationToken cancellationToken)
+    public static async Task<long> EnsureRootAsync(DbExec db, string root, string profile, CancellationToken cancellationToken)
     {
         var existing = await GetRootAsync(db, root, cancellationToken).ConfigureAwait(false);
         if (existing is not null)
@@ -145,7 +156,7 @@ internal static partial class IndexTables
         return id;
     }
 
-    public static async Task<RootRow?> GetRootAsync(Database db, string root, CancellationToken cancellationToken)
+    public static async Task<RootRow?> GetRootAsync(DbExec db, string root, CancellationToken cancellationToken)
     {
         await using var result = await db.ExecuteAsync(
             Sql.Format(
@@ -180,7 +191,7 @@ internal static partial class IndexTables
     }
 
     public static async Task<IndexRootIdentity?> GetRootIdentityAsync(
-        Database db,
+        DbExec db,
         string root,
         CancellationToken cancellationToken)
     {
@@ -203,13 +214,13 @@ internal static partial class IndexTables
             result.Current[2].IsNull ? null : result.Current[2].AsText);
     }
 
-    public static async Task<long?> GetRootIdAsync(Database db, string root, CancellationToken cancellationToken)
+    public static async Task<long?> GetRootIdAsync(DbExec db, string root, CancellationToken cancellationToken)
     {
         var row = await GetRootAsync(db, root, cancellationToken).ConfigureAwait(false);
         return row?.Id;
     }
 
-    public static async Task<List<string>> ListRootPathsAsync(Database db, CancellationToken cancellationToken)
+    public static async Task<List<string>> ListRootPathsAsync(DbExec db, CancellationToken cancellationToken)
     {
         var roots = new List<string>();
         await using var result = await db.ExecuteAsync(
@@ -222,13 +233,13 @@ internal static partial class IndexTables
         return roots;
     }
 
-    public static Task MarkRootRefreshStartedAsync(Database db, long rootId, string profile, CancellationToken cancellationToken) =>
+    public static Task MarkRootRefreshStartedAsync(DbExec db, long rootId, string profile, CancellationToken cancellationToken) =>
         ExecuteAsync(
             db,
             Sql.Format($"UPDATE index_roots SET indexed_utc_ticks = 0, options_hash = {profile}, content_version = {IndexContentVersion.Current} WHERE id = {rootId}"),
             cancellationToken);
 
-    public static Task MarkRootRefreshedAsync(Database db, long rootId, string profile, CancellationToken cancellationToken) =>
+    public static Task MarkRootRefreshedAsync(DbExec db, long rootId, string profile, CancellationToken cancellationToken) =>
         ExecuteAsync(
             db,
             Sql.Format(
@@ -238,7 +249,7 @@ internal static partial class IndexTables
             cancellationToken);
 
     public static Task MarkRootValidatedAsync(
-        Database db,
+        DbExec db,
         long rootId,
         IndexValidationResult result,
         CancellationToken cancellationToken) =>
@@ -255,7 +266,7 @@ internal static partial class IndexTables
                 $"last_validation_failed_count = {result.FailedChecks} WHERE id = {rootId}"),
             cancellationToken);
 
-    public static async Task DeleteRootAsync(Database db, long rootId, CancellationToken cancellationToken)
+    public static async Task DeleteRootAsync(DbExec db, long rootId, CancellationToken cancellationToken)
     {
         await DeleteValidationDriftsForRootAsync(db, rootId, cancellationToken).ConfigureAwait(false);
         await ExecuteAsync(db, Sql.Format($"DELETE FROM index_roots WHERE id = {rootId}"), cancellationToken)
@@ -263,7 +274,7 @@ internal static partial class IndexTables
     }
 
     public static Task SetRootVolumeAsync(
-        Database db,
+        DbExec db,
         long rootId,
         long volumeId,
         IndexedFileIdentity? rootIdentity,
@@ -284,7 +295,7 @@ internal static partial class IndexTables
             cancellationToken);
 
     public static async Task<List<IndexRootStrategyInfo>> ListRootStrategiesAsync(
-        Database db,
+        DbExec db,
         CancellationToken cancellationToken)
     {
         var strategies = new List<IndexRootStrategyInfo>();
@@ -320,11 +331,11 @@ internal static partial class IndexTables
 
     // ----- index_directories -----
 
-    public static Task DeleteDirectoriesForRootAsync(Database db, long rootId, CancellationToken cancellationToken) =>
+    public static Task DeleteDirectoriesForRootAsync(DbExec db, long rootId, CancellationToken cancellationToken) =>
         ExecuteAsync(db, Sql.Format($"DELETE FROM index_directories WHERE root_id = {rootId}"), cancellationToken);
 
     public static async Task EnsureDirectoryAsync(
-        Database db,
+        DbExec db,
         long rootId,
         string path,
         IndexedFileIdentity identity,
@@ -335,16 +346,7 @@ internal static partial class IndexTables
             Sql.Format($"SELECT id FROM index_directories WHERE root_id = {rootId} AND path = {path}"),
             cancellationToken).ConfigureAwait(false);
         if (existing.Count > 0)
-        {
-            await db.ExecuteAsync(
-                Sql.Format(
-                    $"UPDATE index_directories SET volume_id = {identity.VolumeId}, " +
-                    $"directory_reference_number = {identity.FileReferenceNumber}, " +
-                    $"parent_file_reference_number = {identity.ParentFileReferenceNumber}, " +
-                    $"observed_utc_ticks = {DateTime.UtcNow.Ticks} WHERE id = {existing[0]}"),
-                cancellationToken).ConfigureAwait(false);
             return;
-        }
 
         var id = await GetNextIdAsync(db, "index_directories", cancellationToken).ConfigureAwait(false);
         await db.ExecuteAsync(
@@ -357,23 +359,14 @@ internal static partial class IndexTables
     // ----- index_volumes -----
 
     public static async Task<long> EnsureVolumeAsync(
-        Database db,
+        DbExec db,
         IndexVolumeInfo volume,
         CancellationToken cancellationToken)
     {
         var existing = await GetVolumeRowAsync(db, volume.VolumeKey, cancellationToken).ConfigureAwait(false);
         var now = DateTime.UtcNow.Ticks;
         if (existing is not null)
-        {
-            await db.ExecuteAsync(
-                Sql.Format(
-                    $"UPDATE index_volumes SET volume_serial = {volume.VolumeSerial}, filesystem_name = {volume.FileSystemName}, " +
-                    $"is_remote = {Bool(volume.IsRemote)}, usn_supported = {Bool(volume.UsnSupported)}, " +
-                    $"drive_kind = {volume.DriveKind.ToString()}, " +
-                    $"last_checked_utc_ticks = {now} WHERE id = {existing.Id}"),
-                cancellationToken).ConfigureAwait(false);
             return existing.Id;
-        }
 
         var id = await GetNextIdAsync(db, "index_volumes", cancellationToken).ConfigureAwait(false);
         await db.ExecuteAsync(
@@ -385,7 +378,7 @@ internal static partial class IndexTables
     }
 
     public static async Task<VolumeRow?> GetVolumeRowAsync(
-        Database db,
+        DbExec db,
         string volumeKey,
         CancellationToken cancellationToken)
     {
@@ -407,7 +400,7 @@ internal static partial class IndexTables
     }
 
     public static async Task<string?> GetVolumeKeyAsync(
-        Database db,
+        DbExec db,
         long volumeId,
         CancellationToken cancellationToken)
     {
@@ -421,7 +414,7 @@ internal static partial class IndexTables
     }
 
     public static async Task<List<IndexVolumeHealthInfo>> ListVolumeHealthAsync(
-        Database db,
+        DbExec db,
         CancellationToken cancellationToken)
     {
         var volumes = new List<IndexVolumeHealthInfo>();
@@ -453,7 +446,7 @@ internal static partial class IndexTables
     }
 
     public static async Task<IndexReplayReferenceSet> ReadReplayReferencesAsync(
-        Database db,
+        DbExec db,
         long volumeId,
         CancellationToken cancellationToken)
     {
@@ -480,7 +473,7 @@ internal static partial class IndexTables
     }
 
     public static Task UpdateVolumeCheckpointAsync(
-        Database db,
+        DbExec db,
         long volumeId,
         ulong journalId,
         long lastCommittedUsn,
@@ -498,61 +491,77 @@ internal static partial class IndexTables
     // ----- files -----
 
     public static async Task<ExistingFileRow?> GetFileRowAsync(
-        Database db,
+        DbExec db,
         long rootId,
         string path,
         CancellationToken cancellationToken)
     {
+        ExistingFileRow? latest = null;
         await using var result = await db.ExecuteAsync(
-            Sql.Format($"SELECT id, path, size_bytes, created_utc_ticks, modified_utc_ticks, attributes, status, content_version, extractor_id, extractor_version FROM files WHERE root_id = {rootId} AND path = {path}"),
-            cancellationToken).ConfigureAwait(false);
-
-        if (!await result.MoveNextAsync(cancellationToken).ConfigureAwait(false))
-            return null;
-
-        return new ExistingFileRow(
-            result.Current[0].AsInteger,
-            result.Current[1].AsText,
-            result.Current[2].AsInteger,
-            result.Current[3].AsInteger,
-            result.Current[4].AsInteger,
-            result.Current[5].AsInteger,
-            result.Current[6].AsText,
-            result.Current[7].IsNull ? string.Empty : result.Current[7].AsText,
-            result.Current[8].IsNull ? string.Empty : result.Current[8].AsText,
-            result.Current[9].IsNull ? string.Empty : result.Current[9].AsText);
-    }
-
-    public static async Task<Dictionary<string, ExistingFileRow>> LoadExistingFilesAsync(
-        Database db,
-        long rootId,
-        CancellationToken cancellationToken)
-    {
-        var rows = new Dictionary<string, ExistingFileRow>(StringComparer.OrdinalIgnoreCase);
-        await using var result = await db.ExecuteAsync(
-            Sql.Format($"SELECT id, path, size_bytes, created_utc_ticks, modified_utc_ticks, attributes, status, content_version, extractor_id, extractor_version FROM files WHERE root_id = {rootId}"),
+            Sql.Format(
+                $"SELECT id, path, size_bytes, created_utc_ticks, modified_utc_ticks, attributes, status, content_version, extractor_id, extractor_version, extraction_attempt_count " +
+                $"FROM files WHERE root_id = {rootId} AND path = {path} AND status != {FileStatus.Indexing}"),
             cancellationToken).ConfigureAwait(false);
 
         while (await result.MoveNextAsync(cancellationToken).ConfigureAwait(false))
         {
-            var row = new ExistingFileRow(
-                result.Current[0].AsInteger,
-                result.Current[1].AsText,
-                result.Current[2].AsInteger,
-                result.Current[3].AsInteger,
-                result.Current[4].AsInteger,
-                result.Current[5].AsInteger,
-                result.Current[6].AsText,
-                result.Current[7].IsNull ? string.Empty : result.Current[7].AsText,
-                result.Current[8].IsNull ? string.Empty : result.Current[8].AsText,
-                result.Current[9].IsNull ? string.Empty : result.Current[9].AsText);
-            rows[row.Path] = row;
+            var row = ReadExistingFileRow(result.Current);
+            if (latest is null || row.Id > latest.Id)
+                latest = row;
+        }
+
+        return latest is not null && !IsStaleStatus(latest.Status) ? latest : null;
+    }
+
+    public static async Task<Dictionary<string, ExistingFileRow>> LoadExistingFilesAsync(
+        DbExec db,
+        long rootId,
+        CancellationToken cancellationToken)
+    {
+        var latestRows = new Dictionary<string, ExistingFileRow>(StringComparer.OrdinalIgnoreCase);
+        await using var result = await db.ExecuteAsync(
+            Sql.Format(
+                $"SELECT id, path, size_bytes, created_utc_ticks, modified_utc_ticks, attributes, status, content_version, extractor_id, extractor_version, extraction_attempt_count " +
+                $"FROM files WHERE root_id = {rootId} AND status != {FileStatus.Indexing}"),
+            cancellationToken).ConfigureAwait(false);
+
+        while (await result.MoveNextAsync(cancellationToken).ConfigureAwait(false))
+        {
+            var row = ReadExistingFileRow(result.Current);
+            if (!latestRows.TryGetValue(row.Path, out var existing) || row.Id > existing.Id)
+                latestRows[row.Path] = row;
+        }
+
+        var rows = new Dictionary<string, ExistingFileRow>(StringComparer.OrdinalIgnoreCase);
+        foreach (var (path, row) in latestRows)
+        {
+            if (!IsStaleStatus(row.Status))
+                rows[path] = row;
         }
 
         return rows;
     }
 
-    public static async Task<long> EnsureFileRowAsync(
+    private static ExistingFileRow ReadExistingFileRow(DbValue[] row) =>
+        new(
+            row[0].AsInteger,
+            row[1].AsText,
+            row[2].AsInteger,
+            row[3].AsInteger,
+            row[4].AsInteger,
+            row[5].AsInteger,
+            row[6].AsText,
+            row[7].IsNull ? string.Empty : row[7].AsText,
+            row[8].IsNull ? string.Empty : row[8].AsText,
+            row[9].IsNull ? string.Empty : row[9].AsText,
+            row[10].IsNull ? 0 : row[10].AsInteger);
+
+    /// <summary>
+    /// Inserts a new file-version row. Changed-file indexing is append-only:
+    /// readers resolve the latest row per root/path, and delete/skip paths
+    /// append tombstones instead of updating or deleting old rows.
+    /// </summary>
+    public static async Task<InsertedFileRow> InsertFileRowAsync(
         Database db,
         long rootId,
         string path,
@@ -562,91 +571,217 @@ internal static partial class IndexTables
         IndexedFileIdentity? identity,
         string extractorId,
         string extractorVersion,
+        long extractionAttemptCount,
+        long lastExtractionAttemptUtcTicks,
         CancellationToken cancellationToken)
     {
-        var fileName = Path.GetFileName(path);
-        var fileNameLower = fileName.ToLowerInvariant();
-        var extension = Path.GetExtension(path).ToLowerInvariant();
-        var directoryPath = Path.GetDirectoryName(path) ?? string.Empty;
-        var pathLower = path.ToLowerInvariant();
-        var directoryPathLower = directoryPath.ToLowerInvariant();
-        var attributes = (long)info.Attributes;
-        var fileTypeCategory = FileTypeCategory.ForExtension(extension);
-        var existingByIdentity = identity is null
-            ? new List<long>()
-            : await ReadIdsAsync(
-                db,
-                Sql.Format(
-                    $"SELECT id FROM files WHERE root_id = {rootId} AND volume_id = {identity.VolumeId} " +
-                    $"AND file_reference_number = {identity.FileReferenceNumber}"),
-                cancellationToken).ConfigureAwait(false);
-        var existingByPath = await ReadIdsAsync(
-                db,
-                Sql.Format($"SELECT id FROM files WHERE root_id = {rootId} AND path = {path}"),
-                cancellationToken).ConfigureAwait(false);
-        var now = DateTime.UtcNow.Ticks;
-        var fileId = existingByIdentity.FirstOrDefault();
-        var pathId = existingByPath.FirstOrDefault();
-
-        if (fileId > 0 && pathId > 0 && fileId != pathId)
-            await DeleteFileByIdAsync(db, pathId, cancellationToken).ConfigureAwait(false);
-
-        foreach (var duplicateId in existingByIdentity.Skip(1))
-            await DeleteFileByIdAsync(db, duplicateId, cancellationToken).ConfigureAwait(false);
-
-        if (fileId == 0)
-            fileId = pathId;
-
-        if (fileId == 0)
+        List<string> replacedPaths = [];
+        if (identity is not null)
         {
-            var id = await GetNextIdAsync(db, "files", cancellationToken).ConfigureAwait(false);
-            await db.ExecuteAsync(
-                Sql.Format(
-                    $"INSERT INTO files (id, root_id, path, path_lower, directory_path, directory_path_lower, file_name, file_name_lower, extension, size_bytes, created_utc_ticks, modified_utc_ticks, attributes, file_type_category, indexed_utc_ticks, status, error, volume_id, file_reference_number, parent_file_reference_number, last_observed_usn, content_version, open_count, last_opened_utc_ticks, extractor_id, extractor_version, extraction_attempt_count, last_extraction_attempt_utc_ticks) " +
-                    $"VALUES ({id}, {rootId}, {path}, {pathLower}, {directoryPath}, {directoryPathLower}, {fileName}, {fileNameLower}, {extension}, {info.Length}, {info.CreationTimeUtc.Ticks}, {info.LastWriteTimeUtc.Ticks}, {attributes}, {fileTypeCategory}, {now}, {status}, {error}, {identity?.VolumeId}, {identity?.FileReferenceNumber}, " +
-                    $"{identity?.ParentFileReferenceNumber}, {identity?.LastObservedUsn}, {IndexContentVersion.Current}, 0, 0, {extractorId}, {extractorVersion}, 0, 0)"),
-                cancellationToken).ConfigureAwait(false);
-            await ReplaceMetadataTokensAsync(
-                db,
-                rootId,
-                id,
-                path,
-                directoryPath,
-                fileName,
-                extension,
-                fileTypeCategory,
-                cancellationToken).ConfigureAwait(false);
-            return id;
+            replacedPaths = await InsertIdentityTombstonesAsync(
+                    db,
+                    rootId,
+                    path,
+                    identity.VolumeId,
+                    identity.FileReferenceNumber,
+                    cancellationToken)
+                .ConfigureAwait(false);
         }
 
+        var values = CreateFileRowValues(
+            rootId,
+            path,
+            info.Length,
+            info.CreationTimeUtc.Ticks,
+            info.LastWriteTimeUtc.Ticks,
+            (long)info.Attributes,
+            status,
+            error,
+            identity,
+            extractorId,
+            extractorVersion,
+            extractionAttemptCount,
+            lastExtractionAttemptUtcTicks);
+        var id = await InsertFileRowValuesAsync(db, values, cancellationToken).ConfigureAwait(false);
+        if (!IsStaleStatus(status) && !string.Equals(status, FileStatus.Indexing, StringComparison.OrdinalIgnoreCase))
+        {
+            await InsertMetadataTokensAsync(
+                    db,
+                    rootId,
+                    id,
+                    path,
+                    values.DirectoryPath,
+                    values.FileName,
+                    values.Extension,
+                    values.FileTypeCategory,
+                    cancellationToken)
+                .ConfigureAwait(false);
+        }
+
+        return new InsertedFileRow(id, replacedPaths);
+    }
+
+    private static async Task<List<string>> InsertIdentityTombstonesAsync(
+        DbExec db,
+        long rootId,
+        string currentPath,
+        long volumeId,
+        string fileReferenceNumber,
+        CancellationToken cancellationToken)
+    {
+        var latestRows = new Dictionary<string, (long Id, string Status)>(StringComparer.OrdinalIgnoreCase);
+        var replacedPaths = new List<string>();
+        await using (var result = await db.ExecuteAsync(
+                Sql.Format(
+                    $"SELECT id, path, status FROM files WHERE root_id = {rootId} AND volume_id = {volumeId} " +
+                    $"AND file_reference_number = {fileReferenceNumber} AND status != {FileStatus.Indexing}"),
+                cancellationToken).ConfigureAwait(false))
+        {
+            while (await result.MoveNextAsync(cancellationToken).ConfigureAwait(false))
+            {
+                var path = result.Current[1].AsText;
+                var row = (Id: result.Current[0].AsInteger, Status: result.Current[2].AsText);
+                if (!latestRows.TryGetValue(path, out var existing) || row.Id > existing.Id)
+                    latestRows[path] = row;
+            }
+        }
+
+        foreach (var (path, row) in latestRows)
+        {
+            if (!IsStaleStatus(row.Status) &&
+                !string.Equals(path, currentPath, StringComparison.OrdinalIgnoreCase))
+            {
+                await InsertFileTombstoneAsync(db, rootId, path, identity: null, cancellationToken).ConfigureAwait(false);
+                replacedPaths.Add(path);
+            }
+        }
+
+        return replacedPaths;
+    }
+
+    public static async Task<long> InsertFileTombstoneAsync(
+        DbExec db,
+        long rootId,
+        string path,
+        IndexedFileIdentity? identity,
+        CancellationToken cancellationToken)
+    {
+        var values = CreateFileRowValues(
+            rootId,
+            path,
+            sizeBytes: 0,
+            createdUtcTicks: 0,
+            modifiedUtcTicks: 0,
+            attributes: 0,
+            status: FileStatus.Stale,
+            error: null,
+            identity,
+            extractorId: string.Empty,
+            extractorVersion: string.Empty,
+            extractionAttemptCount: 0,
+            lastExtractionAttemptUtcTicks: 0);
+        return await InsertFileRowValuesAsync(db, values, cancellationToken).ConfigureAwait(false);
+    }
+
+    private static async Task<long> InsertFileRowValuesAsync(
+        DbExec db,
+        FileRowValues values,
+        CancellationToken cancellationToken)
+    {
+        var id = await GetNextIdAsync(db, "files", cancellationToken).ConfigureAwait(false);
         await db.ExecuteAsync(
             Sql.Format(
-                $"UPDATE files SET path = {path}, path_lower = {pathLower}, directory_path = {directoryPath}, " +
-                $"directory_path_lower = {directoryPathLower}, file_name = {fileName}, file_name_lower = {fileNameLower}, " +
-                $"extension = {extension}, size_bytes = {info.Length}, created_utc_ticks = {info.CreationTimeUtc.Ticks}, " +
-                $"modified_utc_ticks = {info.LastWriteTimeUtc.Ticks}, attributes = {attributes}, file_type_category = {fileTypeCategory}, indexed_utc_ticks = {now}, " +
-                $"status = {status}, error = {error}, volume_id = {identity?.VolumeId}, " +
-                $"file_reference_number = {identity?.FileReferenceNumber}, " +
-                $"parent_file_reference_number = {identity?.ParentFileReferenceNumber}, " +
-                $"last_observed_usn = {identity?.LastObservedUsn}, " +
-                $"content_version = {IndexContentVersion.Current}, extractor_id = {extractorId}, " +
-                $"extractor_version = {extractorVersion} WHERE id = {fileId}"),
+                $"INSERT INTO files (id, root_id, path, path_lower, directory_path, directory_path_lower, file_name, file_name_lower, extension, size_bytes, created_utc_ticks, modified_utc_ticks, attributes, file_type_category, indexed_utc_ticks, status, error, volume_id, file_reference_number, parent_file_reference_number, last_observed_usn, content_version, open_count, last_opened_utc_ticks, extractor_id, extractor_version, extraction_attempt_count, last_extraction_attempt_utc_ticks) " +
+                $"VALUES ({id}, {values.RootId}, {values.Path}, {values.PathLower}, {values.DirectoryPath}, {values.DirectoryPathLower}, {values.FileName}, {values.FileNameLower}, {values.Extension}, {values.SizeBytes}, {values.CreatedUtcTicks}, {values.ModifiedUtcTicks}, {values.Attributes}, {values.FileTypeCategory}, {DateTime.UtcNow.Ticks}, {values.Status}, {values.Error}, {values.Identity?.VolumeId}, {values.Identity?.FileReferenceNumber}, " +
+                $"{values.Identity?.ParentFileReferenceNumber}, {values.Identity?.LastObservedUsn}, {IndexContentVersion.Current}, 0, 0, {values.ExtractorId}, {values.ExtractorVersion}, {values.ExtractionAttemptCount}, {values.LastExtractionAttemptUtcTicks})"),
             cancellationToken).ConfigureAwait(false);
-        await ReplaceMetadataTokensAsync(
-            db,
+        return id;
+    }
+
+    private static FileRowValues CreateFileRowValues(
+        long rootId,
+        string path,
+        long sizeBytes,
+        long createdUtcTicks,
+        long modifiedUtcTicks,
+        long attributes,
+        string status,
+        string? error,
+        IndexedFileIdentity? identity,
+        string extractorId,
+        string extractorVersion,
+        long extractionAttemptCount,
+        long lastExtractionAttemptUtcTicks)
+    {
+        var fileName = Path.GetFileName(path);
+        var extension = Path.GetExtension(path).ToLowerInvariant();
+        var directoryPath = Path.GetDirectoryName(path) ?? string.Empty;
+        return new FileRowValues(
             rootId,
-            fileId,
             path,
+            path.ToLowerInvariant(),
             directoryPath,
+            directoryPath.ToLowerInvariant(),
             fileName,
+            fileName.ToLowerInvariant(),
             extension,
-            fileTypeCategory,
-            cancellationToken).ConfigureAwait(false);
-        return fileId;
+            sizeBytes,
+            createdUtcTicks,
+            modifiedUtcTicks,
+            attributes,
+            FileTypeCategory.ForExtension(extension),
+            status,
+            error,
+            identity,
+            extractorId,
+            extractorVersion,
+            extractionAttemptCount,
+            lastExtractionAttemptUtcTicks);
+    }
+
+    private sealed record FileRowValues(
+        long RootId,
+        string Path,
+        string PathLower,
+        string DirectoryPath,
+        string DirectoryPathLower,
+        string FileName,
+        string FileNameLower,
+        string Extension,
+        long SizeBytes,
+        long CreatedUtcTicks,
+        long ModifiedUtcTicks,
+        long Attributes,
+        string FileTypeCategory,
+        string Status,
+        string? Error,
+        IndexedFileIdentity? Identity,
+        string ExtractorId,
+        string ExtractorVersion,
+        long ExtractionAttemptCount,
+        long LastExtractionAttemptUtcTicks);
+
+    public static Task SupersedeFileRowAsync(
+        DbExec db,
+        long fileId,
+        string originalPath,
+        CancellationToken cancellationToken)
+    {
+        var tombstonePath = $"{originalPath}.__filesearch_stale_{fileId}";
+        var fileName = Path.GetFileName(tombstonePath);
+        var directoryPath = Path.GetDirectoryName(tombstonePath) ?? string.Empty;
+        return ExecuteAsync(
+            db,
+            Sql.Format(
+                $"UPDATE files SET path = {tombstonePath}, path_lower = {tombstonePath.ToLowerInvariant()}, " +
+                $"directory_path = {directoryPath}, directory_path_lower = {directoryPath.ToLowerInvariant()}, " +
+                $"file_name = {fileName}, file_name_lower = {fileName.ToLowerInvariant()}, " +
+                $"status = {FileStatus.Stale}, indexed_utc_ticks = {DateTime.UtcNow.Ticks} WHERE id = {fileId}"),
+            cancellationToken);
     }
 
     public static async Task<List<long>> ReadMetadataCandidateFileIdsAsync(
-        Database db,
+        DbExec db,
         long rootId,
         IReadOnlyList<string> tokens,
         bool requireAllTokens,
@@ -664,7 +799,7 @@ internal static partial class IndexTables
                 matches = await ReadIdsAsync(
                         db,
                         Sql.Format(
-                            $"SELECT file_id FROM file_metadata_tokens WHERE root_id = {rootId} AND token = {token}"),
+                            $"SELECT file_id FROM file_metadata_tokens WHERE token = {token} AND root_id = {rootId}"),
                         cancellationToken)
                     .ConfigureAwait(false);
             }
@@ -697,13 +832,14 @@ internal static partial class IndexTables
     }
 
     public static async IAsyncEnumerable<IndexedFileMetadata> ReadFileMetadataAsync(
-        Database db,
+        DbExec db,
         long rootId,
         [EnumeratorCancellation] CancellationToken cancellationToken)
     {
+        var latest = new Dictionary<string, (long Id, IndexedFileMetadata File)>(StringComparer.OrdinalIgnoreCase);
         await using var result = await db.ExecuteAsync(
             Sql.Format(
-                $"SELECT path, directory_path, file_name, extension, size_bytes, created_utc_ticks, " +
+                $"SELECT id, path, directory_path, file_name, extension, size_bytes, created_utc_ticks, " +
                 $"modified_utc_ticks, attributes, file_type_category, open_count, last_opened_utc_ticks, status, extractor_id " +
                 $"FROM files WHERE root_id = {rootId} AND status != {FileStatus.Indexing}"),
             cancellationToken).ConfigureAwait(false);
@@ -711,61 +847,84 @@ internal static partial class IndexTables
         while (await result.MoveNextAsync(cancellationToken).ConfigureAwait(false))
         {
             var row = result.Current;
-            yield return new IndexedFileMetadata(
-                row[0].AsText,
-                row[1].IsNull ? string.Empty : row[1].AsText,
-                row[2].AsText,
+            var id = row[0].AsInteger;
+            var file = new IndexedFileMetadata(
+                row[1].AsText,
+                row[2].IsNull ? string.Empty : row[2].AsText,
                 row[3].AsText,
-                row[4].AsInteger,
-                row[5].IsNull ? 0 : row[5].AsInteger,
-                row[6].AsInteger,
-                row[7].IsNull ? 0 : row[7].AsInteger,
-                row[8].IsNull ? string.Empty : row[8].AsText,
-                row[9].IsNull ? 0 : row[9].AsInteger,
+                row[4].AsText,
+                row[5].AsInteger,
+                row[6].IsNull ? 0 : row[6].AsInteger,
+                row[7].AsInteger,
+                row[8].IsNull ? 0 : row[8].AsInteger,
+                row[9].IsNull ? string.Empty : row[9].AsText,
                 row[10].IsNull ? 0 : row[10].AsInteger,
-                row[11].AsText,
-                row[12].IsNull ? string.Empty : row[12].AsText);
+                row[11].IsNull ? 0 : row[11].AsInteger,
+                row[12].AsText,
+                row[13].IsNull ? string.Empty : row[13].AsText);
+            if (!latest.TryGetValue(file.Path, out var existing) || id > existing.Id)
+                latest[file.Path] = (id, file);
+        }
+
+        foreach (var file in latest.Values
+                     .Where(static item => !IsStaleStatus(item.File.Status))
+                     .Select(static item => item.File)
+                     .OrderBy(static file => file.Path, StringComparer.OrdinalIgnoreCase))
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            yield return file;
         }
     }
 
     public static async IAsyncEnumerable<IndexedFileMetadata> ReadFileMetadataAsync(
-        Database db,
+        DbExec db,
         long rootId,
         IReadOnlyList<long> fileIds,
         [EnumeratorCancellation] CancellationToken cancellationToken)
     {
+        var candidateRows = new List<(long Id, IndexedFileMetadata File)>();
         foreach (var batch in fileIds.Chunk(500))
         {
             await using var result = await db.ExecuteAsync(
                 Sql.Format(
-                    $"SELECT path, directory_path, file_name, extension, size_bytes, created_utc_ticks, " +
+                    $"SELECT id, path, directory_path, file_name, extension, size_bytes, created_utc_ticks, " +
                     $"modified_utc_ticks, attributes, file_type_category, open_count, last_opened_utc_ticks, status, extractor_id " +
-                    $"FROM files WHERE root_id = {rootId} AND id IN ({new Sql.IdList(batch)}) AND status != {FileStatus.Indexing}"),
+                    $"FROM files WHERE root_id = {rootId} AND id IN ({new Sql.IdList(batch)}) AND status != {FileStatus.Indexing} AND status != {FileStatus.Stale}"),
                 cancellationToken).ConfigureAwait(false);
 
             while (await result.MoveNextAsync(cancellationToken).ConfigureAwait(false))
             {
                 var row = result.Current;
-                yield return new IndexedFileMetadata(
-                    row[0].AsText,
-                    row[1].IsNull ? string.Empty : row[1].AsText,
-                    row[2].AsText,
-                    row[3].AsText,
-                    row[4].AsInteger,
-                    row[5].IsNull ? 0 : row[5].AsInteger,
-                    row[6].AsInteger,
-                    row[7].IsNull ? 0 : row[7].AsInteger,
-                    row[8].IsNull ? string.Empty : row[8].AsText,
-                    row[9].IsNull ? 0 : row[9].AsInteger,
-                    row[10].IsNull ? 0 : row[10].AsInteger,
-                    row[11].AsText,
-                    row[12].IsNull ? string.Empty : row[12].AsText);
+                candidateRows.Add((
+                    row[0].AsInteger,
+                    new IndexedFileMetadata(
+                        row[1].AsText,
+                        row[2].IsNull ? string.Empty : row[2].AsText,
+                        row[3].AsText,
+                        row[4].AsText,
+                        row[5].AsInteger,
+                        row[6].IsNull ? 0 : row[6].AsInteger,
+                        row[7].AsInteger,
+                        row[8].IsNull ? 0 : row[8].AsInteger,
+                        row[9].IsNull ? string.Empty : row[9].AsText,
+                        row[10].IsNull ? 0 : row[10].AsInteger,
+                        row[11].IsNull ? 0 : row[11].AsInteger,
+                        row[12].AsText,
+                        row[13].IsNull ? string.Empty : row[13].AsText)));
             }
+        }
+
+        foreach (var group in candidateRows.GroupBy(row => row.File.Path, StringComparer.OrdinalIgnoreCase))
+        {
+            var latestCandidate = group.MaxBy(static row => row.Id);
+            var currentId = await ReadFileIdAsync(db, rootId, latestCandidate.File.Path, cancellationToken).ConfigureAwait(false);
+            if (currentId == latestCandidate.Id)
+                yield return latestCandidate.File;
         }
     }
 
     public static Task SetFileStatusAsync(
-        Database db,
+        DbExec db,
         long fileId,
         string status,
         string? error,
@@ -776,7 +935,7 @@ internal static partial class IndexTables
             cancellationToken);
 
     public static Task RecordExtractionAttemptAsync(
-        Database db,
+        DbExec db,
         long fileId,
         string extractorId,
         string extractorVersion,
@@ -790,60 +949,70 @@ internal static partial class IndexTables
             cancellationToken);
 
     public static async Task<IReadOnlyList<IndexFailureInfo>> ListFailedFilesAsync(
-        Database db,
+        DbExec db,
         CancellationToken cancellationToken)
     {
         var failures = new List<IndexFailureInfo>();
-        await using var result = await db.ExecuteAsync(
-            Sql.Format(
-                $"SELECT r.root_path, f.path, f.extractor_id, f.extractor_version, f.error, " +
-                $"f.extraction_attempt_count, f.last_extraction_attempt_utc_ticks " +
-                $"FROM files f INNER JOIN index_roots r ON r.id = f.root_id " +
-                $"WHERE f.status = {FileStatus.Error} ORDER BY f.path"),
-            cancellationToken).ConfigureAwait(false);
+        var activeIds = await ReadCurrentFileIdsAsync(db, IsVisibleCurrentStatus, cancellationToken).ConfigureAwait(false);
 
-        while (await result.MoveNextAsync(cancellationToken).ConfigureAwait(false))
+        // Each result gets its own scope: reader sessions allow only one
+        // active query, so the first result must be disposed before the
+        // second query executes.
+        foreach (var batch in activeIds.Chunk(DeleteIdBatchSize))
         {
-            var lastAttemptTicks = result.Current[6].IsNull ? 0 : result.Current[6].AsInteger;
-            failures.Add(new IndexFailureInfo(
-                result.Current[0].AsText,
-                result.Current[1].AsText,
-                result.Current[2].IsNull ? string.Empty : result.Current[2].AsText,
-                result.Current[3].IsNull ? string.Empty : result.Current[3].AsText,
-                result.Current[4].IsNull ? string.Empty : result.Current[4].AsText,
-                result.Current[5].IsNull ? 0 : result.Current[5].AsInteger,
-                lastAttemptTicks > 0
-                    ? new DateTime(lastAttemptTicks, DateTimeKind.Utc)
-                    : null));
+            await using var result = await db.ExecuteAsync(
+                    Sql.Format(
+                        $"SELECT r.root_path, f.path, f.extractor_id, f.extractor_version, f.error, " +
+                        $"f.extraction_attempt_count, f.last_extraction_attempt_utc_ticks " +
+                        $"FROM files f INNER JOIN index_roots r ON r.id = f.root_id " +
+                        $"WHERE f.id IN ({new Sql.IdList(batch)}) AND f.status = {FileStatus.Error} ORDER BY f.path"),
+                    cancellationToken).ConfigureAwait(false);
+            while (await result.MoveNextAsync(cancellationToken).ConfigureAwait(false))
+            {
+                var lastAttemptTicks = result.Current[6].IsNull ? 0 : result.Current[6].AsInteger;
+                failures.Add(new IndexFailureInfo(
+                    result.Current[0].AsText,
+                    result.Current[1].AsText,
+                    result.Current[2].IsNull ? string.Empty : result.Current[2].AsText,
+                    result.Current[3].IsNull ? string.Empty : result.Current[3].AsText,
+                    result.Current[4].IsNull ? string.Empty : result.Current[4].AsText,
+                    result.Current[5].IsNull ? 0 : result.Current[5].AsInteger,
+                    lastAttemptTicks > 0
+                        ? new DateTime(lastAttemptTicks, DateTimeKind.Utc)
+                        : null));
+            }
         }
 
-        await using var issueResult = await db.ExecuteAsync(
-            Sql.Format(
-                $"SELECT r.root_path, f.path, f.extractor_id, f.extractor_version, i.member_path, " +
-                $"i.code, i.message, i.severity, f.extraction_attempt_count, f.last_extraction_attempt_utc_ticks " +
-                $"FROM extraction_issues i INNER JOIN files f ON f.id = i.file_id " +
-                $"INNER JOIN index_roots r ON r.id = f.root_id ORDER BY f.path, i.member_path"),
-            cancellationToken).ConfigureAwait(false);
-
-        while (await issueResult.MoveNextAsync(cancellationToken).ConfigureAwait(false))
+        foreach (var batch in activeIds.Chunk(DeleteIdBatchSize))
         {
-            var lastAttemptTicks = issueResult.Current[9].IsNull ? 0 : issueResult.Current[9].AsInteger;
-            var code = issueResult.Current[5].IsNull ? string.Empty : issueResult.Current[5].AsText;
-            var message = issueResult.Current[6].IsNull ? string.Empty : issueResult.Current[6].AsText;
-            failures.Add(new IndexFailureInfo(
-                issueResult.Current[0].AsText,
-                issueResult.Current[1].AsText,
-                issueResult.Current[2].IsNull ? string.Empty : issueResult.Current[2].AsText,
-                issueResult.Current[3].IsNull ? string.Empty : issueResult.Current[3].AsText,
-                message,
-                issueResult.Current[8].IsNull ? 0 : issueResult.Current[8].AsInteger,
-                lastAttemptTicks > 0
-                    ? new DateTime(lastAttemptTicks, DateTimeKind.Utc)
-                    : null,
-                issueResult.Current[4].IsNull ? null : issueResult.Current[4].AsText,
-                "extraction_issue",
-                code,
-                issueResult.Current[7].IsNull ? null : issueResult.Current[7].AsText));
+            await using var issueResult = await db.ExecuteAsync(
+                Sql.Format(
+                    $"SELECT r.root_path, f.path, f.extractor_id, f.extractor_version, i.member_path, " +
+                    $"i.code, i.message, i.severity, f.extraction_attempt_count, f.last_extraction_attempt_utc_ticks " +
+                    $"FROM extraction_issues i INNER JOIN files f ON f.id = i.file_id " +
+                    $"INNER JOIN index_roots r ON r.id = f.root_id WHERE f.id IN ({new Sql.IdList(batch)}) ORDER BY f.path, i.member_path"),
+                cancellationToken).ConfigureAwait(false);
+
+            while (await issueResult.MoveNextAsync(cancellationToken).ConfigureAwait(false))
+            {
+                var lastAttemptTicks = issueResult.Current[9].IsNull ? 0 : issueResult.Current[9].AsInteger;
+                var code = issueResult.Current[5].IsNull ? string.Empty : issueResult.Current[5].AsText;
+                var message = issueResult.Current[6].IsNull ? string.Empty : issueResult.Current[6].AsText;
+                failures.Add(new IndexFailureInfo(
+                    issueResult.Current[0].AsText,
+                    issueResult.Current[1].AsText,
+                    issueResult.Current[2].IsNull ? string.Empty : issueResult.Current[2].AsText,
+                    issueResult.Current[3].IsNull ? string.Empty : issueResult.Current[3].AsText,
+                    message,
+                    issueResult.Current[8].IsNull ? 0 : issueResult.Current[8].AsInteger,
+                    lastAttemptTicks > 0
+                        ? new DateTime(lastAttemptTicks, DateTimeKind.Utc)
+                        : null,
+                    issueResult.Current[4].IsNull ? null : issueResult.Current[4].AsText,
+                    "extraction_issue",
+                    code,
+                    issueResult.Current[7].IsNull ? null : issueResult.Current[7].AsText));
+            }
         }
 
         return failures
@@ -886,7 +1055,7 @@ internal static partial class IndexTables
     }
 
     public static async Task<IReadOnlyList<IndexValidationDriftInfo>> ListValidationDriftsAsync(
-        Database db,
+        DbExec db,
         string root,
         CancellationToken cancellationToken)
     {
@@ -916,9 +1085,12 @@ internal static partial class IndexTables
         Database db,
         long fileId,
         IReadOnlyList<ExtractionIssue> issues,
+        bool deleteExisting,
         CancellationToken cancellationToken)
     {
-        await DeleteExtractionIssuesAsync(db, fileId, cancellationToken).ConfigureAwait(false);
+        if (deleteExisting)
+            await DeleteExtractionIssuesAsync(db, fileId, cancellationToken).ConfigureAwait(false);
+
         if (issues.Count == 0)
             return;
 
@@ -947,43 +1119,94 @@ internal static partial class IndexTables
             await batch.ExecuteAsync(cancellationToken).ConfigureAwait(false);
     }
 
-    /// <summary>Hard-deletes a file row and its lines (no tombstones).</summary>
-    public static async Task DeleteFileAsync(
-        Database db,
+    /// <summary>Appends a tombstone so the deleted path hides older file-version rows.</summary>
+    public static async Task<int> DeleteFileAsync(
+        DbExec db,
         long rootId,
         string path,
         CancellationToken cancellationToken)
     {
-        var ids = await ReadIdsAsync(
-            db,
-            Sql.Format($"SELECT id FROM files WHERE root_id = {rootId} AND path = {path}"),
-            cancellationToken).ConfigureAwait(false);
-        foreach (var id in ids)
+        var existing = await GetFileRowAsync(db, rootId, path, cancellationToken).ConfigureAwait(false);
+        if (existing is null)
+            return 0;
+
+        await InsertFileTombstoneAsync(db, rootId, path, identity: null, cancellationToken).ConfigureAwait(false);
+        return 1;
+    }
+
+    /// <summary>
+    /// Deletes every indexed file whose path sits under the given directory.
+    /// Watchers report one Deleted/Renamed event for a removed folder, not
+    /// one per child, so a directory-path delete has to sweep the subtree.
+    /// Streams id+path and filters in memory: prefix predicates in SQL are
+    /// dialect-sensitive, and this path only runs when an exact-path delete
+    /// matched nothing.
+    /// </summary>
+    public static async Task<int> DeleteFilesUnderDirectoryAsync(
+        DbExec db,
+        long rootId,
+        string directoryPath,
+        CancellationToken cancellationToken)
+    {
+        var prefix = directoryPath.EndsWith(System.IO.Path.DirectorySeparatorChar)
+            ? directoryPath
+            : directoryPath + System.IO.Path.DirectorySeparatorChar;
+
+        var deletedPaths = new List<string>();
+        await foreach (var file in ReadFileMetadataAsync(db, rootId, cancellationToken).ConfigureAwait(false))
         {
-            await DeleteFileByIdAsync(db, id, cancellationToken).ConfigureAwait(false);
+            if (file.Path.StartsWith(prefix, StringComparison.OrdinalIgnoreCase))
+                deletedPaths.Add(file.Path);
         }
+
+        foreach (var path in deletedPaths)
+            await InsertFileTombstoneAsync(db, rootId, path, identity: null, cancellationToken).ConfigureAwait(false);
+
+        return deletedPaths.Count;
     }
 
     public static async Task DeleteFilesByIdentityAsync(
-        Database db,
+        DbExec db,
         long volumeId,
         string fileReferenceNumber,
         CancellationToken cancellationToken)
     {
-        var ids = await ReadIdsAsync(
-            db,
-            Sql.Format($"SELECT id FROM files WHERE volume_id = {volumeId} AND file_reference_number = {fileReferenceNumber}"),
-            cancellationToken).ConfigureAwait(false);
+        var latestRows = new Dictionary<(long RootId, string Path), (long Id, string Status)>();
+        await using (var result = await db.ExecuteAsync(
+                Sql.Format(
+                    $"SELECT id, root_id, path, status FROM files WHERE volume_id = {volumeId} " +
+                    $"AND file_reference_number = {fileReferenceNumber} AND status != {FileStatus.Indexing}"),
+                cancellationToken).ConfigureAwait(false))
+        {
+            while (await result.MoveNextAsync(cancellationToken).ConfigureAwait(false))
+            {
+                var key = (result.Current[1].AsInteger, result.Current[2].AsText);
+                var row = (Id: result.Current[0].AsInteger, Status: result.Current[3].AsText);
+                if (!latestRows.TryGetValue(key, out var existing) || row.Id > existing.Id)
+                    latestRows[key] = row;
+            }
+        }
 
-        foreach (var id in ids)
-            await DeleteFileByIdAsync(db, id, cancellationToken).ConfigureAwait(false);
+        foreach (var (key, row) in latestRows)
+        {
+            if (!IsStaleStatus(row.Status))
+                await InsertFileTombstoneAsync(db, key.RootId, key.Path, identity: null, cancellationToken).ConfigureAwait(false);
+        }
     }
 
-    public static Task<List<long>> ReadFileIdsForRootAsync(Database db, long rootId, CancellationToken cancellationToken) =>
-        ReadIdsAsync(db, Sql.Format($"SELECT id FROM files WHERE root_id = {rootId}"), cancellationToken);
+    public static Task<List<long>> ReadFileIdsForRootAsync(DbExec db, long rootId, CancellationToken cancellationToken) =>
+        ReadCurrentFileIdsForRootAsync(db, rootId, IsVisibleCurrentStatus, cancellationToken);
 
-    public static async Task DeleteFilesForRootAsync(Database db, long rootId, CancellationToken cancellationToken)
+    public static Task<List<long>> ReadCurrentOkFileIdsForRootAsync(
+        DbExec db,
+        long rootId,
+        CancellationToken cancellationToken) =>
+        ReadCurrentFileIdsForRootAsync(db, rootId, IsOkStatus, cancellationToken);
+
+    public static async Task DeleteFilesForRootAsync(DbExec db, long rootId, CancellationToken cancellationToken)
     {
+        await ExecuteAsync(db, Sql.Format($"DELETE FROM line_trigrams WHERE root_id = {rootId}"), cancellationToken)
+            .ConfigureAwait(false);
         await ExecuteAsync(db, Sql.Format($"DELETE FROM file_metadata_tokens WHERE root_id = {rootId}"), cancellationToken)
             .ConfigureAwait(false);
         await ExecuteAsync(
@@ -1005,40 +1228,52 @@ internal static partial class IndexTables
             .ConfigureAwait(false);
     }
 
-    public static Task<long> CountOkFilesAsync(Database db, long rootId, CancellationToken cancellationToken) =>
-        GetCountAsync(db, Sql.Format($"SELECT COUNT(*) FROM files WHERE root_id = {rootId} AND status = {FileStatus.Ok}"), cancellationToken);
-
-    public static async Task<long> CountFailedFilesAsync(Database db, CancellationToken cancellationToken)
+    public static async Task<long> CountOkFilesAsync(DbExec db, long rootId, CancellationToken cancellationToken)
     {
-        var fileErrors = await GetCountAsync(
-            db,
-            Sql.Format($"SELECT COUNT(*) FROM files WHERE status = {FileStatus.Error}"),
-            cancellationToken).ConfigureAwait(false);
-        var extractionIssues = await GetCountAsync(
-            db,
-            "SELECT COUNT(*) FROM extraction_issues WHERE severity != 'info'",
-            cancellationToken).ConfigureAwait(false);
-        return fileErrors + extractionIssues;
+        var ids = await ReadCurrentFileIdsForRootAsync(db, rootId, IsOkStatus, cancellationToken).ConfigureAwait(false);
+        return ids.Count;
+    }
+
+    public static async Task<long> CountFailedFilesAsync(DbExec db, CancellationToken cancellationToken)
+    {
+        var activeIds = await ReadCurrentFileIdsAsync(db, IsVisibleCurrentStatus, cancellationToken).ConfigureAwait(false);
+        var fileErrors = await ReadCurrentFileIdsAsync(db, IsErrorStatus, cancellationToken).ConfigureAwait(false);
+        long extractionIssues = 0;
+        foreach (var batch in activeIds.Chunk(DeleteIdBatchSize))
+        {
+            extractionIssues += await GetCountAsync(
+                    db,
+                    Sql.Format($"SELECT COUNT(*) FROM extraction_issues WHERE file_id IN ({new Sql.IdList(batch)}) AND severity != 'info'"),
+                    cancellationToken)
+                .ConfigureAwait(false);
+        }
+
+        return fileErrors.Count + extractionIssues;
     }
 
     // ----- lines -----
 
-    public static async Task DeleteLinesAsync(Database db, long fileId, CancellationToken cancellationToken)
+    public static async Task DeleteLinesAsync(DbExec db, long fileId, CancellationToken cancellationToken)
     {
+        var lineIds = await ReadIdsAsync(db, Sql.Format($"SELECT id FROM lines WHERE file_id = {fileId}"), cancellationToken)
+            .ConfigureAwait(false);
+        await DeleteLineTrigramsAsync(db, lineIds, cancellationToken).ConfigureAwait(false);
         await ExecuteAsync(db, Sql.Format($"DELETE FROM lines WHERE file_id = {fileId}"), cancellationToken)
             .ConfigureAwait(false);
         await DeleteContentUnitsAsync(db, fileId, cancellationToken).ConfigureAwait(false);
     }
 
-    private static async Task DeleteFileByIdAsync(Database db, long fileId, CancellationToken cancellationToken)
+    private static async Task DeleteFileByIdAsync(DbExec db, long fileId, CancellationToken cancellationToken)
     {
-        await DeleteMetadataTokensAsync(db, fileId, cancellationToken).ConfigureAwait(false);
+        // Per-file DELETE on file_metadata_tokens is both expensive in
+        // CSharpDB and can stall watcher updates. Orphaned token rows are
+        // harmless after the file row is gone; root rebuilds clear by root_id.
         await DeleteExtractionIssuesAsync(db, fileId, cancellationToken).ConfigureAwait(false);
         await DeleteLinesAsync(db, fileId, cancellationToken).ConfigureAwait(false);
         await db.ExecuteAsync(Sql.Format($"DELETE FROM files WHERE id = {fileId}"), cancellationToken).ConfigureAwait(false);
     }
 
-    public static async Task RecordFileOpenedAsync(Database db, string path, CancellationToken cancellationToken)
+    public static async Task RecordFileOpenedAsync(DbExec db, string path, CancellationToken cancellationToken)
     {
         var ids = await ReadIdsAsync(
             db,
@@ -1055,10 +1290,10 @@ internal static partial class IndexTables
         }
     }
 
-    private static Task DeleteMetadataTokensAsync(Database db, long fileId, CancellationToken cancellationToken) =>
+    private static Task DeleteMetadataTokensAsync(DbExec db, long fileId, CancellationToken cancellationToken) =>
         ExecuteAsync(db, Sql.Format($"DELETE FROM file_metadata_tokens WHERE file_id = {fileId}"), cancellationToken);
 
-    private static Task DeleteExtractionIssuesAsync(Database db, long fileId, CancellationToken cancellationToken) =>
+    private static Task DeleteExtractionIssuesAsync(DbExec db, long fileId, CancellationToken cancellationToken) =>
         ExecuteAsync(db, Sql.Format($"DELETE FROM extraction_issues WHERE file_id = {fileId}"), cancellationToken);
 
     private static async Task ReplaceMetadataTokensAsync(
@@ -1070,24 +1305,39 @@ internal static partial class IndexTables
         string fileName,
         string extension,
         string fileTypeCategory,
+        bool deleteExisting,
         CancellationToken cancellationToken)
     {
         try
         {
-            await DeleteMetadataTokensAsync(db, fileId, cancellationToken).ConfigureAwait(false);
+            // DELETE is a full table scan in CSharpDB; skip it for rows that
+            // cannot have tokens yet (freshly inserted files).
+            if (deleteExisting)
+                await DeleteMetadataTokensAsync(db, fileId, cancellationToken).ConfigureAwait(false);
 
-            var tokens = BuildMetadataTokens(path, directoryPath, fileName, extension, fileTypeCategory);
+            var tokens = BuildIndexedMetadataTokens(path, directoryPath, fileName, extension, fileTypeCategory);
             if (tokens.Count == 0)
                 return;
 
+            var batch = db.PrepareInsertBatch("file_metadata_tokens", MetadataTokenInsertBatchSize);
             foreach (var token in tokens)
             {
                 var id = CreateMetadataTokenId(rootId, fileId, token);
-                await db.ExecuteAsync(
-                        Sql.Format($"INSERT INTO file_metadata_tokens VALUES ({id}, {rootId}, {fileId}, {token})"),
-                        cancellationToken)
-                    .ConfigureAwait(false);
+                batch.AddRow(
+                    DbValue.FromInteger(id),
+                    DbValue.FromInteger(rootId),
+                    DbValue.FromInteger(fileId),
+                    DbValue.FromText(token));
+
+                if (batch.Count >= MetadataTokenInsertBatchSize)
+                {
+                    await batch.ExecuteAsync(cancellationToken).ConfigureAwait(false);
+                    batch.Clear();
+                }
             }
+
+            if (batch.Count > 0)
+                await batch.ExecuteAsync(cancellationToken).ConfigureAwait(false);
         }
         catch (OperationCanceledException)
         {
@@ -1099,6 +1349,50 @@ internal static partial class IndexTables
         }
     }
 
+    public static async Task InsertMetadataTokensAsync(
+        Database db,
+        long rootId,
+        long fileId,
+        string path,
+        string directoryPath,
+        string fileName,
+        string extension,
+        string fileTypeCategory,
+        CancellationToken cancellationToken)
+    {
+        var tokens = BuildIndexedMetadataTokens(path, directoryPath, fileName, extension, fileTypeCategory);
+        if (tokens.Count == 0)
+            return;
+
+        var batch = PrepareMetadataTokenBatch(db);
+        AddMetadataTokens(batch, rootId, fileId, tokens);
+        await FlushMetadataTokenBatchAsync(batch, cancellationToken).ConfigureAwait(false);
+    }
+
+    public static InsertBatch PrepareMetadataTokenBatch(Database db) =>
+        db.PrepareInsertBatch("file_metadata_tokens", MetadataTokenInsertBatchSize);
+
+    public static void AddMetadataTokens(InsertBatch batch, long rootId, long fileId, IReadOnlyList<string> tokens)
+    {
+        foreach (var token in tokens)
+        {
+            batch.AddRow(
+                DbValue.FromInteger(CreateMetadataTokenId(rootId, fileId, token)),
+                DbValue.FromInteger(rootId),
+                DbValue.FromInteger(fileId),
+                DbValue.FromText(token));
+        }
+    }
+
+    public static async Task FlushMetadataTokenBatchAsync(InsertBatch batch, CancellationToken cancellationToken)
+    {
+        if (batch.Count == 0)
+            return;
+
+        await batch.ExecuteAsync(cancellationToken).ConfigureAwait(false);
+        batch.Clear();
+    }
+
     public static IReadOnlyList<string> BuildQueryMetadataTokens(IEnumerable<string> terms)
     {
         var tokens = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
@@ -1108,7 +1402,7 @@ internal static partial class IndexTables
         return tokens.ToList();
     }
 
-    private static List<string> BuildMetadataTokens(
+    public static List<string> BuildMetadataTokens(
         string path,
         string directoryPath,
         string fileName,
@@ -1118,8 +1412,8 @@ internal static partial class IndexTables
         var tokens = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         AddTextTokens(tokens, path, includePrefixes: false);
         AddTextTokens(tokens, directoryPath, includePrefixes: false);
-        AddTextTokens(tokens, fileName, includePrefixes: true);
-        AddTextTokens(tokens, Path.GetFileNameWithoutExtension(fileName), includePrefixes: true);
+        AddIndexedFileNameTokens(tokens, fileName);
+        AddIndexedFileNameTokens(tokens, Path.GetFileNameWithoutExtension(fileName));
         AddTextTokens(tokens, extension.TrimStart('.'), includePrefixes: false);
         AddTextTokens(tokens, fileTypeCategory, includePrefixes: false);
         foreach (var segment in path.Split(
@@ -1133,7 +1427,44 @@ internal static partial class IndexTables
         return tokens.ToList();
     }
 
-    private static long CreateMetadataTokenId(long rootId, long fileId, string token)
+    private static void AddIndexedFileNameTokens(HashSet<string> tokens, string value)
+    {
+        var exactTokens = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        AddTextTokens(exactTokens, value, includePrefixes: false);
+        foreach (var token in exactTokens)
+        {
+            tokens.Add(token);
+            var max = Math.Min(8, token.Length);
+            for (var length = MetadataTokenPrefixMinLength; length < max; length++)
+                tokens.Add(token[..length]);
+        }
+    }
+
+    public static List<string> BuildIndexedMetadataTokens(
+        string path,
+        string directoryPath,
+        string fileName,
+        string extension,
+        string fileTypeCategory)
+    {
+        var tokens = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        AddTextTokens(tokens, fileName, includePrefixes: true);
+        AddTextTokens(tokens, Path.GetFileNameWithoutExtension(fileName), includePrefixes: true);
+        AddUnderscoreParts(tokens, fileName);
+        AddUnderscoreParts(tokens, Path.GetFileNameWithoutExtension(fileName));
+        AddTextTokens(tokens, extension.TrimStart('.'), includePrefixes: false);
+        AddTextTokens(tokens, fileTypeCategory, includePrefixes: false);
+        foreach (var segment in directoryPath.Split(
+                     new[] { Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar },
+                     StringSplitOptions.RemoveEmptyEntries))
+        {
+            AddTextTokens(tokens, segment, includePrefixes: false);
+        }
+
+        return tokens.ToList();
+    }
+
+    public static long CreateMetadataTokenId(long rootId, long fileId, string token)
     {
         const ulong offsetBasis = 14695981039346656037;
         const ulong prime = 1099511628211;
@@ -1183,26 +1514,74 @@ internal static partial class IndexTables
         }
     }
 
-    public static async Task DeleteLinesForFilesAsync(Database db, IEnumerable<long> fileIds, CancellationToken cancellationToken)
+    private static void AddUnderscoreParts(HashSet<string> tokens, string value)
+    {
+        foreach (var token in MetadataTokenRegex().Matches(value.ToLowerInvariant()).Select(match => match.Value))
+        {
+            if (!token.Contains('_', StringComparison.Ordinal))
+                continue;
+
+            foreach (var part in token.Split('_', StringSplitOptions.RemoveEmptyEntries))
+                tokens.Add(part);
+        }
+    }
+
+    public static async Task DeleteLinesForFilesAsync(DbExec db, IEnumerable<long> fileIds, CancellationToken cancellationToken)
     {
         var ids = fileIds.ToArray();
         if (ids.Length == 0)
             return;
 
+        var lineIds = await ReadIdsAsync(
+                db,
+                Sql.Format($"SELECT id FROM lines WHERE file_id IN ({new Sql.IdList(ids)})"),
+                cancellationToken)
+            .ConfigureAwait(false);
+        await DeleteLineTrigramsAsync(db, lineIds, cancellationToken).ConfigureAwait(false);
         await ExecuteAsync(db, Sql.Format($"DELETE FROM lines WHERE file_id IN ({new Sql.IdList(ids)})"), cancellationToken)
             .ConfigureAwait(false);
         await ExecuteAsync(db, Sql.Format($"DELETE FROM content_units WHERE file_id IN ({new Sql.IdList(ids)})"), cancellationToken)
             .ConfigureAwait(false);
     }
 
-    private static Task DeleteContentUnitsAsync(Database db, long fileId, CancellationToken cancellationToken) =>
+    private static async Task DeleteLineTrigramsAsync(
+        DbExec db,
+        List<long> lineIds,
+        CancellationToken cancellationToken)
+    {
+        if (lineIds.Count == 0)
+            return;
+
+        foreach (var batch in lineIds.Chunk(DeleteIdBatchSize))
+        {
+            await ExecuteAsync(
+                    db,
+                    Sql.Format($"DELETE FROM line_trigrams WHERE line_id IN ({new Sql.IdList(batch)})"),
+                    cancellationToken)
+                .ConfigureAwait(false);
+        }
+    }
+
+    private static Task DeleteContentUnitsAsync(DbExec db, long fileId, CancellationToken cancellationToken) =>
         ExecuteAsync(db, Sql.Format($"DELETE FROM content_units WHERE file_id = {fileId}"), cancellationToken);
 
-    public static Task<long> CountOkLinesAsync(Database db, long rootId, CancellationToken cancellationToken) =>
-        GetCountAsync(
-            db,
-            Sql.Format($"SELECT COUNT(*) FROM lines l INNER JOIN files f ON f.id = l.file_id WHERE f.root_id = {rootId} AND f.status = {FileStatus.Ok}"),
-            cancellationToken);
+    public static async Task<long> CountOkLinesAsync(DbExec db, long rootId, CancellationToken cancellationToken)
+    {
+        var fileIds = (await ReadCurrentFileIdsForRootAsync(db, rootId, IsOkStatus, cancellationToken).ConfigureAwait(false))
+            .ToHashSet();
+        if (fileIds.Count == 0)
+            return 0;
+
+        long count = 0;
+        await using var result = await db.ExecuteAsync("SELECT file_id FROM lines", cancellationToken).ConfigureAwait(false);
+        while (await result.MoveNextAsync(cancellationToken).ConfigureAwait(false))
+        {
+            if (fileIds.Contains(result.Current[0].AsInteger))
+                count++;
+        }
+
+        return count;
+    }
 
     public static string SelectLinesSql(long rootId) =>
         SelectLinesColumns +
@@ -1211,62 +1590,235 @@ internal static partial class IndexTables
 
     public static string SelectLinesSql(long rootId, IReadOnlyList<long> lineIds) =>
         SelectLinesColumns +
-        Sql.Format($"f.root_id = {rootId} AND f.status = {FileStatus.Ok} AND l.id IN ({new Sql.IdList(lineIds)})") +
+        Sql.Format($"l.id IN ({new Sql.IdList(lineIds)}) AND f.root_id = {rootId} AND f.status = {FileStatus.Ok}") +
         SelectLinesOrder;
 
+    public static Task<List<long>> ReadLineIdsForTrigramAsync(
+        DbExec db,
+        long rootId,
+        string trigram,
+        CancellationToken cancellationToken) =>
+        ReadIdsAsync(
+            db,
+            Sql.Format($"SELECT line_id FROM line_trigrams WHERE trigram = {trigram} AND root_id = {rootId}"),
+            cancellationToken);
+
+    public static async IAsyncEnumerable<LineTrigramSource> ReadLineTrigramSourcesAsync(
+        DbExec db,
+        long rootId,
+        [EnumeratorCancellation] CancellationToken cancellationToken)
+    {
+        var fileIds = await ReadCurrentFileIdsForRootAsync(db, rootId, IsOkStatus, cancellationToken).ConfigureAwait(false);
+        foreach (var batch in fileIds.Chunk(DeleteIdBatchSize))
+        {
+            await using var result = await db.ExecuteAsync(
+                Sql.Format($"SELECT id, content FROM lines WHERE file_id IN ({new Sql.IdList(batch)})"),
+                cancellationToken).ConfigureAwait(false);
+
+            while (await result.MoveNextAsync(cancellationToken).ConfigureAwait(false))
+            {
+                var row = result.Current;
+                yield return new LineTrigramSource(
+                    row[0].AsInteger,
+                    row[1].AsText);
+            }
+        }
+    }
+
+    public static async IAsyncEnumerable<CachedIndexedLine> ReadCachedLinesAsync(
+        DbExec db,
+        long rootId,
+        [EnumeratorCancellation] CancellationToken cancellationToken)
+    {
+        var fileIds = await ReadCurrentFileIdsForRootAsync(db, rootId, IsOkStatus, cancellationToken).ConfigureAwait(false);
+        foreach (var batch in fileIds.Chunk(DeleteIdBatchSize))
+        {
+            await using var result = await db.ExecuteAsync(
+                "SELECT l.id, f.id, f.path, f.file_name, f.extension, f.size_bytes, f.created_utc_ticks, f.modified_utc_ticks, " +
+                "f.status, f.extractor_id, f.file_type_category, l.line_number, l.content, l.anchor_json, l.content_unit_id " +
+                "FROM lines l INNER JOIN files f ON f.id = l.file_id " +
+                Sql.Format($"WHERE f.id IN ({new Sql.IdList(batch)}) AND f.status = {FileStatus.Ok}") +
+                SelectLinesOrder,
+                cancellationToken).ConfigureAwait(false);
+
+            while (await result.MoveNextAsync(cancellationToken).ConfigureAwait(false))
+            {
+                yield return new CachedIndexedLine(
+                    result.Current[0].AsInteger,
+                    result.Current[1].AsInteger,
+                    ReadIndexedLine(result.Current, offset: 2));
+            }
+        }
+    }
+
+    public static async IAsyncEnumerable<CachedIndexedLine> ReadCachedLinesForFileAsync(
+        DbExec db,
+        long fileId,
+        [EnumeratorCancellation] CancellationToken cancellationToken)
+    {
+        await using var result = await db.ExecuteAsync(
+            "SELECT l.id, f.id, f.path, f.file_name, f.extension, f.size_bytes, f.created_utc_ticks, f.modified_utc_ticks, " +
+            "f.status, f.extractor_id, f.file_type_category, l.line_number, l.content, l.anchor_json, l.content_unit_id " +
+            "FROM lines l INNER JOIN files f ON f.id = l.file_id " +
+            Sql.Format($"WHERE f.id = {fileId} AND f.status = {FileStatus.Ok}") +
+            SelectLinesOrder,
+            cancellationToken).ConfigureAwait(false);
+
+        while (await result.MoveNextAsync(cancellationToken).ConfigureAwait(false))
+        {
+            yield return new CachedIndexedLine(
+                result.Current[0].AsInteger,
+                result.Current[1].AsInteger,
+                ReadIndexedLine(result.Current, offset: 2));
+        }
+    }
+
+    public static async IAsyncEnumerable<CachedIndexedLine> ReadCachedLinesAsync(
+        DbExec db,
+        long rootId,
+        IReadOnlyList<long> lineIds,
+        [EnumeratorCancellation] CancellationToken cancellationToken)
+    {
+        if (lineIds.Count == 0)
+            yield break;
+
+        await using var result = await db.ExecuteAsync(
+            "SELECT l.id, f.id, f.path, f.file_name, f.extension, f.size_bytes, f.created_utc_ticks, f.modified_utc_ticks, " +
+            "f.status, f.extractor_id, f.file_type_category, l.line_number, l.content, l.anchor_json, l.content_unit_id " +
+            "FROM lines l INNER JOIN files f ON f.id = l.file_id " +
+            Sql.Format($"WHERE l.id IN ({new Sql.IdList(lineIds)}) AND f.root_id = {rootId} AND f.status = {FileStatus.Ok}") +
+            SelectLinesOrder,
+            cancellationToken).ConfigureAwait(false);
+
+        while (await result.MoveNextAsync(cancellationToken).ConfigureAwait(false))
+        {
+            yield return new CachedIndexedLine(
+                result.Current[0].AsInteger,
+                result.Current[1].AsInteger,
+                ReadIndexedLine(result.Current, offset: 2));
+        }
+    }
+
+    public static async IAsyncEnumerable<FileChangeRow> ReadFileChangesAfterIdAsync(
+        DbExec db,
+        long rootId,
+        long afterFileId,
+        [EnumeratorCancellation] CancellationToken cancellationToken)
+    {
+        await using var result = await db.ExecuteAsync(
+            Sql.Format(
+                $"SELECT id, path, status FROM files WHERE root_id = {rootId} AND id > {afterFileId} " +
+                $"AND status != {FileStatus.Indexing} ORDER BY id"),
+            cancellationToken).ConfigureAwait(false);
+
+        while (await result.MoveNextAsync(cancellationToken).ConfigureAwait(false))
+        {
+            yield return new FileChangeRow(
+                result.Current[0].AsInteger,
+                result.Current[1].AsText,
+                result.Current[2].AsText);
+        }
+    }
+
+    public static async Task<long> ReadMaxFileIdForRootAsync(
+        DbExec db,
+        long rootId,
+        CancellationToken cancellationToken)
+    {
+        await using var result = await db.ExecuteAsync(
+            Sql.Format($"SELECT id FROM files WHERE root_id = {rootId} ORDER BY id"),
+            cancellationToken).ConfigureAwait(false);
+
+        var max = 0L;
+        while (await result.MoveNextAsync(cancellationToken).ConfigureAwait(false))
+            max = Math.Max(max, result.Current[0].AsInteger);
+
+        return max;
+    }
+
+    public static async IAsyncEnumerable<IndexedLine> ReadCurrentLinesAsync(
+        DbExec db,
+        long rootId,
+        [EnumeratorCancellation] CancellationToken cancellationToken)
+    {
+        var fileIds = await ReadCurrentFileIdsForRootAsync(db, rootId, IsOkStatus, cancellationToken).ConfigureAwait(false);
+        foreach (var batch in fileIds.Chunk(DeleteIdBatchSize))
+        {
+            await using var result = await db.ExecuteAsync(
+                SelectLinesColumns +
+                Sql.Format($"f.id IN ({new Sql.IdList(batch)}) AND f.status = {FileStatus.Ok}") +
+                SelectLinesOrder,
+                cancellationToken).ConfigureAwait(false);
+
+            while (await result.MoveNextAsync(cancellationToken).ConfigureAwait(false))
+                yield return ReadIndexedLine(result.Current, offset: 0);
+        }
+    }
+
     public static async IAsyncEnumerable<IndexedLine> ReadLinesAsync(
-        Database db,
+        DbExec db,
         string sql,
         [EnumeratorCancellation] CancellationToken cancellationToken)
     {
         await using var result = await db.ExecuteAsync(sql, cancellationToken).ConfigureAwait(false);
         while (await result.MoveNextAsync(cancellationToken).ConfigureAwait(false))
         {
-            var row = result.Current;
-            yield return new IndexedLine(
-                row[0].AsText,
-                row[1].AsText,
-                row[2].AsText,
-                row[3].AsInteger,
-                row[4].IsNull ? 0 : row[4].AsInteger,
-                row[5].AsInteger,
-                row[6].AsText,
-                row[7].IsNull ? string.Empty : row[7].AsText,
-                row[8].IsNull ? string.Empty : row[8].AsText,
-                checked((int)row[9].AsInteger),
-                row[10].AsText,
-                row[11].IsNull ? null : DeserializeAnchor(row[11].AsText),
-                row[12].IsNull ? null : row[12].AsInteger,
-                ParseEnum(row[13].IsNull ? null : row[13].AsText, ContentUnitKind.Text),
-                row[14].IsNull ? null : DeserializeLocator(row[14].AsText),
-                row[15].IsNull ? string.Empty : row[15].AsText,
-                row[16].IsNull ? string.Empty : row[16].AsText,
-                row[17].IsNull ? string.Empty : row[17].AsText,
-                row[18].IsNull ? string.Empty : row[18].AsText);
+            yield return ReadIndexedLine(result.Current, offset: 0);
         }
     }
 
+    private static IndexedLine ReadIndexedLine(DbValue[] row, int offset)
+    {
+        var lineNumber = checked((int)row[offset + 9].AsInteger);
+        var anchor = row[offset + 11].IsNull ? null : DeserializeAnchor(row[offset + 11].AsText);
+        return new IndexedLine(
+            row[offset].AsText,
+            row[offset + 1].AsText,
+            row[offset + 2].AsText,
+            row[offset + 3].AsInteger,
+            row[offset + 4].IsNull ? 0 : row[offset + 4].AsInteger,
+            row[offset + 5].AsInteger,
+            row[offset + 6].AsText,
+            row[offset + 7].IsNull ? string.Empty : row[offset + 7].AsText,
+            row[offset + 8].IsNull ? string.Empty : row[offset + 8].AsText,
+            lineNumber,
+            row[offset + 10].AsText,
+            anchor,
+            row[offset + 12].IsNull ? null : row[offset + 12].AsInteger,
+            ContentUnitKind.Text,
+            SourceLocator.FromAnchor(anchor, lineNumber),
+            string.Empty,
+            string.Empty,
+            string.Empty,
+            string.Empty);
+    }
+
     public static async Task<ContentUnit?> ReadContentUnitAsync(
-        Database db,
+        DbExec db,
         long id,
         CancellationToken cancellationToken)
     {
-        await using var result = await db.ExecuteAsync(
-            SelectContentUnitColumns + Sql.Format($"WHERE u.id = {id}"),
-            cancellationToken).ConfigureAwait(false);
+        await using (var result = await db.ExecuteAsync(
+                SelectContentUnitColumns +
+                "INNER JOIN files f ON f.id = u.file_id " +
+                Sql.Format($"WHERE u.id = {id} AND f.status != {FileStatus.Stale}"),
+                cancellationToken)
+            .ConfigureAwait(false))
+        {
+            if (await result.MoveNextAsync(cancellationToken).ConfigureAwait(false))
+                return ReadContentUnit(result.Current);
+        }
 
-        return await result.MoveNextAsync(cancellationToken).ConfigureAwait(false)
-            ? ReadContentUnit(result.Current)
-            : null;
+        return await ReadTextLineContentUnitAsync(db, id, cancellationToken).ConfigureAwait(false);
     }
 
     public static async Task<string?> ReadFilePathAsync(
-        Database db,
+        DbExec db,
         long fileId,
         CancellationToken cancellationToken)
     {
         await using var result = await db.ExecuteAsync(
-            Sql.Format($"SELECT path FROM files WHERE id = {fileId}"),
+            Sql.Format($"SELECT path FROM files WHERE id = {fileId} AND status != {FileStatus.Stale}"),
             cancellationToken).ConfigureAwait(false);
 
         return await result.MoveNextAsync(cancellationToken).ConfigureAwait(false)
@@ -1275,59 +1827,78 @@ internal static partial class IndexTables
     }
 
     public static async Task<long?> ReadFileIdAsync(
-        Database db,
+        DbExec db,
         long rootId,
         string path,
         CancellationToken cancellationToken)
     {
+        long? latestId = null;
+        string? latestStatus = null;
         await using var result = await db.ExecuteAsync(
-            Sql.Format($"SELECT id FROM files WHERE root_id = {rootId} AND path = {path}"),
+            Sql.Format($"SELECT id, status FROM files WHERE root_id = {rootId} AND path = {path} AND status != {FileStatus.Indexing}"),
             cancellationToken).ConfigureAwait(false);
 
-        return await result.MoveNextAsync(cancellationToken).ConfigureAwait(false)
-            ? result.Current[0].AsInteger
+        while (await result.MoveNextAsync(cancellationToken).ConfigureAwait(false))
+        {
+            var id = result.Current[0].AsInteger;
+            if (latestId is null || id > latestId.Value)
+            {
+                latestId = id;
+                latestStatus = result.Current[1].AsText;
+            }
+        }
+
+        return latestId is not null && latestStatus is not null && !IsStaleStatus(latestStatus)
+            ? latestId.Value
             : null;
     }
 
     public static async Task<IReadOnlyList<long>> ReadContentUnitIdsForRootAsync(
-        Database db,
+        DbExec db,
         long rootId,
         CancellationToken cancellationToken)
     {
         var ids = new List<long>();
-        await using var result = await db.ExecuteAsync(
-            Sql.Format(
-                $"SELECT u.id FROM content_units u INNER JOIN files f ON f.id = u.file_id " +
-                $"WHERE f.root_id = {rootId} ORDER BY u.id"),
-            cancellationToken).ConfigureAwait(false);
+        var fileIds = await ReadCurrentFileIdsForRootAsync(db, rootId, IsOkStatus, cancellationToken).ConfigureAwait(false);
 
-        while (await result.MoveNextAsync(cancellationToken).ConfigureAwait(false))
-            ids.Add(result.Current[0].AsInteger);
+        foreach (var batch in fileIds.Chunk(DeleteIdBatchSize))
+        {
+            await using var result = await db.ExecuteAsync(
+                Sql.Format(
+                    $"SELECT content_unit_id FROM lines WHERE file_id IN ({new Sql.IdList(batch)}) ORDER BY id"),
+                cancellationToken).ConfigureAwait(false);
+
+            while (await result.MoveNextAsync(cancellationToken).ConfigureAwait(false))
+                ids.Add(result.Current[0].AsInteger);
+        }
 
         return ids;
     }
 
     public static async Task<IReadOnlyList<ContentUnit>> ReadContentUnitsForFileAsync(
-        Database db,
+        DbExec db,
         long fileId,
         CancellationToken cancellationToken)
     {
         var units = new List<ContentUnit>();
         await using var result = await db.ExecuteAsync(
-            SelectContentUnitColumns +
-            "INNER JOIN lines l ON l.content_unit_id = u.id " +
-            Sql.Format($"WHERE u.file_id = {fileId}") +
-            " ORDER BY l.line_number, u.id",
+            "SELECT l.content_unit_id, l.file_id, l.line_number, l.content, l.anchor_json, " +
+            "f.extractor_id, f.extractor_version, u.id, u.file_id, u.kind, u.locator_json, u.unit_text, " +
+            "u.content_hash, u.language, u.extractor_id, u.extractor_version " +
+            "FROM lines l INNER JOIN files f ON f.id = l.file_id " +
+            "LEFT JOIN content_units u ON u.id = l.content_unit_id " +
+            Sql.Format($"WHERE l.file_id = {fileId} AND f.status != {FileStatus.Stale}") +
+            " ORDER BY l.line_number, l.id",
             cancellationToken).ConfigureAwait(false);
 
         while (await result.MoveNextAsync(cancellationToken).ConfigureAwait(false))
-            units.Add(ReadContentUnit(result.Current));
+            units.Add(ReadLineContentUnit(result.Current));
 
         return units;
     }
 
     public static async Task<IReadOnlyList<ContentUnit>> ReadNeighboringContentUnitsAsync(
-        Database db,
+        DbExec db,
         long contentUnitId,
         int before,
         int after,
@@ -1370,6 +1941,57 @@ internal static partial class IndexTables
             row[7].IsNull ? string.Empty : row[7].AsText,
             row[8].IsNull ? string.Empty : row[8].AsText);
 
+    private static async Task<ContentUnit?> ReadTextLineContentUnitAsync(
+        DbExec db,
+        long id,
+        CancellationToken cancellationToken)
+    {
+        await using var result = await db.ExecuteAsync(
+            Sql.Format(
+                $"SELECT l.content_unit_id, l.file_id, l.line_number, l.content, l.anchor_json, " +
+                $"f.extractor_id, f.extractor_version FROM lines l INNER JOIN files f ON f.id = l.file_id " +
+                $"WHERE l.id = {id} AND f.status != {FileStatus.Stale}"),
+            cancellationToken).ConfigureAwait(false);
+
+        return await result.MoveNextAsync(cancellationToken).ConfigureAwait(false)
+            ? ReadSynthesizedLineContentUnit(result.Current)
+            : null;
+    }
+
+    private static ContentUnit ReadLineContentUnit(DbValue[] row)
+    {
+        if (!row[7].IsNull)
+        {
+            return new ContentUnit(
+                row[7].AsInteger,
+                row[8].AsInteger,
+                ParseEnum(row[9].IsNull ? null : row[9].AsText, ContentUnitKind.Text),
+                row[10].IsNull ? new SourceLocator() : DeserializeLocator(row[10].AsText) ?? new SourceLocator(),
+                row[11].IsNull ? string.Empty : row[11].AsText,
+                row[12].IsNull ? string.Empty : row[12].AsText,
+                row[13].IsNull ? string.Empty : row[13].AsText,
+                row[14].IsNull ? string.Empty : row[14].AsText,
+                row[15].IsNull ? string.Empty : row[15].AsText);
+        }
+
+        return ReadSynthesizedLineContentUnit(row);
+    }
+
+    private static ContentUnit ReadSynthesizedLineContentUnit(DbValue[] row)
+    {
+        var anchor = row[4].IsNull ? null : DeserializeAnchor(row[4].AsText);
+        var line = new TextLine(
+            checked((int)row[2].AsInteger),
+            row[3].IsNull ? string.Empty : row[3].AsText,
+            anchor);
+        return ContentUnit.FromTextLine(
+            row[0].AsInteger,
+            row[1].AsInteger,
+            line,
+            row[5].IsNull ? string.Empty : row[5].AsText,
+            row[6].IsNull ? string.Empty : row[6].AsText);
+    }
+
     private static SourceAnchor? DeserializeAnchor(string json)
     {
         if (string.IsNullOrWhiteSpace(json))
@@ -1403,7 +2025,7 @@ internal static partial class IndexTables
     // ----- pending_changes -----
 
     public static async Task UpsertPendingChangeAsync(
-        Database db,
+        DbExec db,
         string root,
         string? path,
         IndexChangeKind kind,
@@ -1426,7 +2048,7 @@ internal static partial class IndexTables
             cancellationToken).ConfigureAwait(false);
     }
 
-    public static async Task<List<PendingIndexChange>> ReadPendingChangesAsync(Database db, CancellationToken cancellationToken)
+    public static async Task<List<PendingIndexChange>> ReadPendingChangesAsync(DbExec db, CancellationToken cancellationToken)
     {
         var changes = new List<PendingIndexChange>();
         await using var result = await db.ExecuteAsync(
@@ -1446,7 +2068,7 @@ internal static partial class IndexTables
     }
 
     public static Task DeletePendingChangeAsync(
-        Database db,
+        DbExec db,
         string root,
         string? path,
         IndexChangeKind kind,
@@ -1458,7 +2080,7 @@ internal static partial class IndexTables
             Sql.Format($" AND kind = {(long)kind}"),
             cancellationToken);
 
-    public static Task DeletePendingChangesForRootAsync(Database db, string root, CancellationToken cancellationToken) =>
+    public static Task DeletePendingChangesForRootAsync(DbExec db, string root, CancellationToken cancellationToken) =>
         ExecuteAsync(db, Sql.Format($"DELETE FROM pending_changes WHERE root_path = {root}"), cancellationToken);
 
     // ----- shared helpers -----
@@ -1469,17 +2091,20 @@ internal static partial class IndexTables
             : Sql.Format($"path = {path}");
 
     private static Task DeleteValidationDriftsForRootAsync(
-        Database db,
+        DbExec db,
         long rootId,
         CancellationToken cancellationToken) =>
         ExecuteAsync(db, Sql.Format($"DELETE FROM validation_drifts WHERE root_id = {rootId}"), cancellationToken);
 
-    public static async Task<long> GetNextIdAsync(Database db, string tableName, CancellationToken cancellationToken)
+    public static Task AnalyzeAsync(DbExec db, CancellationToken cancellationToken) =>
+        ExecuteAsync(db, "ANALYZE", cancellationToken);
+
+    public static async Task<long> GetNextIdAsync(DbExec db, string tableName, CancellationToken cancellationToken)
     {
         return await AllocateIdsAsync(db, tableName, 1, cancellationToken).ConfigureAwait(false);
     }
 
-    public static async Task<long> AllocateIdsAsync(Database db, string tableName, long count, CancellationToken cancellationToken)
+    public static async Task<long> AllocateIdsAsync(DbExec db, string tableName, long count, CancellationToken cancellationToken)
     {
         ArgumentOutOfRangeException.ThrowIfNegativeOrZero(count);
 
@@ -1516,10 +2141,75 @@ internal static partial class IndexTables
         return firstId;
     }
 
-    private static async Task ExecuteAsync(Database db, string sql, CancellationToken cancellationToken)
+    private static async Task ExecuteAsync(DbExec db, string sql, CancellationToken cancellationToken)
     {
         await db.ExecuteAsync(sql, cancellationToken).ConfigureAwait(false);
     }
+
+    private static async Task<List<long>> ReadCurrentFileIdsForRootAsync(
+        DbExec db,
+        long rootId,
+        Func<string, bool> includeStatus,
+        CancellationToken cancellationToken)
+    {
+        var latestByPath = new Dictionary<string, (long Id, string Status)>(StringComparer.OrdinalIgnoreCase);
+        await using var result = await db.ExecuteAsync(
+            Sql.Format($"SELECT id, path, status FROM files WHERE root_id = {rootId} AND status != {FileStatus.Indexing}"),
+            cancellationToken).ConfigureAwait(false);
+
+        while (await result.MoveNextAsync(cancellationToken).ConfigureAwait(false))
+        {
+            var path = result.Current[1].AsText;
+            var row = (Id: result.Current[0].AsInteger, Status: result.Current[2].AsText);
+            if (!latestByPath.TryGetValue(path, out var existing) || row.Id > existing.Id)
+                latestByPath[path] = row;
+        }
+
+        var ids = latestByPath.Values
+            .Where(row => includeStatus(row.Status))
+            .Select(row => row.Id)
+            .ToList();
+        ids.Sort();
+        return ids;
+    }
+
+    private static async Task<List<long>> ReadCurrentFileIdsAsync(
+        DbExec db,
+        Func<string, bool> includeStatus,
+        CancellationToken cancellationToken)
+    {
+        var latestByPath = new Dictionary<string, (long Id, string Status)>(StringComparer.OrdinalIgnoreCase);
+        await using var result = await db.ExecuteAsync(
+            Sql.Format($"SELECT id, root_id, path, status FROM files WHERE status != {FileStatus.Indexing}"),
+            cancellationToken).ConfigureAwait(false);
+
+        while (await result.MoveNextAsync(cancellationToken).ConfigureAwait(false))
+        {
+            var key = result.Current[1].AsInteger.ToString(System.Globalization.CultureInfo.InvariantCulture) + "\0" + result.Current[2].AsText;
+            var row = (Id: result.Current[0].AsInteger, Status: result.Current[3].AsText);
+            if (!latestByPath.TryGetValue(key, out var existing) || row.Id > existing.Id)
+                latestByPath[key] = row;
+        }
+
+        var ids = latestByPath.Values
+            .Where(row => includeStatus(row.Status))
+            .Select(row => row.Id)
+            .ToList();
+        ids.Sort();
+        return ids;
+    }
+
+    private static bool IsVisibleCurrentStatus(string status) =>
+        !IsStaleStatus(status) && !string.Equals(status, FileStatus.Indexing, StringComparison.OrdinalIgnoreCase);
+
+    private static bool IsOkStatus(string status) =>
+        string.Equals(status, FileStatus.Ok, StringComparison.OrdinalIgnoreCase);
+
+    private static bool IsErrorStatus(string status) =>
+        string.Equals(status, FileStatus.Error, StringComparison.OrdinalIgnoreCase);
+
+    private static bool IsStaleStatus(string status) =>
+        string.Equals(status, FileStatus.Stale, StringComparison.OrdinalIgnoreCase);
 
     private static int Bool(bool value) => value ? 1 : 0;
 
@@ -1532,7 +2222,7 @@ internal static partial class IndexTables
             ? parsed
             : fallback;
 
-    private static async Task<long> GetCountAsync(Database db, string sql, CancellationToken cancellationToken)
+    private static async Task<long> GetCountAsync(DbExec db, string sql, CancellationToken cancellationToken)
     {
         await using var result = await db.ExecuteAsync(sql, cancellationToken).ConfigureAwait(false);
         return await result.MoveNextAsync(cancellationToken).ConfigureAwait(false)
@@ -1540,7 +2230,7 @@ internal static partial class IndexTables
             : 0;
     }
 
-    private static async Task<List<long>> ReadIdsAsync(Database db, string sql, CancellationToken cancellationToken)
+    private static async Task<List<long>> ReadIdsAsync(DbExec db, string sql, CancellationToken cancellationToken)
     {
         var ids = new List<long>();
         await using var result = await db.ExecuteAsync(sql, cancellationToken).ConfigureAwait(false);
