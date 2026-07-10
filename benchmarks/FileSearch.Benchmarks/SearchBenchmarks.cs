@@ -16,9 +16,9 @@ public class MetadataSearchBenchmarks
             BenchmarkProfile.Resolve(Environment.GetEnvironmentVariable("FILESEARCH_BENCHMARK_PROFILE")),
             Environment.GetEnvironmentVariable("FILESEARCH_BENCHMARK_ROOT"));
         var manifest = new BenchmarkCorpusGenerator().EnsureCorpus(_paths, force: false);
-        await new MetadataIndexSeeder().EnsureSeededAsync(_paths, manifest, CancellationToken.None)
-            .ConfigureAwait(false);
         _index = BenchmarkIndexFactory.Create(_paths);
+        await new MetadataIndexSeeder().EnsureSeededAsync(_index, _paths, manifest, CancellationToken.None)
+            .ConfigureAwait(false);
     }
 
     [GlobalCleanup]
@@ -51,9 +51,9 @@ public class IndexedContentSearchBenchmarks
             BenchmarkProfile.Resolve(Environment.GetEnvironmentVariable("FILESEARCH_BENCHMARK_PROFILE")),
             Environment.GetEnvironmentVariable("FILESEARCH_BENCHMARK_ROOT"));
         _manifest = new BenchmarkCorpusGenerator().EnsureCorpus(_paths, force: false);
-        await new MetadataIndexSeeder().EnsureSeededAsync(_paths, _manifest, CancellationToken.None)
-            .ConfigureAwait(false);
         _index = BenchmarkIndexFactory.Create(_paths);
+        await new MetadataIndexSeeder().EnsureSeededAsync(_index, _paths, _manifest, CancellationToken.None)
+            .ConfigureAwait(false);
         await _index.BuildOrRefreshAsync(
                 new IndexRequest(_paths.ContentRoot, BenchmarkIndexFactory.IndexOptions),
                 CancellationToken.None)

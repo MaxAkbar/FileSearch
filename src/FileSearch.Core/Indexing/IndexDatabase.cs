@@ -202,7 +202,7 @@ internal sealed class IndexDatabase : IDisposable
         {
             if (_current is null || _current.Retired || (!_writeSessionActive && HasExternalChange()))
             {
-                RetireCurrentLocked();
+                await RetireCurrentAndDisposeLockedAsync(cancellationToken).ConfigureAwait(false);
                 var opened = await TryOpenValidatedAsync(cancellationToken).ConfigureAwait(false);
                 if (opened is null)
                     return null;
@@ -328,7 +328,12 @@ internal sealed class IndexDatabase : IDisposable
         public int DisposedFlag;
     }
 
-    private readonly record struct FileStamp(long MainLength, long MainTicks, long WalLength, long WalTicks);
+    private readonly record struct FileStamp(
+        long MainLength,
+        long MainTicks,
+        long WalLength,
+        long WalTicks,
+        ulong WalHeaderFingerprint);
 
     private FileStamp ReadStamp()
     {
@@ -339,11 +344,49 @@ internal sealed class IndexDatabase : IDisposable
         }
 
         var main = Stat(DatabasePath);
-        var wal = Stat(DatabasePath + ".wal");
-        return new FileStamp(main.Length, main.Ticks, wal.Length, wal.Ticks);
+        var walPath = DatabasePath + ".wal";
+        var wal = Stat(walPath);
+        return new FileStamp(
+            main.Length,
+            main.Ticks,
+            wal.Length,
+            wal.Ticks,
+            ReadWalHeaderFingerprint(walPath));
     }
 
     private bool HasExternalChange() => ReadStamp() != _stamp;
+
+    private static ulong ReadWalHeaderFingerprint(string walPath)
+    {
+        const int walHeaderSize = 32;
+        const ulong fnvOffset = 14695981039346656037UL;
+        const ulong fnvPrime = 1099511628211UL;
+
+        Span<byte> header = stackalloc byte[walHeaderSize];
+        try
+        {
+            using var handle = File.OpenHandle(
+                walPath,
+                FileMode.Open,
+                FileAccess.Read,
+                FileShare.ReadWrite | FileShare.Delete);
+            var bytesRead = RandomAccess.Read(handle, header, 0);
+            var hash = fnvOffset;
+            hash = (hash ^ (byte)bytesRead) * fnvPrime;
+            foreach (var value in header[..bytesRead])
+                hash = (hash ^ value) * fnvPrime;
+
+            return hash;
+        }
+        catch (IOException)
+        {
+            return 0;
+        }
+        catch (UnauthorizedAccessException)
+        {
+            return 0;
+        }
+    }
 
     private bool ShouldCheckpoint()
     {
@@ -423,6 +466,23 @@ internal sealed class IndexDatabase : IDisposable
             _ = DisposeRetiredAsync(current);
     }
 
+    private async Task RetireCurrentAndDisposeLockedAsync(CancellationToken cancellationToken)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        var current = _current;
+        if (current is null)
+            return;
+
+        RetireCurrentLocked(disposeWhenUnused: false);
+        // A detached CSharpDB handle must finish its checkpoint/delete close
+        // before a replacement can safely open the same WAL.
+        while (Volatile.Read(ref current.Leases) > 0)
+            await Task.Delay(10, CancellationToken.None).ConfigureAwait(false);
+
+        await DisposeRetiredAsync(current).ConfigureAwait(false);
+        cancellationToken.ThrowIfCancellationRequested();
+    }
+
     private async ValueTask<SharedHandle?> RetireCurrentAsync(bool disposeWhenUnused = true)
     {
         await _handleGate.WaitAsync(CancellationToken.None).ConfigureAwait(false);
@@ -491,8 +551,7 @@ internal sealed class IndexDatabase : IDisposable
             if (_current is not null && !_current.Retired && _schemaEnsured && !HasExternalChange())
                 return _current;
 
-            var previous = _current;
-            RetireCurrentLocked();
+            await RetireCurrentAndDisposeLockedAsync(cancellationToken).ConfigureAwait(false);
 
             var databaseExisted = File.Exists(DatabasePath);
             var db = await OpenDatabaseAsync(preferHybrid: databaseExisted, cancellationToken).ConfigureAwait(false);
@@ -516,24 +575,16 @@ internal sealed class IndexDatabase : IDisposable
                 {
                     await CloseQuietlyAsync(db).ConfigureAwait(false);
 
-                    // Rebuilding replaces the files on disk. Any surviving
-                    // handle makes the deletes silently fail, after which
+                    // Rebuilding replaces the files on disk. The previous
+                    // handle was drained before this open; any surviving
+                    // external handle makes the deletes silently fail, after
+                    // which
                     // CREATE TABLE IF NOT EXISTS would keep the OLD tables and
                     // the meta rewrite would stamp them with the CURRENT
                     // version — a poisoned database that fails its shape probe
-                    // on every open, forever. Drain and dispose our own
-                    // retired handle deterministically, then verify the files
-                    // are really gone and fail LOUDLY if they are not (e.g. an
-                    // older FileSearch process still has the index open).
-                    if (previous is not null)
-                    {
-                        var deadline = DateTime.UtcNow + CompactLeaseDrainTimeout;
-                        while (Volatile.Read(ref previous.Leases) > 0 && DateTime.UtcNow < deadline)
-                            await Task.Delay(50, cancellationToken).ConfigureAwait(false);
-
-                        await DisposeRetiredAsync(previous).ConfigureAwait(false);
-                    }
-
+                    // on every open, forever. Verify the files are really gone
+                    // and fail loudly if they are not (e.g. an older FileSearch
+                    // process still has the index open).
                     DeleteDatabaseFiles();
                     if (File.Exists(DatabasePath) ||
                         File.Exists(DatabasePath + ".wal") ||

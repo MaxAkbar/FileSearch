@@ -1500,6 +1500,15 @@ public sealed class FileIndexTests : IDisposable
         File.WriteAllText(Path.Combine(_root, "version-substring.txt"), "critical_latency_event happened\n");
         await BuildAsync();
 
+        var databaseInfo = new FileInfo(_dbPath);
+        var walPath = _dbPath + ".wal";
+        var walInfo = new FileInfo(walPath);
+        var databaseLength = databaseInfo.Length;
+        var databaseWriteTimeUtc = databaseInfo.LastWriteTimeUtc;
+        var walLength = walInfo.Length;
+        var walWriteTimeUtc = walInfo.LastWriteTimeUtc;
+        var walHeaderBefore = ReadWalHeader(walPath);
+
         var db = await Database.OpenAsync(_dbPath, TestContext.Current.CancellationToken);
         try
         {
@@ -1519,6 +1528,17 @@ public sealed class FileIndexTests : IDisposable
             await SafeDisposeAsync(db);
         }
 
+        var walHeaderAfter = ReadWalHeader(walPath);
+        Assert.False(walHeaderBefore.SequenceEqual(walHeaderAfter));
+        Assert.Equal(databaseLength, new FileInfo(_dbPath).Length);
+        Assert.Equal(walLength, new FileInfo(walPath).Length);
+
+        // Reproduce a rapid same-size WAL reset on a filesystem whose write
+        // timestamps have not advanced. Header identity must still force the
+        // stale shared handle to be drained before refresh opens a new one.
+        File.SetLastWriteTimeUtc(_dbPath, databaseWriteTimeUtc);
+        File.SetLastWriteTimeUtc(walPath, walWriteTimeUtc);
+
         await _index.RefreshRootAsync(
             new IndexRequest(_root, new WalkerOptions()),
             IndexRefreshMode.Incremental,
@@ -1528,6 +1548,18 @@ public sealed class FileIndexTests : IDisposable
 
         var hit = Assert.Single(hits);
         Assert.EndsWith("version-substring.txt", hit.Path);
+
+        static byte[] ReadWalHeader(string path)
+        {
+            var header = new byte[32];
+            using var stream = new FileStream(
+                path,
+                FileMode.Open,
+                FileAccess.Read,
+                FileShare.ReadWrite | FileShare.Delete);
+            stream.ReadExactly(header);
+            return header;
+        }
     }
 
     [Fact]

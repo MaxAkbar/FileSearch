@@ -1,7 +1,6 @@
 using CSharpDB.Engine;
 using CSharpDB.Primitives;
 using FileSearch.Core.Indexing;
-using Microsoft.Extensions.Logging.Abstractions;
 
 namespace FileSearch.Benchmarks;
 
@@ -10,20 +9,24 @@ internal sealed partial class MetadataIndexSeeder
     private const int FileBatchSize = 2_000;
     private const int TokenBatchFlushSize = 16_384;
 
-    public async Task EnsureSeededAsync(BenchmarkPaths paths, CorpusManifest manifest, CancellationToken cancellationToken)
+    public async Task EnsureSeededAsync(
+        CSharpDbFileIndex index,
+        BenchmarkPaths paths,
+        CorpusManifest manifest,
+        CancellationToken cancellationToken)
     {
         Directory.CreateDirectory(paths.MetadataRoot);
 
-        using (var index = BenchmarkIndexFactory.Create(paths))
-        {
-            await index.BuildOrRefreshAsync(
-                    new IndexRequest(paths.MetadataRoot, BenchmarkIndexFactory.IndexOptions),
-                    cancellationToken)
-                .ConfigureAwait(false);
-        }
+        var stats = await index.GetStatsAsync(paths.MetadataRoot, cancellationToken).ConfigureAwait(false);
+        if (stats.Exists && stats.FileCount >= manifest.MetadataOnlyEntryCount)
+            return;
 
-        using var database = new IndexDatabase(new FileIndexOptions { DatabasePath = paths.DatabasePath }, NullLogger.Instance);
-        await database.RunExclusiveWriteAsync(
+        await index.BuildOrRefreshAsync(
+                new IndexRequest(paths.MetadataRoot, BenchmarkIndexFactory.IndexOptions),
+                cancellationToken)
+            .ConfigureAwait(false);
+
+        await index.RunExclusiveWriteAsync(
                 db => SeedMetadataRowsAsync(db, paths, manifest, cancellationToken),
                 cancellationToken)
             .ConfigureAwait(false);

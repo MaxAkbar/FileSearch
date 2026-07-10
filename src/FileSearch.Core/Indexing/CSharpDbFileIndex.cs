@@ -104,6 +104,11 @@ public sealed class CSharpDbFileIndex : IFileIndex, IIndexReplayWriter, IIndexUs
 
     public void Dispose() => _database.Dispose();
 
+    internal Task RunExclusiveWriteAsync(
+        Func<Database, Task> action,
+        CancellationToken cancellationToken) =>
+        _database.RunExclusiveWriteAsync(action, cancellationToken);
+
     public async Task<ContentUnit?> GetContentUnitAsync(long id, CancellationToken cancellationToken)
     {
         ArgumentOutOfRangeException.ThrowIfNegativeOrZero(id);

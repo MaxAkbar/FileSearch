@@ -35,10 +35,10 @@ internal sealed class BenchmarkReportRunner
         if (forceIndex)
             DeleteDatabaseFiles(paths);
 
-        LogPhase("Seeding metadata index");
-        await _metadataSeeder.EnsureSeededAsync(paths, manifest, cancellationToken).ConfigureAwait(false);
-
         using var index = BenchmarkIndexFactory.Create(paths);
+        LogPhase("Seeding metadata index");
+        await _metadataSeeder.EnsureSeededAsync(index, paths, manifest, cancellationToken).ConfigureAwait(false);
+
         var metrics = new List<BenchmarkMetric>();
 
         LogPhase("Indexing physical content");
