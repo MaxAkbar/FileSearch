@@ -65,7 +65,7 @@ public sealed class SemanticCandidateProvider : IRoutedCandidateProvider
 
         var embedding = await _embedder.EmbedAsync(semanticText, TextEmbeddingInputKind.Query, cancellationToken)
             .ConfigureAwait(false);
-        var matches = await SearchTwoLevelAsync(embedding, cancellationToken).ConfigureAwait(false);
+        var matches = await SearchTwoLevelAsync(embedding, plan.Request.Roots, cancellationToken).ConfigureAwait(false);
 
         foreach (var match in matches)
         {
@@ -121,6 +121,7 @@ public sealed class SemanticCandidateProvider : IRoutedCandidateProvider
 
     private async Task<IReadOnlyList<VectorMatch>> SearchTwoLevelAsync(
         TextEmbedding embedding,
+        IReadOnlyCollection<string> roots,
         CancellationToken cancellationToken)
     {
         var fileMatches = await _vectorIndex
@@ -129,7 +130,9 @@ public sealed class SemanticCandidateProvider : IRoutedCandidateProvider
                 MaxSemanticFiles,
                 cancellationToken,
                 embedding.Model,
-                VectorDocumentKind.File)
+                VectorDocumentKind.File,
+                fileIds: null,
+                roots)
             .ConfigureAwait(false);
         if (fileMatches.Count > 0)
         {
@@ -144,7 +147,8 @@ public sealed class SemanticCandidateProvider : IRoutedCandidateProvider
                     cancellationToken,
                     embedding.Model,
                     VectorDocumentKind.ContentChunk,
-                    fileIds)
+                    fileIds,
+                    roots)
                 .ConfigureAwait(false);
             if (chunkMatches.Count > 0)
                 return BlendFileAndChunkScores(fileMatches, chunkMatches);
@@ -156,7 +160,9 @@ public sealed class SemanticCandidateProvider : IRoutedCandidateProvider
                 MaxSemanticMatches,
                 cancellationToken,
                 embedding.Model,
-                VectorDocumentKind.ContentChunk)
+                VectorDocumentKind.ContentChunk,
+                fileIds: null,
+                roots)
             .ConfigureAwait(false);
     }
 

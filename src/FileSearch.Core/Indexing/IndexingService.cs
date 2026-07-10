@@ -22,6 +22,7 @@ public sealed class IndexingService : IIndexingService
     private readonly IIndexStartupCatchUpService? _startupCatchUp;
     private readonly IIndexerRuntimeCondition _runtimeCondition;
     private readonly ISemanticIndexingCoordinator? _semanticIndexing;
+    private readonly ISemanticIndexStatusService? _semanticIndexStatus;
     private readonly IndexingServiceOptions _options;
     private readonly object _sync = new();
     private readonly Dictionary<string, IndexedLocation> _locations = new(StringComparer.OrdinalIgnoreCase);
@@ -56,7 +57,8 @@ public sealed class IndexingService : IIndexingService
         IIndexStartupCatchUpService? startupCatchUp = null,
         IIndexerRuntimeCondition? runtimeCondition = null,
         IndexingServiceOptions? options = null,
-        ISemanticIndexingCoordinator? semanticIndexing = null)
+        ISemanticIndexingCoordinator? semanticIndexing = null,
+        ISemanticIndexStatusService? semanticIndexStatus = null)
     {
         _index = index;
         _queue = queue;
@@ -64,6 +66,7 @@ public sealed class IndexingService : IIndexingService
         _startupCatchUp = startupCatchUp;
         _runtimeCondition = runtimeCondition ?? new WindowsIndexerRuntimeCondition();
         _semanticIndexing = semanticIndexing;
+        _semanticIndexStatus = semanticIndexStatus;
         _options = (options ?? new IndexingServiceOptions()).Normalize();
         _logger = logger ?? NullLogger<IndexingService>.Instance;
     }
@@ -103,6 +106,7 @@ public sealed class IndexingService : IIndexingService
             if (catchUp.HandledRoots.Contains(normalizedRoot))
             {
                 SetRootStatusDetail(normalizedRoot, "Caught up via USN journal");
+                await EnqueueSemanticRefreshIfNeededAsync(location, cancellationToken).ConfigureAwait(false);
                 continue;
             }
 
@@ -149,6 +153,38 @@ public sealed class IndexingService : IIndexingService
         {
             _logger.LogWarning(ex, "Startup USN catch-up failed; falling back to startup root refresh.");
             return IndexStartupCatchUpResult.Empty;
+        }
+    }
+
+    private async Task EnqueueSemanticRefreshIfNeededAsync(
+        IndexedLocation location,
+        CancellationToken cancellationToken)
+    {
+        if (_semanticIndexing is null || _semanticIndexStatus is null)
+            return;
+
+        try
+        {
+            var status = await _semanticIndexStatus.GetRootStatusAsync(location.Root, cancellationToken)
+                .ConfigureAwait(false);
+            if (!status.IsModelAvailable || status.ContentUnitCount == 0 || status.IsReady)
+                return;
+
+            SetRootStatusDetail(location.Root, $"Smart Search rebuild queued: {status.Message}");
+            await EnqueueSemanticRootRefreshAsync(
+                    location.Root,
+                    location.WalkerOptions,
+                    IndexQueuePriority.Low,
+                    cancellationToken)
+                .ConfigureAwait(false);
+        }
+        catch (OperationCanceledException)
+        {
+            throw;
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Could not evaluate Smart Search startup coverage for {Root}.", location.Root);
         }
     }
 
@@ -769,7 +805,6 @@ public sealed class IndexingService : IIndexingService
             {
                 case IndexChangeKind.RefreshRoot:
                     SetRootStatusDetail(item.Root, "Snapshot scan running");
-                    await DeleteSemanticRootAsync(item.Root, cancellationToken).ConfigureAwait(false);
                     await _index.RefreshRootAsync(
                         new IndexRequest(
                             item.Root,
@@ -785,7 +820,6 @@ public sealed class IndexingService : IIndexingService
                     break;
                 case IndexChangeKind.RefreshSemanticRoot:
                     SetRootStatusDetail(item.Root, "Smart Search vectors running");
-                    await DeleteSemanticRootAsync(item.Root, cancellationToken).ConfigureAwait(false);
                     await UpsertSemanticRootAsync(item.Root, cancellationToken).ConfigureAwait(false);
                     await _index.RemovePendingChangeAsync(item.Root, null, item.Kind, cancellationToken)
                         .ConfigureAwait(false);
@@ -793,7 +827,6 @@ public sealed class IndexingService : IIndexingService
                 case IndexChangeKind.UpsertFile:
                     if (item.Path is not null)
                     {
-                        await DeleteSemanticFileAsync(item.Root, item.Path, cancellationToken).ConfigureAwait(false);
                         await _index.UpsertFileAsync(item.Root, item.Path, item.WalkerOptions, cancellationToken)
                             .ConfigureAwait(false);
                         await UpsertSemanticFileAsync(item.Root, item.Path, cancellationToken).ConfigureAwait(false);
@@ -909,7 +942,7 @@ public sealed class IndexingService : IIndexingService
             SetRootStatusDetail(
                 root,
                 result.IsAvailable
-                    ? $"Smart Search vectors complete: {result.VectorCount:n0} chunk(s)"
+                    ? $"Smart Search vectors complete: {result.VectorCount:n0} vector(s)"
                     : $"Smart Search unavailable: {result.Message}");
         }
         catch (OperationCanceledException)
@@ -1078,6 +1111,17 @@ public sealed class IndexingService : IIndexingService
                     !existingDetail.StartsWith("Snapshot scan queued:", StringComparison.Ordinal))
                 {
                     _rootStatusDetails[normalizedRoot] = "Snapshot scan queued";
+                }
+
+                return;
+            }
+
+            if (item.Kind == IndexChangeKind.RefreshSemanticRoot)
+            {
+                if (!_rootStatusDetails.TryGetValue(normalizedRoot, out var existingDetail) ||
+                    !existingDetail.StartsWith("Smart Search rebuild queued:", StringComparison.Ordinal))
+                {
+                    _rootStatusDetails[normalizedRoot] = "Smart Search rebuild queued";
                 }
 
                 return;

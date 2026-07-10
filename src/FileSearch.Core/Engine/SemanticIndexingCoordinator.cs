@@ -135,7 +135,7 @@ public sealed class SemanticIndexingCoordinator : ISemanticIndexingCoordinator
                 0,
                 null,
                 "No indexed file found for semantic indexing.")
-            : await UpsertFileAsync(fileId.Value, cancellationToken).ConfigureAwait(false);
+            : await _builder.UpsertFileAsync(root, fileId.Value, cancellationToken).ConfigureAwait(false);
     }
 
     public async Task<SemanticRootIndexBuildResult> UpsertRootAsync(
@@ -156,16 +156,35 @@ public sealed class SemanticIndexingCoordinator : ISemanticIndexingCoordinator
                 "No indexed files found for semantic indexing.");
         }
 
+        var normalizedFileIds = fileIds.Where(id => id > 0).Distinct().ToArray();
+        if (_builder is ISemanticBatchIndexBuilder batchBuilder &&
+            _vectorIndex is IVectorIndexBulkMutations bulkMutations)
+        {
+            var batch = await batchBuilder.BuildFilesAsync(root, normalizedFileIds, cancellationToken)
+                .ConfigureAwait(false);
+            if (!batch.IsAvailable)
+                return SemanticRootIndexBuildResult.Unavailable(root, normalizedFileIds.Length, batch.Message);
+
+            await bulkMutations.ReplaceRootAsync(root, normalizedFileIds, batch.Documents, cancellationToken)
+                .ConfigureAwait(false);
+            return SemanticRootIndexBuildResult.Completed(
+                root,
+                normalizedFileIds.Length,
+                batch.IndexedFileCount,
+                batch.VectorCount,
+                $"Indexed semantic vectors for {batch.IndexedFileCount:n0} file(s).");
+        }
+
         var availability = await _embedder.GetAvailabilityAsync(cancellationToken).ConfigureAwait(false);
         if (!availability.IsAvailable)
             return SemanticRootIndexBuildResult.Unavailable(root, fileIds.Count, availability.Message);
 
         var indexedFiles = 0;
         var vectors = 0;
-        foreach (var fileId in fileIds.Where(id => id > 0).Distinct())
+        foreach (var fileId in normalizedFileIds)
         {
             cancellationToken.ThrowIfCancellationRequested();
-            var result = await UpsertFileAsync(fileId, cancellationToken).ConfigureAwait(false);
+            var result = await _builder.UpsertFileAsync(root, fileId, cancellationToken).ConfigureAwait(false);
             if (result.WasIndexed)
                 indexedFiles++;
             vectors += result.VectorCount;
@@ -173,7 +192,7 @@ public sealed class SemanticIndexingCoordinator : ISemanticIndexingCoordinator
 
         return SemanticRootIndexBuildResult.Completed(
             root,
-            fileIds.Count,
+            normalizedFileIds.Length,
             indexedFiles,
             vectors,
             $"Indexed semantic vectors for {indexedFiles:n0} file(s).");
@@ -213,12 +232,25 @@ public sealed class SemanticIndexingCoordinator : ISemanticIndexingCoordinator
             throw new ArgumentException("Path is required.", nameof(path));
 
         var fileId = await _contentUnits.GetFileIdAsync(root, path, cancellationToken).ConfigureAwait(false);
-        return fileId is null
-            ? new SemanticIndexCleanupResult(
+        if (fileId is null)
+        {
+            return new SemanticIndexCleanupResult(
                 null,
                 Array.Empty<long>(),
-                "No indexed file found for semantic vector cleanup.")
-            : await DeleteFileAsync(fileId.Value, cancellationToken).ConfigureAwait(false);
+                "No indexed file found for semantic vector cleanup.");
+        }
+
+        if (_vectorIndex is IVectorIndexBulkMutations bulkMutations)
+        {
+            await bulkMutations.DeleteFileAsync(root, fileId.Value, cancellationToken).ConfigureAwait(false);
+            return new SemanticIndexCleanupResult(
+                fileId,
+                Array.Empty<long>(),
+                "Deleted semantic vectors for the indexed file.",
+                root);
+        }
+
+        return await DeleteFileAsync(fileId.Value, cancellationToken).ConfigureAwait(false);
     }
 
     public async Task<SemanticIndexCleanupResult> DeleteRootAsync(
@@ -227,6 +259,16 @@ public sealed class SemanticIndexingCoordinator : ISemanticIndexingCoordinator
     {
         if (string.IsNullOrWhiteSpace(root))
             throw new ArgumentException("Root is required.", nameof(root));
+
+        if (_vectorIndex is IVectorIndexBulkMutations bulkMutations)
+        {
+            await bulkMutations.DeleteRootAsync(root, cancellationToken).ConfigureAwait(false);
+            return new SemanticIndexCleanupResult(
+                null,
+                Array.Empty<long>(),
+                "Deleted semantic vectors for the indexed root.",
+                root);
+        }
 
         var contentUnitIds = await _contentUnits.GetContentUnitIdsForRootAsync(root, cancellationToken)
             .ConfigureAwait(false);

@@ -209,7 +209,8 @@ public sealed class CandidateProviderTests : IDisposable
                     model,
                     ContentUnitChunker.ChunkerVersion,
                     "checksum",
-                    locator),
+                    locator,
+                    _root),
             },
             cancellationToken);
         var provider = new SemanticCandidateProvider(
@@ -263,7 +264,8 @@ public sealed class CandidateProviderTests : IDisposable
                     new float[] { 1, 0 },
                     model,
                     ContentUnitChunker.ChunkerVersion,
-                    "file-auth-checksum"),
+                    "file-auth-checksum",
+                    root: _root),
                 new VectorDocument(
                     "chunk-auth",
                     VectorDocumentKind.ContentChunk,
@@ -273,7 +275,8 @@ public sealed class CandidateProviderTests : IDisposable
                     model,
                     ContentUnitChunker.ChunkerVersion,
                     "chunk-auth-checksum",
-                    authLocator),
+                    authLocator,
+                    _root),
                 new VectorDocument(
                     "file-billing",
                     VectorDocumentKind.File,
@@ -282,7 +285,8 @@ public sealed class CandidateProviderTests : IDisposable
                     new float[] { 0, 1 },
                     model,
                     ContentUnitChunker.ChunkerVersion,
-                    "file-billing-checksum"),
+                    "file-billing-checksum",
+                    root: _root),
                 new VectorDocument(
                     "chunk-billing",
                     VectorDocumentKind.ContentChunk,
@@ -292,7 +296,8 @@ public sealed class CandidateProviderTests : IDisposable
                     model,
                     ContentUnitChunker.ChunkerVersion,
                     "chunk-billing-checksum",
-                    billingLocator),
+                    billingLocator,
+                    _root),
             },
             cancellationToken);
         var provider = new SemanticCandidateProvider(
@@ -333,6 +338,56 @@ public sealed class CandidateProviderTests : IDisposable
         Assert.Equal(@"C:\docs\auth.md", candidate.Path);
         Assert.Equal(11, candidate.ContentUnitId);
         Assert.Equal("authentication migration plan", candidate.DisplayText);
+    }
+
+    [Fact]
+    public async Task SemanticProvider_DoesNotReturnHigherScoringVectorFromAnotherRoot()
+    {
+        var cancellationToken = TestContext.Current.CancellationToken;
+        var otherRoot = Path.Combine(Path.GetTempPath(), "filesearch-provider-other-" + Guid.NewGuid().ToString("N"));
+        var model = new EmbeddingModelInfo("test-embedding", "1", 2);
+        var vectorIndex = new InMemoryVectorIndex();
+        await vectorIndex.UpsertAsync(
+            new[]
+            {
+                new VectorDocument(
+                    "selected",
+                    VectorDocumentKind.ContentChunk,
+                    fileId: 1,
+                    new long[] { 11 },
+                    new float[] { 0.8f, 0.2f },
+                    model,
+                    ContentUnitChunker.ChunkerVersion,
+                    "selected-checksum",
+                    root: _root),
+                new VectorDocument(
+                    "other",
+                    VectorDocumentKind.ContentChunk,
+                    fileId: 2,
+                    new long[] { 22 },
+                    new float[] { 1, 0 },
+                    model,
+                    ContentUnitChunker.ChunkerVersion,
+                    "other-checksum",
+                    root: otherRoot),
+            },
+            cancellationToken);
+        var provider = new SemanticCandidateProvider(
+            new StubTextEmbedder(model, new float[] { 1, 0 }),
+            vectorIndex,
+            new StubContentUnitReader(
+                new Dictionary<long, string>
+                {
+                    [1] = Path.Combine(_root, "selected.txt"),
+                    [2] = Path.Combine(otherRoot, "other.txt"),
+                },
+                new ContentUnit(11, 1, ContentUnitKind.Text, new SourceLocator(StartLine: 1), "selected", "h1", "en", "plain", "1"),
+                new ContentUnit(22, 2, ContentUnitKind.Text, new SourceLocator(StartLine: 1), "other", "h2", "en", "plain", "1")));
+
+        var candidate = Assert.Single(await CollectAsync(provider, CreateSemanticPlan(), cancellationToken));
+
+        Assert.Equal(Path.Combine(_root, "selected.txt"), candidate.Path);
+        Assert.Equal(11, candidate.ContentUnitId);
     }
 
     [Fact]
@@ -444,6 +499,39 @@ public sealed class CandidateProviderTests : IDisposable
         Assert.Equal("live.txt", result.Path);
         Assert.True(live.WasCalled);
         Assert.False(indexed.WasCalled);
+    }
+
+    [Fact]
+    public async Task HybridPipeline_UsesLiveMetadataProviderForUnsupportedFileNameRegex()
+    {
+        var cancellationToken = TestContext.Current.CancellationToken;
+        var path = Path.Combine(_root, "ServiceCollectionExtensions.cs");
+        await File.WriteAllTextAsync(path, "unrelated content", cancellationToken);
+        var index = new StubIndexSearch(
+            covered: true,
+            new Hit("incorrect-index-hit.txt", 0, "incorrect", Array.Empty<MatchSpan>(), HitKind.Metadata, Route: HitRoute.Indexed));
+        var pipeline = new HybridRetrievalPipeline(
+            new QueryPlanner(),
+            new ICandidateProvider[]
+            {
+                new MetadataCandidateProvider(_searcher),
+                new IndexedMetadataCandidateProvider(index, new IndexCoverageService(index)),
+            },
+            new WeightedResultFusion(),
+            new PassthroughReranker());
+        var request = new SearchRequest(
+            new RegexQuery("Service.*Extensions"),
+            new[] { _root },
+            new WalkerOptions(),
+            UseIndex: true,
+            Mode: QueryMode.Regex,
+            SearchTarget: SearchTarget.FileNames);
+
+        var result = Assert.Single(await pipeline.SearchAsync(request, cancellationToken));
+
+        Assert.Equal(path, result.Path);
+        Assert.Equal(HitRoute.Live, result.BestCandidate?.Route);
+        Assert.False(index.SearchWasUsed);
     }
 
     private SearchPlan CreatePlan(Query query, bool useIndex = false) =>

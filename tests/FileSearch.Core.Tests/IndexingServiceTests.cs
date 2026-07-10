@@ -70,6 +70,58 @@ public sealed class IndexingServiceTests
     }
 
     [Fact]
+    public async Task StartAsyncQueuesSemanticMigrationWhenCatchUpSkippedLexicalRefresh()
+    {
+        var index = new BlockingFileIndex();
+        var queue = new RecordingQueue();
+        var operations = new OperationRecorder();
+        var semantic = new RecordingSemanticIndexingCoordinator(operations);
+        var root = Path.Combine(Path.GetTempPath(), "filesearch-start-semantic-migration-" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(root);
+        var catchUp = new StaticStartupCatchUp(new IndexStartupCatchUpResult(
+            new HashSet<string>(StringComparer.OrdinalIgnoreCase) { IndexPath.NormalizeRoot(root) },
+            new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)));
+        var semanticStatus = new StaticSemanticIndexStatusService(new SemanticIndexRootStatus(
+            root,
+            IsModelAvailable: true,
+            "test-model",
+            "Test model",
+            IndexedFileCount: 1,
+            ContentUnitCount: 2,
+            VectorCount: 0,
+            CoveredContentUnitCount: 0,
+            "Smart Search vectors are not built for this location."));
+        var service = new IndexingService(
+            index,
+            queue,
+            new IndexWatcherService(queue),
+            startupCatchUp: catchUp,
+            semanticIndexing: semantic,
+            semanticIndexStatus: semanticStatus);
+
+        await service.StartAsync(
+            new[] { new IndexedLocation(root, new WalkerOptions(), WatchEnabled: false) },
+            TestContext.Current.CancellationToken);
+
+        try
+        {
+            var item = Assert.Single(queue.Enqueued);
+            Assert.Equal(IndexChangeKind.RefreshSemanticRoot, item.Kind);
+            Assert.Equal(IndexPath.NormalizeRoot(root), item.Root);
+            Assert.NotNull(service.CurrentStatus.RootStatusDetails);
+            Assert.Contains(
+                "Smart Search rebuild queued",
+                service.CurrentStatus.RootStatusDetails![IndexPath.NormalizeRoot(root)],
+                StringComparison.Ordinal);
+        }
+        finally
+        {
+            await service.StopAsync(TestContext.Current.CancellationToken);
+            Directory.Delete(root, recursive: true);
+        }
+    }
+
+    [Fact]
     public async Task StartAsyncQueuesRootRefreshForCatchUpFallbackLocation()
     {
         var index = new BlockingFileIndex();
@@ -351,7 +403,7 @@ public sealed class IndexingServiceTests
     }
 
     [Fact]
-    public async Task UpsertFileQueueItem_CleansOldSemanticVectorsBeforeIndexingAndUpsertsAfter()
+    public async Task UpsertFileQueueItem_PublishesSemanticReplacementAfterLexicalIndexing()
     {
         var operations = new OperationRecorder();
         var index = new BlockingFileIndex { CompleteRefreshImmediately = true, OperationRecorder = operations };
@@ -382,7 +434,7 @@ public sealed class IndexingServiceTests
             await WaitUntilAsync(() => semantic.HasUpsertedFiles, TestContext.Current.CancellationToken);
 
             Assert.Equal(
-                new[] { "semantic-delete-file", "index-upsert-file", "semantic-upsert-file" },
+                new[] { "index-upsert-file", "semantic-upsert-file" },
                 operations.Snapshot());
             Assert.Contains(path, semantic.SnapshotUpsertedFiles());
         }
@@ -435,7 +487,7 @@ public sealed class IndexingServiceTests
     }
 
     [Fact]
-    public async Task RefreshRootQueueItem_RebuildsSemanticRootAroundCoreRefresh()
+    public async Task RefreshRootQueueItem_PublishesSemanticRootAfterCoreRefresh()
     {
         var operations = new OperationRecorder();
         var index = new BlockingFileIndex { CompleteRefreshImmediately = true, OperationRecorder = operations };
@@ -460,7 +512,7 @@ public sealed class IndexingServiceTests
             await WaitUntilAsync(() => semantic.HasUpsertedRoots, TestContext.Current.CancellationToken);
 
             Assert.Equal(
-                new[] { "semantic-delete-root", "index-refresh-root", "semantic-upsert-root" },
+                new[] { "index-refresh-root", "semantic-upsert-root" },
                 operations.Snapshot());
             Assert.Contains(IndexPath.NormalizeRoot(root), semantic.SnapshotUpsertedRoots());
         }
@@ -498,7 +550,7 @@ public sealed class IndexingServiceTests
     }
 
     [Fact]
-    public async Task RefreshSemanticRootQueueItem_RebuildsOnlySemanticRoot()
+    public async Task RefreshSemanticRootQueueItem_AtomicallyReplacesOnlySemanticRoot()
     {
         var operations = new OperationRecorder();
         var index = new BlockingFileIndex { CompleteRefreshImmediately = true, OperationRecorder = operations };
@@ -524,7 +576,7 @@ public sealed class IndexingServiceTests
             await WaitUntilAsync(() => semantic.HasUpsertedRoots, TestContext.Current.CancellationToken);
 
             Assert.Equal(
-                new[] { "semantic-delete-root", "semantic-upsert-root" },
+                new[] { "semantic-upsert-root" },
                 operations.Snapshot());
             Assert.Null(index.RefreshRequest);
             Assert.Contains(normalizedRoot, semantic.SnapshotUpsertedRoots());
@@ -920,6 +972,15 @@ public sealed class IndexingServiceTests
             IReadOnlyCollection<IndexedLocation> locations,
             CancellationToken cancellationToken) =>
             Task.FromResult(_result);
+    }
+
+    private sealed class StaticSemanticIndexStatusService(SemanticIndexRootStatus status)
+        : ISemanticIndexStatusService
+    {
+        public Task<SemanticIndexRootStatus> GetRootStatusAsync(
+            string root,
+            CancellationToken cancellationToken) =>
+            Task.FromResult(status with { Root = IndexPath.NormalizeRoot(root) });
     }
 
     private sealed class StaticRuntimeCondition(bool isIdle) : IIndexerRuntimeCondition

@@ -12,7 +12,20 @@ The index database is stored at:
 %LocalAppData%\FileSearch\Index\filesearch.db
 ```
 
-The Core project uses `CSharpDB.Engine` directly. The requested `CSharpDB` 3.9.0 meta-package currently pulls missing NuGet dependencies (`CSharpDB.CodeModules` and `CSharpDB.ImportExport`), so the implementation references the newest buildable engine package available in this environment: `CSharpDB.Engine` 3.7.0.
+The Core project uses `CSharpDB.Engine` directly. The current indexed-search store references `CSharpDB.Engine` 4.0.2.
+
+CSharpDB 4.0.2 supplies bounded, chunked full-text postings for hot terms and index-planned `DELETE`/`UPDATE` predicates. FileSearch keeps its app-level trigram index because it provides the required mid-token substring behavior, while changed-file updates now use the indexed mutation path to remove the superseded file version and all of its owned rows in one transaction. The new version is published first, so a cleanup failure cannot erase the last searchable copy. This integration does not change the FileSearch schema version and does not require an existing index to be rebuilt.
+
+Smart Search stores semantic vectors beside the lexical database:
+
+```text
+%LocalAppData%\FileSearch\Index\filesearch.vectors.json
+%LocalAppData%\FileSearch\Index\filesearch.vectors.segments\
+```
+
+The vector manifest uses immutable root snapshots and small per-file overlay segments. A root rebuild embeds chunks across files in token-budgeted ONNX batches and publishes one manifest update; watcher changes replace only the affected file overlay. Segment payloads use symmetric int8 storage, while retrieval remains an exhaustive cosine-ranked scan. The current 200,000-vector benchmark remains below the exact-search gate, so FileSearch does not ship an HNSW native dependency.
+
+Vector formats 1 and 2 remain readable and migrate to format 3 on the first semantic mutation. Older vectors without root ownership are intentionally excluded from root-scoped Smart Search and discarded during migration; roots with incomplete semantic coverage automatically queue a semantic-only rebuild after startup catch-up. The lexical CSharpDB index does not need to be rebuilt for this vector-store migration.
 
 ## What Gets Indexed
 
@@ -26,7 +39,7 @@ The database stores:
 - extracted line number, content, and optional source-anchor metadata,
 - pending filesystem changes that need recovery after app restart,
 - failed/skipped extraction records and archive member skip reasons,
-- a CSharpDB full-text index over line content.
+- extracted line content plus per-file trigram postings used to bound substring and regex candidate sets.
 
 When Image OCR is enabled for an indexed location, FileSearch uses Windows OCR to extract searchable lines from PNG, JPEG, BMP, and TIFF images, PDF pages that do not expose native PDF text, and embedded images in Office, OpenDocument, EPUB, email, and ZIP/archive files. OCR output is stored as text lines in the same local index, with the OCR line's image, PDF page, or embedded-member bounding region stored as source-anchor metadata. Result rows and exports can show the region label, and preview panes can render standalone image files or PDF pages with the OCR region highlighted. Opening the result still opens the original file in the default app.
 
@@ -39,6 +52,8 @@ When Image OCR is enabled for an indexed location, FileSearch uses Windows OCR t
 5. Run searches as usual.
 
 If the current search is broader than the indexed profile, FileSearch reports that the index does not cover the search and safely falls back to the live scanner. If the index is stale or missing, FileSearch uses live scan results and schedules background indexing for the covered root.
+
+Literal and Boolean file-name searches use an in-memory trigram index built from the stored file metadata, including matches in the middle of a name. File-name query forms that cannot be narrowed safely, such as regular expressions, fall back to the live scanner. Folder-name and combined file/folder-name searches also remain live-scanner operations so their results represent actual folders rather than files stored beneath matching paths.
 
 ## Indexed Locations
 
@@ -128,6 +143,7 @@ Refreshing an indexed location:
 - records failed files without failing the whole refresh.
 
 Incremental watcher updates use the same per-file extraction path as a refresh.
+After a replacement is fully written, FileSearch atomically removes the superseded version's metadata tokens, extraction issues, trigrams, lines, content units, and file row through `file_id` indexes. Exact file deletes publish a tombstone first and then use the same cleanup transaction.
 
 ## Index Health
 
@@ -148,7 +164,7 @@ Health statuses mean:
 
 ## Query Semantics
 
-Indexed search preserves the existing plain text, regex, and Boolean query behavior. CSharpDB full-text search is used only to find candidate line rows when safe. Every candidate is rechecked with FileSearch's existing query engine before a hit is returned, and highlights are generated the same way as live search.
+Indexed search preserves the existing plain text, regex, and Boolean query behavior. The index uses app-level trigram postings to find candidate files when a query has required literals, and falls back to scanning indexed line rows for patterns that cannot be safely bounded. Every candidate is rechecked with FileSearch's existing query engine before a hit is returned, and highlights are generated the same way as live search.
 
 ## Maintenance
 

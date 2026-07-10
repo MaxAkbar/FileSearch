@@ -7,8 +7,8 @@ namespace FileSearch.Core.Indexing;
 /// A borrowed snapshot view of the shared index database: a
 /// <see cref="Database.ReaderSession"/> for statement reads (pass
 /// <see cref="Session"/> to <see cref="IndexTables"/> via <see cref="DbExec"/>)
-/// plus the underlying handle for Database-only operations (full-text
-/// <c>SearchAsync</c>). Dispose promptly — the shared handle cannot be
+/// plus the underlying handle for Database-only operations. Dispose promptly
+/// — the shared handle cannot be
 /// swapped for external changes or compaction while leases are active.
 /// </summary>
 internal sealed class IndexReadLease : IDisposable

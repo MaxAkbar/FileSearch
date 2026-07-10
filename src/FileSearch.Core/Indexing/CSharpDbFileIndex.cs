@@ -447,6 +447,8 @@ public sealed class CSharpDbFileIndex : IFileIndex, IIndexReplayWriter, IIndexUs
         SearchRequest request,
         [EnumeratorCancellation] CancellationToken cancellationToken)
     {
+        IndexedSearchRequestSupport.ThrowIfUnsupported(request);
+
         if (request.Expression is UnifiedQuery { HasUnavailableSemantic: true })
         {
             request.Status?.Invoke(UnifiedQuery.SemanticUnavailableMessage);
@@ -977,10 +979,13 @@ public sealed class CSharpDbFileIndex : IFileIndex, IIndexReplayWriter, IIndexUs
         CancellationToken cancellationToken)
     {
         var hits = new List<Hit>();
-        var candidateTokens = IndexTables.BuildQueryMetadataTokens(spec.Terms);
         var nameIndex = await _metadataNameCache.GetOrLoadAsync(db, rootId, databaseGeneration, cancellationToken)
             .ConfigureAwait(false);
-        var candidates = nameIndex.FindCandidates(candidateTokens, spec.RequireAllTerms).ToList();
+        var candidates = spec.SearchTarget == SearchTarget.FileNames
+            ? nameIndex.FindFileNameCandidates(spec.Terms, spec.RequireAllTerms).ToList()
+            : nameIndex.FindCandidates(
+                IndexTables.BuildQueryMetadataTokens(spec.Terms),
+                spec.RequireAllTerms).ToList();
 
         if (candidates.Count == 0)
             return hits;
@@ -1023,6 +1028,9 @@ public sealed class CSharpDbFileIndex : IFileIndex, IIndexReplayWriter, IIndexUs
                 continue;
             }
 
+            if (spec.SearchTarget == SearchTarget.FileNames && !query.IsMatch(file.FileName))
+                continue;
+
             var score = spec.Score(file, root, out var displayText);
             if (score <= 0)
                 continue;
@@ -1039,12 +1047,13 @@ public sealed class CSharpDbFileIndex : IFileIndex, IIndexReplayWriter, IIndexUs
                 HitRoute.Indexed));
         }
 
-        return hits
+        var ordered = hits
             .OrderByDescending(hit => hit.Score)
             .ThenByDescending(hit => hit.ModifiedUtc ?? DateTime.MinValue)
-            .ThenBy(hit => hit.Path, StringComparer.OrdinalIgnoreCase)
-            .Take(MetadataHitLimit)
-            .ToList();
+            .ThenBy(hit => hit.Path, StringComparer.OrdinalIgnoreCase);
+        return spec.SearchTarget == SearchTarget.FileNames
+            ? ordered.ToList()
+            : ordered.Take(MetadataHitLimit).ToList();
     }
 
     private static async IAsyncEnumerable<Hit> SearchUnifiedMetadataOnlyAsync(
@@ -2613,25 +2622,30 @@ public sealed class CSharpDbFileIndex : IFileIndex, IIndexReplayWriter, IIndexUs
         cacheRemovedPaths?.AddRange(insertedFile.ReplacedPaths);
         cacheFileIds?.Add(insertedFileId);
 
-        if (result.Status == ExtractedFileStatus.Skipped)
-            return 0;
+        long linesIndexed = 0;
+        if (result.Status == ExtractedFileStatus.Ok)
+        {
+            await IndexTables.ReplaceExtractionIssuesAsync(db, insertedFileId, result.Issues, deleteExisting: false, cancellationToken).ConfigureAwait(false);
+            linesIndexed = await InsertLinesAsync(
+                    db,
+                    rootId,
+                    insertedFileId,
+                    candidate.Info,
+                    result.Lines,
+                    result.LineExtractorId,
+                    result.LineExtractorVersion,
+                    cacheLines,
+                    lineIdAllocator,
+                    cancellationToken)
+                .ConfigureAwait(false);
+        }
 
-        if (result.Status == ExtractedFileStatus.Error)
-            return 0;
+        if (candidate.ExistingFileId > 0 && candidate.ExistingFileId != insertedFileId)
+        {
+            await IndexTables.DeleteFileVersionAsync(db, candidate.ExistingFileId, cancellationToken)
+                .ConfigureAwait(false);
+        }
 
-        await IndexTables.ReplaceExtractionIssuesAsync(db, insertedFileId, result.Issues, deleteExisting: false, cancellationToken).ConfigureAwait(false);
-        var linesIndexed = await InsertLinesAsync(
-                db,
-                rootId,
-                insertedFileId,
-                candidate.Info,
-                result.Lines,
-                result.LineExtractorId,
-                result.LineExtractorVersion,
-                cacheLines,
-                lineIdAllocator,
-                cancellationToken)
-            .ConfigureAwait(false);
         return linesIndexed;
     }
 
@@ -3519,15 +3533,18 @@ public sealed class CSharpDbFileIndex : IFileIndex, IIndexReplayWriter, IIndexUs
 
         private readonly IndexedFileMetadata[] _files;
         private readonly Dictionary<string, int[]> _tokenToFileIndexes;
+        private readonly Dictionary<long, int[]> _fileNameTrigramToFileIndexes;
 
         private MetadataNameIndex(
             long databaseGeneration,
             IndexedFileMetadata[] files,
-            Dictionary<string, int[]> tokenToFileIndexes)
+            Dictionary<string, int[]> tokenToFileIndexes,
+            Dictionary<long, int[]> fileNameTrigramToFileIndexes)
         {
             DatabaseGeneration = databaseGeneration;
             _files = files;
             _tokenToFileIndexes = tokenToFileIndexes;
+            _fileNameTrigramToFileIndexes = fileNameTrigramToFileIndexes;
         }
 
         public long DatabaseGeneration { get; }
@@ -3535,10 +3552,18 @@ public sealed class CSharpDbFileIndex : IFileIndex, IIndexReplayWriter, IIndexUs
         public static MetadataNameIndex Create(long databaseGeneration, List<IndexedFileMetadata> files)
         {
             if (files.Count == 0)
-                return new MetadataNameIndex(databaseGeneration, s_emptyFiles, new Dictionary<string, int[]>(StringComparer.OrdinalIgnoreCase));
+            {
+                return new MetadataNameIndex(
+                    databaseGeneration,
+                    s_emptyFiles,
+                    new Dictionary<string, int[]>(StringComparer.OrdinalIgnoreCase),
+                    new Dictionary<long, int[]>());
+            }
 
             var fileArray = files.ToArray();
             var buckets = new Dictionary<string, List<int>>(StringComparer.OrdinalIgnoreCase);
+            var trigramBuckets = new Dictionary<long, List<int>>();
+            var fileNameTrigrams = new HashSet<long>();
             for (var index = 0; index < fileArray.Length; index++)
             {
                 var file = fileArray[index];
@@ -3552,13 +3577,34 @@ public sealed class CSharpDbFileIndex : IFileIndex, IIndexReplayWriter, IIndexUs
 
                     bucket.Add(index);
                 }
+
+                fileNameTrigrams.Clear();
+                AddFileNameTrigrams(file.FileName, fileNameTrigrams);
+                foreach (var trigram in fileNameTrigrams)
+                {
+                    if (!trigramBuckets.TryGetValue(trigram, out var bucket))
+                    {
+                        bucket = [];
+                        trigramBuckets[trigram] = bucket;
+                    }
+
+                    bucket.Add(index);
+                }
             }
 
             var tokenToFileIndexes = new Dictionary<string, int[]>(buckets.Count, StringComparer.OrdinalIgnoreCase);
             foreach (var (token, bucket) in buckets)
                 tokenToFileIndexes[token] = bucket.ToArray();
 
-            return new MetadataNameIndex(databaseGeneration, fileArray, tokenToFileIndexes);
+            var fileNameTrigramToFileIndexes = new Dictionary<long, int[]>(trigramBuckets.Count);
+            foreach (var (trigram, bucket) in trigramBuckets)
+                fileNameTrigramToFileIndexes[trigram] = bucket.ToArray();
+
+            return new MetadataNameIndex(
+                databaseGeneration,
+                fileArray,
+                tokenToFileIndexes,
+                fileNameTrigramToFileIndexes);
         }
 
         private static HashSet<string> BuildIndexTokens(IndexedFileMetadata file)
@@ -3625,6 +3671,103 @@ public sealed class CSharpDbFileIndex : IFileIndex, IIndexReplayWriter, IIndexUs
             var max = Math.Min(32, token.Length);
             for (var length = 2; length < max; length++)
                 tokens.Add(token[..length]);
+        }
+
+        private static void AddFileNameTrigrams(string fileName, HashSet<long> trigrams)
+        {
+            var normalized = fileName.ToLowerInvariant();
+            for (var index = 0; index <= normalized.Length - QueryTrigramTerms.TrigramLength; index++)
+            {
+                trigrams.Add(
+                    ((long)normalized[index] << 32) |
+                    ((long)normalized[index + 1] << 16) |
+                    normalized[index + 2]);
+            }
+        }
+
+        public IEnumerable<IndexedFileMetadata> FindFileNameCandidates(
+            IReadOnlyList<string> terms,
+            bool requireAllTerms)
+        {
+            if (terms.Count == 0)
+                return _files;
+
+            return requireAllTerms
+                ? FindAllFileNameTermCandidates(terms)
+                : FindAnyFileNameTermCandidates(terms);
+        }
+
+        private IEnumerable<IndexedFileMetadata> FindAllFileNameTermCandidates(IReadOnlyList<string> terms)
+        {
+            HashSet<int>? candidates = null;
+            foreach (var term in terms)
+            {
+                var termCandidates = FindFileNameTermCandidateIndexes(term);
+                if (termCandidates is null)
+                    continue;
+                if (termCandidates.Count == 0)
+                    return s_emptyFiles;
+
+                if (candidates is null)
+                    candidates = termCandidates;
+                else
+                    candidates.IntersectWith(termCandidates);
+
+                if (candidates.Count == 0)
+                    return s_emptyFiles;
+            }
+
+            return candidates is null ? _files : Materialize(candidates);
+        }
+
+        private IEnumerable<IndexedFileMetadata> FindAnyFileNameTermCandidates(IReadOnlyList<string> terms)
+        {
+            var candidates = new HashSet<int>();
+            foreach (var term in terms)
+            {
+                var termCandidates = FindFileNameTermCandidateIndexes(term);
+                if (termCandidates is null)
+                    return _files;
+
+                candidates.UnionWith(termCandidates);
+            }
+
+            return candidates.Count == 0 ? s_emptyFiles : Materialize(candidates);
+        }
+
+        private HashSet<int>? FindFileNameTermCandidateIndexes(string term)
+        {
+            var normalized = term.ToLowerInvariant();
+            if (normalized.Length < QueryTrigramTerms.TrigramLength)
+                return null;
+
+            var seenTrigrams = new HashSet<long>();
+            var buckets = new List<int[]>();
+            for (var index = 0; index <= normalized.Length - QueryTrigramTerms.TrigramLength; index++)
+            {
+                var trigram =
+                    ((long)normalized[index] << 32) |
+                    ((long)normalized[index + 1] << 16) |
+                    normalized[index + 2];
+                if (!seenTrigrams.Add(trigram))
+                    continue;
+
+                if (!_fileNameTrigramToFileIndexes.TryGetValue(trigram, out var bucket))
+                    return [];
+
+                buckets.Add(bucket);
+            }
+
+            buckets.Sort(static (left, right) => left.Length.CompareTo(right.Length));
+            var candidates = buckets[0].ToHashSet();
+            for (var index = 1; index < buckets.Count; index++)
+            {
+                candidates.IntersectWith(buckets[index]);
+                if (candidates.Count == 0)
+                    break;
+            }
+
+            return candidates;
         }
 
         public IEnumerable<IndexedFileMetadata> FindCandidates(

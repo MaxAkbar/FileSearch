@@ -29,3 +29,17 @@ BenchmarkDotNet search microbenchmarks are also available:
 ```powershell
 dotnet run -c Release --project .\benchmarks\FileSearch.Benchmarks\FileSearch.Benchmarks.csproj -- bench --filter *
 ```
+
+Run the deterministic 200,000-vector exact semantic-search gate with:
+
+```powershell
+dotnet run -c Release --project .\benchmarks\FileSearch.Benchmarks\FileSearch.Benchmarks.csproj -- semantic --documents 200000 --queries 20
+```
+
+This command measures exact top-50 search over 384-dimension int8 vectors. It recommends an HNSW evaluation only when P95 exceeds 250 ms.
+
+Run a real model batch-vs-single smoke in an explicit model directory with:
+
+```powershell
+dotnet run -c Release --project .\benchmarks\FileSearch.Benchmarks\FileSearch.Benchmarks.csproj -- semantic-model --model-id all-minilm-l6-v2-onnx --model-directory "$env:TEMP\filesearch-semantic-model-smoke" --install-model
+```

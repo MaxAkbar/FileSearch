@@ -567,6 +567,48 @@ public sealed class FileIndexTests : IDisposable
     }
 
     [Fact]
+    public async Task IncrementalUpsertRemovesSupersededFileVersionRows()
+    {
+        var file = Path.Combine(_root, "changed.txt");
+        File.WriteAllText(file, "old_content_marker\n");
+        await BuildAsync();
+        var oldFileId = AssertFileId(await _index.GetFileIdAsync(
+            _root,
+            file,
+            TestContext.Current.CancellationToken));
+
+        File.WriteAllText(file, "replacement_content_marker with a different length\n");
+        await _index.UpsertFileAsync(_root, file, new WalkerOptions(), TestContext.Current.CancellationToken);
+
+        var newFileId = AssertFileId(await _index.GetFileIdAsync(
+            _root,
+            file,
+            TestContext.Current.CancellationToken));
+        Assert.NotEqual(oldFileId, newFileId);
+        Assert.Empty(await RawIndexedSearchAsync(new TermQuery("old_content_marker")));
+        Assert.Single(await RawIndexedSearchAsync(new TermQuery("replacement_content_marker")));
+        await AssertFileVersionRemovedAsync(oldFileId);
+    }
+
+    [Fact]
+    public async Task IncrementalDeleteRemovesOwnedRowsForDeletedFileVersion()
+    {
+        var file = Path.Combine(_root, "deleted-version.txt");
+        File.WriteAllText(file, "deleted_version_marker\n");
+        await BuildAsync();
+        var deletedFileId = AssertFileId(await _index.GetFileIdAsync(
+            _root,
+            file,
+            TestContext.Current.CancellationToken));
+
+        File.Delete(file);
+        await _index.DeleteFileAsync(_root, file, TestContext.Current.CancellationToken);
+
+        Assert.Empty(await RawIndexedSearchAsync(new TermQuery("deleted_version_marker")));
+        await AssertFileVersionRemovedAsync(deletedFileId);
+    }
+
+    [Fact]
     public async Task OverlappingRootsIndexIndependently()
     {
         var nested = Path.Combine(_root, "nested");
@@ -787,7 +829,7 @@ public sealed class FileIndexTests : IDisposable
     [Fact]
     public async Task IndexedSearchStreamsLargeResultSetsWithoutDuplicates()
     {
-        // 600 matching lines forces the mid-loop FTS batch flush (500) plus
+        // 600 matching lines forces the mid-loop candidate batch flush (500) plus
         // the tail flush — the production-dominant path for common terms.
         File.WriteAllText(
             Path.Combine(_root, "many.txt"),
@@ -804,7 +846,7 @@ public sealed class FileIndexTests : IDisposable
     [Fact]
     public async Task IndexedSearchDeduplicatesLinesMatchingMultipleOrBranches()
     {
-        // "alpha beta" matches both FTS candidate queries of the OR — the
+        // "alpha beta" matches both candidate queries of the OR — the
         // cross-query dedupe must keep it a single hit, same as live search.
         File.WriteAllText(Path.Combine(_root, "overlap.txt"), "alpha beta\nalpha only\nbeta only\n");
 
@@ -1701,6 +1743,121 @@ public sealed class FileIndexTests : IDisposable
     }
 
     [Fact]
+    public async Task IndexedFileNameSearchFindsMidTokenSubstring()
+    {
+        var path = Path.Combine(_root, "ServiceCollectionExtensions.cs");
+        File.WriteAllText(path, "unrelated content\n");
+        await BuildAsync();
+
+        var request = new SearchRequest(
+            new TermQuery("CollectionExtensions"),
+            new[] { _root },
+            new WalkerOptions(),
+            UseIndex: true,
+            SearchTarget: SearchTarget.FileNames);
+        var hits = new List<Hit>();
+        await foreach (var hit in _indexedSearcher.SearchAsync(request, TestContext.Current.CancellationToken))
+            hits.Add(hit);
+
+        var found = Assert.Single(hits);
+        Assert.Equal(path, found.Path);
+        Assert.Equal(HitKind.Metadata, found.Kind);
+        Assert.Equal(HitRoute.Indexed, found.Route);
+    }
+
+    [Fact]
+    public async Task IndexedFileNameSearchRechecksCaseSensitiveQuery()
+    {
+        File.WriteAllText(Path.Combine(_root, "CaseSensitiveNeedle.txt"), "unrelated content\n");
+        await BuildAsync();
+
+        var request = new SearchRequest(
+            new TermQuery("casesensitiveneedle", caseSensitive: true),
+            new[] { _root },
+            new WalkerOptions(),
+            UseIndex: true,
+            SearchTarget: SearchTarget.FileNames);
+        var hits = new List<Hit>();
+        await foreach (var hit in _indexedSearcher.SearchAsync(request, TestContext.Current.CancellationToken))
+            hits.Add(hit);
+
+        Assert.Empty(hits);
+    }
+
+    [Fact]
+    public async Task FileNameRegexUsesLiveFallback()
+    {
+        var path = Path.Combine(_root, "ServiceCollectionExtensions.cs");
+        File.WriteAllText(path, "unrelated content\n");
+        await BuildAsync();
+
+        var status = string.Empty;
+        var request = new SearchRequest(
+            new RegexQuery("Service.*Extensions"),
+            new[] { _root },
+            new WalkerOptions(),
+            UseIndex: true,
+            Status: message => status = message,
+            Mode: QueryMode.Regex,
+            SearchTarget: SearchTarget.FileNames);
+        var hits = new List<Hit>();
+        await foreach (var hit in _indexedSearcher.SearchAsync(request, TestContext.Current.CancellationToken))
+            hits.Add(hit);
+
+        var found = Assert.Single(hits);
+        Assert.Equal(path, found.Path);
+        Assert.Equal(HitRoute.Live, found.Route);
+        Assert.Contains("using live scan", status, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public async Task FolderNameSearchUsesLiveFallbackAndReturnsFolderRows()
+    {
+        var folder = Path.Combine(_root, "Invoices");
+        Directory.CreateDirectory(folder);
+        File.WriteAllText(Path.Combine(folder, "readme.txt"), "unrelated content\n");
+        await BuildAsync();
+
+        var status = string.Empty;
+        var request = new SearchRequest(
+            new TermQuery("Invoices"),
+            new[] { _root },
+            new WalkerOptions(),
+            UseIndex: true,
+            Status: message => status = message,
+            SearchTarget: SearchTarget.FolderNames);
+        var hits = new List<Hit>();
+        await foreach (var hit in _indexedSearcher.SearchAsync(request, TestContext.Current.CancellationToken))
+            hits.Add(hit);
+
+        var found = Assert.Single(hits);
+        Assert.Equal(folder, found.Path);
+        Assert.Equal(HitKind.Metadata, found.Kind);
+        Assert.Equal(HitRoute.Live, found.Route);
+        Assert.Contains("Folder name search is not indexed yet", status, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public async Task RawIndexRejectsFolderNameSearchInsteadOfReturningFileRows()
+    {
+        var request = new SearchRequest(
+            new TermQuery("Invoices"),
+            new[] { _root },
+            new WalkerOptions(),
+            UseIndex: true,
+            SearchTarget: SearchTarget.FolderNames);
+
+        var error = await Assert.ThrowsAsync<NotSupportedException>(async () =>
+        {
+            await foreach (var _ in _index.SearchAsync(request, TestContext.Current.CancellationToken))
+            {
+            }
+        });
+
+        Assert.Contains("Folder name search is not indexed yet", error.Message, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
     public async Task MetadataSearchRanksFrequentlyOpenedFilesHigher()
     {
         var alpha = Path.Combine(_root, "open-alpha.txt");
@@ -1892,6 +2049,44 @@ public sealed class FileIndexTests : IDisposable
             .Select(hit => $"{Path.GetFileName(hit.Path)}:{hit.LineNumber}:{hit.LineContent}")
             .Order(StringComparer.Ordinal)
             .ToList();
+
+    private static long AssertFileId(long? fileId)
+    {
+        Assert.NotNull(fileId);
+        Assert.True(fileId > 0);
+        return fileId.Value;
+    }
+
+    private async Task AssertFileVersionRemovedAsync(long fileId)
+    {
+        var cancellationToken = TestContext.Current.CancellationToken;
+        var db = await Database.OpenAsync(_dbPath, cancellationToken);
+        try
+        {
+            var ownedTables = new[]
+            {
+                (Table: "file_metadata_tokens", Column: "file_id"),
+                (Table: "extraction_issues", Column: "file_id"),
+                (Table: "file_trigrams", Column: "file_id"),
+                (Table: "lines", Column: "file_id"),
+                (Table: "content_units", Column: "file_id"),
+                (Table: "files", Column: "id"),
+            };
+
+            foreach (var (table, column) in ownedTables)
+            {
+                await using var result = await db.ExecuteAsync(
+                    $"SELECT COUNT(*) FROM {table} WHERE {column} = {fileId}",
+                    cancellationToken);
+                Assert.True(await result.MoveNextAsync(cancellationToken));
+                Assert.Equal(0, result.Current[0].AsInteger);
+            }
+        }
+        finally
+        {
+            await SafeDisposeAsync(db);
+        }
+    }
 
     private static IndexVolumeInfo FakeVolume(
         string root,

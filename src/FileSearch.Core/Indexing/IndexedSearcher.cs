@@ -56,7 +56,7 @@ public sealed class IndexedSearcher : ISearcher
             yield break;
         }
 
-        if (!CanUseIndexForRequest(request, out var fallbackReason))
+        if (!IndexedSearchRequestSupport.CanUseIndex(request, out var fallbackReason))
         {
             request.Status?.Invoke($"{fallbackReason}; using live scan");
             await foreach (var hit in SearchLiveWithForegroundYieldAsync(request with { UseIndex = false }, cancellationToken).ConfigureAwait(false))
@@ -139,27 +139,6 @@ public sealed class IndexedSearcher : ISearcher
 
     private static Hit TagRoute(Hit hit, HitRoute route) =>
         hit.Route == route ? hit : hit with { Route = route };
-
-    private static bool CanUseIndexForRequest(SearchRequest request, out string fallbackReason)
-    {
-        fallbackReason = string.Empty;
-        if (request.SearchTarget == SearchTarget.Content)
-            return true;
-
-        if (request.SearchTarget is SearchTarget.FolderNames or SearchTarget.FileAndFolderNames)
-        {
-            fallbackReason = "Folder name search is not indexed yet";
-            return false;
-        }
-
-        if (!MetadataSearchSpec.TryCreate(request, out _))
-        {
-            fallbackReason = "This name query is not supported by the metadata index";
-            return false;
-        }
-
-        return true;
-    }
 
     private bool HasQueuedWorkForRequestRoot(SearchRequest request, IndexingStatus? indexingStatus)
     {

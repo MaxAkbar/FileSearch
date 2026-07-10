@@ -20,7 +20,12 @@ public sealed class IndexedMetadataCandidateProvider : IndexedCandidateProvider
             return null;
 
         if (request.SearchTarget == SearchTarget.FileNames)
-            return CreateIndexedRequest(request, request.Expression, SearchTarget.FileNames);
+        {
+            var indexedRequest = CreateIndexedRequest(request, request.Expression, SearchTarget.FileNames);
+            return IndexedSearchRequestSupport.CanUseIndex(indexedRequest, out _)
+                ? indexedRequest
+                : null;
+        }
 
         var expression = SearcherCandidateProvider.CreateMetadataExpression(request.Expression);
         if (expression is null)

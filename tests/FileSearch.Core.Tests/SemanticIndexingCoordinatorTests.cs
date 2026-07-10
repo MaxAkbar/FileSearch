@@ -67,6 +67,37 @@ public sealed class SemanticIndexingCoordinatorTests
     }
 
     [Fact]
+    public async Task UpsertRootAsync_BuildsAcrossFilesAndPublishesOneRootMutation()
+    {
+        const string root = @"C:\root";
+        var contentUnits = new StubContentUnitReader(
+            Array.Empty<KeyValuePair<string, long>>(),
+            new[] { new KeyValuePair<string, IReadOnlyList<long>>(root, new long[] { 42, 43 }) },
+            Array.Empty<KeyValuePair<string, IReadOnlyList<long>>>(),
+            CreateUnit(1, 42),
+            CreateUnit(2, 43));
+        var vectorIndex = new RecordingBulkVectorIndex();
+        var embedder = new StubTextEmbedder(isAvailable: true);
+        var builder = new SemanticIndexBuilder(
+            contentUnits,
+            new ContentUnitChunker(),
+            embedder,
+            vectorIndex);
+        var coordinator = new SemanticIndexingCoordinator(contentUnits, builder, embedder, vectorIndex);
+
+        var result = await coordinator.UpsertRootAsync(root, TestContext.Current.CancellationToken);
+
+        Assert.True(result.IsAvailable);
+        Assert.Equal(2, result.IndexedFileCount);
+        Assert.Equal(4, result.VectorCount);
+        Assert.Equal(1, vectorIndex.ReplaceRootCallCount);
+        Assert.Equal(new long[] { 42, 43 }, vectorIndex.ReplacedFileIds);
+        Assert.Equal(4, vectorIndex.ReplacementDocuments.Count);
+        Assert.All(vectorIndex.ReplacementDocuments, document => Assert.Equal(root, document.Root));
+        Assert.Equal(0, vectorIndex.UpsertCallCount);
+    }
+
+    [Fact]
     public async Task DeleteFileAsync_DeletesVectorsForExistingContentUnits()
     {
         var vectorIndex = new RecordingVectorIndex();
@@ -284,7 +315,63 @@ public sealed class SemanticIndexingCoordinatorTests
             CancellationToken cancellationToken,
             EmbeddingModelInfo? model = null,
             VectorDocumentKind? kind = null,
-            IReadOnlyCollection<long>? fileIds = null) =>
+            IReadOnlyCollection<long>? fileIds = null,
+            IReadOnlyCollection<string>? roots = null) =>
             Task.FromResult<IReadOnlyList<VectorMatch>>(Array.Empty<VectorMatch>());
+    }
+
+    private sealed class RecordingBulkVectorIndex : IVectorIndex, IVectorIndexBulkMutations
+    {
+        public int UpsertCallCount { get; private set; }
+
+        public int ReplaceRootCallCount { get; private set; }
+
+        public IReadOnlyList<long> ReplacedFileIds { get; private set; } = Array.Empty<long>();
+
+        public IReadOnlyList<VectorDocument> ReplacementDocuments { get; private set; } = Array.Empty<VectorDocument>();
+
+        public Task UpsertAsync(IReadOnlyCollection<VectorDocument> documents, CancellationToken cancellationToken)
+        {
+            UpsertCallCount++;
+            return Task.CompletedTask;
+        }
+
+        public Task DeleteAsync(IReadOnlyCollection<long> contentUnitIds, CancellationToken cancellationToken) =>
+            Task.CompletedTask;
+
+        public Task<IReadOnlyList<VectorMatch>> SearchAsync(
+            ReadOnlyMemory<float> queryVector,
+            int count,
+            CancellationToken cancellationToken,
+            EmbeddingModelInfo? model = null,
+            VectorDocumentKind? kind = null,
+            IReadOnlyCollection<long>? fileIds = null,
+            IReadOnlyCollection<string>? roots = null) =>
+            Task.FromResult<IReadOnlyList<VectorMatch>>(Array.Empty<VectorMatch>());
+
+        public Task ReplaceFileAsync(
+            string root,
+            long fileId,
+            IReadOnlyCollection<VectorDocument> documents,
+            CancellationToken cancellationToken) =>
+            Task.CompletedTask;
+
+        public Task ReplaceRootAsync(
+            string root,
+            IReadOnlyCollection<long> fileIds,
+            IReadOnlyCollection<VectorDocument> documents,
+            CancellationToken cancellationToken)
+        {
+            ReplaceRootCallCount++;
+            ReplacedFileIds = fileIds.ToArray();
+            ReplacementDocuments = documents.ToArray();
+            return Task.CompletedTask;
+        }
+
+        public Task DeleteFileAsync(string root, long fileId, CancellationToken cancellationToken) =>
+            Task.CompletedTask;
+
+        public Task DeleteRootAsync(string root, CancellationToken cancellationToken) =>
+            Task.CompletedTask;
     }
 }

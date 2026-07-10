@@ -5,8 +5,8 @@ namespace FileSearch.Core.Indexing;
 
 /// <summary>
 /// Phase breakdown for one indexed <see cref="CSharpDbFileIndex.SearchAsync"/>
-/// call, used to attribute fixed query overhead (database open, FTS lookup,
-/// row fetch, recheck) in benchmarks. Populated only while
+/// call, used to attribute fixed query overhead (database open, metadata
+/// lookup, trigram lookup, row fetch, recheck) in benchmarks. Populated only while
 /// <see cref="CSharpDbFileIndex.SearchTimingsCallback"/> is set; ordinary
 /// searches skip all bookkeeping. Tick values are <see cref="Stopwatch"/>
 /// timestamp deltas.
@@ -22,14 +22,11 @@ internal sealed class IndexSearchTimings
     /// <summary>Metadata token lookup, scoring, and ordering.</summary>
     public long MetadataTicks { get; set; }
 
-    /// <summary>Full-text index candidate lookups.</summary>
-    public long FtsLookupTicks { get; set; }
-
     /// <summary>Trigram postings lookups used to bound substring candidates.</summary>
     public long TrigramLookupTicks { get; set; }
 
     /// <summary>
-    /// Reading line rows from the database (FTS id batches or the
+    /// Reading line rows from the database (candidate batches or the
     /// full-scan fallback), excluding recheck time. Includes consumer dwell
     /// time between yielded hits, which is negligible for counting consumers.
     /// </summary>
@@ -47,7 +44,7 @@ internal sealed class IndexSearchTimings
     /// <summary>Hits that survived the recheck.</summary>
     public int HitCount { get; set; }
 
-    /// <summary>True when no FTS candidate query existed and the search scanned every line row.</summary>
+    /// <summary>True when no safe candidate query existed and the search scanned every line row.</summary>
     public bool UsedFullScan { get; set; }
 
     /// <summary>True when substring candidates came from the trigram postings table.</summary>

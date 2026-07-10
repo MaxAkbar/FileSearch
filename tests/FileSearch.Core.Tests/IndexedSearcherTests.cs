@@ -29,6 +29,80 @@ public sealed class IndexedSearcherTests
     }
 
     [Fact]
+    public async Task UsesIndexedResultsForSupportedFileNameQuery()
+    {
+        var live = new StubSearcher("live.txt");
+        var index = new StubIndexSearch(covered: true, "indexed.txt");
+        var searcher = new IndexedSearcher(live, index, new IndexCoverageService(index));
+        var request = new SearchRequest(
+            new TermQuery("needle"),
+            new[] { s_root },
+            new WalkerOptions(),
+            UseIndex: true,
+            SearchTarget: SearchTarget.FileNames);
+
+        var hit = Assert.Single(await CollectAsync(searcher, request));
+
+        Assert.Equal("indexed.txt", hit.Path);
+        Assert.Equal(HitRoute.Indexed, hit.Route);
+        Assert.False(live.WasUsed);
+        Assert.True(index.SearchWasUsed);
+    }
+
+    [Theory]
+    [InlineData(SearchTarget.FolderNames)]
+    [InlineData(SearchTarget.FileAndFolderNames)]
+    public async Task UsesLiveScanForFolderNameTargets(SearchTarget target)
+    {
+        var live = new StubSearcher("live.txt");
+        var index = new StubIndexSearch(covered: true, "indexed.txt");
+        var searcher = new IndexedSearcher(live, index, new IndexCoverageService(index));
+        var status = string.Empty;
+        var request = new SearchRequest(
+            new TermQuery("needle"),
+            new[] { s_root },
+            new WalkerOptions(),
+            UseIndex: true,
+            Status: message => status = message,
+            SearchTarget: target);
+
+        var hit = Assert.Single(await CollectAsync(searcher, request));
+
+        Assert.Equal("live.txt", hit.Path);
+        Assert.Equal(HitRoute.Live, hit.Route);
+        Assert.True(live.WasUsed);
+        Assert.False(index.SearchWasUsed);
+        Assert.Contains("Folder name search is not indexed yet", status, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("using live scan", status, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public async Task UsesLiveScanForUnsupportedFileNameRegex()
+    {
+        var live = new StubSearcher("live.txt");
+        var index = new StubIndexSearch(covered: true, "indexed.txt");
+        var searcher = new IndexedSearcher(live, index, new IndexCoverageService(index));
+        var status = string.Empty;
+        var request = new SearchRequest(
+            new RegexQuery("needle.*"),
+            new[] { s_root },
+            new WalkerOptions(),
+            UseIndex: true,
+            Status: message => status = message,
+            Mode: QueryMode.Regex,
+            SearchTarget: SearchTarget.FileNames);
+
+        var hit = Assert.Single(await CollectAsync(searcher, request));
+
+        Assert.Equal("live.txt", hit.Path);
+        Assert.Equal(HitRoute.Live, hit.Route);
+        Assert.True(live.WasUsed);
+        Assert.False(index.SearchWasUsed);
+        Assert.Contains("not supported by the metadata index", status, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("using live scan", status, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
     public async Task UsesLiveScanWhenIndexDisabled()
     {
         var live = new StubSearcher("live.txt");

@@ -44,7 +44,8 @@ public sealed class SemanticIndexStatusServiceTests
                     new float[] { 1, 0, 0 },
                     model,
                     ContentUnitChunker.ChunkerVersion,
-                    "checksum"),
+                    "checksum",
+                    root: @"C:\Docs"),
             },
             TestContext.Current.CancellationToken);
         var service = new SemanticIndexStatusService(
@@ -60,6 +61,43 @@ public sealed class SemanticIndexStatusServiceTests
         Assert.Equal(1, status.VectorCount);
         Assert.Equal(2, status.CoveredContentUnitCount);
         Assert.Contains("Smart Search ready", status.Message, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public async Task GetRootStatusAsync_RootlessLegacyVectors_DoNotReportReady()
+    {
+        var manifest = new EmbeddingModelPackManifest
+        {
+            Id = "test-model",
+            DisplayName = "Test model",
+            Version = "1",
+            Dimension = 3,
+        };
+        var vectorIndex = new InMemoryVectorIndex();
+        await vectorIndex.UpsertAsync(
+            new[]
+            {
+                new VectorDocument(
+                    "legacy-rootless",
+                    VectorDocumentKind.ContentChunk,
+                    fileId: 7,
+                    new long[] { 10 },
+                    new float[] { 1, 0, 0 },
+                    manifest.ToModelInfo(),
+                    ContentUnitChunker.ChunkerVersion,
+                    "checksum"),
+            },
+            TestContext.Current.CancellationToken);
+        var service = new SemanticIndexStatusService(
+            new StubModelPackStore(new InstalledEmbeddingModelPack(manifest, @"C:\Models\test-model", true, "Installed.")),
+            new StubContentUnitReader(new long[] { 7 }, new long[] { 10 }),
+            vectorIndex);
+
+        var status = await service.GetRootStatusAsync(@"C:\Docs", TestContext.Current.CancellationToken);
+
+        Assert.False(status.IsReady);
+        Assert.Equal(0, status.VectorCount);
+        Assert.Contains("not built", status.Message, StringComparison.OrdinalIgnoreCase);
     }
 
     private sealed class StubModelPackStore(InstalledEmbeddingModelPack? selected) : IEmbeddingModelPackStore

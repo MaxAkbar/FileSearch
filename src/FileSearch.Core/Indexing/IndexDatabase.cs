@@ -682,10 +682,9 @@ internal sealed class IndexDatabase : IDisposable
         await TryExecuteAsync(db, "CREATE INDEX IF NOT EXISTS idx_index_roots_volume ON index_roots(volume_id)", cancellationToken).ConfigureAwait(false);
         await TryExecuteAsync(db, "CREATE UNIQUE INDEX IF NOT EXISTS idx_index_directories_root_path ON index_directories(root_id, path)", cancellationToken).ConfigureAwait(false);
         await TryExecuteAsync(db, "CREATE INDEX IF NOT EXISTS idx_index_directories_volume_ref ON index_directories(volume_id, directory_reference_number)", cancellationToken).ConfigureAwait(false);
-        // Path rows are append-only: a changed file inserts a newer row and
-        // readers choose the latest row per root/path. Keeping this non-unique
-        // avoids CSharpDB's full-table UPDATE/DELETE planning on watcher
-        // upserts while still serving overlapping roots independently.
+        // A changed file publishes a new row before removing its superseded
+        // version. This index stays non-unique so both versions can coexist
+        // during that handoff and overlapping roots remain independent.
         await TryExecuteAsync(db, "CREATE INDEX IF NOT EXISTS idx_files_root_path ON files(root_id, path)", cancellationToken).ConfigureAwait(false);
         await TryExecuteAsync(db, "CREATE INDEX IF NOT EXISTS idx_files_root_id ON files(root_id, id)", cancellationToken).ConfigureAwait(false);
         await TryExecuteAsync(db, "CREATE INDEX IF NOT EXISTS idx_files_root_file_name_lower ON files(root_id, file_name_lower)", cancellationToken).ConfigureAwait(false);

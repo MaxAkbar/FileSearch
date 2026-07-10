@@ -11,7 +11,7 @@ internal sealed class BenchmarkReportRunner
     /// <summary>Mid-token substring of the corpus token "critical_latency_event".</summary>
     private const string MidTokenSubstringQuery = "ritical_latency";
 
-    /// <summary>Regex matching the same corpus token; regexes cannot use FTS candidates.</summary>
+    /// <summary>Regex matching the same corpus token; required literals can use trigram candidates.</summary>
     private const string RegexQueryPattern = @"critical_latency_\w+";
 
     /// <summary>Below this indexed-file count, per-million memory normalization is meaningless.</summary>
@@ -143,13 +143,18 @@ internal sealed class BenchmarkReportRunner
                 cancellationToken)
             .ConfigureAwait(false));
 
-        LogPhase("Measuring incremental catch-up");
+        LogPhase("Measuring incremental updates and deletes");
         var incremental = await MeasureIncrementalCatchUpAsync(index, paths, cancellationToken).ConfigureAwait(false);
         metrics.Add(new BenchmarkMetric(
             "incremental_catch_up_throughput",
-            incremental.FilesPerSecond,
+            incremental.UpdateFilesPerSecond,
             "files/second",
-            $"Upserted {incremental.FileCount:n0} changed files in {incremental.Elapsed.TotalSeconds:n2}s."));
+            $"Re-indexed {incremental.FileCount:n0} existing changed files in {incremental.UpdateElapsed.TotalSeconds:n2}s."));
+        metrics.Add(new BenchmarkMetric(
+            "incremental_delete_throughput",
+            incremental.DeleteFilesPerSecond,
+            "files/second",
+            $"Removed {incremental.FileCount:n0} indexed files and their owned rows in {incremental.DeleteElapsed.TotalSeconds:n2}s."));
 
         LogPhase("Measuring restart recovery correctness");
         var restartCorrectness = await MeasureRestartCorrectnessAsync(paths, cancellationToken).ConfigureAwait(false);
@@ -269,7 +274,7 @@ internal sealed class BenchmarkReportRunner
         return new QueryLatencyMeasurement(warmupMilliseconds, warmupHitCount, LatencySummary.From(samples));
     }
 
-    private static async Task<(int FileCount, TimeSpan Elapsed, double FilesPerSecond)> MeasureIncrementalCatchUpAsync(
+    private static async Task<IncrementalMutationMeasurement> MeasureIncrementalCatchUpAsync(
         CSharpDbFileIndex index,
         BenchmarkPaths paths,
         CancellationToken cancellationToken)
@@ -283,25 +288,57 @@ internal sealed class BenchmarkReportRunner
             var path = Path.Combine(folder, $"incremental_catch_up_{i:D6}.txt");
             await File.WriteAllTextAsync(
                     path,
-                    string.Create(CultureInfo.InvariantCulture, $"incremental_catch_up_marker {i:D6}"),
+                    string.Create(CultureInfo.InvariantCulture, $"incremental_original_marker {i:D6}"),
                     cancellationToken)
+                .ConfigureAwait(false);
+            await index.UpsertFileAsync(paths.ContentRoot, path, BenchmarkIndexFactory.IndexOptions, cancellationToken)
                 .ConfigureAwait(false);
             changed.Add(path);
         }
 
-        var stopwatch = Stopwatch.StartNew();
-        foreach (var path in changed)
+        try
         {
-            await index.UpsertFileAsync(paths.ContentRoot, path, BenchmarkIndexFactory.IndexOptions, cancellationToken)
-                .ConfigureAwait(false);
-        }
+            for (var i = 0; i < changed.Count; i++)
+            {
+                await File.WriteAllTextAsync(
+                        changed[i],
+                        string.Create(CultureInfo.InvariantCulture, $"incremental_updated_marker with changed content {i:D6}"),
+                        cancellationToken)
+                    .ConfigureAwait(false);
+            }
 
-        stopwatch.Stop();
-        return (
-            count,
-            stopwatch.Elapsed,
-            stopwatch.Elapsed.TotalSeconds <= 0 ? count : count / stopwatch.Elapsed.TotalSeconds);
+            var updateStopwatch = Stopwatch.StartNew();
+            foreach (var path in changed)
+            {
+                await index.UpsertFileAsync(paths.ContentRoot, path, BenchmarkIndexFactory.IndexOptions, cancellationToken)
+                    .ConfigureAwait(false);
+            }
+
+            updateStopwatch.Stop();
+            foreach (var path in changed)
+                File.Delete(path);
+
+            var deleteStopwatch = Stopwatch.StartNew();
+            foreach (var path in changed)
+                await index.DeleteFileAsync(paths.ContentRoot, path, cancellationToken).ConfigureAwait(false);
+
+            deleteStopwatch.Stop();
+            return new IncrementalMutationMeasurement(
+                count,
+                updateStopwatch.Elapsed,
+                Rate(count, updateStopwatch.Elapsed),
+                deleteStopwatch.Elapsed,
+                Rate(count, deleteStopwatch.Elapsed));
+        }
+        finally
+        {
+            foreach (var path in changed)
+                DeleteIfExists(path);
+        }
     }
+
+    private static double Rate(int count, TimeSpan elapsed) =>
+        elapsed.TotalSeconds <= 0 ? count : count / elapsed.TotalSeconds;
 
     private static async Task<(int Expected, int Recovered, double PercentRecovered)> MeasureRestartCorrectnessAsync(
         BenchmarkPaths paths,
@@ -395,14 +432,13 @@ internal sealed class BenchmarkReportRunner
         metrics.Add(PhaseMetric("indexed_query_phase_open_avg", collected, static t => t.OpenTicks, notes));
         metrics.Add(PhaseMetric("indexed_query_phase_root_resolve_avg", collected, static t => t.RootResolveTicks, notes));
         metrics.Add(PhaseMetric("indexed_query_phase_metadata_avg", collected, static t => t.MetadataTicks, notes));
-        metrics.Add(PhaseMetric("indexed_query_phase_fts_lookup_avg", collected, static t => t.FtsLookupTicks, notes));
         metrics.Add(PhaseMetric("indexed_query_phase_trigram_lookup_avg", collected, static t => t.TrigramLookupTicks, notes));
         metrics.Add(PhaseMetric("indexed_query_phase_line_fetch_avg", collected, static t => t.LineFetchTicks, notes));
         metrics.Add(PhaseMetric("indexed_query_phase_recheck_avg", collected, static t => t.RecheckTicks, notes));
         metrics.Add(PhaseMetric(
             "indexed_query_phase_other_avg",
             collected,
-            static t => t.TotalTicks - (t.OpenTicks + t.RootResolveTicks + t.MetadataTicks + t.FtsLookupTicks + t.TrigramLookupTicks + t.LineFetchTicks + t.RecheckTicks),
+            static t => t.TotalTicks - (t.OpenTicks + t.RootResolveTicks + t.MetadataTicks + t.TrigramLookupTicks + t.LineFetchTicks + t.RecheckTicks),
             notes + " Remainder not covered by the named phases (candidate iteration, streaming plumbing)."));
         metrics.Add(new BenchmarkMetric(
             "indexed_query_lines_examined_avg",
@@ -617,4 +653,11 @@ internal sealed class BenchmarkReportRunner
         double WarmupMilliseconds,
         int WarmupHitCount,
         LatencySummary Warm);
+
+    private sealed record IncrementalMutationMeasurement(
+        int FileCount,
+        TimeSpan UpdateElapsed,
+        double UpdateFilesPerSecond,
+        TimeSpan DeleteElapsed,
+        double DeleteFilesPerSecond);
 }

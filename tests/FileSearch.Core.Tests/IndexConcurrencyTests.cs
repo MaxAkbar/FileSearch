@@ -53,8 +53,7 @@ public sealed class IndexConcurrencyTests : IDisposable
     {
         // Enough matching lines that the search streams instead of finishing
         // in one pull; a regex query forces the full-scan path. 600 keeps the
-        // test fast — hot-token postings currently cost O(blob) per inserted
-        // line in the engine, so large uniform corpora are slow to index.
+        // test fast while still keeping the result stream open mid-query.
         File.WriteAllText(
             Path.Combine(_root, "many.txt"),
             string.Concat(Enumerable.Range(0, 600).Select(i =>

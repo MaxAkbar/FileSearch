@@ -8,6 +8,24 @@ namespace FileSearch.Core.Tests;
 
 public sealed class EmbeddingModelPackTests
 {
+    [Fact]
+    public void OnnxTextEmbedder_BatchRangesRespectPaddedTokenBudget()
+    {
+        var ranges = OnnxTextEmbedder.CreateBatchRanges(
+            new[] { 50, 50, 200, 20, 20 },
+            maximumBatchSize: 4,
+            maximumPaddedTokens: 200);
+
+        Assert.Equal(
+            new[]
+            {
+                new EmbeddingBatchRange(0, 2, 50),
+                new EmbeddingBatchRange(2, 1, 200),
+                new EmbeddingBatchRange(3, 2, 20),
+            },
+            ranges);
+    }
+
     private static readonly JsonSerializerOptions s_jsonOptions = new() { WriteIndented = true };
 
     [Fact]

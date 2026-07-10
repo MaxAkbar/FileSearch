@@ -29,6 +29,25 @@ public interface ITextEmbedder
         TextEmbeddingInputKind inputKind,
         CancellationToken cancellationToken) =>
         EmbedAsync(text, cancellationToken);
+
+    async Task<IReadOnlyList<TextEmbedding>> EmbedBatchAsync(
+        IReadOnlyList<string> texts,
+        TextEmbeddingInputKind inputKind,
+        CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(texts);
+        if (texts.Count == 0)
+            return Array.Empty<TextEmbedding>();
+
+        var embeddings = new TextEmbedding[texts.Count];
+        for (var i = 0; i < texts.Count; i++)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            embeddings[i] = await EmbedAsync(texts[i], inputKind, cancellationToken).ConfigureAwait(false);
+        }
+
+        return embeddings;
+    }
 }
 
 public sealed class UnavailableTextEmbedder : ITextEmbedder
@@ -47,6 +66,12 @@ public sealed class UnavailableTextEmbedder : ITextEmbedder
 
     public Task<TextEmbedding> EmbedAsync(
         string text,
+        TextEmbeddingInputKind inputKind,
+        CancellationToken cancellationToken) =>
+        throw new InvalidOperationException(Message);
+
+    public Task<IReadOnlyList<TextEmbedding>> EmbedBatchAsync(
+        IReadOnlyList<string> texts,
         TextEmbeddingInputKind inputKind,
         CancellationToken cancellationToken) =>
         throw new InvalidOperationException(Message);

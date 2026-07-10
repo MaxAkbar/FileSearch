@@ -17,9 +17,8 @@ internal sealed class FileSearchRepl
 {
     private static readonly string[] s_indexerStatusArgs = ["status"];
 
-    private readonly Searcher _liveSearcher;
+    private readonly ISearcher _searcher;
     private readonly IFileIndex _index;
-    private readonly IndexCoverageService _coverageService;
     private readonly IQueryFactory _queryFactory;
     private readonly IExtractorRegistry _extractorRegistry;
     private readonly IWorkflowStore _workflowStore;
@@ -28,17 +27,15 @@ internal sealed class FileSearchRepl
     private CancellationTokenSource? _activeCommand;
 
     public FileSearchRepl(
-        Searcher liveSearcher,
+        ISearcher searcher,
         IFileIndex index,
-        IndexCoverageService coverageService,
         IQueryFactory queryFactory,
         IExtractorRegistry extractorRegistry,
         IWorkflowStore workflowStore,
         IWorkflowRunner workflowRunner)
     {
-        _liveSearcher = liveSearcher;
+        _searcher = searcher;
         _index = index;
-        _coverageService = coverageService;
         _queryFactory = queryFactory;
         _extractorRegistry = extractorRegistry;
         _workflowStore = workflowStore;
@@ -323,25 +320,10 @@ internal sealed class FileSearchRepl
             .Spinner(Spinner.Known.Dots)
             .StartAsync($"Searching {Markup.Escape(_state.Root)}", async ctx =>
             {
-                IAsyncEnumerable<Hit> stream;
-                if (_state.UseIndex)
+                await foreach (var hit in _searcher.SearchAsync(request, cancellationToken)
+                                   .WithCancellation(cancellationToken).ConfigureAwait(false))
                 {
-                    var coverage = await _coverageService.GetCoverageAsync(request, cancellationToken).ConfigureAwait(false);
-                    statusMessages.Enqueue(coverage.IsCovered
-                        ? coverage.Message
-                        : $"{coverage.Message}; using live scan");
-                    indexed = coverage.IsCovered;
-                    stream = coverage.IsCovered
-                        ? _index.SearchAsync(request, cancellationToken)
-                        : _liveSearcher.SearchAsync(request with { UseIndex = false }, cancellationToken);
-                }
-                else
-                {
-                    stream = _liveSearcher.SearchAsync(request with { UseIndex = false }, cancellationToken);
-                }
-
-                await foreach (var hit in stream.WithCancellation(cancellationToken).ConfigureAwait(false))
-                {
+                    indexed = hit.Route == HitRoute.Indexed;
                     totalHits++;
                     if (hits.Count < _state.ResultLimit)
                         hits.Add(hit);
@@ -350,6 +332,8 @@ internal sealed class FileSearchRepl
                 }
             }).ConfigureAwait(false);
         stopwatch.Stop();
+
+        indexed = ResolveIndexedRoute(_state.UseIndex, totalHits, indexed, statusMessages);
 
         RenderSearchSummary(queryText, totalHits, hits.Count, stopwatch.Elapsed, indexed, statusMessages);
         RenderHits(hits, totalHits);
@@ -397,29 +381,17 @@ internal sealed class FileSearchRepl
             Mode: options.State.Mode,
             SearchTarget: options.State.SearchTarget);
 
-        IAsyncEnumerable<Hit> stream;
-        if (options.State.UseIndex)
+        await foreach (var hit in _searcher.SearchAsync(request, cancellationToken)
+                           .WithCancellation(cancellationToken).ConfigureAwait(false))
         {
-            var coverage = await _coverageService.GetCoverageAsync(request, cancellationToken).ConfigureAwait(false);
-            statusMessages.Enqueue(coverage.IsCovered ? coverage.Message : $"{coverage.Message}; using live scan");
-            indexed = coverage.IsCovered;
-            stream = coverage.IsCovered
-                ? _index.SearchAsync(request, cancellationToken)
-                : _liveSearcher.SearchAsync(request with { UseIndex = false }, cancellationToken);
-        }
-        else
-        {
-            stream = _liveSearcher.SearchAsync(request with { UseIndex = false }, cancellationToken);
-        }
-
-        await foreach (var hit in stream.WithCancellation(cancellationToken).ConfigureAwait(false))
-        {
+            indexed = hit.Route == HitRoute.Indexed;
             totalHits++;
             if (hits.Count < options.State.ResultLimit)
                 hits.Add(hit);
         }
 
         stopwatch.Stop();
+        indexed = ResolveIndexedRoute(options.State.UseIndex, totalHits, indexed, statusMessages);
         var rendered = RenderOneShotSearch(options, hits, totalHits, indexed, stopwatch.Elapsed, statusMessages);
         await WriteOneShotOutputAsync(rendered, options.OutputPath, cancellationToken).ConfigureAwait(false);
         return 0;
@@ -1042,6 +1014,22 @@ internal sealed class FileSearchRepl
         foreach (var hit in hits)
             sb.AppendLine(JsonSerializer.Serialize(ToOneShotHit(hit), s_oneShotJsonLineOptions));
         return sb.ToString();
+    }
+
+    private static bool ResolveIndexedRoute(
+        bool indexRequested,
+        int totalHits,
+        bool indexedHitObserved,
+        IEnumerable<string> statusMessages)
+    {
+        if (totalHits > 0)
+            return indexedHitObserved;
+        if (!indexRequested)
+            return false;
+
+        var statuses = statusMessages.ToArray();
+        return statuses.Any(message => message.Contains("Using indexed search", StringComparison.OrdinalIgnoreCase)) &&
+               !statuses.Any(message => message.Contains("using live scan", StringComparison.OrdinalIgnoreCase));
     }
 
     private static string RenderOneShotCsv(IReadOnlyList<Hit> hits)

@@ -104,7 +104,11 @@ public sealed class SemanticIndexStatusService : ISemanticIndexStatusService
         }
 
         var stats = await _vectorIndex
-            .GetStatsAsync(contentUnitIds, cancellationToken, selected.Manifest.ToModelInfo())
+            .GetStatsAsync(
+                contentUnitIds,
+                cancellationToken,
+                selected.Manifest.ToModelInfo(),
+                new[] { root })
             .ConfigureAwait(false);
 
         var message = stats.DocumentCount == 0

@@ -66,6 +66,36 @@ public sealed class SemanticIndexBuilderTests
             Assert.NotNull(document.Locator);
         });
         Assert.Equal(2, embedder.EmbeddedTexts.Count);
+        Assert.Equal(new[] { 2 }, embedder.BatchSizes);
+    }
+
+    [Fact]
+    public async Task BuildFilesAsync_BatchesChunksAcrossFilesWithoutMutatingVectorIndex()
+    {
+        var vectorIndex = new RecordingVectorIndex();
+        var embedder = new StubTextEmbedder(s_model, _ => new float[] { 1, 0 });
+        var builder = new SemanticIndexBuilder(
+            new StubContentUnitReader(
+                CreateUnit(1, 10, "first file"),
+                CreateUnit(2, 20, "second file")),
+            new ContentUnitChunker(),
+            embedder,
+            vectorIndex);
+
+        var result = await builder.BuildFilesAsync(
+            @"C:\root",
+            new long[] { 10, 20 },
+            TestContext.Current.CancellationToken);
+
+        Assert.True(result.IsAvailable);
+        Assert.Equal(2, result.IndexedFileCount);
+        Assert.Equal(4, result.VectorCount);
+        Assert.Equal(new[] { 2 }, embedder.BatchSizes);
+        Assert.All(result.Documents, document => Assert.Equal(@"C:\root", document.Root));
+        Assert.Contains(result.Documents, document => document.FilePath == @"C:\files\10.txt");
+        Assert.Contains(result.Documents, document => document.FilePath == @"C:\files\20.txt");
+        Assert.Empty(vectorIndex.UpsertedDocuments);
+        Assert.Empty(vectorIndex.DeletedContentUnitIds);
     }
 
     [Fact]
@@ -114,6 +144,9 @@ public sealed class SemanticIndexBuilderTests
             CancellationToken cancellationToken) =>
             Task.FromResult<IReadOnlyList<ContentUnit>>(
                 _units.Where(unit => unit.FileId == fileId).ToArray());
+
+        public Task<string?> GetFilePathAsync(long fileId, CancellationToken cancellationToken) =>
+            Task.FromResult<string?>($@"C:\files\{fileId}.txt");
     }
 
     private sealed class StubTextEmbedder : ITextEmbedder
@@ -129,6 +162,8 @@ public sealed class SemanticIndexBuilderTests
 
         public List<string> EmbeddedTexts { get; } = new();
 
+        public List<int> BatchSizes { get; } = new();
+
         public Task<TextEmbedderAvailability> GetAvailabilityAsync(CancellationToken cancellationToken) =>
             Task.FromResult(TextEmbedderAvailability.Available);
 
@@ -136,6 +171,20 @@ public sealed class SemanticIndexBuilderTests
         {
             EmbeddedTexts.Add(text);
             return Task.FromResult(new TextEmbedding(_embed(text), _model));
+        }
+
+        public Task<IReadOnlyList<TextEmbedding>> EmbedBatchAsync(
+            IReadOnlyList<string> texts,
+            TextEmbeddingInputKind inputKind,
+            CancellationToken cancellationToken)
+        {
+            BatchSizes.Add(texts.Count);
+            var embeddings = texts.Select(text =>
+            {
+                EmbeddedTexts.Add(text);
+                return new TextEmbedding(_embed(text), _model);
+            }).ToArray();
+            return Task.FromResult<IReadOnlyList<TextEmbedding>>(embeddings);
         }
     }
 
@@ -167,7 +216,8 @@ public sealed class SemanticIndexBuilderTests
             CancellationToken cancellationToken,
             EmbeddingModelInfo? model = null,
             VectorDocumentKind? kind = null,
-            IReadOnlyCollection<long>? fileIds = null) =>
+            IReadOnlyCollection<long>? fileIds = null,
+            IReadOnlyCollection<string>? roots = null) =>
             Task.FromResult<IReadOnlyList<VectorMatch>>(Array.Empty<VectorMatch>());
     }
 }

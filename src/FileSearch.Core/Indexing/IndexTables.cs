@@ -555,9 +555,9 @@ internal static partial class IndexTables
             row[10].IsNull ? 0 : row[10].AsInteger);
 
     /// <summary>
-    /// Inserts a new file-version row. Changed-file indexing is append-only:
-    /// readers resolve the latest row per root/path, and delete/skip paths
-    /// append tombstones instead of updating or deleting old rows.
+    /// Inserts a new file-version row. Changed-file indexing publishes the new
+    /// version before the superseded version is removed, and readers resolve
+    /// the latest row per root/path throughout that handoff.
     /// </summary>
     public static async Task<InsertedFileRow> InsertFileRowAsync(
         Database db,
@@ -1080,7 +1080,7 @@ internal static partial class IndexTables
 
     /// <summary>Appends a tombstone so the deleted path hides older file-version rows.</summary>
     public static async Task<int> DeleteFileAsync(
-        DbExec db,
+        Database db,
         long rootId,
         string path,
         CancellationToken cancellationToken)
@@ -1090,6 +1090,7 @@ internal static partial class IndexTables
             return 0;
 
         await InsertFileTombstoneAsync(db, rootId, path, identity: null, cancellationToken).ConfigureAwait(false);
+        await DeleteFileVersionAsync(db, existing.Id, cancellationToken).ConfigureAwait(false);
         return 1;
     }
 
@@ -1214,17 +1215,33 @@ internal static partial class IndexTables
 
     public static async Task DeleteLinesAsync(DbExec db, long fileId, CancellationToken cancellationToken)
     {
-        await DeleteFileTrigramsAsync(db, [fileId], cancellationToken).ConfigureAwait(false);
+        await DeleteFileTrigramsAsync(db, fileId, cancellationToken).ConfigureAwait(false);
         await ExecuteAsync(db, Sql.Format($"DELETE FROM lines WHERE file_id = {fileId}"), cancellationToken)
             .ConfigureAwait(false);
         await DeleteContentUnitsAsync(db, fileId, cancellationToken).ConfigureAwait(false);
     }
 
-    private static async Task DeleteFileByIdAsync(DbExec db, long fileId, CancellationToken cancellationToken)
+    /// <summary>
+    /// Atomically removes one superseded file version and all rows owned by it.
+    /// Every predicate is backed by a file-id index in the current schema.
+    /// </summary>
+    public static ValueTask DeleteFileVersionAsync(
+        Database db,
+        long fileId,
+        CancellationToken cancellationToken) =>
+        db.RunWriteTransactionAsync(
+            async (transaction, token) =>
+            {
+                await DeleteFileVersionRowsAsync(transaction, fileId, token).ConfigureAwait(false);
+            },
+            ct: cancellationToken);
+
+    private static async Task DeleteFileVersionRowsAsync(
+        DbExec db,
+        long fileId,
+        CancellationToken cancellationToken)
     {
-        // Per-file DELETE on file_metadata_tokens is both expensive in
-        // CSharpDB and can stall watcher updates. Orphaned token rows are
-        // harmless after the file row is gone; root rebuilds clear by root_id.
+        await DeleteMetadataTokensAsync(db, fileId, cancellationToken).ConfigureAwait(false);
         await DeleteExtractionIssuesAsync(db, fileId, cancellationToken).ConfigureAwait(false);
         await DeleteLinesAsync(db, fileId, cancellationToken).ConfigureAwait(false);
         await db.ExecuteAsync(Sql.Format($"DELETE FROM files WHERE id = {fileId}"), cancellationToken).ConfigureAwait(false);
@@ -1252,59 +1269,6 @@ internal static partial class IndexTables
 
     private static Task DeleteExtractionIssuesAsync(DbExec db, long fileId, CancellationToken cancellationToken) =>
         ExecuteAsync(db, Sql.Format($"DELETE FROM extraction_issues WHERE file_id = {fileId}"), cancellationToken);
-
-    private static async Task ReplaceMetadataTokensAsync(
-        Database db,
-        long rootId,
-        long fileId,
-        string path,
-        string directoryPath,
-        string fileName,
-        string extension,
-        string fileTypeCategory,
-        bool deleteExisting,
-        CancellationToken cancellationToken)
-    {
-        try
-        {
-            // DELETE is a full table scan in CSharpDB; skip it for rows that
-            // cannot have tokens yet (freshly inserted files).
-            if (deleteExisting)
-                await DeleteMetadataTokensAsync(db, fileId, cancellationToken).ConfigureAwait(false);
-
-            var tokens = BuildIndexedMetadataTokens(path, directoryPath, fileName, extension, fileTypeCategory);
-            if (tokens.Count == 0)
-                return;
-
-            var batch = db.PrepareInsertBatch("file_metadata_tokens", MetadataTokenInsertBatchSize);
-            foreach (var token in tokens)
-            {
-                var id = CreateMetadataTokenId(rootId, fileId, token);
-                batch.AddRow(
-                    DbValue.FromInteger(id),
-                    DbValue.FromInteger(rootId),
-                    DbValue.FromInteger(fileId),
-                    DbValue.FromText(token));
-
-                if (batch.Count >= MetadataTokenInsertBatchSize)
-                {
-                    await batch.ExecuteAsync(cancellationToken).ConfigureAwait(false);
-                    batch.Clear();
-                }
-            }
-
-            if (batch.Count > 0)
-                await batch.ExecuteAsync(cancellationToken).ConfigureAwait(false);
-        }
-        catch (OperationCanceledException)
-        {
-            throw;
-        }
-        catch (CSharpDbException)
-        {
-            // Metadata search remains correct by scanning files when tokens are unavailable.
-        }
-    }
 
     public static async Task InsertMetadataTokensAsync(
         Database db,
@@ -1513,6 +1477,12 @@ internal static partial class IndexTables
                 .ConfigureAwait(false);
         }
     }
+
+    private static Task DeleteFileTrigramsAsync(
+        DbExec db,
+        long fileId,
+        CancellationToken cancellationToken) =>
+        ExecuteAsync(db, Sql.Format($"DELETE FROM file_trigrams WHERE file_id = {fileId}"), cancellationToken);
 
     private static Task DeleteContentUnitsAsync(DbExec db, long fileId, CancellationToken cancellationToken) =>
         ExecuteAsync(db, Sql.Format($"DELETE FROM content_units WHERE file_id = {fileId}"), cancellationToken);

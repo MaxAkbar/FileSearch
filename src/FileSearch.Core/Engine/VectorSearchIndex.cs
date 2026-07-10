@@ -1,4 +1,5 @@
 using System.Numerics.Tensors;
+using FileSearch.Core.Indexing;
 
 namespace FileSearch.Core.Engine;
 
@@ -35,7 +36,7 @@ internal sealed class VectorSearchIndex
         _options = options ?? new VectorIndexOptions();
         _records = documents
             .OrderBy(document => document.Id, StringComparer.Ordinal)
-            .Select((document, index) => new VectorSearchRecord(index, document, CreateUnitVector(document.Vector)))
+            .Select(CreateSearchRecord)
             .ToArray();
         _partitions = BuildPartitions(_records);
         _fileBuckets = BuildFileBuckets(_records);
@@ -47,8 +48,11 @@ internal sealed class VectorSearchIndex
         int count,
         EmbeddingModelInfo? model = null,
         VectorDocumentKind? kind = null,
-        IReadOnlyCollection<long>? fileIds = null)
+        IReadOnlyCollection<long>? fileIds = null,
+        IReadOnlyCollection<string>? roots = null,
+        CancellationToken cancellationToken = default)
     {
+        cancellationToken.ThrowIfCancellationRequested();
         if (count <= 0 || queryVector.Length == 0 || _records.Length == 0)
             return EmptyResult("empty");
 
@@ -57,8 +61,9 @@ internal sealed class VectorSearchIndex
             return EmptyResult("zero-query");
 
         var fileIdSet = NormalizeFileIds(fileIds);
+        var rootSet = NormalizeRoots(roots);
         if (fileIdSet is not null)
-            return SearchFileBuckets(query, count, model, kind, fileIdSet);
+            return SearchFileBuckets(query, count, model, kind, fileIdSet, rootSet, cancellationToken);
 
         var partitionKey = TryCreatePartitionKey(query.Length, model, kind);
         if (partitionKey is not null &&
@@ -76,12 +81,14 @@ internal sealed class VectorSearchIndex
                         model,
                         kind,
                         fileIds: null,
+                        rootSet,
                         new VectorIndexSearchDiagnostics(
                             _records.Length,
                             approximateCandidates.Count,
                             UsedApproximateIndex: true,
                             UsedFileIdIndex: false,
-                            "lsh"));
+                            "lsh"),
+                        cancellationToken);
                 }
             }
 
@@ -92,12 +99,14 @@ internal sealed class VectorSearchIndex
                 model,
                 kind,
                 fileIds: null,
+                rootSet,
                 new VectorIndexSearchDiagnostics(
                     _records.Length,
                     partitionIndices.Length,
                     UsedApproximateIndex: false,
                     UsedFileIdIndex: false,
-                    "partition-exact"));
+                    "partition-exact"),
+                cancellationToken);
         }
 
         return SearchCandidates(
@@ -107,12 +116,14 @@ internal sealed class VectorSearchIndex
             model,
             kind,
             fileIds: null,
+            rootSet,
             new VectorIndexSearchDiagnostics(
                 _records.Length,
                 _records.Length,
                 UsedApproximateIndex: false,
                 UsedFileIdIndex: false,
-                "filtered-exact"));
+                "filtered-exact"),
+            cancellationToken);
     }
 
     private VectorSearchResult SearchFileBuckets(
@@ -120,7 +131,9 @@ internal sealed class VectorSearchIndex
         int count,
         EmbeddingModelInfo? model,
         VectorDocumentKind? kind,
-        HashSet<long> fileIds)
+        HashSet<long> fileIds,
+        HashSet<string>? roots,
+        CancellationToken cancellationToken)
     {
         var candidates = new HashSet<int>();
         foreach (var fileId in fileIds)
@@ -139,12 +152,14 @@ internal sealed class VectorSearchIndex
             model,
             kind,
             fileIds,
+            roots,
             new VectorIndexSearchDiagnostics(
                 _records.Length,
                 candidates.Count,
                 UsedApproximateIndex: false,
                 UsedFileIdIndex: true,
-                "file-filter-exact"));
+                "file-filter-exact"),
+            cancellationToken);
     }
 
     private VectorSearchResult SearchCandidates(
@@ -154,22 +169,27 @@ internal sealed class VectorSearchIndex
         EmbeddingModelInfo? model,
         VectorDocumentKind? kind,
         HashSet<long>? fileIds,
-        VectorIndexSearchDiagnostics diagnostics)
+        HashSet<string>? roots,
+        VectorIndexSearchDiagnostics diagnostics,
+        CancellationToken cancellationToken)
     {
         var top = new List<ScoredVectorRecord>(Math.Min(count, _records.Length));
+        var visited = 0;
         foreach (var index in candidateIndices)
         {
+            if ((visited++ & 1023) == 0)
+                cancellationToken.ThrowIfCancellationRequested();
             if ((uint)index >= (uint)_records.Length)
                 continue;
 
             var record = _records[index];
-            if (record.UnitVector.Length != query.Length)
+            if (record.Dimension != query.Length)
                 continue;
 
-            if (!MatchesFilters(record.Document, query.Length, model, kind, fileIds))
+            if (!MatchesFilters(record.Document, query.Length, model, kind, fileIds, roots))
                 continue;
 
-            var score = Dot(query, record.UnitVector);
+            var score = Score(query, record);
             if (score <= 0)
                 continue;
 
@@ -259,17 +279,21 @@ internal sealed class VectorSearchIndex
             document.Model,
             document.ChunkerVersion,
             document.ContentChecksum,
-            document.Locator);
+            document.Locator,
+            document.Root,
+            document.FilePath);
 
     private static bool MatchesFilters(
         VectorDocument document,
         int dimension,
         EmbeddingModelInfo? model,
         VectorDocumentKind? kind,
-        HashSet<long>? fileIds) =>
+        HashSet<long>? fileIds,
+        HashSet<string>? roots) =>
         document.Vector.Count == dimension &&
         (kind is null || document.Kind == kind) &&
         (fileIds is null || fileIds.Contains(document.FileId)) &&
+        (roots is null || roots.Contains(document.Root)) &&
         MatchesModel(document.Model, model);
 
     private static bool MatchesModel(EmbeddingModelInfo documentModel, EmbeddingModelInfo? queryModel) =>
@@ -285,6 +309,18 @@ internal sealed class VectorSearchIndex
             return null;
 
         var normalized = fileIds.Where(id => id > 0).ToHashSet();
+        return normalized.Count == 0 ? null : normalized;
+    }
+
+    private static HashSet<string>? NormalizeRoots(IReadOnlyCollection<string>? roots)
+    {
+        if (roots is null || roots.Count == 0)
+            return null;
+
+        var normalized = roots
+            .Where(root => !string.IsNullOrWhiteSpace(root))
+            .Select(IndexPath.NormalizeRoot)
+            .ToHashSet(StringComparer.OrdinalIgnoreCase);
         return normalized.Count == 0 ? null : normalized;
     }
 
@@ -362,7 +398,7 @@ internal sealed class VectorSearchIndex
             var buckets = new Dictionary<ulong, List<int>>();
             foreach (var index in indices)
             {
-                var signature = CreateSignature(records[index].UnitVector, _planes);
+                var signature = CreateSignature(records[index], _planes);
                 for (var band = 0; band < BandCount; band++)
                 {
                     var key = CreateBandKey(signature, band);
@@ -440,6 +476,51 @@ internal sealed class VectorSearchIndex
         return signature;
     }
 
+    private static ulong CreateSignature(VectorSearchRecord record, IReadOnlyList<float[]> planes)
+    {
+        ulong signature = 0;
+        for (var i = 0; i < planes.Count; i++)
+        {
+            if (ProjectionScore(record, planes[i]) >= 0)
+                signature |= 1UL << i;
+        }
+
+        return signature;
+    }
+
+    private static VectorSearchRecord CreateSearchRecord(VectorDocument document, int index) =>
+        document.Vector is QuantizedVector quantized
+            ? new VectorSearchRecord(index, document, FloatUnitVector: null, quantized)
+            : new VectorSearchRecord(index, document, CreateUnitVector(document.Vector), QuantizedVector: null);
+
+    private static float Score(float[] query, VectorSearchRecord record)
+    {
+        if (record.FloatUnitVector is not null)
+            return Dot(query, record.FloatUnitVector);
+        if (record.QuantizedVector is null || record.QuantizedVector.SquaredNorm <= 0)
+            return 0;
+
+        var values = record.QuantizedVector.Values;
+        double dot = 0;
+        for (var i = 0; i < values.Length; i++)
+            dot += query[i] * values[i];
+        return (float)(dot / Math.Sqrt(record.QuantizedVector.SquaredNorm));
+    }
+
+    private static float ProjectionScore(VectorSearchRecord record, float[] plane)
+    {
+        if (record.FloatUnitVector is not null)
+            return Dot(record.FloatUnitVector, plane);
+        if (record.QuantizedVector is null)
+            return 0;
+
+        var values = record.QuantizedVector.Values;
+        double dot = 0;
+        for (var i = 0; i < values.Length; i++)
+            dot += values[i] * plane[i];
+        return (float)dot;
+    }
+
     private static ulong CreateBandKey(ulong signature, int band) =>
         CreateBandKey((byte)((signature >> (band * BandBits)) & 0xffUL), band);
 
@@ -465,9 +546,13 @@ internal sealed class VectorSearchIndex
     private sealed record VectorSearchRecord(
         int Index,
         VectorDocument Document,
-        float[] UnitVector);
+        float[]? FloatUnitVector,
+        QuantizedVector? QuantizedVector)
+    {
+        public int Dimension => FloatUnitVector?.Length ?? QuantizedVector?.Count ?? 0;
+    }
 
-    private sealed record ScoredVectorRecord(
+    private readonly record struct ScoredVectorRecord(
         VectorSearchRecord Record,
         float Score);
 }
