@@ -1129,7 +1129,7 @@ public sealed class CSharpDbFileIndex : IFileIndex, IIndexReplayWriter, IIndexUs
         try
         {
             var lease = await _database.OpenReadLeaseAsync(cancellationToken).ConfigureAwait(false);
-        var db = lease?.Session;
+            var db = lease?.Session;
             if (db is null)
                 return new IndexCoverage(IndexCoverageStatus.Missing, "Index does not cover this folder");
 

@@ -115,12 +115,12 @@ internal static class QueryTrigramTerms
 
             var combined = new List<HashSet<string>>(clauses.Count * childClauses.Count);
             foreach (var existing in clauses)
-            foreach (var childClause in childClauses)
-            {
-                var merged = new HashSet<string>(existing, StringComparer.Ordinal);
-                merged.UnionWith(childClause);
-                combined.Add(merged);
-            }
+                foreach (var childClause in childClauses)
+                {
+                    var merged = new HashSet<string>(existing, StringComparer.Ordinal);
+                    merged.UnionWith(childClause);
+                    combined.Add(merged);
+                }
 
             clauses = combined;
         }
