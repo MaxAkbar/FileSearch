@@ -591,11 +591,7 @@ public sealed class EmbeddingModelPackInstaller : IEmbeddingModelPackInstaller, 
         if (string.IsNullOrWhiteSpace(file.DownloadUrl))
             throw new InvalidOperationException($"Download URL is missing for {file.RelativePath}.");
 
-        using var response = await _httpClient.GetAsync(
-                file.DownloadUrl,
-                HttpCompletionOption.ResponseHeadersRead,
-                cancellationToken)
-            .ConfigureAwait(false);
+        using var response = await GetDownloadResponseAsync(file.DownloadUrl, cancellationToken).ConfigureAwait(false);
         response.EnsureSuccessStatusCode();
 
         var targetPath = Path.Combine(directory, file.RelativePath);
@@ -644,6 +640,32 @@ public sealed class EmbeddingModelPackInstaller : IEmbeddingModelPackInstaller, 
         {
             if (File.Exists(tempPath))
                 File.Delete(tempPath);
+        }
+    }
+
+    private async Task<HttpResponseMessage> GetDownloadResponseAsync(
+        string downloadUrl,
+        CancellationToken cancellationToken)
+    {
+        try
+        {
+            return await _httpClient.GetAsync(
+                    downloadUrl,
+                    HttpCompletionOption.ResponseHeadersRead,
+                    cancellationToken)
+                .ConfigureAwait(false);
+        }
+        catch (HttpRequestException ex)
+        {
+            var host = Uri.TryCreate(downloadUrl, UriKind.Absolute, out var uri)
+                ? uri.Host
+                : "the model host";
+            throw new HttpRequestException(
+                $"Could not download from {host}. The HTTPS connection was blocked or interrupted. " +
+                $"Allow {host} through the firewall or configure the required HTTPS proxy, then retry. " +
+                $"Network error: {ex.GetBaseException().Message}",
+                ex,
+                ex.StatusCode);
         }
     }
 
