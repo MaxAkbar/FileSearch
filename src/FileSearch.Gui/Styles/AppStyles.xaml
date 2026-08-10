@@ -81,7 +81,7 @@
     <!-- ===== Density tokens (Comfortable defaults) ===== -->
     <!-- Caption/drag height for the ModernWpf chrome; the window extends its
          view into the title bar, so this must track TitleBarMinHeight. -->
-    <sys:Double x:Key="{x:Static ui:TitleBar.HeightKey}">44</sys:Double>
+    <sys:Double x:Key="{x:Static ui:WindowTitleBar.HeightKey}">44</sys:Double>
     <Thickness x:Key="AppDensity.TitleBarPadding">12,6</Thickness>
     <sys:Double x:Key="AppDensity.TitleBarMinHeight">44</sys:Double>
     <Thickness x:Key="AppDensity.TitleMenuItemPadding">14,5</Thickness>

@@ -10,7 +10,7 @@
         mc:Ignorable="d"
         d:DataContext="{d:DesignInstance Type=vm:MainViewModel}"
         ui:WindowHelper.UseModernWindowStyle="True"
-        ui:TitleBar.ExtendViewIntoTitleBar="True"
+        ui:WindowTitleBar.ExtendsContentIntoTitleBar="True"
         Icon="Assets/FileSearch.ico"
         Background="{DynamicResource Atlas.PaperBrush}"
         Foreground="{DynamicResource Atlas.InkBrush}"
