@@ -1259,6 +1259,19 @@ public sealed class FileIndexTests : IDisposable
     }
 
     [Fact]
+    public async Task CurrentSchemaStoresUtcTicksAsBigInt()
+    {
+        File.WriteAllText(Path.Combine(_root, "bigint-schema.txt"), "bigint schema needle\n");
+        await BuildAsync();
+
+        const long largeTickValue = 639219823516075047;
+        await using var db = await Database.OpenAsync(_dbPath, TestContext.Current.CancellationToken);
+        await db.ExecuteAsync($"UPDATE index_roots SET indexed_utc_ticks = {largeTickValue}", TestContext.Current.CancellationToken);
+        await db.ExecuteAsync($"UPDATE index_volumes SET last_checked_utc_ticks = {largeTickValue}", TestContext.Current.CancellationToken);
+        await db.ExecuteAsync($"UPDATE files SET created_utc_ticks = {largeTickValue}", TestContext.Current.CancellationToken);
+    }
+
+    [Fact]
     public async Task IndexedSearchToleratesWalCleanupContention()
     {
         File.WriteAllText(Path.Combine(_root, "wal.txt"), "wal needle\n");
