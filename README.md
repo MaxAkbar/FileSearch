@@ -88,7 +88,7 @@ WPF front end for the core search library. It targets `net10.0-windows` and uses
 
 - `CommunityToolkit.Mvvm` for MVVM helpers.
 - `Microsoft.Extensions.Hosting` and dependency injection for app composition.
-- `ModernWpfUI` for modern Windows styling.
+- `ModernWpfUI` 1.x for modern Windows styling and .NET 10 Fluent control resources.
 
 The app provides the main search form, result grid, match preview panel, result refinement, settings, themes, and Windows integration menu actions.
 

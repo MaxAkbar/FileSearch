@@ -1259,6 +1259,31 @@ public sealed class FileIndexTests : IDisposable
     }
 
     [Fact]
+    public async Task CurrentSchemaStoresUtcTicksAsBigInt()
+    {
+        File.WriteAllText(Path.Combine(_root, "bigint-schema.txt"), "bigint schema needle\n");
+        await BuildAsync();
+
+        const long largeTickValue = 639219823516075047;
+        await using var db = await Database.OpenAsync(_dbPath, TestContext.Current.CancellationToken);
+        await db.ExecuteAsync($"UPDATE index_roots SET indexed_utc_ticks = {largeTickValue}", TestContext.Current.CancellationToken);
+        await db.ExecuteAsync($"UPDATE index_volumes SET last_checked_utc_ticks = {largeTickValue}", TestContext.Current.CancellationToken);
+        await db.ExecuteAsync($"UPDATE files SET created_utc_ticks = {largeTickValue}", TestContext.Current.CancellationToken);
+
+        await AssertAnyRowMatchesAsync("index_roots", "indexed_utc_ticks");
+        await AssertAnyRowMatchesAsync("files", "created_utc_ticks");
+
+        async Task AssertAnyRowMatchesAsync(string table, string column)
+        {
+            await using var result = await db.ExecuteAsync(
+                $"SELECT COUNT(*) FROM {table} WHERE {column} = {largeTickValue}",
+                TestContext.Current.CancellationToken);
+            Assert.True(await result.MoveNextAsync(TestContext.Current.CancellationToken));
+            Assert.True(result.Current[0].AsInteger > 0);
+        }
+    }
+
+    [Fact]
     public async Task IndexedSearchToleratesWalCleanupContention()
     {
         File.WriteAllText(Path.Combine(_root, "wal.txt"), "wal needle\n");

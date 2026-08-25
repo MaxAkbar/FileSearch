@@ -400,8 +400,12 @@ public sealed partial class ApplicationSettingsViewModel : ObservableObject
             OnPropertyChanged(nameof(SemanticModelSummary));
             OnPropertyChanged(nameof(CanInstallSemanticModel));
 
-            if (_isInitialized)
-                SaveSettings(updateStartupRegistration: false);
+            if (!_isInitialized)
+                return;
+
+            SaveSettings(updateStartupRegistration: false);
+            if (CanInstallSemanticModel)
+                InstallSemanticModelCommand.Execute(null);
         }
     }
 

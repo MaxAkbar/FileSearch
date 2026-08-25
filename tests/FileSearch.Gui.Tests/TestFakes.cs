@@ -14,6 +14,35 @@ internal sealed class FakeSettingsService : ISettingsService
     public void Update(Action<AppSettings> mutate) => mutate(Current);
 }
 
+internal sealed class FakeEmbeddingModelPackInstaller : IEmbeddingModelPackInstaller
+{
+    public int InstallCallCount { get; private set; }
+
+    public string? LastModelId { get; private set; }
+
+    public TaskCompletionSource InstallStarted { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
+
+    public Task<InstalledEmbeddingModelPack> InstallAsync(
+        string modelId,
+        IProgress<EmbeddingModelInstallProgress>? progress,
+        CancellationToken cancellationToken)
+    {
+        InstallCallCount++;
+        LastModelId = modelId;
+        InstallStarted.TrySetResult();
+        var manifest = new EmbeddingModelPackManifest
+        {
+            Id = modelId,
+            DisplayName = modelId,
+        };
+        return Task.FromResult(new InstalledEmbeddingModelPack(
+            manifest,
+            Path.Combine("Models", modelId),
+            true,
+            "Installed."));
+    }
+}
+
 internal sealed class FakePreviewService : IFilePreviewService
 {
     public Task<string> LoadHitsPreviewAsync(string path, IReadOnlyList<int> hitLineNumbers, int contextLines, CancellationToken cancellationToken) =>

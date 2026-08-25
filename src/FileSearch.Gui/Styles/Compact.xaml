@@ -4,7 +4,7 @@
                     xmlns:sys="clr-namespace:System;assembly=mscorlib">
 
     <!-- Compact density overlay. Colors still come from the active theme. -->
-    <sys:Double x:Key="{x:Static ui:TitleBar.HeightKey}">36</sys:Double>
+    <sys:Double x:Key="{x:Static ui:WindowTitleBar.HeightKey}">36</sys:Double>
     <Thickness x:Key="AppDensity.TitleBarPadding">10,4</Thickness>
     <sys:Double x:Key="AppDensity.TitleBarMinHeight">36</sys:Double>
     <Thickness x:Key="AppDensity.TitleMenuItemPadding">12,3</Thickness>

@@ -1,3 +1,4 @@
+using FileSearch.Core.Engine;
 using FileSearch.Gui.Services;
 using FileSearch.Gui.Settings;
 using FileSearch.Gui.ViewModels;
@@ -123,6 +124,50 @@ public sealed class ApplicationSettingsViewModelTests
         Assert.Equal("fr-FR", settings.Current.OcrLanguageTag);
         Assert.Equal(0, settings.Current.OcrMaxPdfPages);
         Assert.Contains("no page limit", appSettings.OcrMaxPdfPagesSummary);
+    }
+
+    [Fact]
+    public async Task SemanticModelSelectionPersistsAndStartsInstallation()
+    {
+        var settings = new FakeSettingsService();
+        var options = new EmbeddingModelPackOptions();
+        var installer = new FakeEmbeddingModelPackInstaller();
+        var appSettings = new ApplicationSettingsViewModel(
+            settings,
+            new StatusBarViewModel(),
+            semanticModelCatalog: new EmbeddingModelPackCatalog(),
+            semanticModelInstaller: installer,
+            semanticModelOptions: options);
+        var selected = appSettings.SemanticModelPackOptions.Single(option => !option.IsDisabled && option.IsRecommended);
+
+        appSettings.SemanticModelPack = selected;
+        await installer.InstallStarted.Task.WaitAsync(TestContext.Current.CancellationToken);
+
+        Assert.Equal(selected.Id, settings.Current.SemanticModelPackId);
+        Assert.Equal(selected.Id, options.SelectedModelPackId);
+        Assert.Equal(selected.Id, installer.LastModelId);
+        Assert.Equal(1, installer.InstallCallCount);
+    }
+
+    [Fact]
+    public void DisablingSemanticModelPersistsWithoutStartingInstallation()
+    {
+        var settings = new FakeSettingsService();
+        settings.Current.SemanticModelPackId = "bge-small-en-v1.5-onnx";
+        var options = new EmbeddingModelPackOptions();
+        var installer = new FakeEmbeddingModelPackInstaller();
+        var appSettings = new ApplicationSettingsViewModel(
+            settings,
+            new StatusBarViewModel(),
+            semanticModelCatalog: new EmbeddingModelPackCatalog(),
+            semanticModelInstaller: installer,
+            semanticModelOptions: options);
+
+        appSettings.SemanticModelPack = SemanticModelPackOption.Disabled;
+
+        Assert.Empty(settings.Current.SemanticModelPackId);
+        Assert.Empty(options.SelectedModelPackId);
+        Assert.Equal(0, installer.InstallCallCount);
     }
 
     [Fact]

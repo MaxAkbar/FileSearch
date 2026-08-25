@@ -182,6 +182,41 @@ public sealed class EmbeddingModelPackTests
     }
 
     [Fact]
+    public async Task Installer_ReportsHostAndUnderlyingHttpsError()
+    {
+        var directory = CreateTempDirectory();
+        try
+        {
+            var manifest = CreateManifest("https-failure-test");
+            var catalog = new StubCatalog(new EmbeddingModelPackCatalogEntry(manifest, IsRecommended: true, "1 KB"));
+            var store = new EmbeddingModelPackStore(new EmbeddingModelPackOptions
+            {
+                ModelPacksDirectory = directory,
+                SelectedModelPackId = manifest.Id,
+            });
+            var transportException = new HttpRequestException(
+                "The SSL connection could not be established.",
+                new IOException("An existing connection was forcibly closed by the remote host."));
+            using var httpClient = new HttpClient(new ThrowingHttpMessageHandler(transportException));
+            var installer = new EmbeddingModelPackInstaller(catalog, store, httpClient, new StubValidator(
+                EmbeddingModelPackValidationResult.Passed("Smoke validation passed.")));
+
+            var exception = await Assert.ThrowsAsync<HttpRequestException>(() => installer.InstallAsync(
+                manifest.Id,
+                progress: null,
+                TestContext.Current.CancellationToken));
+
+            Assert.Contains("example.invalid", exception.Message, StringComparison.OrdinalIgnoreCase);
+            Assert.Contains("firewall", exception.Message, StringComparison.OrdinalIgnoreCase);
+            Assert.Contains("forcibly closed", exception.Message, StringComparison.OrdinalIgnoreCase);
+        }
+        finally
+        {
+            Directory.Delete(directory, recursive: true);
+        }
+    }
+
+    [Fact]
     public async Task OnnxValidator_ReturnsFailureForInvalidModelFile()
     {
         var directory = CreateTempDirectory();
@@ -261,5 +296,13 @@ public sealed class EmbeddingModelPackTests
             {
                 Content = new ByteArrayContent(Encoding.UTF8.GetBytes(content)),
             });
+    }
+
+    private sealed class ThrowingHttpMessageHandler(Exception exception) : HttpMessageHandler
+    {
+        protected override Task<HttpResponseMessage> SendAsync(
+            HttpRequestMessage request,
+            CancellationToken cancellationToken) =>
+            Task.FromException<HttpResponseMessage>(exception);
     }
 }
