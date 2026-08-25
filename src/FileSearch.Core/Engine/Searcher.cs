@@ -555,13 +555,14 @@ public sealed class Searcher : ISearcher
             displayText = name;
             score = 900;
         }
-        else if (!string.Equals(relativePath, name, StringComparison.OrdinalIgnoreCase) &&
+        else if (isDirectory &&
+                 !string.Equals(relativePath, name, StringComparison.OrdinalIgnoreCase) &&
                  query.IsMatch(relativePath))
         {
             displayText = relativePath;
             score = 600;
         }
-        else if (query.IsMatch(path))
+        else if (isDirectory && query.IsMatch(path))
         {
             displayText = path;
             score = 300;

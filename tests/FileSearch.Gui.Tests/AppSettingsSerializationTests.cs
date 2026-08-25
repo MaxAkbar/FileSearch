@@ -62,6 +62,7 @@ public sealed class AppSettingsSerializationTests
                     IncludeSubfolders = false,
                     SearchMode = QueryMode.Regex,
                     SearchTarget = SearchTarget.FileNames,
+                    SearchTargets = [SearchTarget.Content, SearchTarget.FileNames],
                     MatchCase = true,
                     EnableDocumentExtraction = false,
                     EnableImageOcr = true,
@@ -214,6 +215,7 @@ public sealed class AppSettingsSerializationTests
         Assert.False(savedSearch.IncludeSubfolders);
         Assert.Equal(QueryMode.Regex, savedSearch.SearchMode);
         Assert.Equal(SearchTarget.FileNames, savedSearch.SearchTarget);
+        Assert.Equal([SearchTarget.Content, SearchTarget.FileNames], savedSearch.GetSearchTargets());
         Assert.True(savedSearch.MatchCase);
         Assert.False(savedSearch.EnableDocumentExtraction);
         Assert.True(savedSearch.EnableImageOcr);
@@ -237,6 +239,7 @@ public sealed class AppSettingsSerializationTests
         Assert.Equal(@"C:\Daily", workspace.Search.SearchPath);
         Assert.Equal("*.md", workspace.Search.FileNamePattern);
         Assert.Equal(SearchTarget.FolderNames, workspace.Search.SearchTarget);
+        Assert.Equal([SearchTarget.FolderNames], workspace.Search.GetSearchTargets());
         Assert.Equal("Markdown", Assert.Single(workspace.CustomScopes).Name);
         Assert.Equal(@"C:\Daily\plan.md", Assert.Single(workspace.FavoriteResults).Path);
         Assert.Equal(@"C:\Daily\pin.md", Assert.Single(workspace.PinnedPaths));
@@ -271,6 +274,23 @@ public sealed class AppSettingsSerializationTests
         Assert.Equal("Build output", excludeList.Name);
         Assert.Equal(".dll; .exe", excludeList.Extensions);
         Assert.Equal("bin; obj", excludeList.Folders);
+    }
+
+    [Fact]
+    public void LegacyCombinedSearchTargetExpandsToIndependentTargets()
+    {
+        var search = JsonSerializer.Deserialize<SavedSearchSettings>(
+            """
+            {
+              "SearchTarget": "FileAndFolderNames"
+            }
+            """,
+            s_options);
+
+        Assert.NotNull(search);
+        Assert.Equal(
+            [SearchTarget.FileNames, SearchTarget.FolderNames],
+            search.GetSearchTargets());
     }
 
     [Fact]

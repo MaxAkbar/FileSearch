@@ -644,7 +644,8 @@ public sealed partial class HistoryViewModel : ObservableObject
     private static bool HasSameSavedSearchIdentity(SavedSearchSettings left, SavedSearchSettings right) =>
         string.Equals(left.QueryText?.Trim(), right.QueryText?.Trim(), StringComparison.OrdinalIgnoreCase) &&
         string.Equals(left.SearchPath?.Trim(), right.SearchPath?.Trim(), StringComparison.OrdinalIgnoreCase) &&
-        left.SearchTarget == right.SearchTarget;
+        left.GetSearchTargets().OrderBy(target => target)
+            .SequenceEqual(right.GetSearchTargets().OrderBy(target => target));
 
     private void LoadLegacySavedSearches(AppSettings saved)
     {
@@ -727,7 +728,7 @@ public sealed partial class HistoryViewModel : ObservableObject
         Contains(item.FileNamePattern, needle) ||
         Contains(item.ExcludeFileNamePattern, needle) ||
         Contains(item.SearchMode.ToString(), needle) ||
-        Contains(item.SearchTarget.ToString(), needle);
+        item.GetSearchTargets().Any(target => Contains(target.ToString(), needle));
 
     private static bool MatchesFavorite(FavoriteResultSettings item, string needle) =>
         Contains(item.Path, needle) ||
@@ -759,8 +760,16 @@ public sealed partial class HistoryViewModel : ObservableObject
         WorkspaceList.PageSize = _applicationSettings.SidebarPageSize;
     }
 
-    private static SavedSearchSettings NormalizeSavedSearch(SavedSearchSettings search) =>
-        new()
+    private static SavedSearchSettings NormalizeSavedSearch(SavedSearchSettings search)
+    {
+        var searchTargets = search.GetSearchTargets();
+        var legacySearchTarget = searchTargets.Count == 2 &&
+                                 searchTargets.Contains(SearchTarget.FileNames) &&
+                                 searchTargets.Contains(SearchTarget.FolderNames)
+            ? SearchTarget.FileAndFolderNames
+            : searchTargets[0];
+
+        return new SavedSearchSettings
         {
             QueryText = search.QueryText?.Trim() ?? string.Empty,
             SearchPath = search.SearchPath?.Trim() ?? string.Empty,
@@ -768,7 +777,8 @@ public sealed partial class HistoryViewModel : ObservableObject
             ExcludeFileNamePattern = search.ExcludeFileNamePattern?.Trim() ?? string.Empty,
             IncludeSubfolders = search.IncludeSubfolders,
             SearchMode = search.SearchMode,
-            SearchTarget = Enum.IsDefined(search.SearchTarget) ? search.SearchTarget : SearchTarget.Content,
+            SearchTarget = legacySearchTarget,
+            SearchTargets = searchTargets.ToList(),
             MatchCase = search.MatchCase,
             EnableDocumentExtraction = search.EnableDocumentExtraction,
             EnableImageOcr = search.EnableImageOcr,
@@ -782,6 +792,7 @@ public sealed partial class HistoryViewModel : ObservableObject
             ModifiedBefore = search.ModifiedBefore == default ? DateTime.Today : search.ModifiedBefore,
             AdditionalPlainTextExtensions = search.AdditionalPlainTextExtensions?.Trim() ?? string.Empty,
         };
+    }
 
     private const int MaxFavoriteEntries = 100;
 

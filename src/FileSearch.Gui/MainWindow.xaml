@@ -1373,17 +1373,21 @@
                             <WrapPanel>
                                 <StackPanel Margin="0,0,36,0">
                                     <TextBlock Text="SEARCH IN" Style="{StaticResource OptionGroupLabelStyle}"/>
-                                    <ListBox ItemsSource="{Binding Search.SearchTargetOptions}"
-                                             SelectedItem="{Binding Search.SelectedSearchTargetOption}"
-                                             Style="{StaticResource ResultOptionPickerStyle}"
-                                             Margin="0,0,0,2"
-                                             ItemContainerStyle="{StaticResource ResultOptionPickerItemStyle}">
-                                        <ListBox.ItemTemplate>
+                                    <ItemsControl ItemsSource="{Binding Search.SearchTargetOptions}"
+                                                  Margin="0,0,0,2">
+                                        <ItemsControl.ItemsPanel>
+                                            <ItemsPanelTemplate>
+                                                <WrapPanel/>
+                                            </ItemsPanelTemplate>
+                                        </ItemsControl.ItemsPanel>
+                                        <ItemsControl.ItemTemplate>
                                             <DataTemplate DataType="{x:Type vm:SearchTargetOption}">
-                                                <TextBlock Text="{Binding DisplayName}"/>
+                                                <CheckBox Content="{Binding DisplayName}"
+                                                          IsChecked="{Binding IsSelected}"
+                                                          Style="{StaticResource CheckChipStyle}"/>
                                             </DataTemplate>
-                                        </ListBox.ItemTemplate>
-                                    </ListBox>
+                                        </ItemsControl.ItemTemplate>
+                                    </ItemsControl>
                                 </StackPanel>
                                 <StackPanel>
                                     <TextBlock Text="MATCH" Style="{StaticResource OptionGroupLabelStyle}"/>

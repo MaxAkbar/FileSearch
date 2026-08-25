@@ -1,4 +1,6 @@
 using System;
+using System.Collections.Generic;
+using System.Linq;
 using System.Text.Json.Serialization;
 using FileSearch.Core.Engine;
 using FileSearch.Core.Queries;
@@ -31,6 +33,8 @@ public sealed class SavedSearchSettings
 
     public SearchTarget SearchTarget { get; set; } = SearchTarget.Content;
 
+    public List<SearchTarget> SearchTargets { get; set; } = [];
+
     public int MinSizeKB { get; set; }
 
     public int MaxSizeKB { get; set; }
@@ -49,6 +53,29 @@ public sealed class SavedSearchSettings
     public string DisplayName =>
         string.IsNullOrWhiteSpace(QueryText) ? "(empty search)" : QueryText.Trim();
 
+    public IReadOnlyList<SearchTarget> GetSearchTargets()
+    {
+        var configuredTargets = SearchTargets.Count > 0 ? SearchTargets : [SearchTarget];
+        var targets = new List<SearchTarget>(3);
+
+        foreach (var target in configuredTargets)
+        {
+            if (target == SearchTarget.FileAndFolderNames)
+            {
+                targets.Add(SearchTarget.FileNames);
+                targets.Add(SearchTarget.FolderNames);
+            }
+            else if (Enum.IsDefined(target))
+            {
+                targets.Add(target);
+            }
+        }
+
+        return targets.Count == 0
+            ? [SearchTarget.Content]
+            : targets.Distinct().ToArray();
+    }
+
     [JsonIgnore]
     public string Summary
     {
@@ -56,7 +83,10 @@ public sealed class SavedSearchSettings
         {
             var path = string.IsNullOrWhiteSpace(SearchPath) ? "No folder" : SearchPath.Trim();
             var scope = string.IsNullOrWhiteSpace(FileNamePattern) ? "all files" : FileNamePattern.Trim();
-            var target = SearchTarget == SearchTarget.Content ? SearchMode.ToString() : SearchTarget.ToString();
+            var targets = GetSearchTargets();
+            var target = targets.Count == 1 && targets[0] == SearchTarget.Content
+                ? SearchMode.ToString()
+                : string.Join(", ", targets);
             return $"{path} | {target} | {scope}";
         }
     }

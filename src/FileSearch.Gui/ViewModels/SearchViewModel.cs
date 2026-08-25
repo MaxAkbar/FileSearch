@@ -28,8 +28,21 @@ using FileSearch.WindowsOcr;
 
 namespace FileSearch.Gui.ViewModels;
 
-public sealed record SearchTargetOption(SearchTarget Value, string DisplayName)
+public sealed partial class SearchTargetOption : ObservableObject
 {
+    public SearchTargetOption(SearchTarget value, string displayName)
+    {
+        Value = value;
+        DisplayName = displayName;
+    }
+
+    public SearchTarget Value { get; }
+
+    public string DisplayName { get; }
+
+    [ObservableProperty]
+    private bool _isSelected;
+
     public override string ToString() => DisplayName;
 }
 
@@ -68,6 +81,7 @@ public sealed partial class SearchViewModel : ObservableObject, IDisposable
     private readonly bool _isInitialized;
     private bool _isRebuildingFacetOptions;
     private bool _suppressResultViewMaintenance;
+    private bool _updatingSearchTargets;
     private int _nextResultRank;
 
     public SearchViewModel(
@@ -110,7 +124,9 @@ public sealed partial class SearchViewModel : ObservableObject, IDisposable
 
         SelectedSortOption = ResultSortOptions[0];
         SelectedGroupOption = ResultGroupOptions[0];
-        SelectedSearchTargetOption = SearchTargetOptions[0];
+        foreach (var option in SearchTargetOptions)
+            option.PropertyChanged += OnSearchTargetOptionPropertyChanged;
+        SearchTargetOptions[0].IsSelected = true;
         RebuildFacetOptions();
         ApplyResultViewShape();
 
@@ -203,7 +219,6 @@ public sealed partial class SearchViewModel : ObservableObject, IDisposable
             new SearchTargetOption(SearchTarget.Content, "Contents"),
             new SearchTargetOption(SearchTarget.FileNames, "File names"),
             new SearchTargetOption(SearchTarget.FolderNames, "Folder names"),
-            new SearchTargetOption(SearchTarget.FileAndFolderNames, "File and folder names"),
         };
 
     // --- search inputs (Main tab) ---
@@ -221,7 +236,6 @@ public sealed partial class SearchViewModel : ObservableObject, IDisposable
     [ObservableProperty] private bool _enableImageOcr;
     [ObservableProperty] private bool _skipUnknownFileTypes;
     [ObservableProperty] private bool _useIndex;
-    [ObservableProperty] private SearchTargetOption? _selectedSearchTargetOption;
     [ObservableProperty] private int _minSizeKB;
     [ObservableProperty] private int _maxSizeKB;
     private string _additionalPlainTextExtensions = string.Empty;
@@ -398,9 +412,14 @@ public sealed partial class SearchViewModel : ObservableObject, IDisposable
 
     public bool HasImageOcrPreview => ImageOcrPreview is not null;
 
-    public SearchTarget CurrentSearchTarget => SelectedSearchTargetOption?.Value ?? SearchTarget.Content;
+    public IReadOnlyList<SearchTarget> CurrentSearchTargets => SearchTargetOptions
+        .Where(option => option.IsSelected)
+        .Select(option => option.Value)
+        .ToArray();
 
-    public bool IsContentSearch => CurrentSearchTarget == SearchTarget.Content;
+    public SearchTarget CurrentSearchTarget => CurrentSearchTargets.FirstOrDefault(SearchTarget.Content);
+
+    public bool IsContentSearch => CurrentSearchTargets is [SearchTarget.Content];
 
     public string ResultsSummaryText => $"{FilesMatched:n0} {ResultItemNounPlural} · {TotalHits:n0} hits";
 
@@ -492,17 +511,23 @@ public sealed partial class SearchViewModel : ObservableObject, IDisposable
     public string ResultsContextText =>
         string.IsNullOrWhiteSpace(QueryText)
             ? "Results"
-            : CurrentSearchTarget == SearchTarget.Content
+            : IsContentSearch
                 ? $"Find “{QueryText.Trim()}”"
-                : $"Find names matching “{QueryText.Trim()}”";
+                : CurrentSearchTargets.Contains(SearchTarget.Content)
+                    ? $"Find “{QueryText.Trim()}” in selected areas"
+                    : $"Find names matching “{QueryText.Trim()}”";
 
-    public string SearchTargetSummary => SelectedSearchTargetOption?.DisplayName ?? "Contents";
+    public string SearchTargetSummary => string.Join(", ", SearchTargetOptions
+        .Where(option => option.IsSelected)
+        .Select(option => option.DisplayName));
 
-    public string QueryPlaceholderText => CurrentSearchTarget == SearchTarget.Content
+    public string QueryPlaceholderText => IsContentSearch
         ? "Search text or fields like type:pdf modified:last-month"
-        : "Search file or folder names";
+        : CurrentSearchTargets.Contains(SearchTarget.Content)
+            ? "Search contents, file names, or folder names"
+            : "Search file or folder names";
 
-    private string ResultItemNounPlural => CurrentSearchTarget == SearchTarget.Content ? "files" : "items";
+    private string ResultItemNounPlural => IsContentSearch ? "files" : "items";
 
     public string FilePatternSummary =>
         string.IsNullOrWhiteSpace(FileNamePattern) ? "All files" : FileNamePattern;
@@ -638,8 +663,37 @@ public sealed partial class SearchViewModel : ObservableObject, IDisposable
 
     partial void OnSelectedSizeFacetChanged(ResultFacetOption? value) => OnFacetSelectionChanged();
 
-    partial void OnSelectedSearchTargetOptionChanged(SearchTargetOption? value)
+    private void OnSearchTargetOptionPropertyChanged(object? sender, PropertyChangedEventArgs e)
     {
+        if (_updatingSearchTargets || e.PropertyName != nameof(SearchTargetOption.IsSelected))
+            return;
+
+        if (!SearchTargetOptions.Any(option => option.IsSelected) && sender is SearchTargetOption option)
+        {
+            _updatingSearchTargets = true;
+            option.IsSelected = true;
+            _updatingSearchTargets = false;
+        }
+
+        NotifySearchTargetsChanged();
+    }
+
+    private void SetSearchTargets(IEnumerable<SearchTarget> targets)
+    {
+        var selectedTargets = targets.ToHashSet();
+        if (selectedTargets.Count == 0)
+            selectedTargets.Add(SearchTarget.Content);
+
+        _updatingSearchTargets = true;
+        foreach (var option in SearchTargetOptions)
+            option.IsSelected = selectedTargets.Contains(option.Value);
+        _updatingSearchTargets = false;
+        NotifySearchTargetsChanged();
+    }
+
+    private void NotifySearchTargetsChanged()
+    {
+        OnPropertyChanged(nameof(CurrentSearchTargets));
         OnPropertyChanged(nameof(CurrentSearchTarget));
         OnPropertyChanged(nameof(IsContentSearch));
         OnPropertyChanged(nameof(SearchTargetSummary));
@@ -667,7 +721,7 @@ public sealed partial class SearchViewModel : ObservableObject, IDisposable
     [RelayCommand]
     private void ResetSearchOptions()
     {
-        SelectedSearchTargetOption = SearchTargetOptions[0];
+        SetSearchTargets([SearchTarget.Content]);
         SearchMode = QueryMode.Unified;
         MatchCase = false;
         IncludeSubfolders = true;
@@ -1002,16 +1056,7 @@ public sealed partial class SearchViewModel : ObservableObject, IDisposable
                 routeStatus = message;
                 _status.Text = message;
             });
-            var request = new SearchRequest(
-                query,
-                new[] { SearchPath },
-                BuildWalkerOptions(CurrentSearchTarget),
-                progress.Report,
-                UseIndex,
-                routeProgress.Report,
-                QueryText,
-                SearchMode,
-                CurrentSearchTarget);
+            var searchTargets = CurrentSearchTargets;
 
             // Consume the hit stream on the thread pool and flush to the UI
             // in timed batches — applying hits one at a time marshalled every
@@ -1019,8 +1064,22 @@ public sealed partial class SearchViewModel : ObservableObject, IDisposable
             var pendingHits = new System.Collections.Concurrent.ConcurrentQueue<Hit>();
             var consumer = Task.Run(async () =>
             {
-                await foreach (var hit in _searcher.SearchAsync(request, token).ConfigureAwait(false))
-                    pendingHits.Enqueue(hit);
+                foreach (var searchTarget in searchTargets)
+                {
+                    var request = new SearchRequest(
+                        query,
+                        new[] { SearchPath },
+                        BuildWalkerOptions(searchTarget),
+                        progress.Report,
+                        UseIndex,
+                        routeProgress.Report,
+                        QueryText,
+                        SearchMode,
+                        searchTarget);
+
+                    await foreach (var hit in _searcher.SearchAsync(request, token).ConfigureAwait(false))
+                        pendingHits.Enqueue(hit);
+                }
             }, token);
 
             while (true)
@@ -1183,8 +1242,16 @@ public sealed partial class SearchViewModel : ObservableObject, IDisposable
         _status.Text = $"Scope set to {scope.Name}.";
     }
 
-    private SavedSearchSettings CreateSavedSearch() =>
-        new()
+    private SavedSearchSettings CreateSavedSearch()
+    {
+        var searchTargets = CurrentSearchTargets;
+        var legacySearchTarget = searchTargets.Count == 2 &&
+                                 searchTargets.Contains(SearchTarget.FileNames) &&
+                                 searchTargets.Contains(SearchTarget.FolderNames)
+            ? SearchTarget.FileAndFolderNames
+            : searchTargets[0];
+
+        return new SavedSearchSettings
         {
             QueryText = QueryText,
             SearchPath = SearchPath,
@@ -1197,7 +1264,8 @@ public sealed partial class SearchViewModel : ObservableObject, IDisposable
             EnableImageOcr = EnableImageOcr,
             SkipUnknownFileTypes = SkipUnknownFileTypes,
             UseIndex = UseIndex,
-            SearchTarget = CurrentSearchTarget,
+            SearchTarget = legacySearchTarget,
+            SearchTargets = searchTargets.ToList(),
             MinSizeKB = MinSizeKB,
             MaxSizeKB = MaxSizeKB,
             ModifiedAfterEnabled = ModifiedAfterEnabled,
@@ -1206,6 +1274,7 @@ public sealed partial class SearchViewModel : ObservableObject, IDisposable
             ModifiedBefore = ModifiedBefore,
             AdditionalPlainTextExtensions = AdditionalPlainTextExtensions,
         };
+    }
 
     private void ApplySavedSearch(SavedSearchSettings? search)
     {
@@ -1223,8 +1292,7 @@ public sealed partial class SearchViewModel : ObservableObject, IDisposable
         EnableImageOcr = search.EnableImageOcr;
         SkipUnknownFileTypes = search.SkipUnknownFileTypes;
         UseIndex = search.UseIndex;
-        SelectedSearchTargetOption = SearchTargetOptions.FirstOrDefault(option => option.Value == search.SearchTarget)
-            ?? SearchTargetOptions[0];
+        SetSearchTargets(search.GetSearchTargets());
         MinSizeKB = Math.Max(0, search.MinSizeKB);
         MaxSizeKB = Math.Max(0, search.MaxSizeKB);
         ModifiedAfterEnabled = search.ModifiedAfterEnabled;

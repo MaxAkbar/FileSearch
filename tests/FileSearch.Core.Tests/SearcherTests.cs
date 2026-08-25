@@ -207,6 +207,18 @@ public sealed class SearcherTests : IDisposable
     }
 
     [Fact]
+    public async Task FileNameSearchDoesNotMatchParentFolderNames()
+    {
+        var folder = Path.Combine(_root, "Invoices");
+        Directory.CreateDirectory(folder);
+        File.WriteAllText(Path.Combine(folder, "readme.txt"), "nothing\n");
+
+        var hits = await SearchNamesAsync(new TermQuery("invoice"), SearchTarget.FileNames);
+
+        Assert.Empty(hits);
+    }
+
+    [Fact]
     public async Task FolderNameSearchFindsFolders()
     {
         var folder = Path.Combine(_root, "Invoices");

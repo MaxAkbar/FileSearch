@@ -318,7 +318,9 @@ public sealed class SearchViewModelTests
             vm.ExcludeFileNamePattern = "*.g.cs";
             vm.IncludeSubfolders = false;
             vm.SearchMode = QueryMode.Regex;
-            vm.SelectedSearchTargetOption = vm.SearchTargetOptions.Single(option => option.Value == SearchTarget.FileNames);
+            vm.SearchTargetOptions.Single(option => option.Value == SearchTarget.FileNames).IsSelected = true;
+            vm.SearchTargetOptions.Single(option => option.Value == SearchTarget.FolderNames).IsSelected = true;
+            vm.SearchTargetOptions.Single(option => option.Value == SearchTarget.Content).IsSelected = false;
             vm.MatchCase = true;
             vm.EnableDocumentExtraction = false;
             vm.EnableImageOcr = true;
@@ -338,7 +340,10 @@ public sealed class SearchViewModelTests
             var saved = Assert.Single(history.SavedSearches);
             Assert.Equal(path, saved.SearchPath);
             Assert.Equal(QueryMode.Regex, saved.SearchMode);
-            Assert.Equal(SearchTarget.FileNames, saved.SearchTarget);
+            Assert.Equal(SearchTarget.FileAndFolderNames, saved.SearchTarget);
+            Assert.Equal(
+                [SearchTarget.FileNames, SearchTarget.FolderNames],
+                saved.SearchTargets);
             Assert.False(saved.IncludeSubfolders);
             Assert.True(saved.MatchCase);
             Assert.False(saved.EnableDocumentExtraction);
@@ -359,7 +364,9 @@ public sealed class SearchViewModelTests
             vm.ExcludeFileNamePattern = string.Empty;
             vm.IncludeSubfolders = true;
             vm.SearchMode = QueryMode.Boolean;
-            vm.SelectedSearchTargetOption = vm.SearchTargetOptions.Single(option => option.Value == SearchTarget.Content);
+            vm.SearchTargetOptions.Single(option => option.Value == SearchTarget.Content).IsSelected = true;
+            vm.SearchTargetOptions.Single(option => option.Value == SearchTarget.FileNames).IsSelected = false;
+            vm.SearchTargetOptions.Single(option => option.Value == SearchTarget.FolderNames).IsSelected = false;
             vm.MatchCase = false;
             vm.EnableDocumentExtraction = true;
             vm.EnableImageOcr = false;
@@ -379,7 +386,9 @@ public sealed class SearchViewModelTests
             Assert.Equal("*.g.cs", vm.ExcludeFileNamePattern);
             Assert.False(vm.IncludeSubfolders);
             Assert.Equal(QueryMode.Regex, vm.SearchMode);
-            Assert.Equal(SearchTarget.FileNames, vm.CurrentSearchTarget);
+            Assert.Equal(
+                [SearchTarget.FileNames, SearchTarget.FolderNames],
+                vm.CurrentSearchTargets);
             Assert.True(vm.MatchCase);
             Assert.False(vm.EnableDocumentExtraction);
             Assert.True(vm.EnableImageOcr);
@@ -467,17 +476,58 @@ public sealed class SearchViewModelTests
             vm.SkipUnknownFileTypes = true;
             vm.EnableDocumentExtraction = false;
             vm.EnableImageOcr = false;
-            vm.SelectedSearchTargetOption = vm.SearchTargetOptions.Single(option => option.Value == SearchTarget.FileAndFolderNames);
+            vm.SearchTargetOptions.Single(option => option.Value == SearchTarget.FileNames).IsSelected = true;
+            vm.SearchTargetOptions.Single(option => option.Value == SearchTarget.FolderNames).IsSelected = true;
+            vm.SearchTargetOptions.Single(option => option.Value == SearchTarget.Content).IsSelected = false;
 
             var task = vm.SearchCommand.ExecuteAsync(null);
             pump.PumpUntil(() => task.IsCompleted, TimeSpan.FromSeconds(10));
 
-            Assert.NotNull(searcher.Request);
-            Assert.Equal(SearchTarget.FileAndFolderNames, searcher.Request.SearchTarget);
-            Assert.Equal(new[] { "*.cs" }, searcher.Request.WalkerOptions.IncludeGlobs);
-            Assert.Equal(new[] { "*.tmp" }, searcher.Request.WalkerOptions.ExcludeGlobs);
-            Assert.Empty(searcher.Request.WalkerOptions.IncludeExtensions);
-            Assert.Empty(searcher.Request.WalkerOptions.ExcludeExtensions);
+            Assert.Equal(2, searcher.Requests.Count);
+            Assert.Equal(
+                [SearchTarget.FileNames, SearchTarget.FolderNames],
+                searcher.Requests.Select(request => request.SearchTarget));
+            Assert.All(searcher.Requests, request =>
+            {
+                Assert.Equal(new[] { "*.cs" }, request.WalkerOptions.IncludeGlobs);
+                Assert.Equal(new[] { "*.tmp" }, request.WalkerOptions.ExcludeGlobs);
+                Assert.Empty(request.WalkerOptions.IncludeExtensions);
+                Assert.Empty(request.WalkerOptions.ExcludeExtensions);
+            });
+        }, searcher);
+    }
+
+    [Fact]
+    public void SearchTargetOptionsKeepAtLeastOneTargetSelected()
+    {
+        RunWithPump((pump, vm, history, status, settings) =>
+        {
+            var content = vm.SearchTargetOptions.Single(option => option.Value == SearchTarget.Content);
+
+            content.IsSelected = false;
+
+            Assert.True(content.IsSelected);
+            Assert.Equal([SearchTarget.Content], vm.CurrentSearchTargets);
+        });
+    }
+
+    [Fact]
+    public void MultiTargetSearchCombinesMatchesAndDeduplicatesResultPaths()
+    {
+        var searcher = new MultiTargetResultSearcher();
+        RunWithPump((pump, vm, history, status, settings) =>
+        {
+            vm.QueryText = "needle";
+            vm.SearchPath = Path.GetTempPath();
+            vm.SearchTargetOptions.Single(option => option.Value == SearchTarget.FileNames).IsSelected = true;
+
+            var task = vm.SearchCommand.ExecuteAsync(null);
+            pump.PumpUntil(() => task.IsCompleted, TimeSpan.FromSeconds(10));
+
+            Assert.Equal([SearchTarget.Content, SearchTarget.FileNames], searcher.RequestedTargets);
+            Assert.Equal(3, vm.FilesMatched);
+            Assert.Equal(4, vm.TotalHits);
+            Assert.Single(vm.Files, file => file.FullPath == @"C:\results\shared.txt");
         }, searcher);
     }
 
@@ -810,6 +860,7 @@ public sealed class SearchViewModelTests
             vm.SearchPath = @"C:\Other";
             vm.FileNamePattern = "*.md";
             vm.ExcludeFileNamePattern = string.Empty;
+            vm.IncludeSubfolders = true;
             vm.SearchMode = QueryMode.Boolean;
             vm.MatchCase = false;
             vm.RefinementQuery = string.Empty;
@@ -1046,6 +1097,7 @@ public sealed class SearchViewModelTests
     private sealed class RecordingSearcher : ISearcher
     {
         public SearchRequest? Request { get; private set; }
+        public List<SearchRequest> Requests { get; } = [];
         public int RequestCount { get; private set; }
 
         public async IAsyncEnumerable<Hit> SearchAsync(
@@ -1053,9 +1105,29 @@ public sealed class SearchViewModelTests
             [EnumeratorCancellation] CancellationToken cancellationToken)
         {
             Request = request;
+            Requests.Add(request);
             RequestCount++;
             await Task.Yield();
             yield break;
+        }
+    }
+
+    private sealed class MultiTargetResultSearcher : ISearcher
+    {
+        public List<SearchTarget> RequestedTargets { get; } = [];
+
+        public async IAsyncEnumerable<Hit> SearchAsync(
+            SearchRequest request,
+            [EnumeratorCancellation] CancellationToken cancellationToken)
+        {
+            RequestedTargets.Add(request.SearchTarget);
+            await Task.Yield();
+            yield return new Hit(@"C:\results\shared.txt", 1, "needle", Array.Empty<MatchSpan>());
+            yield return new Hit(
+                $@"C:\results\{request.SearchTarget}.txt",
+                1,
+                "needle",
+                Array.Empty<MatchSpan>());
         }
     }
 
