@@ -54,7 +54,7 @@ jobs:
         run: dotnet build .\${{ env.SOLUTION }} --configuration Debug --no-restore
 
       - name: Test (Debug, with coverage)
-        run: dotnet test .\${{ env.SOLUTION }} --configuration Debug --no-build --logger trx --results-directory TestResults --collect:"XPlat Code Coverage"
+        run: dotnet test --solution .\${{ env.SOLUTION }} --configuration Debug --no-build --results-directory TestResults --report-trx --coverage --coverage-output-format cobertura
 
       # Release runs with different JIT/optimization behavior; test it too so
       # a Release-only failure can't reach the publish step unnoticed.
@@ -62,7 +62,7 @@ jobs:
         run: dotnet build .\${{ env.SOLUTION }} --configuration Release --no-restore
 
       - name: Test (Release)
-        run: dotnet test .\${{ env.SOLUTION }} --configuration Release --no-build --logger trx --results-directory TestResults
+        run: dotnet test --solution .\${{ env.SOLUTION }} --configuration Release --no-build --results-directory TestResults --report-trx
 
       - name: CLI smoke test
         shell: pwsh
@@ -144,7 +144,7 @@ jobs:
           name: test-results
           path: |
             TestResults/**/*.trx
-            TestResults/**/coverage.cobertura.xml
+            TestResults/**/*.cobertura.xml
           if-no-files-found: ignore
           retention-days: 14
 

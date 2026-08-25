@@ -1265,21 +1265,28 @@ public sealed class FileIndexTests : IDisposable
         await BuildAsync();
 
         const long largeTickValue = 639219823516075047;
-        await using var db = await Database.OpenAsync(_dbPath, TestContext.Current.CancellationToken);
-        await db.ExecuteAsync($"UPDATE index_roots SET indexed_utc_ticks = {largeTickValue}", TestContext.Current.CancellationToken);
-        await db.ExecuteAsync($"UPDATE index_volumes SET last_checked_utc_ticks = {largeTickValue}", TestContext.Current.CancellationToken);
-        await db.ExecuteAsync($"UPDATE files SET created_utc_ticks = {largeTickValue}", TestContext.Current.CancellationToken);
-
-        await AssertAnyRowMatchesAsync("index_roots", "indexed_utc_ticks");
-        await AssertAnyRowMatchesAsync("files", "created_utc_ticks");
-
-        async Task AssertAnyRowMatchesAsync(string table, string column)
+        var db = await Database.OpenAsync(_dbPath, TestContext.Current.CancellationToken);
+        try
         {
-            await using var result = await db.ExecuteAsync(
-                $"SELECT COUNT(*) FROM {table} WHERE {column} = {largeTickValue}",
-                TestContext.Current.CancellationToken);
-            Assert.True(await result.MoveNextAsync(TestContext.Current.CancellationToken));
-            Assert.True(result.Current[0].AsInteger > 0);
+            await db.ExecuteAsync($"UPDATE index_roots SET indexed_utc_ticks = {largeTickValue}", TestContext.Current.CancellationToken);
+            await db.ExecuteAsync($"UPDATE index_volumes SET last_checked_utc_ticks = {largeTickValue}", TestContext.Current.CancellationToken);
+            await db.ExecuteAsync($"UPDATE files SET created_utc_ticks = {largeTickValue}", TestContext.Current.CancellationToken);
+
+            await AssertAnyRowMatchesAsync("index_roots", "indexed_utc_ticks");
+            await AssertAnyRowMatchesAsync("files", "created_utc_ticks");
+
+            async Task AssertAnyRowMatchesAsync(string table, string column)
+            {
+                await using var result = await db.ExecuteAsync(
+                    $"SELECT COUNT(*) FROM {table} WHERE {column} = {largeTickValue}",
+                    TestContext.Current.CancellationToken);
+                Assert.True(await result.MoveNextAsync(TestContext.Current.CancellationToken));
+                Assert.True(result.Current[0].AsInteger > 0);
+            }
+        }
+        finally
+        {
+            await SafeDisposeAsync(db);
         }
     }
 
