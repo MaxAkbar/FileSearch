@@ -103,7 +103,7 @@ jobs:
         run: dotnet build .\${{ env.SOLUTION }} --configuration Release --no-restore
 
       - name: Test Release
-        run: dotnet test .\${{ env.SOLUTION }} --configuration Release --no-build --logger trx --results-directory TestResults
+        run: dotnet test --solution .\${{ env.SOLUTION }} --configuration Release --no-build --results-directory TestResults --report-trx
 
       - name: CLI smoke test
         shell: pwsh
@@ -153,6 +153,7 @@ jobs:
         env:
           STORE_PACKAGE_IDENTITY_NAME: ${{ vars.STORE_PACKAGE_IDENTITY_NAME }}
           STORE_PUBLISHER: ${{ vars.STORE_PUBLISHER }}
+          STORE_DISPLAY_NAME: ${{ vars.STORE_DISPLAY_NAME }}
           STORE_PUBLISHER_DISPLAY_NAME: ${{ vars.STORE_PUBLISHER_DISPLAY_NAME }}
           WINDOWS_SIGNING_PFX_BASE64: ${{ secrets.WINDOWS_SIGNING_PFX_BASE64 }}
           WINDOWS_SIGNING_PFX_PASSWORD: ${{ secrets.WINDOWS_SIGNING_PFX_PASSWORD }}
