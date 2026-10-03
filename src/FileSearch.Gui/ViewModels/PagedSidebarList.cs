@@ -78,6 +78,11 @@ public sealed class PagedSidebarList<T> : ObservableObject
 
     public bool HasItems => Items.Count > 0;
 
+    /// <summary>The source itself is empty (not merely filtered to nothing): show the empty state.</summary>
+    public bool IsEmpty => _filteredItemCount == 0 && !HasSearchText;
+
+    public bool HasContent => !IsEmpty;
+
     public bool IsPagerVisible => _filteredItemCount > _pageSize;
 
     public bool IsFooterVisible => IsPagerVisible || HasSearchText || _filteredItemCount == 0;
@@ -147,6 +152,8 @@ public sealed class PagedSidebarList<T> : ObservableObject
     {
         OnPropertyChanged(nameof(HasSearchText));
         OnPropertyChanged(nameof(HasItems));
+        OnPropertyChanged(nameof(IsEmpty));
+        OnPropertyChanged(nameof(HasContent));
         OnPropertyChanged(nameof(IsPagerVisible));
         OnPropertyChanged(nameof(IsFooterVisible));
         OnPropertyChanged(nameof(Count));

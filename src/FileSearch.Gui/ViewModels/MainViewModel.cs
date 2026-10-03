@@ -97,6 +97,13 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
         }
     }
 
+    /// <summary>Title-bar button: sidebar ⇄ icon rail.</summary>
+    [RelayCommand]
+    private void ToggleSidebar() => Settings.IsSidebarCollapsed = !Settings.IsSidebarCollapsed;
+
+    [RelayCommand]
+    private void ExpandSidebar() => Settings.IsSidebarCollapsed = false;
+
     [RelayCommand]
     private void InstallWindowsIntegration()
     {

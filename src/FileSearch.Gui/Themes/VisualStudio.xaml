@@ -127,4 +127,9 @@
     <Color           x:Key="SystemAccentColor">#FF007ACC</Color>
     <SolidColorBrush x:Key="SystemAccentColorBrush" Color="{StaticResource VsAccentColor}"/>
 
+    <!-- The soft (tinted) type badge is tuned for light surfaces; dark
+         themes use the neutral mono chip instead. -->
+    <Visibility x:Key="AppStyle.TypeBadgeColoredVisibility">Collapsed</Visibility>
+    <Visibility x:Key="AppStyle.TypeBadgeNeutralVisibility">Visible</Visibility>
+
 </ResourceDictionary>

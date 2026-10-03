@@ -67,6 +67,11 @@ public sealed partial class HistoryViewModel : ObservableObject
             MatchesWorkspace,
             "workspaces",
             _applicationSettings.SidebarPageSize);
+        LocationList = new PagedSidebarList<string>(
+            Locations,
+            MatchesText,
+            "locations",
+            _applicationSettings.SidebarPageSize);
 
         var saved = _settingsService.Current;
         foreach (var search in saved.SavedSearches.Select(NormalizeSavedSearch).Where(IsUsableSavedSearch))
@@ -77,6 +82,8 @@ public sealed partial class HistoryViewModel : ObservableObject
 
         foreach (var query in saved.RecentQueries) RecentQueries.Add(query);
         foreach (var path in saved.RecentPaths) RecentPaths.Add(path);
+        foreach (var location in saved.Locations.Where(location => !string.IsNullOrWhiteSpace(location)))
+            Locations.Add(location.Trim());
         foreach (var favorite in saved.FavoriteResults.Select(NormalizeFavorite).Where(IsUsableFavorite))
             FavoriteResults.Add(favorite);
         foreach (var workspace in saved.Workspaces.Select(NormalizeWorkspace).Where(IsUsableWorkspace))
@@ -99,6 +106,7 @@ public sealed partial class HistoryViewModel : ObservableObject
         };
         RecentQueries.CollectionChanged += (_, _) => ClearRecentQueriesCommand.NotifyCanExecuteChanged();
         RecentPaths.CollectionChanged += (_, _) => ClearRecentPathsCommand.NotifyCanExecuteChanged();
+        Locations.CollectionChanged += (_, _) => ClearLocationsCommand.NotifyCanExecuteChanged();
         CustomScopes.CollectionChanged += (_, _) =>
         {
             ClearCustomScopesCommand.NotifyCanExecuteChanged();
@@ -117,6 +125,26 @@ public sealed partial class HistoryViewModel : ObservableObject
     public PagedSidebarList<FavoriteResultSettings> FavoriteResultList { get; }
 
     public PagedSidebarList<WorkspaceSettings> WorkspaceList { get; }
+
+    public PagedSidebarList<string> LocationList { get; }
+
+    /// <summary>Every file-type scope (built-ins, then custom), unpaged, for the search bar's type menu.</summary>
+    public IReadOnlyList<SidebarScopeItem> ScopeItems => _scopeItems;
+
+    /// <summary>Label of the search bar's file-type button: the active scope, else the raw pattern.</summary>
+    public string ActiveScopeText
+    {
+        get
+        {
+            var active = _scopeItems.FirstOrDefault(scope => scope.IsActive);
+            if (active is not null)
+                return string.IsNullOrWhiteSpace(active.FileNamePattern) ? "All file types" : active.Name;
+            return string.IsNullOrWhiteSpace(_activeScopePattern) ? "All file types" : _activeScopePattern;
+        }
+    }
+
+    /// <summary>Pinned folders ("Locations" in the sidebar), in the order they were added.</summary>
+    public ObservableCollection<string> Locations { get; } = new();
 
     public ObservableCollection<SavedSearchSettings> SavedSearches { get; } = new();
 
@@ -141,6 +169,21 @@ public sealed partial class HistoryViewModel : ObservableObject
                 NormalizeScopePattern(scope.FileNamePattern),
                 normalized,
                 StringComparison.OrdinalIgnoreCase);
+        OnPropertyChanged(nameof(ActiveScopeText));
+    }
+
+    /// <summary>Pins <paramref name="path"/> to Locations (no-op when already pinned).</summary>
+    public void AddLocation(string path)
+    {
+        if (string.IsNullOrWhiteSpace(path))
+            return;
+
+        var trimmed = path.Trim();
+        if (Locations.Any(location => string.Equals(location, trimmed, StringComparison.OrdinalIgnoreCase)))
+            return;
+
+        Locations.Add(trimmed);
+        SaveHistory();
     }
 
     /// <summary>Promotes the attempt into saved searches, both legacy lists, and persists.</summary>
@@ -539,6 +582,22 @@ public sealed partial class HistoryViewModel : ObservableObject
     private bool CanClearRecentPaths() => RecentPaths.Count > 0;
 
     [RelayCommand]
+    private void RemoveLocation(string? path)
+    {
+        SearchHistory.Remove(Locations, path);
+        SaveHistory();
+    }
+
+    [RelayCommand(CanExecute = nameof(CanClearLocations))]
+    private void ClearLocations()
+    {
+        Locations.Clear();
+        SaveHistory();
+    }
+
+    private bool CanClearLocations() => Locations.Count > 0;
+
+    [RelayCommand]
     private void RemoveRecentQuery(string? query)
     {
         SearchHistory.Remove(RecentQueries, query);
@@ -568,6 +627,7 @@ public sealed partial class HistoryViewModel : ObservableObject
         {
             settings.RecentQueries = RecentQueries.ToList();
             settings.RecentPaths = RecentPaths.ToList();
+            settings.Locations = Locations.ToList();
             settings.SavedSearches = SavedSearches
                 .Select(NormalizeSavedSearch)
                 .Where(IsUsableSavedSearch)
@@ -758,6 +818,7 @@ public sealed partial class HistoryViewModel : ObservableObject
         SavedSearchList.PageSize = _applicationSettings.SidebarPageSize;
         FavoriteResultList.PageSize = _applicationSettings.SidebarPageSize;
         WorkspaceList.PageSize = _applicationSettings.SidebarPageSize;
+        LocationList.PageSize = _applicationSettings.SidebarPageSize;
     }
 
     private static SavedSearchSettings NormalizeSavedSearch(SavedSearchSettings search)

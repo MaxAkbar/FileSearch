@@ -81,12 +81,14 @@
 
             <h2>Search Controls</h2>
             <ul class="plain-list">
-                <li><strong>Start</strong> runs the search. Pressing <kbd>Enter</kbd> in the Containing text field also starts it.</li>
-                <li><strong>Cancel</strong> stops the current search and keeps any results already found.</li>
-                <li>The status bar shows current progress, skipped files, failed files, total hits, and elapsed time.</li>
+                <li>The search bar reads left to right: the <strong>folder</strong> to search (click the folder icon to browse, type a path, or open the arrow for your locations and recent folders), the <strong>search box</strong>, the <strong>file types</strong> menu, and <strong>Search</strong>.</li>
+                <li><strong>Search</strong> runs the search. Pressing <kbd>Enter</kbd> in the search box also starts it. While a search runs the button becomes <strong>Stop</strong>, which keeps any results already found.</li>
+                <li><strong>Aa</strong> in the search box turns on match case; <strong>.*</strong> switches to regular-expression matching. The other modes (Unified, Boolean, PlainText) are under the search options button at the far right, together with what to search (contents, file names, folder names), subfolders, Office/PDF text, image OCR, the index, and size/date limits.</li>
+                <li>The status bar shows the current status, elapsed time, and whether the folder you are searching is indexed, with <strong>Add to index</strong> when it is not.</li>
             </ul>
 
             <h2>File Name Patterns</h2>
+            <p>The <strong>file types</strong> menu in the search bar holds one-click patterns: all file types, source and config, documents, PDFs, and your own named scopes (<strong>New file-type scope…</strong>). Choosing one fills the include pattern, which you can also edit under <strong>Filters &gt; Name</strong>.</p>
             <p>Patterns are filters, not the search text. They are matched against file names, not the full folder path. Use semicolons or commas to separate multiple patterns.</p>
             <pre><code>*.cs
 *.cs;*.xaml;*.json
@@ -107,7 +109,7 @@
             </ul>
 
             <h2>The Sidebar</h2>
-            <p>The sidebar on the left keeps frequently used scopes, folders, and searches one click away. Each section has its own search box, shows page controls when there are many matches, collapses independently, and the panel scrolls as a whole when the expanded sections are taller than the window.</p>
+            <p>The sidebar on the left keeps frequently used folders and searches one click away. Each section is a card with its own filter box, page controls, and <strong>Clear all</strong>; sections collapse independently and the panel scrolls as a whole. The button at the far left of the title bar (or <strong>View &gt; Sidebar</strong>) collapses the sidebar to an icon rail; click any rail icon to reopen it on that section.</p>
             <div class="table-wrap">
                 <table>
                     <thead>
@@ -118,12 +120,20 @@
                     </thead>
                     <tbody>
                         <tr>
-                            <td><strong>Scopes</strong></td>
-                            <td>One-click file name patterns. Presets cover all files, source and config, documents, and PDFs. <strong>New scope</strong> saves your own named pattern, such as <code>*.cs;*.xaml;*.md</code>; clicking a scope fills <strong>File name pattern</strong>.</td>
+                            <td><strong>Locations</strong></td>
+                            <td>Folders you pinned. Click one to search there; <strong>+</strong> adds a folder, and <strong>Pin this folder to locations</strong> in the folder menu pins the current one. The X on a row unpins it.</td>
                         </tr>
                         <tr>
                             <td><strong>Recent folders</strong></td>
-                            <td>Folders you searched recently. Click one to set <strong>Look in</strong>. The X on a row removes that entry.</td>
+                            <td>Folders you searched recently. Click one to search there again. The X on a row removes that entry.</td>
+                        </tr>
+                        <tr>
+                            <td><strong>Favorites</strong></td>
+                            <td>Files you starred from the results. Click one to open it.</td>
+                        </tr>
+                        <tr>
+                            <td><strong>Workspaces</strong></td>
+                            <td>Saved setups (search, scopes, favorites, pins, and result view). <strong>+</strong> saves the current workspace; the header buttons import and export workspace files.</td>
                         </tr>
                         <tr>
                             <td><strong>Indexed locations</strong></td>
@@ -131,7 +141,7 @@
                         </tr>
                         <tr>
                             <td><strong>Saved searches</strong></td>
-                            <td>Your most recent full searches. Click one to restore the query, folder, patterns, search mode, and filters.</td>
+                            <td>Your most recent full searches. Click one to restore the query, folder, patterns, search mode, and filters. <strong>+</strong> saves the current search without running it.</td>
                         </tr>
                     </tbody>
                 </table>

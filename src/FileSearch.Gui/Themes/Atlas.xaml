@@ -17,79 +17,79 @@
     -->
 
     <!-- Window / page background -->
-    <SolidColorBrush x:Key="ApplicationPageBackgroundThemeBrush" Color="#F4F1EA"/>
+    <SolidColorBrush x:Key="ApplicationPageBackgroundThemeBrush" Color="#F1EEE7"/>
 
     <!-- Card / panel surfaces -->
-    <SolidColorBrush x:Key="SystemControlBackgroundChromeMediumLowBrush" Color="#FFFDF8"/>
-    <SolidColorBrush x:Key="SystemControlBackgroundChromeMediumBrush"    Color="#FFFDF8"/>
-    <SolidColorBrush x:Key="SystemControlBackgroundChromeHighBrush"      Color="#FFFDF8"/>
-    <SolidColorBrush x:Key="SystemControlBackgroundAltMediumLowBrush"    Color="#FFFDF8"/>
-    <SolidColorBrush x:Key="SystemControlBackgroundAltMediumBrush"       Color="#FAF7F0"/>
-    <SolidColorBrush x:Key="SystemControlBackgroundAltHighBrush"         Color="#FFFDF8"/>
+    <SolidColorBrush x:Key="SystemControlBackgroundChromeMediumLowBrush" Color="#FFFFFF"/>
+    <SolidColorBrush x:Key="SystemControlBackgroundChromeMediumBrush"    Color="#FFFFFF"/>
+    <SolidColorBrush x:Key="SystemControlBackgroundChromeHighBrush"      Color="#FFFFFF"/>
+    <SolidColorBrush x:Key="SystemControlBackgroundAltMediumLowBrush"    Color="#FFFFFF"/>
+    <SolidColorBrush x:Key="SystemControlBackgroundAltMediumBrush"       Color="#FAF8F3"/>
+    <SolidColorBrush x:Key="SystemControlBackgroundAltHighBrush"         Color="#FFFFFF"/>
 
     <!-- List rows / hover -->
-    <SolidColorBrush x:Key="SystemControlBackgroundListLowBrush"    Color="#FAF7F0"/>
+    <SolidColorBrush x:Key="SystemControlBackgroundListLowBrush"    Color="#FAF8F3"/>
     <SolidColorBrush x:Key="SystemControlBackgroundListMediumBrush" Color="#11000000"/>
 
     <!-- ===== Our surfaces (Atlas.*) — light token set, mirrors AppStyles.xaml ===== -->
-    <Color x:Key="Atlas.AccentColor">#2F7D57</Color>
-    <Color x:Key="Atlas.Accent2Color">#37926A</Color>
-    <Color x:Key="Atlas.PaperColor">#F4F1EA</Color>
-    <Color x:Key="Atlas.SurfaceColor">#FFFDF8</Color>
-    <Color x:Key="Atlas.Surface2Color">#FAF7F0</Color>
-    <Color x:Key="Atlas.SidebarColor">#EDE8DF</Color>
-    <Color x:Key="Atlas.InkColor">#23261F</Color>
-    <Color x:Key="Atlas.Ink2Color">#5B5F54</Color>
-    <Color x:Key="Atlas.Ink3Color">#8E9286</Color>
-    <Color x:Key="Atlas.LineColor">#17000000</Color>
-    <Color x:Key="Atlas.Line2Color">#29000000</Color>
-    <Color x:Key="Atlas.HoverColor">#0A23261F</Color>
-    <Color x:Key="Atlas.SelColor">#1F2F7D57</Color>
-    <Color x:Key="Atlas.AccentTintColor">#1A2F7D57</Color>
-    <Color x:Key="Atlas.AccentSoftColor">#0F2F7D57</Color>
+    <Color x:Key="Atlas.AccentColor">#1E7A46</Color>
+    <Color x:Key="Atlas.Accent2Color">#155C34</Color>
+    <Color x:Key="Atlas.PaperColor">#F1EEE7</Color>
+    <Color x:Key="Atlas.SurfaceColor">#FFFFFF</Color>
+    <Color x:Key="Atlas.Surface2Color">#FAF8F3</Color>
+    <Color x:Key="Atlas.SidebarColor">#F1EEE7</Color>
+    <Color x:Key="Atlas.InkColor">#1F1D1A</Color>
+    <Color x:Key="Atlas.Ink2Color">#58534A</Color>
+    <Color x:Key="Atlas.Ink3Color">#696459</Color>
+    <Color x:Key="Atlas.LineColor">#DDD8CC</Color>
+    <Color x:Key="Atlas.Line2Color">#B8B1A3</Color>
+    <Color x:Key="Atlas.HoverColor">#0D1F1D1A</Color>
+    <Color x:Key="Atlas.SelColor">#141E7A46</Color>
+    <Color x:Key="Atlas.AccentTintColor">#1F1E7A46</Color>
+    <Color x:Key="Atlas.AccentSoftColor">#141E7A46</Color>
     <Color x:Key="Atlas.OnAccentColor">#FFFFFF</Color>
-    <Color x:Key="Atlas.WarmColor">#C4722E</Color>
-    <Color x:Key="Atlas.WarmTintColor">#1FC4722E</Color>
-    <Color x:Key="Atlas.HitColor">#8CFFCE54</Color>
-    <Color x:Key="Atlas.HitInkColor">#23261F</Color>
-    <Color x:Key="Atlas.Surface3Color">#F1EDE4</Color>
-    <Color x:Key="Atlas.OkColor">#2E9E6B</Color>
-    <Color x:Key="Atlas.AccentBorderColor">#6B2F7D57</Color>
-    <SolidColorBrush x:Key="AppStyle.OmniBarBackground" Color="#FFFDF8"/>
-    <SolidColorBrush x:Key="AppStyle.FilterChipBackground" Color="#FFFDF8"/>
-    <SolidColorBrush x:Key="AppStyle.ThemeMiniButtonSelectedBackground" Color="#1A2F7D57"/>
-    <SolidColorBrush x:Key="AppStyle.ThemeMiniButtonSelectedBorderBrush" Color="#2F7D57"/>
-    <SolidColorBrush x:Key="AppStyle.ThemeMiniButtonSelectedForeground" Color="#2F7D57"/>
-    <SolidColorBrush x:Key="AppStyle.QueryChipBackground" Color="#FAF7F0"/>
-    <SolidColorBrush x:Key="AppStyle.NavSectionBackground" Color="#FFFDF8"/>
-    <SolidColorBrush x:Key="AppStyle.NavSectionHeaderBackground" Color="#FAF7F0"/>
-    <SolidColorBrush x:Key="AppStyle.NavSectionHeaderBorderBrush" Color="#17000000"/>
-    <SolidColorBrush x:Key="AppStyle.PreviewImageBackground" Color="#FAF7F0"/>
+    <Color x:Key="Atlas.WarmColor">#B86A25</Color>
+    <Color x:Key="Atlas.WarmTintColor">#1FB86A25</Color>
+    <Color x:Key="Atlas.HitColor">#F9D66B</Color>
+    <Color x:Key="Atlas.HitInkColor">#1F1D1A</Color>
+    <Color x:Key="Atlas.Surface3Color">#F1EEE7</Color>
+    <Color x:Key="Atlas.OkColor">#1E7A46</Color>
+    <Color x:Key="Atlas.AccentBorderColor">#991E7A46</Color>
+    <SolidColorBrush x:Key="AppStyle.OmniBarBackground" Color="#FFFFFF"/>
+    <SolidColorBrush x:Key="AppStyle.FilterChipBackground" Color="#FFFFFF"/>
+    <SolidColorBrush x:Key="AppStyle.ThemeMiniButtonSelectedBackground" Color="#141E7A46"/>
+    <SolidColorBrush x:Key="AppStyle.ThemeMiniButtonSelectedBorderBrush" Color="#1E7A46"/>
+    <SolidColorBrush x:Key="AppStyle.ThemeMiniButtonSelectedForeground" Color="#155C34"/>
+    <SolidColorBrush x:Key="AppStyle.QueryChipBackground" Color="#FAF8F3"/>
+    <SolidColorBrush x:Key="AppStyle.NavSectionBackground" Color="#FAF8F3"/>
+    <SolidColorBrush x:Key="AppStyle.NavSectionHeaderBackground" Color="#FAF8F3"/>
+    <SolidColorBrush x:Key="AppStyle.NavSectionHeaderBorderBrush" Color="#00000000"/>
+    <SolidColorBrush x:Key="AppStyle.PreviewImageBackground" Color="#FAF8F3"/>
     <CornerRadius x:Key="AppStyle.CommandButtonCornerRadius">9</CornerRadius>
-    <SolidColorBrush x:Key="AppStyle.SecondaryButtonBackground" Color="#FFFDF8"/>
-    <SolidColorBrush x:Key="AppStyle.SecondaryButtonBorderBrush" Color="#29000000"/>
-    <SolidColorBrush x:Key="AppStyle.SecondaryButtonHoverBackground" Color="#FAF7F0"/>
-    <SolidColorBrush x:Key="AppStyle.SecondaryButtonHoverBorderBrush" Color="#2F7D57"/>
-    <SolidColorBrush x:Key="AppStyle.SecondaryButtonHoverForeground" Color="#23261F"/>
-    <SolidColorBrush x:Key="AppStyle.IconButtonHoverBackground" Color="#0A23261F"/>
-    <SolidColorBrush x:Key="AppStyle.IconButtonHoverForeground" Color="#23261F"/>
-    <SolidColorBrush x:Key="AppStyle.PreviewCodeBackground" Color="#FFFDF8"/>
-    <SolidColorBrush x:Key="SystemControlBackgroundAccentBrush"       Color="#2F7D57"/>
-    <SolidColorBrush x:Key="SystemControlHighlightAccentBrush"        Color="#2F7D57"/>
-    <SolidColorBrush x:Key="SystemControlHighlightAltAccentBrush"     Color="#37926A"/>
-    <SolidColorBrush x:Key="SystemControlHighlightListAccentLowBrush"    Color="#1F2F7D57"/>
-    <SolidColorBrush x:Key="SystemControlHighlightListAccentMediumBrush" Color="#332F7D57"/>
+    <SolidColorBrush x:Key="AppStyle.SecondaryButtonBackground" Color="#FFFFFF"/>
+    <SolidColorBrush x:Key="AppStyle.SecondaryButtonBorderBrush" Color="#CFC9BC"/>
+    <SolidColorBrush x:Key="AppStyle.SecondaryButtonHoverBackground" Color="#FAF8F3"/>
+    <SolidColorBrush x:Key="AppStyle.SecondaryButtonHoverBorderBrush" Color="#B8B1A3"/>
+    <SolidColorBrush x:Key="AppStyle.SecondaryButtonHoverForeground" Color="#1F1D1A"/>
+    <SolidColorBrush x:Key="AppStyle.IconButtonHoverBackground" Color="#121F1D1A"/>
+    <SolidColorBrush x:Key="AppStyle.IconButtonHoverForeground" Color="#1F1D1A"/>
+    <SolidColorBrush x:Key="AppStyle.PreviewCodeBackground" Color="#FFFFFF"/>
+    <SolidColorBrush x:Key="SystemControlBackgroundAccentBrush"       Color="#1E7A46"/>
+    <SolidColorBrush x:Key="SystemControlHighlightAccentBrush"        Color="#1E7A46"/>
+    <SolidColorBrush x:Key="SystemControlHighlightAltAccentBrush"     Color="#155C34"/>
+    <SolidColorBrush x:Key="SystemControlHighlightListAccentLowBrush"    Color="#1F1E7A46"/>
+    <SolidColorBrush x:Key="SystemControlHighlightListAccentMediumBrush" Color="#331E7A46"/>
 
     <!-- Text -->
-    <SolidColorBrush x:Key="SystemControlForegroundBaseHighBrush"       Color="#23261F"/>
-    <SolidColorBrush x:Key="SystemControlForegroundBaseMediumHighBrush" Color="#3F4339"/>
-    <SolidColorBrush x:Key="SystemControlForegroundBaseMediumBrush"     Color="#8E9286"/>
+    <SolidColorBrush x:Key="SystemControlForegroundBaseHighBrush"       Color="#1F1D1A"/>
+    <SolidColorBrush x:Key="SystemControlForegroundBaseMediumHighBrush" Color="#3F3B34"/>
+    <SolidColorBrush x:Key="SystemControlForegroundBaseMediumBrush"     Color="#696459"/>
     <SolidColorBrush x:Key="SystemControlForegroundBaseLowBrush"        Color="#29000000"/>
     <SolidColorBrush x:Key="SystemControlForegroundChromeWhiteBrush"    Color="#FFFFFF"/>
-    <SolidColorBrush x:Key="SystemControlForegroundChromeHighBrush"     Color="#23261F"/>
+    <SolidColorBrush x:Key="SystemControlForegroundChromeHighBrush"     Color="#1F1D1A"/>
 
     <!-- Accent color resources (some ModernWpf controls bind these directly) -->
-    <Color           x:Key="SystemAccentColor">#2F7D57</Color>
-    <SolidColorBrush x:Key="SystemAccentColorBrush" Color="#2F7D57"/>
+    <Color           x:Key="SystemAccentColor">#1E7A46</Color>
+    <SolidColorBrush x:Key="SystemAccentColorBrush" Color="#1E7A46"/>
 
 </ResourceDictionary>

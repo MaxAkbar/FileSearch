@@ -56,6 +56,7 @@ public sealed class BindingPathAuditTests
         typeof(ResultFacetOption),
         typeof(ResultSortOption),
         typeof(ResultGroupOption),
+        typeof(PreviewLineViewModel),
         typeof(System.Windows.Data.CollectionViewGroup),
     };
 

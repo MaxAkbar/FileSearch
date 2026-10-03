@@ -53,6 +53,11 @@ public sealed partial class SearchTargetOption : ObservableObject
 public sealed partial class SearchViewModel : ObservableObject, IDisposable
 {
     private const int HitsTabIndex = 1;
+
+    /// <summary>Context radius for "Show whole file": large enough for nearly any
+    /// source file, bounded so a huge log can't flood the preview.</summary>
+    private const int WholeFileContextLines = 20_000;
+
     public const double MinimumPreviewPaneWidth = 300;
     public const double MaximumPreviewPaneWidth = 720;
 
@@ -123,7 +128,7 @@ public sealed partial class SearchViewModel : ObservableObject, IDisposable
         _history.FavoriteResults.CollectionChanged += OnFavoriteResultsChanged;
 
         SelectedSortOption = ResultSortOptions[0];
-        SelectedGroupOption = ResultGroupOptions[0];
+        SelectedGroupOption = ResultGroupOptions.First(option => option.Value == ResultGroupMode.Folder);
         foreach (var option in SearchTargetOptions)
             option.PropertyChanged += OnSearchTargetOptionPropertyChanged;
         SearchTargetOptions[0].IsSelected = true;
@@ -265,7 +270,7 @@ public sealed partial class SearchViewModel : ObservableObject, IDisposable
     [ObservableProperty] private bool _isResultSortAndGroupVisible;
     [ObservableProperty] private bool _isCompactResultLayout;
     [ObservableProperty] private string _folderFacetFilterText = string.Empty;
-    [ObservableProperty] private double _previewPaneWidth = 360;
+    [ObservableProperty] private double _previewPaneWidth = 468;
     [ObservableProperty] private int _selectedDetailsTabIndex;
     [ObservableProperty] private ResultSortOption? _selectedSortOption;
     [ObservableProperty] private ResultGroupOption? _selectedGroupOption;
@@ -274,6 +279,14 @@ public sealed partial class SearchViewModel : ObservableObject, IDisposable
     [ObservableProperty] private ResultFacetOption? _selectedModifiedFacet;
     [ObservableProperty] private ResultFacetOption? _selectedSourceFacet;
     [ObservableProperty] private ResultFacetOption? _selectedSizeFacet;
+
+    // --- preview code view (parsed rows + match navigator) ---
+    [ObservableProperty] private IReadOnlyList<PreviewLineViewModel> _previewLines = Array.Empty<PreviewLineViewModel>();
+    [ObservableProperty] private PreviewLineViewModel? _currentPreviewLine;
+    [ObservableProperty] private bool _isPreviewWrapEnabled = true;
+    [ObservableProperty] private bool _isWholeFilePreview;
+    private PreviewLineViewModel[] _previewMatchLines = Array.Empty<PreviewLineViewModel>();
+    private PreviewLineViewModel? _markedPreviewLine;
 
     // --- in-memory filter over the results ("search the search") ---
     [ObservableProperty] private string _refinementQuery = string.Empty;
@@ -423,6 +436,99 @@ public sealed partial class SearchViewModel : ObservableObject, IDisposable
 
     public string ResultsSummaryText => $"{FilesMatched:n0} {ResultItemNounPlural} · {TotalHits:n0} hits";
 
+    /// <summary>Large results heading ("1,057 matches"); the query context until results arrive.</summary>
+    public string ResultsHeadlineText =>
+        FilesMatched == 0
+            ? ResultsContextText
+            : IsContentSearch
+                ? $"{TotalHits:n0} {(TotalHits == 1 ? "match" : "matches")}"
+                : $"{FilesMatched:n0} {(FilesMatched == 1 ? "item" : "items")}";
+
+    /// <summary>Muted line beside the heading ("in 199 files").</summary>
+    public string ResultsSublineText =>
+        FilesMatched == 0 || !IsContentSearch
+            ? string.Empty
+            : $"in {FilesMatched:n0} {(FilesMatched == 1 ? "file" : "files")}";
+
+    /// <summary>The ".*" toggle in the query box. Off returns to structured (Unified) matching.</summary>
+    public bool IsRegexMode
+    {
+        get => SearchMode == QueryMode.Regex;
+        set
+        {
+            if (value)
+                SearchMode = QueryMode.Regex;
+            else if (SearchMode == QueryMode.Regex)
+                SearchMode = QueryMode.Unified;
+        }
+    }
+
+    /// <summary>Current grouping as shown on the View button ("By folder").</summary>
+    public string ResultViewButtonText => (SelectedGroupOption?.Value ?? ResultGroupMode.File) switch
+    {
+        ResultGroupMode.Folder => "By folder",
+        ResultGroupMode.FileType => "By type",
+        ResultGroupMode.ModifiedDate => "By date",
+        ResultGroupMode.Source => "By source",
+        _ => "Flat list",
+    };
+
+    /// <summary>Folder headers already name the folder, so cards hide their path line.</summary>
+    public bool IsGroupedByFolder => SelectedGroupOption?.Value == ResultGroupMode.Folder;
+
+    public bool HasPreviewLines => PreviewLines.Count > 0;
+
+    public int PreviewMatchCount => _previewMatchLines.Length;
+
+    public bool HasPreviewMatches => _previewMatchLines.Length > 0;
+
+    /// <summary>Navigator label in the preview pane ("Match 1 of 2").</summary>
+    public string PreviewMatchPositionText
+    {
+        get
+        {
+            if (_previewMatchLines.Length == 0)
+                return HasPreviewLines ? "No line matches" : string.Empty;
+
+            var index = CurrentPreviewLine is null ? -1 : IndexOfPreviewMatch(CurrentPreviewLine);
+            return index < 0
+                ? $"{_previewMatchLines.Length:n0} {(_previewMatchLines.Length == 1 ? "match" : "matches")}"
+                : $"Match {index + 1:n0} of {_previewMatchLines.Length:n0}";
+        }
+    }
+
+    public string PreviewCurrentLineText =>
+        CurrentPreviewLine?.LineNumber is { } line ? $"Line {line:n0}" : string.Empty;
+
+    /// <summary>Footer of the code view ("Showing lines 43–59").</summary>
+    public string PreviewRangeText
+    {
+        get
+        {
+            int? first = null;
+            int? last = null;
+            foreach (var line in PreviewLines)
+            {
+                if (line.LineNumber is not { } number)
+                    continue;
+                first ??= number;
+                last = number;
+            }
+
+            return first is null
+                ? string.Empty
+                : first == last
+                    ? $"Showing line {first:n0}"
+                    : $"Showing lines {first:n0}–{last:n0}";
+        }
+    }
+
+    public string WholeFileToggleText => IsWholeFilePreview ? "Show matches only" : "Show whole file";
+
+    /// <summary>Primary preview action ("Open at line 46").</summary>
+    public string OpenPreviewTargetText =>
+        CurrentPreviewLine?.LineNumber is { } line ? $"Open at line {line:n0}" : "Open";
+
     public IReadOnlyList<ResultFacetChip> ActiveResultFacetChips => BuildActiveResultFacetChips();
 
     public bool HasActiveResultFacets => ActiveResultFacetChips.Count > 0;
@@ -570,6 +676,9 @@ public sealed partial class SearchViewModel : ObservableObject, IDisposable
         CopyFileContentCommand.NotifyCanExecuteChanged();
         RenameResultCommand.NotifyCanExecuteChanged();
         DeleteResultCommand.NotifyCanExecuteChanged();
+        OpenPreviewTargetCommand.NotifyCanExecuteChanged();
+        ToggleWholeFilePreviewCommand.NotifyCanExecuteChanged();
+        IsWholeFilePreview = false;
         if (value is not null)
             SelectedDetailsTabIndex = HitsTabIndex;
         _ = LoadPreviewAsync(value);
@@ -581,8 +690,55 @@ public sealed partial class SearchViewModel : ObservableObject, IDisposable
     partial void OnSelectedWorkspaceChanged(WorkspaceSettings? value) =>
         _ = ApplyWorkspaceAsync(value);
 
-    partial void OnPreviewContentChanged(string value) =>
+    partial void OnPreviewContentChanged(string value)
+    {
         CopyPreviewCommand.NotifyCanExecuteChanged();
+        RebuildPreviewLines();
+    }
+
+    partial void OnCurrentPreviewLineChanged(PreviewLineViewModel? value)
+    {
+        if (_markedPreviewLine is not null)
+            _markedPreviewLine.IsCurrent = false;
+        _markedPreviewLine = value;
+        if (value is not null)
+            value.IsCurrent = true;
+
+        OnPropertyChanged(nameof(PreviewMatchPositionText));
+        OnPropertyChanged(nameof(PreviewCurrentLineText));
+        OnPropertyChanged(nameof(OpenPreviewTargetText));
+    }
+
+    partial void OnIsWholeFilePreviewChanged(bool value) =>
+        OnPropertyChanged(nameof(WholeFileToggleText));
+
+    private void RebuildPreviewLines()
+    {
+        var lines = PreviewLineViewModel.Parse(PreviewContent, SelectedFile?.Hits);
+        _previewMatchLines = lines.Where(line => line.IsHit).ToArray();
+        _markedPreviewLine = null;
+        PreviewLines = lines;
+        CurrentPreviewLine = _previewMatchLines.Length > 0 ? _previewMatchLines[0] : null;
+
+        OnPropertyChanged(nameof(HasPreviewLines));
+        OnPropertyChanged(nameof(PreviewMatchCount));
+        OnPropertyChanged(nameof(HasPreviewMatches));
+        OnPropertyChanged(nameof(PreviewMatchPositionText));
+        OnPropertyChanged(nameof(PreviewRangeText));
+        PreviousPreviewMatchCommand.NotifyCanExecuteChanged();
+        NextPreviewMatchCommand.NotifyCanExecuteChanged();
+    }
+
+    private int IndexOfPreviewMatch(PreviewLineViewModel line)
+    {
+        for (var i = 0; i < _previewMatchLines.Length; i++)
+        {
+            if (ReferenceEquals(_previewMatchLines[i], line))
+                return i;
+        }
+
+        return -1;
+    }
 
     partial void OnImageOcrPreviewChanged(ImageOcrPreviewViewModel? value) =>
         OnPropertyChanged(nameof(HasImageOcrPreview));
@@ -635,6 +791,8 @@ public sealed partial class SearchViewModel : ObservableObject, IDisposable
     {
         OnPropertyChanged(nameof(HasCustomResultArrangement));
         OnPropertyChanged(nameof(ResultArrangementSummaryText));
+        OnPropertyChanged(nameof(ResultViewButtonText));
+        OnPropertyChanged(nameof(IsGroupedByFolder));
     }
 
     private void RefreshFilteredFolderFacetOptions()
@@ -700,12 +858,96 @@ public sealed partial class SearchViewModel : ObservableObject, IDisposable
         OnPropertyChanged(nameof(QueryPlaceholderText));
         OnPropertyChanged(nameof(ResultsSummaryText));
         OnPropertyChanged(nameof(ResultsContextText));
+        OnPropertyChanged(nameof(ResultsHeadlineText));
+        OnPropertyChanged(nameof(ResultsSublineText));
     }
 
     // ----- commands -----
 
     [RelayCommand]
     private void TogglePreviewPane() => IsPreviewPaneVisible = !IsPreviewPaneVisible;
+
+    [RelayCommand]
+    private void ClearQuery() => QueryText = string.Empty;
+
+    [RelayCommand(CanExecute = nameof(CanStepPreviewMatch))]
+    private void PreviousPreviewMatch() => StepPreviewMatch(-1);
+
+    [RelayCommand(CanExecute = nameof(CanStepPreviewMatch))]
+    private void NextPreviewMatch() => StepPreviewMatch(1);
+
+    private bool CanStepPreviewMatch() => _previewMatchLines.Length > 1;
+
+    private void StepPreviewMatch(int delta)
+    {
+        var count = _previewMatchLines.Length;
+        if (count == 0)
+            return;
+
+        var index = CurrentPreviewLine is null ? -1 : IndexOfPreviewMatch(CurrentPreviewLine);
+        var next = index < 0
+            ? (delta > 0 ? 0 : count - 1)
+            : ((index + delta) % count + count) % count;
+        CurrentPreviewLine = _previewMatchLines[next];
+    }
+
+    [RelayCommand(CanExecute = nameof(CanOpenPreviewTarget))]
+    private Task OpenPreviewTargetAsync() =>
+        SelectedFile is { } file
+            ? file.OpenAtLineAsync(CurrentPreviewLine?.LineNumber)
+            : Task.CompletedTask;
+
+    private bool CanOpenPreviewTarget() => HasSelectedFile;
+
+    [RelayCommand(CanExecute = nameof(CanToggleWholeFilePreview))]
+    private Task ToggleWholeFilePreviewAsync()
+    {
+        IsWholeFilePreview = !IsWholeFilePreview;
+        return LoadPreviewAsync(SelectedFile);
+    }
+
+    private bool CanToggleWholeFilePreview() => SelectedFile is { IsDirectory: false };
+
+    /// <summary>"+" on the Locations section: pin a folder for one-click searching.</summary>
+    [RelayCommand]
+    private void AddLocation()
+    {
+        var folder = _folderPicker.PickFolder("Add a location", SearchPath);
+        if (folder is not null)
+            _history.AddLocation(folder);
+    }
+
+    [RelayCommand]
+    private void UseLocation(string? path)
+    {
+        if (!string.IsNullOrWhiteSpace(path))
+            SearchPath = path;
+    }
+
+    /// <summary>Pins the folder being searched to Locations.</summary>
+    [RelayCommand]
+    private void PinSearchFolder()
+    {
+        if (string.IsNullOrWhiteSpace(SearchPath))
+            return;
+
+        _history.AddLocation(SearchPath);
+        _status.Text = $"Added {SearchPath.Trim()} to locations.";
+    }
+
+    /// <summary>"+" on Saved searches: keep the current query and options without running them.</summary>
+    [RelayCommand]
+    private void SaveCurrentSearch()
+    {
+        if (string.IsNullOrWhiteSpace(QueryText))
+        {
+            _status.Text = "Type a query before saving a search.";
+            return;
+        }
+
+        _history.RecordSearch(CreateSavedSearch());
+        _status.Text = "Saved search.";
+    }
 
     [RelayCommand]
     private void HideSearchOptions() => IsSearchOptionsVisible = false;
@@ -2009,6 +2251,16 @@ public sealed partial class SearchViewModel : ObservableObject, IDisposable
             ImageOcrPreview = await ImageOcrPreviewViewModel
                 .TryCreateAsync(file.FullPath, file.Hits, token)
                 .ConfigureAwait(true);
+            if (IsWholeFilePreview)
+            {
+                var wholeFile = await LoadWholeFilePreviewAsync(file, token).ConfigureAwait(true);
+                if (!token.IsCancellationRequested)
+                    PreviewContent = string.IsNullOrWhiteSpace(wholeFile)
+                        ? file.BuildStoredHitPreview()
+                        : wholeFile;
+                return;
+            }
+
             var storedPreview = file.HasStructuredSnippets
                 ? file.BuildStoredHitPreview()
                 : string.Empty;
@@ -2035,6 +2287,44 @@ public sealed partial class SearchViewModel : ObservableObject, IDisposable
         {
             PreviewContent = $"(failed to load preview: {ex.Message})";
         }
+    }
+
+    /// <summary>
+    /// The numbered listing for "Show whole file": every line around the hits
+    /// (bounded by <see cref="WholeFileContextLines"/>), or — for files whose
+    /// hits carry no line numbers — the extracted text numbered from 1.
+    /// </summary>
+    private async Task<string> LoadWholeFilePreviewAsync(FileResultViewModel file, CancellationToken token)
+    {
+        var hitLines = file.Hits
+            .Where(h => h.Kind == HitKind.Content && h.LineNumber > 0)
+            .Select(h => h.LineNumber)
+            .ToList();
+        if (hitLines.Count > 0)
+        {
+            return await _previewService
+                .LoadHitsPreviewAsync(file.FullPath, hitLines, WholeFileContextLines, token)
+                .ConfigureAwait(true);
+        }
+
+        var text = await _previewService.LoadFullTextAsync(file.FullPath, token).ConfigureAwait(true);
+        if (string.IsNullOrEmpty(text))
+            return string.Empty;
+
+        var sb = new StringBuilder();
+        var number = 0;
+        foreach (var line in text.Replace("\r\n", "\n", StringComparison.Ordinal).Split('\n'))
+        {
+            if (++number > WholeFileContextLines)
+                break;
+            sb.Append("  ")
+              .Append(number.ToString(CultureInfo.InvariantCulture).PadLeft(6))
+              .Append("  ")
+              .Append(line)
+              .Append('\n');
+        }
+
+        return sb.ToString();
     }
 
     private static readonly char[] s_patternSeparators = { ';', ',' };
@@ -2243,8 +2533,11 @@ public sealed partial class SearchViewModel : ObservableObject, IDisposable
         RefreshQueryChips();
     }
 
-    partial void OnSearchModeChanged(QueryMode value) =>
+    partial void OnSearchModeChanged(QueryMode value)
+    {
+        OnPropertyChanged(nameof(IsRegexMode));
         RefreshQueryChips();
+    }
 
     partial void OnEnableDocumentExtractionChanged(bool value) =>
         OnPropertyChanged(nameof(DocumentExtractionSummary));
@@ -2288,6 +2581,7 @@ public sealed partial class SearchViewModel : ObservableObject, IDisposable
     partial void OnQueryTextChanged(string value)
     {
         OnPropertyChanged(nameof(ResultsContextText));
+        OnPropertyChanged(nameof(ResultsHeadlineText));
         RefreshQueryChips();
     }
 
@@ -2306,9 +2600,16 @@ public sealed partial class SearchViewModel : ObservableObject, IDisposable
         }
     }
 
-    partial void OnFilesMatchedChanged(int value) =>
+    partial void OnFilesMatchedChanged(int value)
+    {
         OnPropertyChanged(nameof(ResultsSummaryText));
+        OnPropertyChanged(nameof(ResultsHeadlineText));
+        OnPropertyChanged(nameof(ResultsSublineText));
+    }
 
-    partial void OnTotalHitsChanged(int value) =>
+    partial void OnTotalHitsChanged(int value)
+    {
         OnPropertyChanged(nameof(ResultsSummaryText));
+        OnPropertyChanged(nameof(ResultsHeadlineText));
+    }
 }

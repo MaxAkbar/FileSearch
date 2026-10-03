@@ -270,6 +270,26 @@ public sealed partial class ApplicationSettingsViewModel : ObservableObject
 
     public string SidebarPageSizeSummary => $"{SidebarPageSize:n0} rows per sidebar section";
 
+    /// <summary>
+    /// Sidebar shown as the narrow icon rail (title-bar toggle). Persisted on
+    /// its own so a toggle doesn't rewrite the rest of the settings.
+    /// </summary>
+    public bool IsSidebarCollapsed
+    {
+        get => _settingsService.Current.IsSidebarCollapsed;
+        set
+        {
+            if (_settingsService.Current.IsSidebarCollapsed == value)
+                return;
+
+            _settingsService.Update(settings => settings.IsSidebarCollapsed = value);
+            OnPropertyChanged();
+            OnPropertyChanged(nameof(IsSidebarExpanded));
+        }
+    }
+
+    public bool IsSidebarExpanded => !IsSidebarCollapsed;
+
     public QuickSearchHotkeyOption QuickSearchHotkey
     {
         get => _quickSearchHotkey;

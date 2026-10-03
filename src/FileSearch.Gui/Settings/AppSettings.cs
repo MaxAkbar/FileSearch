@@ -21,6 +21,9 @@ public sealed class AppSettings
     /// </summary>
     public int SidebarPageSize { get; set; } = 7;
 
+    /// <summary>Sidebar collapsed to its icon rail.</summary>
+    public bool IsSidebarCollapsed { get; set; }
+
     /// <summary>
     /// Controls how aggressively the background indexer uses CPU/disk.
     /// </summary>
@@ -110,6 +113,12 @@ public sealed class AppSettings
     /// ~15 entries. Surfaced as the dropdown on the "Look in" field.
     /// </summary>
     public List<string> RecentPaths { get; set; } = new();
+
+    /// <summary>
+    /// Folders the user pinned to the sidebar's Locations section, in the
+    /// order they were added.
+    /// </summary>
+    public List<string> Locations { get; set; } = new();
 
     /// <summary>
     /// User-created file-pattern scopes, shown below the built-in scope

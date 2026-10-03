@@ -170,6 +170,20 @@ public sealed partial class IndexViewModel : ObservableObject, IDisposable
     public string CurrentFolderIndexActionText =>
         IsCurrentFolderIndexed ? "Current folder already indexed" : "Add current folder with options";
 
+    /// <summary>Empty-state action in the sidebar's Indexed locations card.</summary>
+    public string AddCurrentFolderToIndexText =>
+        string.IsNullOrWhiteSpace(_search.SearchPath)
+            ? "Add a folder to the index"
+            : $"Add {_search.SearchPath.Trim()} to index";
+
+    /// <summary>Status-bar readout for the search folder ("C:	emp is not indexed").</summary>
+    public string CurrentFolderIndexStatusText =>
+        string.IsNullOrWhiteSpace(_search.SearchPath)
+            ? "No folder selected"
+            : IsCurrentFolderIndexed
+                ? $"{_search.SearchPath.Trim()} is indexed"
+                : $"{_search.SearchPath.Trim()} is not indexed";
+
     public string IndexedLocationCountText =>
         IndexedLocations.Count == 1
             ? "1 indexed location"
@@ -1512,6 +1526,8 @@ public sealed partial class IndexViewModel : ObservableObject, IDisposable
     {
         OnPropertyChanged(nameof(IsCurrentFolderIndexed));
         OnPropertyChanged(nameof(CurrentFolderIndexActionText));
+        OnPropertyChanged(nameof(CurrentFolderIndexStatusText));
+        OnPropertyChanged(nameof(AddCurrentFolderToIndexText));
         OnPropertyChanged(nameof(IndexedLocationCountText));
         AddCurrentFolderToIndexCommand.NotifyCanExecuteChanged();
         BuildOrRefreshIndexCommand.NotifyCanExecuteChanged();

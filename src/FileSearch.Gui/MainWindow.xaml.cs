@@ -14,15 +14,17 @@ namespace FileSearch.Gui;
 
 public partial class MainWindow : Window
 {
+    private const double SidebarRailWidth = 56;
+
     private System.Windows.Point _resultsDragStartPoint;
+    private GridLength? _expandedSidebarWidth;
 
     public MainWindow()
     {
         InitializeComponent();
-        UpdateNavSectionRows();
         DataContextChanged += OnDataContextChanged;
         PreviewKeyDown += OnMainWindowPreviewKeyDown;
-        ShellRoot.SizeChanged += OnShellRootSizeChanged;
+        ResultsArea.SizeChanged += OnResultsAreaSizeChanged;
     }
 
     private void OnExitClick(object sender, RoutedEventArgs e)
@@ -163,42 +165,125 @@ public partial class MainWindow : Window
         window.ShowDialog();
     }
 
-    // Collapsible sidebar sections: an expanded section's row takes the leftover
-    // space (*), a collapsed one shrinks to its header (Auto) and is pushed to
-    // the bottom of the sidebar.
-    private void OnNavSectionToggled(object sender, RoutedEventArgs e) => UpdateNavSectionRows();
-
-    private void UpdateNavSectionRows()
+    // Rows inside a search-bar/toolbar dropdown act like menu items: any
+    // button click closes the dropdown (its toggle travels in Tag).
+    private void OnDropdownItemClick(object sender, RoutedEventArgs e)
     {
-        // Expanded/Collapsed can fire mid-XAML-load (the style sets IsExpanded)
-        // before every named element is wired up; wait until they all exist.
-        if (ScopesSection is null || WorkspacesSection is null || RecentSection is null || FavoritesSection is null || IndexSection is null || SavedSection is null ||
-            ScopesRow is null || WorkspacesRow is null || RecentRow is null || FavoritesRow is null || IndexRow is null || SavedRow is null)
+        if (sender is FrameworkElement { Tag: ToggleButton toggle })
+            toggle.IsChecked = false;
+    }
+
+    // Icon-rail buttons reopen the sidebar on their section (name in Tag).
+    private void OnRailSectionClick(object sender, RoutedEventArgs e)
+    {
+        if (DataContext is not MainViewModel viewModel ||
+            sender is not FrameworkElement { Tag: string sectionName } ||
+            FindName(sectionName) is not Expander section)
+        {
+            return;
+        }
+
+        viewModel.Settings.IsSidebarCollapsed = false;
+        section.IsExpanded = true;
+        Dispatcher.BeginInvoke(() => section.BringIntoView(), System.Windows.Threading.DispatcherPriority.Loaded);
+    }
+
+    private void UpdateSidebarColumn(ApplicationSettingsViewModel settings)
+    {
+        if (settings.IsSidebarCollapsed)
+        {
+            if (SidebarColumn.Width.Value > SidebarRailWidth)
+                _expandedSidebarWidth = SidebarColumn.Width;
+            SidebarColumn.MinWidth = SidebarRailWidth;
+            SidebarColumn.MaxWidth = SidebarRailWidth;
+            SidebarColumn.Width = new GridLength(SidebarRailWidth);
+        }
+        else
+        {
+            SidebarColumn.MinWidth = 220;
+            SidebarColumn.MaxWidth = 440;
+            if (_expandedSidebarWidth is { } width)
+                SidebarColumn.Width = width;
+            else
+                SidebarColumn.SetResourceReference(ColumnDefinition.WidthProperty, "AppDensity.SidebarColumnWidth");
+        }
+
+        if (DataContext is MainViewModel viewModel)
+            UpdatePreviewColumn(viewModel.Search);
+    }
+
+    private void OnSettingsPropertyChanged(object? sender, PropertyChangedEventArgs e)
+    {
+        if (sender is ApplicationSettingsViewModel settings &&
+            e.PropertyName == nameof(ApplicationSettingsViewModel.IsSidebarCollapsed))
+        {
+            UpdateSidebarColumn(settings);
+        }
+    }
+
+    // Preview code view: double-click opens the file at that line.
+    private void OnPreviewLineDoubleClick(object sender, MouseButtonEventArgs e)
+    {
+        if (DataContext is not MainViewModel { Search.SelectedFile: { } file } ||
+            e.OriginalSource is not DependencyObject source ||
+            ItemsControl.ContainerFromElement(PreviewLinesList, source) is not ListBoxItem { DataContext: PreviewLineViewModel line } ||
+            line.IsGap)
+        {
+            return;
+        }
+
+        _ = file.OpenAtLineAsync(line.LineNumber);
+        e.Handled = true;
+    }
+
+    // Ctrl+C in the code view copies the selected lines' text.
+    private void OnPreviewLinesCopy(object sender, ExecutedRoutedEventArgs e)
+    {
+        var lines = PreviewLinesList.SelectedItems
+            .OfType<PreviewLineViewModel>()
+            .Where(line => !line.IsGap)
+            .OrderBy(line => PreviewLinesList.Items.IndexOf(line))
+            .Select(line => line.Text)
+            .ToList();
+        if (lines.Count == 0)
             return;
 
-        // Only the LAST expanded section grows to fill the leftover space; the
-        // others size to their content. This keeps fixed sections (Scopes) from
-        // being stretched and clipped, while pushing collapsed sections — which
-        // sit below the filler — down to the bottom of the sidebar.
-        var sections = new[]
+        System.Windows.Clipboard.SetText(string.Join(Environment.NewLine, lines));
+        e.Handled = true;
+    }
+
+    // Keep the navigator's current match in view, with a little context above it.
+    private void ScrollPreviewToCurrentLine(SearchViewModel search)
+    {
+        if (search.CurrentPreviewLine is not { } line)
+            return;
+
+        var index = PreviewLinesList.Items.IndexOf(line);
+        if (index < 0)
+            return;
+
+        PreviewLinesList.Dispatcher.BeginInvoke(() =>
         {
-            (Section: ScopesSection, Row: ScopesRow),
-            (Section: WorkspacesSection, Row: WorkspacesRow),
-            (Section: RecentSection, Row: RecentRow),
-            (Section: FavoritesSection, Row: FavoritesRow),
-            (Section: IndexSection, Row: IndexRow),
-            (Section: SavedSection, Row: SavedRow),
-        };
+            if (FindDescendant<ScrollViewer>(PreviewLinesList) is { CanContentScroll: true } scroller)
+                scroller.ScrollToVerticalOffset(Math.Max(0, index - 3));
+            else
+                PreviewLinesList.ScrollIntoView(line);
+        }, System.Windows.Threading.DispatcherPriority.Loaded);
+    }
 
-        var fillIndex = -1;
-        for (var i = 0; i < sections.Length; i++)
-            if (sections[i].Section.IsExpanded)
-                fillIndex = i;
+    private static T? FindDescendant<T>(DependencyObject root)
+        where T : DependencyObject
+    {
+        for (var i = 0; i < VisualTreeHelper.GetChildrenCount(root); i++)
+        {
+            var child = VisualTreeHelper.GetChild(root, i);
+            if (child is T match)
+                return match;
+            if (FindDescendant<T>(child) is { } nested)
+                return nested;
+        }
 
-        for (var i = 0; i < sections.Length; i++)
-            sections[i].Row.Height = i == fillIndex
-                ? new GridLength(1, GridUnitType.Star)
-                : GridLength.Auto;
+        return null;
     }
 
     private void OnResultCardDoubleClick(object sender, MouseButtonEventArgs e)
@@ -474,11 +559,16 @@ public partial class MainWindow : Window
     private void OnDataContextChanged(object sender, DependencyPropertyChangedEventArgs e)
     {
         if (e.OldValue is MainViewModel oldViewModel)
+        {
             oldViewModel.Search.PropertyChanged -= OnSearchPropertyChanged;
+            oldViewModel.Settings.PropertyChanged -= OnSettingsPropertyChanged;
+        }
 
         if (e.NewValue is MainViewModel newViewModel)
         {
             newViewModel.Search.PropertyChanged += OnSearchPropertyChanged;
+            newViewModel.Settings.PropertyChanged += OnSettingsPropertyChanged;
+            UpdateSidebarColumn(newViewModel.Settings);
             UpdatePreviewColumn(newViewModel.Search);
         }
     }
@@ -490,9 +580,11 @@ public partial class MainWindow : Window
 
         if (e.PropertyName is nameof(SearchViewModel.IsPreviewPaneVisible) or nameof(SearchViewModel.PreviewPaneWidth))
             UpdatePreviewColumn(search);
+        else if (e.PropertyName == nameof(SearchViewModel.CurrentPreviewLine))
+            ScrollPreviewToCurrentLine(search);
     }
 
-    private void OnShellRootSizeChanged(object sender, SizeChangedEventArgs e)
+    private void OnResultsAreaSizeChanged(object sender, SizeChangedEventArgs e)
     {
         if (DataContext is MainViewModel viewModel)
             UpdatePreviewColumn(viewModel.Search);
@@ -519,18 +611,12 @@ public partial class MainWindow : Window
 
     private double GetAvailablePreviewPaneWidth()
     {
-        if (ShellRoot.ActualWidth <= 0)
+        if (ResultsArea.ActualWidth <= 0)
             return SearchViewModel.MaximumPreviewPaneWidth;
 
-        var navigationWidth = SidebarColumn.ActualWidth;
-        var sidebarSplitterWidth = SidebarSplitterColumn.ActualWidth;
-        var resultsMinWidth = ContentColumn.MinWidth;
-        var previewSplitterWidth = PreviewSplitterColumn.ActualWidth;
-        var available = ShellRoot.ActualWidth
-            - navigationWidth
-            - sidebarSplitterWidth
-            - resultsMinWidth
-            - previewSplitterWidth;
+        var available = ResultsArea.ActualWidth
+            - ContentColumn.MinWidth
+            - PreviewSplitterColumn.ActualWidth;
 
         return Math.Clamp(available, 0, SearchViewModel.MaximumPreviewPaneWidth);
     }

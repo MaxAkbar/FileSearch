@@ -192,6 +192,9 @@ public sealed partial class FileResultViewModel : ObservableObject
         return sb.ToString().TrimEnd();
     }
 
+    /// <summary>Count pill on the result card ("2 matches").</summary>
+    public string MatchCountText => $"{HitCount:n0} {(HitCount == 1 ? "match" : "matches")}";
+
     public string PinActionText => IsPinned ? "Unpin result" : "Pin result";
 
     public string PinGlyph => IsPinned ? "\uE77A" : "\uE718";
@@ -360,6 +363,9 @@ public sealed partial class FileResultViewModel : ObservableObject
         OnPropertyChanged(nameof(MoreText));
     }
 
+    partial void OnHitCountChanged(int value) =>
+        OnPropertyChanged(nameof(MatchCountText));
+
     partial void OnIsPinnedChanged(bool value)
     {
         OnPropertyChanged(nameof(PinActionText));
@@ -376,9 +382,25 @@ public sealed partial class FileResultViewModel : ObservableObject
 
     [RelayCommand] private void ToggleExpand() => IsExpanded = !IsExpanded;
     [RelayCommand]
-    private async Task OpenAsync()
+    private Task OpenAsync() => OpenHitAsync(GetBestSourceHit());
+
+    /// <summary>
+    /// Opens the file at <paramref name="lineNumber"/> (the preview's current
+    /// match). Uses that line's hit when there is one so page/sheet anchors
+    /// survive; any other line opens as a plain line location.
+    /// </summary>
+    public Task OpenAtLineAsync(int? lineNumber)
     {
-        var hit = GetBestSourceHit();
+        if (lineNumber is not > 0)
+            return OpenAsync();
+
+        var hit = _hits.FirstOrDefault(candidate => candidate.LineNumber == lineNumber)
+            ?? new Hit(FullPath, lineNumber.Value, string.Empty, Array.Empty<FileSearch.Core.Queries.MatchSpan>());
+        return OpenHitAsync(hit);
+    }
+
+    private async Task OpenHitAsync(Hit? hit)
+    {
         var opened = hit is not null &&
             await _launcher.OpenAtLocationAsync(FullPath, hit, CancellationToken.None).ConfigureAwait(true);
         if (!opened)
