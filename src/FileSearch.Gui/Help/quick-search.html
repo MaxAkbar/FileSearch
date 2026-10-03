@@ -22,7 +22,9 @@
                 <a href="search.html">Run a Search</a>
                 <a class="active" href="quick-search.html">Quick Search</a>
                 <a href="query-syntax.html">Query Syntax</a>
+                <a href="smart-search.html">Smart Search (ONNX)</a>
                 <a href="results.html">Results and Preview</a>
+                <a href="mail.html">Outlook Mail Search</a>
                 <a href="indexing.html">Indexed Search</a>
                 <a href="workflows.html">Workflows</a>
                 <a href="cli.html">Command Line</a>
@@ -69,6 +71,7 @@
 
             <h2>Search Names or Content</h2>
             <p>Quick Search always starts with fast filename and path matches. Turn on <strong>Content</strong> in the quick window to add indexed file-content matches after those instant results. If an indexed location was built with Image OCR enabled, recognized image, scanned-PDF-page, and embedded document image text can appear in content results too.</p>
+            <p>Quick Search uses ordinary plain-text search words. Unified fields such as <code>type:email</code> belong in the full search window or CLI. Indexed MSG/PST/OST messages appear with <strong>Content</strong> on when the selected folder content index includes document extraction; MSG/PST/OST attachment OCR is not supported.</p>
             <ul class="plain-list">
                 <li><strong>Content on</strong> searches file names, paths, indexed text, indexed image OCR text, indexed scanned-PDF OCR text, and indexed embedded-image OCR text for the selected scope.</li>
                 <li><strong>Content off</strong> searches only file names and paths, which is useful for launcher-style lookup.</li>
@@ -100,14 +103,16 @@
                         </tr>
                         <tr>
                             <td><strong>Entire machine metadata</strong></td>
-                            <td>Filename and path matches across ready fixed drives. This is a bounded metadata search, not a full content scan.</td>
+                            <td>Filename and path matches across ready fixed drives. Built NTFS drive indexes supply saved names; drives without an index use a bounded live metadata scan that may be incomplete. Message and document contents are not searched in this scope.</td>
                         </tr>
                     </tbody>
                 </table>
             </div>
 
+            <p>Enable drive indexing in <strong>File &gt; Settings &gt; Drive file-name index</strong>. Covered folder scopes also use these names. Every search word must match the entry name or its folders, and at least one must match the entry's own name; a term containing <code>\</code> must match the full path. See <a href="indexing.html#drive-name-index">Drive File-Name Index</a>.</p>
+
             <h2>Use the Results</h2>
-            <p>Results appear in stages. Filename and path matches are shown first; indexed content matches are added as the index query returns. The quick window keeps the list bounded so broad searches stay responsive. OCR content hits include an image, PDF page, or embedded-member region label when available.</p>
+            <p>Results appear in stages. Filename and path matches are shown first; indexed content matches are added as the index query returns. The quick window stops after reaching 80 result items or 500 hits so broad searches stay responsive. Use a more specific query or the full window to review a larger result set. OCR content hits include an image, PDF page, or embedded-member region label when available.</p>
             <ul class="plain-list">
                 <li><kbd>Down</kbd> moves from the search box into the results list.</li>
                 <li><kbd>Enter</kbd> opens the selected result.</li>
@@ -130,9 +135,11 @@
                 <li>Dragging a result out of the window starts a standard Windows file drag-and-drop operation.</li>
             </ul>
 
+            <p>For individual PST/OST messages, <strong>Open</strong> creates a text-only EML copy in the registered mail application. Inline preview shows the selected message; Copy path and Reveal refer to its store. Store messages cannot be pinned or dragged as physical files. See <a href="mail.html#results">Mail Results and Preview</a>.</p>
+
             <h2>Pinned Results and Preview</h2>
             <p>When the search box is empty, Quick Search shows pinned results. Pin frequently used files if you want them available before typing a query.</p>
-            <p>Preview is loaded on demand so opening the quick window stays fast. For content hits, preview shows matching lines with nearby context. For standalone OCR image hits, preview can show a compact image highlight; for OCR PDF hits, it can render the page with the region highlighted. For embedded OCR hits, preview includes the stored member path and OCR-region label, and can extract the embedded image from the parent document, email, EPUB, or archive so the region can be highlighted. Use the OCR preview action when you want the larger dedicated preview window without opening the result. For filename-only matches, preview may be empty if no content hit lines are available.</p>
+            <p>Preview is loaded on demand so opening the quick window stays fast. For content hits, preview shows matching lines with nearby context. For standalone OCR image hits, preview can show a compact image highlight; for OCR PDF hits, it can render the page with the region highlighted. For embedded OCR hits, preview includes the stored member path and OCR-region label, and can extract the embedded image from the parent document, EML, EPUB, or archive so the region can be highlighted. Use the OCR preview action when you want the larger dedicated preview window without opening the result. For filename-only matches, preview may be empty if no content hit lines are available.</p>
 
             <div class="callout">
                 Use the full FileSearch window for deep search setup, index management, detailed previews, workflows, and reports. Quick Search is optimized for fast lookup and action.

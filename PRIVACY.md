@@ -24,6 +24,8 @@ When indexing is enabled, FileSearch stores extracted searchable content locally
 
 The index can include file paths, file metadata, extracted line text, indexing status, and failed-file error information.
 
+For MSG/PST/OST searches, this includes mail subjects, sender and recipient addresses, dates, folders, attachment names, and message body text. FileSearch reads these locally and does not sign into a mailbox service. Opening a message from a store creates a text-only EML copy in `%TEMP%\FileSearch\MailPreview`. Copies older than one day are removed on a later message-open attempt when possible; clear that directory manually to remove them immediately. See [Mail search](README.Mail.md) for coverage and limitations.
+
 When a drive file-name index is enabled, FileSearch also stores a list of the file and folder names on that drive:
 
 - `%LocalAppData%\FileSearch\Index\Volumes\*.fsvol`

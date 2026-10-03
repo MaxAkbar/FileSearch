@@ -22,7 +22,9 @@
                 <a href="search.html">Run a Search</a>
                 <a href="quick-search.html">Quick Search</a>
                 <a href="query-syntax.html">Query Syntax</a>
+                <a href="smart-search.html">Smart Search (ONNX)</a>
                 <a href="results.html">Results and Preview</a>
+                <a href="mail.html">Outlook Mail Search</a>
                 <a class="active" href="indexing.html">Indexed Search</a>
                 <a href="workflows.html">Workflows</a>
                 <a href="cli.html">Command Line</a>
@@ -36,24 +38,26 @@
             <section class="hero">
                 <div class="eyebrow">Indexed Search</div>
                 <h1>Speed up repeat searches with a background index.</h1>
-                <p class="lead">FileSearch can index folders you search often. Indexed searches read prepared text from a local database instead of re-opening every file, and the GUI or tray indexer can keep the index current in the background.</p>
+                <p class="lead">FileSearch has folder content indexes for repeat text and mail searches, plus whole-drive name indexes for local NTFS drives. The desktop app can keep indexes current in the background.</p>
             </section>
 
-            <h2>How It Works</h2>
+            <h2>Folder Content Indexes</h2>
             <ul class="plain-list">
                 <li>You choose folders to index, called <strong>indexed locations</strong>. FileSearch scans them in the background and stores their text in a local database.</li>
                 <li>When <strong>Keep index updated after closing window</strong> is enabled, closing the main window hides FileSearch to the tray so indexing and Quick Search remain available.</li>
                 <li>A file watcher batches changes inside indexed locations while either the GUI or tray indexer is running. Local NTFS roots can also catch up from USN journal checkpoints after FileSearch restarts.</li>
-                <li>A search uses the index only when it is <strong>covered</strong>: the <strong>Look in</strong> folder falls inside an indexed location and the current options match what was indexed. When a search is not covered, FileSearch automatically falls back to a normal live scan.</li>
+                <li>A content search uses the index when it is <strong>covered</strong>: the folder in the search bar falls inside an indexed location and the current options match what was indexed. When a search is not covered, FileSearch automatically falls back to a normal live scan.</li>
             </ul>
 
             <div class="callout">
-                Indexed search is opt-in. Turn on the <strong>Use index</strong> checkbox next to the search controls, or <strong>Use index for covered searches</strong> in the Manage indexed locations window. Live scan always remains the fallback, so enabling it never makes results worse.
+                Indexed search is opt-in. Turn on <strong>Use index</strong> in search options, or <strong>Use index for covered searches</strong> in the Manage indexed locations window. Searches outside content-index coverage fall back to a live scan. Allow pending index updates to finish when files have recently changed.
             </div>
-            <p>When an indexed location is built with <strong>Image OCR</strong> enabled, the index can include recognized text from standalone image files, scanned PDF pages, and embedded images in Office, OpenDocument, EPUB, email, and ZIP/archive files. OCR hits keep source labels such as page, member path, and OCR region when that information is available.</p>
+            <p>With document extraction enabled, a folder content index includes local MSG messages and individual messages from PST/OST stores, as well as EML. Changed stores are extracted in full; per-message incremental updates are not available. See <a href="mail.html">Outlook Mail Search</a>.</p>
+            <p>When an indexed location is built with <strong>Image OCR</strong> enabled, the index can include recognized text from standalone image files, scanned PDF pages, and embedded images in Office, OpenDocument, EPUB, EML, and ZIP/archive files. MSG/PST/OST attachment OCR is not supported. OCR hits keep source labels such as page, member path, and OCR region when that information is available.</p>
             <p>If a location was indexed before <strong>Image OCR</strong> was enabled, scanned PDF text will not appear in indexed results until you use <strong>Rebuild selected</strong> for that location.</p>
 
             <h2>Managing Indexed Locations</h2>
+            <p>For meaning-based text search, install a Smart Search model and use the selected location's <strong>Smart Search &gt; Rebuild Smart Search</strong> action to build vectors from its indexed content. <strong>Refresh status</strong> reports coverage. See <a href="smart-search.html">Smart Search with ONNX</a> for the full walkthrough.</p>
             <p>Open <strong>Index &gt; Manage indexed locations...</strong>, or choose <strong>Manage locations</strong> in the sidebar's Indexed locations section.</p>
             <div class="table-wrap">
                 <table>
@@ -66,7 +70,7 @@
                     <tbody>
                         <tr>
                             <td><strong>Add current folder to index</strong></td>
-                            <td>Adds the folder currently shown in <strong>Look in</strong> as an indexed location.</td>
+                            <td>Adds the folder currently shown in the search bar as an indexed location.</td>
                         </tr>
                         <tr>
                             <td><strong>Add folder...</strong></td>
@@ -186,8 +190,31 @@
                 </table>
             </div>
 
-            <h2>Where the Index Is Stored</h2>
-            <p>The index is a local database under <code>%LocalAppData%\FileSearch\Index</code>. It contains text only from the folders you chose to index, never leaves your machine, and can be rebuilt at any time. Removing a location deletes its indexed data.</p>
+            <h2 id="drive-name-index">Drive File-Name Index</h2>
+            <p>A drive index stores file and folder names across a local fixed NTFS drive. It does not store document or mail content. Enable a drive under <strong>File &gt; Settings &gt; Drive file-name index</strong> and check its status there.</p>
+            <div class="table-wrap">
+                <table>
+                    <thead><tr><th>Build method</th><th>Behavior</th></tr></thead>
+                    <tbody>
+                        <tr><td><strong>Use fast administrator scan</strong></td><td>Reads the NTFS master file table. An unelevated app asks Windows to start a one-time elevated helper; it writes a snapshot and exits. Declining the prompt falls back to the folder scan.</td></tr>
+                        <tr><td><strong>Folder scan</strong></td><td>Reads names and file IDs without elevation. It is slower and skips folders the current user cannot read.</td></tr>
+                        <tr><td><strong>Rebuild</strong></td><td>Builds the selected drive again with the chosen method. Missing indexes for enabled drives are built automatically at startup using the folder scan, without a UAC prompt.</td></tr>
+                    </tbody>
+                </table>
+            </div>
+            <p>The running desktop app applies USN change-journal updates and saves changed snapshots periodically and on exit. Expired or recreated journals require a rebuild and trigger a folder scan. A drive without a change journal can be indexed, but it does not update live.</p>
+            <ul class="plain-list">
+                <li><strong>Quick Search</strong> uses drive names for its Entire machine metadata scope and for covered folder scopes. Drives without an index use a bounded live metadata scan, which may be incomplete.</li>
+                <li><strong>Main-window and CLI name searches</strong> use the drive index with <strong>Use index</strong> or <code>--index</code> when all roots are covered. Current name filters still apply; unsupported traversal cases fall back to a live walk.</li>
+                <li><strong>Content searches</strong>, including mail bodies, use folder content indexes or live extraction.</li>
+            </ul>
+            <p>Only local fixed NTFS drives are supported. A hard-linked file is indexed under one name. File-name searches that could traverse directory links can fall back to a live scan. Even after an administrator build, new or renamed entries in unreadable folders may not be fully tracked by the unelevated app. Store/MSIX restrictions may require the folder scan.</p>
+            <p>See <a href="cli.html#volumes">Drive Name Commands</a> for terminal builds and searches. The CLI loads snapshots and catches up from the journal in memory; it does not continuously track drives or save updated snapshots except when building.</p>
+
+            <h2>Where Indexes Are Stored</h2>
+            <p>The folder content database is under <code>%LocalAppData%\FileSearch\Index</code>. It contains local searchable text and metadata from your indexed locations, including mail. Removing a location deletes its indexed data.</p>
+            <p>Drive name snapshots are separate files under <code>%LocalAppData%\FileSearch\Index\Volumes\Volume{GUID}.fsvol</code>. Disable a drive in Settings or use <code>volumes remove</code> to remove its name index.</p>
+            <p>The current database schema supports large file sizes and NTFS journal positions. Existing schema-26 databases upgrade in place on the next write while preserving locations and content. Close older FileSearch processes before using the updated indexer.</p>
 
             <div class="next-links">
                 <a href="search.html">Run a Search</a>

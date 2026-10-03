@@ -318,7 +318,7 @@ public sealed class UnifiedQuery : Query
     private static readonly HashSet<string> s_documentExtensions = new(StringComparer.OrdinalIgnoreCase)
     {
         ".txt", ".md", ".rtf", ".pdf", ".doc", ".docx", ".odt", ".xls", ".xlsx", ".ppt",
-        ".pptx", ".csv", ".tsv", ".epub", ".eml", ".ics", ".vcf",
+        ".pptx", ".csv", ".tsv", ".epub", ".eml", ".msg", ".pst", ".ost", ".ics", ".vcf",
     };
 
     private static readonly HashSet<string> s_imageExtensions = new(StringComparer.OrdinalIgnoreCase)
@@ -374,8 +374,8 @@ public sealed partial class UnifiedQueryParser
         ["excel"] = new[] { ".xls", ".xlsx", ".csv", ".tsv" },
         ["spreadsheet"] = new[] { ".xls", ".xlsx", ".csv", ".tsv" },
         ["xls"] = new[] { ".xls", ".xlsx" },
-        ["email"] = new[] { ".eml", ".msg" },
-        ["mail"] = new[] { ".eml", ".msg" },
+        ["email"] = new[] { ".eml", ".msg", ".pst", ".ost" },
+        ["mail"] = new[] { ".eml", ".msg", ".pst", ".ost" },
         ["epub"] = new[] { ".epub" },
         ["text"] = new[] { ".txt", ".md", ".log" },
         ["markdown"] = new[] { ".md", ".markdown" },

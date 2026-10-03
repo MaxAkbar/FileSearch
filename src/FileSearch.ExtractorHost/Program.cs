@@ -117,6 +117,8 @@ internal static class ExtractorHostProgram
             new RtfExtractor(),
             new HtmlExtractor(),
             new EmlExtractor(),
+            new MsgExtractor(),
+            new OutlookStoreExtractor(),
             new XmlTextExtractor(),
             new CalendarContactExtractor(),
             new ZipExtractor(),

@@ -164,7 +164,7 @@ public sealed class OutOfProcessExtractionService : IOutOfProcessExtractionServi
         if (repositoryRoot is null)
             yield break;
 
-        foreach (var configuration in new[] { "Debug", "Release" })
+        foreach (var configuration in GetDevelopmentHostConfigurations(baseDirectory))
         {
             var hostOutput = Path.Combine(
                 repositoryRoot,
@@ -176,6 +176,19 @@ public sealed class OutOfProcessExtractionService : IOutOfProcessExtractionServi
             yield return Path.Combine(hostOutput, executableName);
             yield return Path.Combine(hostOutput, "FileSearch.ExtractorHost.dll");
         }
+    }
+
+    internal static string[] GetDevelopmentHostConfigurations(string baseDirectory)
+    {
+        // A Release caller must not pick up an older Debug host (or vice versa).
+        // Published apps still prefer the sidecar beside their executable.
+        for (var directory = new DirectoryInfo(baseDirectory); directory is not null; directory = directory.Parent)
+        {
+            if (!string.Equals(directory.Parent?.Name, "bin", StringComparison.OrdinalIgnoreCase)) continue;
+            if (directory.Name.Equals("Release", StringComparison.OrdinalIgnoreCase)) return ["Release", "Debug"];
+            if (directory.Name.Equals("Debug", StringComparison.OrdinalIgnoreCase)) return ["Debug", "Release"];
+        }
+        return ["Debug", "Release"];
     }
 
     private static string? FindAncestorContaining(string startDirectory, string fileName)

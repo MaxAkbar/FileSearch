@@ -67,6 +67,9 @@ public sealed class ContentUnitChunker : IContentChunker
 
             while (end < sourceUnits.Length)
             {
+                if (end > start && sourceUnits[start].Kind == ContentUnitKind.EmailPart &&
+                    sourceUnits[start].Locator.MailMessage?.Id != sourceUnits[end].Locator.MailMessage?.Id)
+                    break;
                 var text = sourceUnits[end].Text.Trim();
                 var separatorLength = textLength == 0 ? 0 : Environment.NewLine.Length;
                 var nextLength = textLength + separatorLength + text.Length;
@@ -89,7 +92,9 @@ public sealed class ContentUnitChunker : IContentChunker
             if (end >= sourceUnits.Length)
                 break;
 
-            var overlap = Math.Min(normalized.OverlapUnits, Math.Max(0, chunkUnits.Length - 1));
+            var crossesMailBoundary = sourceUnits[start].Kind == ContentUnitKind.EmailPart &&
+                sourceUnits[start].Locator.MailMessage?.Id != sourceUnits[end].Locator.MailMessage?.Id;
+            var overlap = crossesMailBoundary ? 0 : Math.Min(normalized.OverlapUnits, Math.Max(0, chunkUnits.Length - 1));
             index = Math.Max(start + 1, end - overlap);
         }
 
@@ -160,7 +165,8 @@ public sealed class ContentUnitChunker : IContentChunker
             Width: region?.Width,
             Height: region?.Height,
             SourceWidth: sourceWidth,
-            SourceHeight: sourceHeight);
+            SourceHeight: sourceHeight,
+            MailMessage: locators[0].MailMessage);
     }
 
     private static string? CreateDisplayText(

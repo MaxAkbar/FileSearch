@@ -22,7 +22,9 @@
                 <a href="search.html">Run a Search</a>
                 <a href="quick-search.html">Quick Search</a>
                 <a href="query-syntax.html">Query Syntax</a>
+                <a href="smart-search.html">Smart Search (ONNX)</a>
                 <a href="results.html">Results and Preview</a>
+                <a href="mail.html">Outlook Mail Search</a>
                 <a href="indexing.html">Indexed Search</a>
                 <a href="workflows.html">Workflows</a>
                 <a href="cli.html">Command Line</a>
@@ -36,7 +38,7 @@
             <section class="hero">
                 <div class="eyebrow">Options</div>
                 <h1>Tune scope, speed, and matching behavior.</h1>
-                <p class="lead">Most searches only need the Main tab. Use Options and Dates when you want stricter query behavior, faster scanning, or file metadata filters.</p>
+                <p class="lead">Most searches need only a folder and query in the search bar. Open search options for targets, matching mode, and extraction; expand Advanced for size, modified-date, and file-type limits.</p>
             </section>
 
             <h2>Query Options</h2>
@@ -51,7 +53,7 @@
                     <tbody>
                         <tr>
                             <td><strong>Search mode</strong></td>
-                            <td>Controls whether the query is parsed as Boolean, Regex, or Plain text.</td>
+                            <td>Controls whether the query is parsed as Unified (the default), Boolean, Regex, or PlainText. Choose it under <strong>Match</strong> in search options.</td>
                         </tr>
                         <tr>
                             <td><strong>Match case</strong></td>
@@ -73,13 +75,13 @@
                     </thead>
                     <tbody>
                         <tr>
-                            <td><strong>Office &amp; PDF documents</strong></td>
-                            <td>When enabled, FileSearch extracts text from supported Office and PDF documents. When disabled, those document types are skipped.</td>
+                            <td><strong>Office &amp; PDF text</strong> (document extraction)</td>
+                            <td>When enabled, FileSearch extracts supported document formats, including Office, PDF, EML, MSG, PST, and OST. When disabled, those formats are skipped.</td>
                             <td>Disable it for faster source-code-only searches.</td>
                         </tr>
                         <tr>
                             <td><strong>Image OCR</strong></td>
-                            <td>When enabled, FileSearch uses Windows OCR to search recognized text in PNG, JPEG, BMP, TIFF, scanned PDF pages, and embedded images in Office, OpenDocument, EPUB, email, and ZIP/archive files.</td>
+                            <td>When enabled, FileSearch uses Windows OCR to search recognized text in PNG, JPEG, BMP, TIFF, scanned PDF pages, and embedded images in Office, OpenDocument, EPUB, EML, and ZIP/archive files. MSG/PST/OST attachments are not OCR targets.</td>
                             <td>Enable it for screenshots, scanned image files, scanned PDFs, image-heavy reference folders, and documents that contain screenshots or scanned attachments. Leave it off for faster searches through photo or asset folders. OCR language and scanned-PDF page limits are configured in <strong>File &gt; Settings</strong>.</td>
                         </tr>
                         <tr>
@@ -96,27 +98,28 @@
                 </table>
             </div>
             <div class="callout">
-                For scanned or image-only PDFs, <strong>Office &amp; PDF documents</strong> and <strong>Image OCR</strong> both need to be enabled. A file name pattern such as <code>*.pdf</code> only limits the files being searched; it does not enable OCR.
+                For scanned or image-only PDFs, <strong>Office &amp; PDF text</strong> and <strong>Text in images (OCR)</strong> both need to be enabled. A file name pattern such as <code>*.pdf</code> only limits the files being searched; it does not enable OCR.
             </div>
 
             <h2>File Size Filters</h2>
-            <p>Minimum and maximum file sizes are entered in kilobytes.</p>
+            <p>Minimum and maximum physical-file sizes are entered in kilobytes under <strong>search options &gt; Advanced</strong>.</p>
             <ul class="plain-list">
                 <li><strong>Min</strong> excludes files smaller than the entered size.</li>
                 <li><strong>Max</strong> excludes files larger than the entered size.</li>
-                <li>A maximum of <code>0</code> means no upper size limit.</li>
+                <li>A maximum of <code>0</code> uses the shared default 100 MiB cap. PST/OST stores are exempt from this default; a positive explicit maximum applies to them too.</li>
             </ul>
 
             <h2>Date Filters</h2>
-            <p>The Dates tab filters by modified date. Use <strong>After</strong>, <strong>Before</strong>, or both to search only files changed in a specific period.</p>
+            <p>The <strong>Modified</strong> controls under <strong>search options &gt; Advanced</strong> filter by the physical file's modified date. Use <strong>After</strong>, <strong>Before</strong>, or both to search files changed in a specific period. These are not message-date filters for mail stores.</p>
             <div class="callout">
                 The Before date is inclusive for the whole selected day, so a file modified at 11:59 PM on that date still qualifies.
             </div>
 
             <h2>Indexed Search</h2>
-            <p>The <strong>Use index</strong> checkbox next to the search controls lets covered searches read from the local file index instead of rescanning files; live scan remains the fallback when a search is not covered. Indexed locations, background indexing, pause/resume, health, and status badges are described on the <a href="indexing.html">Indexed Search</a> page.</p>
+            <p><strong>Use index</strong> in search options lets covered searches read from the local index; live scan remains the fallback when a search is not covered. Folder content indexes and drive name indexes, background indexing, pause/resume, health, and status badges are described on the <a href="indexing.html">Indexed Search</a> page.</p>
 
             <h2>Background Indexer</h2>
+            <p><strong>File &gt; Settings &gt; Drive file-name index</strong> enables name indexing per local fixed NTFS drive. <strong>Use fast administrator scan</strong> requests a one-time elevated master-file-table build; turn it off to scan readable folders without elevation. See <a href="indexing.html#drive-name-index">Drive File-Name Index</a>.</p>
             <p>Use <strong>File &gt; Settings</strong> to control whether FileSearch stays resident after the search window closes and whether the tray indexer starts when Windows starts.</p>
             <ul class="plain-list">
                 <li><strong>Keep index updated after closing window</strong> hides the main window and keeps FileSearch running in the tray, so indexing and Quick Search stay available.</li>
@@ -134,8 +137,9 @@
                 <li><strong>Quick window shortcuts</strong> controls close, focus results, open, reveal, copy path, pin, and preview actions inside Quick Search.</li>
             </ul>
 
-            <h2>Smart Search Model Packs</h2>
-            <p>Use <strong>File &gt; Settings &gt; Smart Search</strong> to choose and install an optional local embedding model. FileSearch does not download a model until you click <strong>Install model</strong>, and semantic search runs locally through ONNX Runtime after a model pack is installed. After download, FileSearch loads the ONNX model and runs a small document/query embedding smoke test before marking the pack ready.</p>
+            <h2 id="smart-search">Smart Search Model Packs</h2>
+            <p>Use <strong>File &gt; Settings &gt; Smart Search</strong> to choose an optional local embedding model. Selecting a model starts installation automatically; <strong>Install model</strong> also starts or retries it. After download, FileSearch loads the ONNX model and runs a document/query embedding smoke test. Semantic search then runs locally.</p>
+            <p>Build Smart Search vectors for an indexed folder, then use <code>semantic:"your concept"</code> in Unified mode with <strong>Contents</strong> and <strong>Use index</strong> enabled. See <a href="smart-search.html">Smart Search with ONNX</a> for the complete setup and search walkthrough, existing model folders, and troubleshooting.</p>
             <ul class="plain-list">
                 <li><strong>Disabled</strong> keeps FileSearch in classic mode with filename, metadata, indexed content, OCR, Boolean, regex, fuzzy and proximity search.</li>
                 <li><strong>BGE small English v1.5</strong> is the recommended local semantic model for English documents.</li>

@@ -22,7 +22,9 @@
                 <a href="search.html">Run a Search</a>
                 <a href="quick-search.html">Quick Search</a>
                 <a href="query-syntax.html">Query Syntax</a>
+                <a href="smart-search.html">Smart Search (ONNX)</a>
                 <a href="results.html">Results and Preview</a>
+                <a href="mail.html">Outlook Mail Search</a>
                 <a href="indexing.html">Indexed Search</a>
                 <a href="workflows.html">Workflows</a>
                 <a href="cli.html">Command Line</a>
@@ -99,6 +101,10 @@
                             <td><code>.\FileSearch.Cli.exe workflow list|folder|show NAME|validate NAME|run NAME [--dry-run] [--yes] [--no-hits]</code></td>
                         </tr>
                         <tr>
+                            <td><code>volumes</code></td>
+                            <td><code>.\FileSearch.Cli.exe volumes list|build DRIVE [--admin|--walk]|remove DRIVE|search TEXT [--drive DRIVE] [--path FOLDER] [--limit N] [--files|--folders] [--json|--jsonl|--csv|--markdown]</code>. See <a href="cli.html#volumes">Drive Name Commands</a> for examples.</td>
+                        </tr>
+                        <tr>
                             <td><code>indexer</code></td>
                             <td><code>.\FileSearch.Cli.exe indexer status|start|pause|resume|shutdown|compact|refresh [FOLDER]|validate [FOLDER]|semantic [FOLDER]</code></td>
                         </tr>
@@ -126,17 +132,17 @@
                         </tr>
                         <tr>
                             <td><code>FileSearch.Cli.exe</code></td>
-                            <td>Runs interactive and one-shot search, index, workflow, and indexer commands from a terminal.</td>
+                            <td>Runs interactive and one-shot search, folder index, drive-name index, workflow, and indexer commands from a terminal.</td>
                             <td>Run directly from PowerShell, Windows Terminal, Command Prompt, scripts, or scheduled tasks.</td>
                         </tr>
                         <tr>
                             <td><code>FileSearch.Indexer.exe</code></td>
-                            <td>Keeps configured indexed locations current and exposes status, pause, resume, refresh, validation, and compaction operations to the desktop app.</td>
+                            <td>Keeps configured indexed locations current and exposes status, pause, resume, refresh, validation, and compaction operations to the desktop app. It also runs the one-time elevated helper for a requested NTFS master-file-table name scan.</td>
                             <td>Manage it from <strong>Index</strong>, <strong>File &gt; Settings</strong>, or the tray icon instead of launching it manually.</td>
                         </tr>
                         <tr>
                             <td><code>FileSearch.ExtractorHost.exe</code></td>
-                            <td>Runs document text extraction out of process so expensive or fragile extractors do not block the main app.</td>
+                            <td>Runs document text extraction, including native MSG/PST/OST readers, out of process so expensive or fragile extractors do not block the main app.</td>
                             <td>No direct action is needed; FileSearch starts it when document extraction requires it.</td>
                         </tr>
                     </tbody>

@@ -22,7 +22,9 @@
                 <a class="active" href="search.html">Run a Search</a>
                 <a href="quick-search.html">Quick Search</a>
                 <a href="query-syntax.html">Query Syntax</a>
+                <a href="smart-search.html">Smart Search (ONNX)</a>
                 <a href="results.html">Results and Preview</a>
+                <a href="mail.html">Outlook Mail Search</a>
                 <a href="indexing.html">Indexed Search</a>
                 <a href="workflows.html">Workflows</a>
                 <a href="cli.html">Command Line</a>
@@ -36,10 +38,10 @@
             <section class="hero">
                 <div class="eyebrow">Search Workflow</div>
                 <h1>Run a focused search.</h1>
-                <p class="lead">Use the Main tab to choose whether you are searching contents, file names, folder names, or both, then set the folder and recursion scope. Use Options and Dates only when you need tighter control.</p>
+                <p class="lead">Choose a folder and enter a query in the search bar. Open search options to choose contents, file names, folder names, or a combination, and use Advanced for size, date, and file-type limits.</p>
             </section>
 
-            <h2>Main Tab</h2>
+            <h2>Search Bar and Options</h2>
             <div class="table-wrap">
                 <table>
                     <thead>
@@ -51,27 +53,27 @@
                     </thead>
                     <tbody>
                         <tr>
-                            <td><strong>Containing text</strong></td>
-                            <td>The text, name fragment, regex, or Boolean expression to find. Recent searches are saved in the dropdown.</td>
+                            <td><strong>Search box</strong></td>
+                            <td>The text, name fragment, or expression to find. Unified mode also accepts fields such as <code>type:</code> and <code>path:</code>.</td>
                             <td><code>error AND timeout</code></td>
                         </tr>
                         <tr>
-                            <td><strong>Search</strong></td>
-                            <td>Chooses the target: file contents, file names, folder names, or file and folder names.</td>
-                            <td><code>File and folder names</code></td>
+                            <td><strong>Search in</strong></td>
+                            <td>In search options, choose Contents, File names, Folder names, or a combination.</td>
+                            <td>File names and Folder names selected.</td>
                         </tr>
                         <tr>
-                            <td><strong>File name pattern</strong></td>
+                            <td><strong>File types / name pattern</strong></td>
                             <td>Optional semicolon- or comma-separated glob filter for files. Blank means all files for name searches or all supported files for content searches.</td>
                             <td><code>*.cs;*.xaml;*.md</code></td>
                         </tr>
                         <tr>
-                            <td><strong>Look in</strong></td>
+                            <td><strong>Folder</strong></td>
                             <td>The folder to search. Recent folders are saved in the dropdown.</td>
                             <td><code>C:\Source\MyApp</code></td>
                         </tr>
                         <tr>
-                            <td><strong>Include subfolders</strong></td>
+                            <td><strong>Subfolders</strong></td>
                             <td>Searches the selected folder and all child folders when enabled.</td>
                             <td>On for solution-wide search.</td>
                         </tr>
@@ -95,16 +97,19 @@
 *.md,*.txt</code></pre>
 
             <div class="callout">
-                To search for a file or folder by name, change <strong>Search</strong> to <strong>File names</strong>, <strong>Folder names</strong>, or <strong>File and folder names</strong>. To limit which files are considered, use <strong>File name pattern</strong>.
+                To search by name, choose <strong>File names</strong>, <strong>Folder names</strong>, or both in search options. Enable <strong>Use index</strong> to use a <a href="indexing.html#drive-name-index">drive name index</a> when it covers the scope; otherwise FileSearch uses the folder index or a live scan.
             </div>
+
+            <h2>Outlook Mail Search</h2>
+            <p>For local MSG, PST, and OST files, choose <strong>Contents</strong> and enable <strong>Office &amp; PDF text</strong>. Search words match message headers, bodies, attachment names, and mail folders. In Unified mode, <code>type:email invoice</code> limits the query to email formats. See <a href="mail.html">Outlook Mail Search</a> for indexing, message previews, and coverage limits.</p>
 
             <h2>Scanned or Image PDF Search</h2>
             <p>Searching <code>*.pdf</code> only limits the search to PDF files. It does not turn on OCR by itself. For scanned or image-only PDFs, use these settings:</p>
             <ul class="plain-list">
-                <li>Set <strong>Search</strong> to <strong>Contents</strong>.</li>
+                <li>Select <strong>Contents</strong> under <strong>Search in</strong> in search options.</li>
                 <li>Set <strong>File name pattern</strong> to <code>*.pdf</code>.</li>
-                <li>Keep <strong>Office/PDF</strong> enabled.</li>
-                <li>Enable <strong>Image OCR</strong>.</li>
+                <li>Keep <strong>Office &amp; PDF text</strong> enabled.</li>
+                <li>Enable <strong>Text in images (OCR)</strong>.</li>
                 <li>If <strong>Use index</strong> is enabled, make sure the indexed location was built with Image OCR enabled; otherwise use <strong>Index &gt; Manage indexed locations... &gt; Rebuild selected</strong>.</li>
             </ul>
 
@@ -151,7 +156,7 @@
             <p>FileSearch keeps the most recent full searches and folders so repeated searches are quick. A search attempt is added to history when it starts, even if it is canceled or fails. History appears in the sidebar's Recent folders and Saved searches sections.</p>
 
             <h2>Quick Search</h2>
-            <p>Use <a href="quick-search.html">Quick Search</a> for launcher-style searches from anywhere. It uses one search box, supports current folder, selected indexed locations, all indexed locations, and bounded machine metadata scopes, then closes after you act on a result.</p>
+            <p>Use <a href="quick-search.html">Quick Search</a> for searches from anywhere. It supports a selected folder, selected indexed locations, all indexed locations, and Entire machine metadata. Ready drive indexes supply name matches; other drives use a bounded live metadata scan. Quick Search closes after you open, reveal, copy, pin, or drag a result.</p>
 
             <div class="next-links">
                 <a href="quick-search.html">Quick Search</a>

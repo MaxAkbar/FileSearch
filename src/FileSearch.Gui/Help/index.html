@@ -23,7 +23,9 @@
                 <a href="search.html">Run a Search</a>
                 <a href="quick-search.html">Quick Search</a>
                 <a href="query-syntax.html">Query Syntax</a>
+                <a href="smart-search.html">Smart Search (ONNX)</a>
                 <a href="results.html">Results and Preview</a>
+                <a href="mail.html">Outlook Mail Search</a>
                 <a href="indexing.html">Indexed Search</a>
                 <a href="workflows.html">Workflows</a>
                 <a href="cli.html">Command Line</a>
@@ -36,14 +38,14 @@
         <main class="content">
             <section class="hero">
                 <div class="eyebrow">FileSearch Help</div>
-                <h1>Find text across files quickly and confidently.</h1>
-                <p class="lead">FileSearch searches a folder for files containing text, regular expressions, or Boolean expressions. It can scan source files, text documents, Office files, PDFs, other common document formats, and opt-in OCR text from images, scanned PDFs, and embedded document images.</p>
+                <h1>Find files, document text, and local mail.</h1>
+                <p class="lead">FileSearch searches file and folder names, source files, Office documents, PDFs, EML/MSG messages, and messages inside local PST/OST stores. Use folder content indexes for repeat text searches, whole-drive NTFS indexes for name lookup, and opt-in OCR for supported images and documents.</p>
             </section>
 
             <section class="grid">
                 <article class="card">
                     <h3>Choose a scope</h3>
-                    <p>Select the folder in <strong>Look in</strong>, decide whether subfolders are included, then optionally narrow the scan with file name patterns like <code>*.cs;*.xaml</code>.</p>
+                    <p>Select a folder in the search bar, choose whether subfolders are included in search options, then optionally narrow the scan with file name patterns like <code>*.cs;*.xaml</code>.</p>
                 </article>
                 <article class="card">
                     <h3>Use Quick Search</h3>
@@ -59,11 +61,11 @@
                 </article>
                 <article class="card">
                     <h3>Pick a query mode</h3>
-                    <p>Use Boolean mode for normal search expressions, Plain text for literal phrases, or Regex when you need a .NET regular expression.</p>
+                    <p>Unified is the default and combines content terms with fields such as <code>type:</code> and <code>modified:</code>. Boolean, PlainText, and Regex modes are also available.</p>
                 </article>
                 <article class="card">
                     <h3>Review matching files</h3>
-                    <p>The results grid shows every matched file, hit count, first matching line, and folder. Selecting a row opens the Hits tab with matching lines and context.</p>
+                    <p>Result cards show matching files or individual store messages and their hit lines. Select a card to load context in the preview pane; use the results toolbar to filter, sort, or group.</p>
                 </article>
             </section>
 
@@ -73,38 +75,42 @@
                     <span class="step-number">1</span>
                     <div>
                         <h3>Enter what you want to find</h3>
-                        <p>Type the text or expression into <strong>Containing text</strong>. Press <kbd>Enter</kbd> or choose <strong>Start</strong> to search.</p>
+                        <p>Type text or an expression into the search box. Press <kbd>Enter</kbd> or choose <strong>Search</strong> to search.</p>
                     </div>
                 </div>
                 <div class="workflow-step">
                     <span class="step-number">2</span>
                     <div>
                         <h3>Limit the file set</h3>
-                        <p>Use <strong>File name pattern</strong> for globs such as <code>*.cs</code>, <code>*.txt</code>, or <code>*.cs;*.xaml;*.md</code>. Leave it blank to search every supported file.</p>
+                        <p>Use the <strong>file types</strong> menu or the name-pattern filter for globs such as <code>*.cs</code>, <code>*.txt</code>, or <code>*.cs;*.xaml;*.md</code>. Leave the pattern blank to consider all supported file types.</p>
                     </div>
                 </div>
                 <div class="workflow-step">
                     <span class="step-number">3</span>
                     <div>
                         <h3>Choose the folder</h3>
-                        <p>Enter a path in <strong>Look in</strong> or use the folder button. Turn <strong>Include subfolders</strong> on when you want recursive search.</p>
+                        <p>Enter a path in the folder field or use the folder button. Open search options and turn <strong>Subfolders</strong> on when you want recursive search.</p>
                     </div>
                 </div>
                 <div class="workflow-step">
                     <span class="step-number">4</span>
                     <div>
                         <h3>Inspect and refine</h3>
-                        <p>Select a result to see matching lines. Open the <strong>Filter</strong> tab to narrow the current results without scanning the files again.</p>
+                        <p>Select a result to see context. Use <strong>filter results</strong> or the <strong>Filters</strong> facets to narrow the current results without scanning the files again.</p>
                     </div>
                 </div>
             </div>
 
             <div class="callout">
-                Boolean search is the default. Adjacent words are treated like <code>AND</code>, so <code>error timeout</code> means files must contain both terms.
+                Unified search is the default. Adjacent content words are treated like <code>AND</code>; add fields such as <code>type:email</code> to limit the files being searched. See <a href="query-syntax.html">Query Syntax</a>.
             </div>
 
             <h2>Common Tasks</h2>
             <div class="grid two">
+                <article class="card compact">
+                    <h3>Search by meaning with ONNX</h3>
+                    <p>Select a local Smart Search model, build vectors for an indexed folder, and search <code>semantic:"authentication migration"</code> in Unified mode with Use index enabled. Follow the <a href="smart-search.html">Smart Search walkthrough</a>.</p>
+                </article>
                 <article class="card compact">
                     <h3>Search only source files</h3>
                     <p>Set <strong>File name pattern</strong> to something like <code>*.cs;*.xaml;*.json</code>, then search from your solution folder with subfolders enabled.</p>
@@ -128,6 +134,14 @@
                 <article class="card compact">
                     <h3>Search all indexed locations</h3>
                     <p>Use <a href="quick-search.html">Quick Search</a> with <strong>All indexed locations</strong> when you do not remember which root contains a file.</p>
+                </article>
+                <article class="card compact">
+                    <h3>Find files across a drive</h3>
+                    <p>Enable a local NTFS drive under <strong>File &gt; Settings &gt; Drive file-name index</strong>. Quick Search and indexed name searches can then use its saved names. See <a href="indexing.html#drive-name-index">Drive File-Name Index</a>.</p>
+                </article>
+                <article class="card compact">
+                    <h3>Search Outlook messages</h3>
+                    <p>Enable document extraction and search <code>type:email invoice</code> in Unified mode. MSG/PST/OST are read locally without Outlook. See <a href="mail.html">Outlook Mail Search</a> for setup, previews, and limits.</p>
                 </article>
                 <article class="card compact">
                     <h3>Reuse a file pattern</h3>

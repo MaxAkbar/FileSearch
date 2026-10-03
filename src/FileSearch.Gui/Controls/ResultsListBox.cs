@@ -71,7 +71,7 @@ public sealed class ResultCardItem : ListBoxItem
 
         protected override string GetNameCore() =>
             owner.DataContext is FileResultViewModel file
-                ? $"{file.FileName}, {file.MatchCountText}, {file.Directory}"
+                ? $"{file.DisplayName}, {file.MatchCountText}, {file.DisplayDirectory}"
                 : base.GetNameCore();
     }
 }

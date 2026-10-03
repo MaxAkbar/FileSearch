@@ -22,7 +22,9 @@
                 <a href="search.html">Run a Search</a>
                 <a href="quick-search.html">Quick Search</a>
                 <a href="query-syntax.html">Query Syntax</a>
+                <a href="smart-search.html">Smart Search (ONNX)</a>
                 <a href="results.html">Results and Preview</a>
+                <a href="mail.html">Outlook Mail Search</a>
                 <a href="indexing.html">Indexed Search</a>
                 <a href="workflows.html">Workflows</a>
                 <a class="active" href="cli.html">Command Line</a>
@@ -58,7 +60,7 @@
                         <tr><td><code>target contents|files|folders|names</code></td><td>Searches content, file names, folder names, or both file and folder names.</td></tr>
                         <tr><td><code>case on|off</code></td><td>Toggles case-sensitive matching.</td></tr>
                         <tr><td><code>recursive on|off</code></td><td>Includes or skips subfolders.</td></tr>
-                        <tr><td><code>docs on|off</code></td><td>Includes or skips Office/PDF/document extractors.</td></tr>
+                        <tr><td><code>docs on|off</code></td><td>Includes or skips document extractors, including EML/MSG/PST/OST mail extraction.</td></tr>
                         <tr><td><code>ocr on|off</code></td><td>Includes or skips image OCR and OCR fallbacks for scanned or embedded images.</td></tr>
                         <tr><td><code>known-only on|off</code></td><td>Restricts content searches to known extractor extensions.</td></tr>
                         <tr><td><code>include</code>, <code>exclude</code>, <code>ext</code>, <code>exclude-ext</code>, <code>plain-ext</code></td><td>Controls glob, extension, and custom text-extension filters.</td></tr>
@@ -80,6 +82,22 @@
 .\FileSearch.Cli.exe index locations --markdown
 .\FileSearch.Cli.exe index failures --jsonl --output .\index-failures.jsonl</code></pre>
             <p>Use <code>.\FileSearch.Cli.exe index --help</code> to print the executable's current index usage.</p>
+
+            <h2 id="volumes">Drive Name Commands</h2>
+            <p><code>volumes</code> manages whole-drive file and folder name indexes for local fixed NTFS drives. <code>--admin</code> requests a fast master-file-table build through Windows elevation; <code>--walk</code> scans readable folders without elevation.</p>
+            <pre><code>.\FileSearch.Cli.exe volumes list --json
+.\FileSearch.Cli.exe volumes build C: --walk --json
+.\FileSearch.Cli.exe volumes build C: --admin --json
+.\FileSearch.Cli.exe volumes search invoice --drive C: --files --json
+.\FileSearch.Cli.exe volumes search report --path "C:\Work" --limit 100 --csv
+.\FileSearch.Cli.exe volumes remove C:</code></pre>
+            <p>Drive-name output supports JSON, JSON Lines, CSV, and Markdown. The CLI catches up from saved journal checkpoints in memory when loading snapshots; it does not track drives continuously or save snapshots except on build. Normal name searches with <code>--target files|folders|names --index</code> also use a drive index when it covers every root. See <a href="indexing.html#drive-name-index">Drive File-Name Index</a>.</p>
+
+            <h2>Mail Search</h2>
+            <pre><code>.\FileSearch.Cli.exe search "type:email invoice" --path "C:\Mail" --mode unified --json
+.\FileSearch.Cli.exe index build "C:\Mail" --json
+.\FileSearch.Cli.exe search "type:email invoice" --path "C:\Mail" --mode unified --index --json</code></pre>
+            <p>Document extraction is enabled by default; <code>--no-docs</code> excludes mail extraction too. Mail JSON/JSONL hits include <code>MailMessage</code> metadata, and CSV includes mail identity, subject, sender, folder, and date columns. The default 100 MiB cap exempts PST/OST; an explicit <code>--max-size</code> applies to stores. These are local-file searches; see <a href="mail.html">Outlook Mail Search</a> for cached OST coverage and attachment limits.</p>
 
             <h2>Workflow Commands</h2>
             <p>Saved workflow JSON files can be listed, inspected, validated, and run from the CLI. Side-effecting workflow steps ask for confirmation in an interactive terminal; pass <code>--yes</code> only for unattended runs you have reviewed.</p>

@@ -1,0 +1,111 @@
+<!doctype html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Outlook Mail Search - FileSearch Help</title>
+    <link rel="stylesheet" href="css/help.css">
+</head>
+<body>
+    <div class="shell">
+        <aside class="sidebar">
+            <a class="brand" href="index.html" aria-label="FileSearch help home">
+                <img src="../Assets/FileSearch-256.png" alt="">
+                <span>
+                    <span class="brand-title">FileSearch</span>
+                    <span class="brand-subtitle">User help</span>
+                </span>
+            </a>
+            <div class="nav-heading">Using FileSearch</div>
+            <nav class="nav">
+                <a href="index.html">Overview</a>
+                <a href="search.html">Run a Search</a>
+                <a href="quick-search.html">Quick Search</a>
+                <a href="query-syntax.html">Query Syntax</a>
+                <a href="smart-search.html">Smart Search (ONNX)</a>
+                <a href="results.html">Results and Preview</a>
+                <a class="active" href="mail.html">Outlook Mail Search</a>
+                <a href="indexing.html">Indexed Search</a>
+                <a href="workflows.html">Workflows</a>
+                <a href="cli.html">Command Line</a>
+                <a href="executables.html">Release Executables</a>
+                <a href="options.html">Options</a>
+                <a href="troubleshooting.html">Troubleshooting</a>
+            </nav>
+        </aside>
+
+        <main class="content">
+            <section class="hero">
+                <div class="eyebrow">Outlook Mail Search</div>
+                <h1>Find messages in local Outlook files.</h1>
+                <p class="lead">Search MSG messages and messages inside PST and OST stores without installing Outlook or an Outlook IFilter. FileSearch reads local files and also supports EML; it does not sign into Exchange or Microsoft 365.</p>
+            </section>
+
+            <h2 id="search">Search a Mail Folder</h2>
+            <ol class="plain-list">
+                <li>Close Outlook and choose the folder containing your mail files. A stable copy of a store also works.</li>
+                <li>Open the search options button, select <strong>Contents</strong>, and enable <strong>Office &amp; PDF text</strong>. This option also enables mail extraction.</li>
+                <li>Search for words in a subject, sender, recipient, body, attachment name, or mail folder. In <strong>Unified</strong> mode, use <code>type:email invoice</code> to restrict the search to EML, MSG, PST, and OST files.</li>
+                <li>For repeat searches, add the containing folder with <strong>Index &gt; Manage indexed locations</strong>, enable document extraction for that location, build its content index, and turn on <strong>Use index</strong>.</li>
+                <li>In Quick Search, choose an indexed scope and turn on <strong>Content</strong>. Enter ordinary search words such as <code>invoice</code>; Quick Search uses plain text rather than Unified field syntax.</li>
+            </ol>
+            <div class="callout">
+                The <a href="indexing.html#drive-name-index">drive file-name index</a> finds the names of mail files. Searching the messages inside them requires a live content search or a folder content index.
+            </div>
+
+            <h2 id="coverage">What Is Searchable</h2>
+            <div class="table-wrap">
+                <table>
+                    <thead><tr><th>Format</th><th>Coverage</th></tr></thead>
+                    <tbody>
+                        <tr><td><code>.eml</code></td><td>Individual messages through the existing EML extractor.</td></tr>
+                        <tr><td><code>.msg</code></td><td>Subject, sender, To/Cc recipients, date, plain/HTML/RTF body text, and file attachment names.</td></tr>
+                        <tr><td><code>.pst</code></td><td>Messages and their mail folders, with the same searchable fields as MSG.</td></tr>
+                        <tr><td><code>.ost</code></td><td>Messages present in the local cache, with the same searchable fields as PST. Online-only and unsynchronized mail is unavailable.</td></tr>
+                    </tbody>
+                </table>
+            </div>
+            <p>MSG/PST/OST extraction does not search attachment contents, embedded messages, or OCR text in mail attachments. It does not export original attachments. Outlook profiles and online mailboxes are not discovered or synchronized automatically.</p>
+            <p>Search words match the extracted message text. Dedicated <code>from:</code> and <code>subject:</code> operators and message-date filters are not available. File size, created-date, and modified-date filters describe the physical mail file or store.</p>
+
+            <h2 id="results">Results and Preview</h2>
+            <p>Each matching PST/OST message has its own card, including messages with identical subjects. Cards show the subject, sender, date, and mail folder. The preview and <strong>Copy file content</strong> read only the selected message.</p>
+            <ul class="plain-list">
+                <li><strong>Open</strong> on a MSG launches its registered application.</li>
+                <li><strong>Open</strong> on a PST/OST message creates a text-only EML copy and opens it in the registered mail application. The copy contains readable headers, body text, and attachment names; attachments and original formatting are omitted.</li>
+                <li><strong>Copy path</strong> and <strong>Reveal in Explorer</strong> refer to the containing store.</li>
+                <li>Individual store messages cannot be renamed, deleted, pinned, favorited, or dragged as physical files from result cards.</li>
+                <li>If the store changed after indexing or searching, refresh the index or rerun the search before opening the message. Old message identities are rejected when the store size or modification timestamp changes.</li>
+            </ul>
+
+            <h2 id="limits">Large Stores and Extraction Limits</h2>
+            <p>Store changes cause the whole changed PST/OST to be extracted again. There is no per-message incremental update yet, so closed, stable copies are useful for large active stores.</p>
+            <ul class="plain-list">
+                <li>The default 100 MiB physical-file cap exempts PST/OST. A positive GUI <strong>Max</strong> size or an explicit CLI <code>--max-size</code> applies to stores too.</li>
+                <li>Default output limits are 2,097,152 characters per message, a 67,108,864-character budget per store including repeated metadata, and 100,000 attempted messages per store, including unreadable messages.</li>
+                <li>MSG property reads and decompressed RTF are limited to 4 MiB. Metadata fields are limited to 4,096 characters, recipient and attachment enumeration is bounded, and store folder nesting is limited to 64 levels.</li>
+                <li>Document-host extraction has a five-minute timeout for stores. Locked, corrupt, or unsupported stores can fail. Truncation and unreadable messages or folders produce extraction warnings; inspect status messages and index failures.</li>
+            </ul>
+            <p>These limits bound emitted text and some reads; they do not guarantee a fixed parser memory limit or support for every historical store variant.</p>
+
+            <h2 id="cli">Command Line</h2>
+            <pre><code>.\FileSearch.Cli.exe search "type:email invoice" --path "C:\Mail" --mode unified --json
+.\FileSearch.Cli.exe index build "C:\Mail" --json
+.\FileSearch.Cli.exe search "type:email invoice" --path "C:\Mail" --mode unified --index --json</code></pre>
+            <p>JSON and JSON Lines mail hits include optional <code>MailMessage</code> metadata with message identity, subject, sender, recipients, UTC date, mail folder, and store fingerprint. CSV includes mail identity, subject, sender, folder, and date columns. Store hit line numbers are globally unique, and message identities keep results distinct.</p>
+            <p><a href="workflows.html#mail-files">Workflow file operations</a> work on physical files, so a copy or move of a matched PST/OST acts on the whole store.</p>
+
+            <h2 id="privacy">Local Mail Data and Preview Copies</h2>
+            <p>The content index contains searchable mail text and metadata locally under <code>%LocalAppData%\FileSearch\Index</code>. Remove the indexed location to delete its indexed data.</p>
+            <p>EML preview copies are stored in <code>%TEMP%\FileSearch\MailPreview</code>. Opening another store message attempts to remove FileSearch's own copies older than one day. Copies may remain if another app holds them open or FileSearch is no longer used. Delete that directory manually to clear preview copies immediately.</p>
+
+            <div class="next-links">
+                <a href="indexing.html">Indexed Search</a>
+                <a href="results.html">Results and Preview</a>
+                <a href="cli.html">Command Line</a>
+                <a href="troubleshooting.html#mail-search">Mail Troubleshooting</a>
+            </div>
+        </main>
+    </div>
+</body>
+</html>

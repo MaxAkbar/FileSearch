@@ -1290,6 +1290,97 @@ public sealed class FileIndexTests : IDisposable
         }
     }
 
+    [Theory]
+    [InlineData(".pst")]
+    [InlineData(".ost")]
+    public async Task FailedStoreExtractionCannotFallBackToAnonymousIFilterLines(string extension)
+    {
+        File.WriteAllText(Path.Combine(_root, "broken" + extension), "invalid store");
+        var fallback = new FakeWindowsIFilterExtractionService { Lines = [new TextLine(1, "anonymous needle")] };
+        using var index = new CSharpDbFileIndex(
+            new FileIndexOptions { DatabasePath = Path.Combine(Path.GetDirectoryName(_dbPath)!, "store-failure.db") },
+            new FileWalker(), new ExtractorRegistry([new ThrowingTestExtractor(extension)]),
+            windowsIFilterExtraction: fallback);
+        await index.BuildOrRefreshAsync(new IndexRequest(_root, new WalkerOptions()), TestContext.Current.CancellationToken);
+        Assert.Equal(0, fallback.CallCount);
+        Assert.NotEmpty(await index.GetFailedFilesAsync(TestContext.Current.CancellationToken));
+        Assert.Empty(await RawIndexedSearchAsync(index, new TermQuery("needle")));
+    }
+
+    [Fact]
+    public async Task NativeMailReplacesUnchangedIFilterResultsOnRefresh()
+    {
+        using var fixtures = new OutlookTestFiles();
+        File.Copy(fixtures.PathFor("message.msg"), Path.Combine(_root, "mail.msg"));
+        var path = Path.Combine(Path.GetDirectoryName(_dbPath)!, "mail-promotion.db");
+        var fallback = new FakeWindowsIFilterExtractionService { Lines = [new TextLine(1, "anonymous needle")] };
+        using (var legacy = new CSharpDbFileIndex(new FileIndexOptions { DatabasePath = path }, new FileWalker(),
+            new ExtractorRegistry([new EmptyTestExtractor(".msg")]), windowsIFilterExtraction: fallback))
+            await legacy.BuildOrRefreshAsync(new IndexRequest(_root, new WalkerOptions()), TestContext.Current.CancellationToken);
+        using var native = new CSharpDbFileIndex(new FileIndexOptions { DatabasePath = path }, new FileWalker(),
+            new ExtractorRegistry([new MsgExtractor()]), windowsIFilterExtraction: fallback);
+        await native.BuildOrRefreshAsync(new IndexRequest(_root, new WalkerOptions()), TestContext.Current.CancellationToken);
+        var hit = Assert.Single(await RawIndexedSearchAsync(native, new TermQuery("MIME registry")));
+        Assert.Equal("MIME registry use cases", hit.MailMessage!.Subject);
+        Assert.Equal(1, fallback.CallCount);
+    }
+
+    [Fact]
+    public async Task CurrentSchemaAccepts64BitFileSizesAndJournalCheckpoints()
+    {
+        File.WriteAllText(Path.Combine(_root, "large-metadata.txt"), "needle\n");
+        await BuildAsync();
+        const long large = 5L * 1024 * 1024 * 1024;
+        var volume = new IndexVolumeInfo("schema-test", "schema-test", _root, "schema-test", "NTFS", false, true);
+        await _index.UpdateVolumeCheckpointCoreAsync(volume, 1, large, "healthy", null, TestContext.Current.CancellationToken);
+        var checkpoint = await _index.GetVolumeCheckpointCoreAsync(volume, TestContext.Current.CancellationToken);
+        Assert.Equal(large, checkpoint!.LastCommittedUsn);
+        var db = await Database.OpenAsync(_dbPath, TestContext.Current.CancellationToken);
+        try
+        {
+            await db.ExecuteAsync($"UPDATE files SET size_bytes = {large}, last_observed_usn = {large}", TestContext.Current.CancellationToken);
+            await using var result = await db.ExecuteAsync("SELECT size_bytes, last_observed_usn FROM files", TestContext.Current.CancellationToken);
+            Assert.True(await result.MoveNextAsync(TestContext.Current.CancellationToken));
+            Assert.Equal(large, result.Current[0].AsInteger);
+            Assert.Equal(large, result.Current[1].AsInteger);
+        }
+        finally { await SafeDisposeAsync(db); }
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task Schema26UpgradePreservesOtherLocationsAndCanResumeAfterPartialWidening(bool partiallyUpgraded)
+    {
+        File.WriteAllText(Path.Combine(_root, "keep.txt"), "needle\n");
+        await BuildAsync();
+        var otherRoot = Path.Combine(Directory.GetParent(_root)!.FullName, "other");
+        Directory.CreateDirectory(otherRoot);
+        File.WriteAllText(Path.Combine(otherRoot, "keep-too.txt"), "needle\n");
+        await _index.BuildOrRefreshAsync(new IndexRequest(otherRoot, new WalkerOptions()), TestContext.Current.CancellationToken);
+        _index.Dispose();
+        var db = await Database.OpenAsync(_dbPath, TestContext.Current.CancellationToken);
+        try
+        {
+            await db.ExecuteAsync("ALTER TABLE index_volumes ALTER COLUMN last_committed_usn TYPE INTEGER", TestContext.Current.CancellationToken);
+            if (!partiallyUpgraded)
+                await db.ExecuteAsync("ALTER TABLE files ALTER COLUMN size_bytes TYPE INTEGER", TestContext.Current.CancellationToken);
+            await db.ExecuteAsync("ALTER TABLE files ALTER COLUMN last_observed_usn TYPE INTEGER", TestContext.Current.CancellationToken);
+            await db.ExecuteAsync("UPDATE meta SET value = '26' WHERE name = 'schema_version'", TestContext.Current.CancellationToken);
+        }
+        finally { await SafeDisposeAsync(db); }
+        using var upgraded = new CSharpDbFileIndex(new FileIndexOptions { DatabasePath = _dbPath }, new FileWalker(), _registry);
+        Assert.Single(await RawIndexedSearchAsync(upgraded, new TermQuery("needle")));
+        await upgraded.BuildOrRefreshAsync(new IndexRequest(_root, new WalkerOptions()), TestContext.Current.CancellationToken);
+        Assert.Single(await RawIndexedSearchAsync(upgraded, new TermQuery("needle")));
+        var otherStats = await upgraded.GetStatsAsync(otherRoot, TestContext.Current.CancellationToken);
+        Assert.True(otherStats.Exists);
+        Assert.Equal(1, otherStats.FileCount);
+        var volume = new IndexVolumeInfo("schema-test", "schema-test", _root, "schema-test", "NTFS", false, true);
+        await upgraded.UpdateVolumeCheckpointCoreAsync(volume, 1, 5L * 1024 * 1024 * 1024, "healthy", null, TestContext.Current.CancellationToken);
+        Assert.Equal(5L * 1024 * 1024 * 1024, (await upgraded.GetVolumeCheckpointCoreAsync(volume, TestContext.Current.CancellationToken))!.LastCommittedUsn);
+    }
+
     [Fact]
     public async Task IndexedSearchToleratesWalCleanupContention()
     {

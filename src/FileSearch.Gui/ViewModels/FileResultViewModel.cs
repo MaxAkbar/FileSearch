@@ -9,6 +9,7 @@ using System.Threading.Tasks;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 using FileSearch.Core.Engine;
+using FileSearch.Core.Extractors;
 using FileSearch.Gui.Services;
 
 namespace FileSearch.Gui.ViewModels;
@@ -82,6 +83,24 @@ public sealed partial class FileResultViewModel : ObservableObject
         string.IsNullOrWhiteSpace(ExtensionPattern) ? "Exclude extension" : $"Exclude {ExtensionPattern}";
 
     public IReadOnlyList<Hit> Hits => _hits;
+
+    public MailMessageMetadata? MailMessage { get; private set; }
+
+    public bool IsStoreMessage => MailMessage?.StoreFingerprint is not null;
+
+    public bool HasMailMessage => MailMessage is not null;
+
+    public string MailSummaryText => MailMessage is { } message
+        ? $"{message.From} · {message.DateUtc?.ToLocalTime():yyyy-MM-dd HH:mm} · {message.Folder}"
+        : string.Empty;
+
+    public string ResultKey => _hits.Count > 0 ? _hits[0].ResultKey : FullPath;
+
+    public string DisplayName => string.IsNullOrWhiteSpace(MailMessage?.Subject) ? FileName : MailMessage.Subject;
+
+    public string DisplayDirectory => MailMessage is { } message
+        ? $"{message.From} · {message.Folder} · {FileName}"
+        : Directory;
 
     // Tracked as hits arrive: rescanning every hit on each add made streaming
     // a file with thousands of matches quadratic on the UI thread.
@@ -281,6 +300,16 @@ public sealed partial class FileResultViewModel : ObservableObject
             return;
 
         var previousCount = _hits.Count;
+        if (previousCount == 0 && hits[0].MailMessage is { } message)
+        {
+            MailMessage = message;
+            OnPropertyChanged(nameof(MailMessage));
+            OnPropertyChanged(nameof(IsStoreMessage));
+            OnPropertyChanged(nameof(HasMailMessage));
+            OnPropertyChanged(nameof(MailSummaryText));
+            OnPropertyChanged(nameof(DisplayName));
+            OnPropertyChanged(nameof(DisplayDirectory));
+        }
         var hadImageOcrPreview = _hasImageOcrPreview;
         var hadStructuredSnippets = _hasStructuredSnippets;
         var oldSource = SourceGroup;
@@ -389,6 +418,8 @@ public sealed partial class FileResultViewModel : ObservableObject
 
         OnPropertyChanged(nameof(FullPath));
         OnPropertyChanged(nameof(FileName));
+        OnPropertyChanged(nameof(DisplayName));
+        OnPropertyChanged(nameof(DisplayDirectory));
         OnPropertyChanged(nameof(Directory));
         OnPropertyChanged(nameof(IsDirectory));
         OnPropertyChanged(nameof(Extension));
@@ -452,7 +483,9 @@ public sealed partial class FileResultViewModel : ObservableObject
             return OpenAsync();
 
         var hit = _hits.FirstOrDefault(candidate => candidate.LineNumber == lineNumber)
-            ?? new Hit(FullPath, lineNumber.Value, string.Empty, Array.Empty<FileSearch.Core.Queries.MatchSpan>());
+            ?? new Hit(FullPath, lineNumber.Value, string.Empty, Array.Empty<FileSearch.Core.Queries.MatchSpan>(),
+                Anchor: IsStoreMessage ? _hits.FirstOrDefault()?.Anchor : null,
+                Locator: IsStoreMessage ? new SourceLocator(MailMessage: MailMessage) : null);
         return OpenHitAsync(hit);
     }
 

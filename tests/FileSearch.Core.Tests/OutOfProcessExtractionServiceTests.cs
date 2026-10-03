@@ -5,6 +5,15 @@ namespace FileSearch.Core.Tests;
 
 public sealed class OutOfProcessExtractionServiceTests : IDisposable
 {
+    [Theory]
+    [InlineData("Release", "Debug")]
+    [InlineData("Debug", "Release")]
+    public void DevelopmentHostMatchesCallerConfiguration(string preferred, string fallback)
+    {
+        var directory = Path.Combine(Path.GetTempPath(), "repo", "src", "Cli", "bin", preferred, "net10.0", "win-x64");
+        Assert.Equal(new[] { preferred, fallback }, OutOfProcessExtractionService.GetDevelopmentHostConfigurations(directory));
+    }
+
     private readonly string _hostPath = Path.Combine(Path.GetTempPath(), Guid.NewGuid().ToString("N") + ".exe");
 
     public void Dispose()

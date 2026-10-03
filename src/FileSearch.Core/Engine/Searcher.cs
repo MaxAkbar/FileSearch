@@ -159,6 +159,7 @@ public sealed class Searcher : ISearcher
                                     request.Expression,
                                     request.WalkerOptions,
                                     channel.Writer,
+                                    request.Status,
                                     token)
                                 .ConfigureAwait(false);
                             Interlocked.Increment(ref filesProcessed);
@@ -172,6 +173,8 @@ public sealed class Searcher : ISearcher
                             // malformed files are routine, so log at Debug.
                             Interlocked.Increment(ref filesFailed);
                             _logger.LogDebug(ex, "Search failed for file {Path}.", path);
+                            if (extractor is MsgExtractor or OutlookStoreExtractor)
+                                request.Status?.Invoke($"Could not read {Path.GetFileName(path)}: {ex.Message}");
                         }
                         finally
                         {
@@ -216,14 +219,28 @@ public sealed class Searcher : ISearcher
         Query query,
         WalkerOptions options,
         ChannelWriter<Hit> writer,
+        Action<string>? status,
         CancellationToken token)
     {
         int hitsForFile = 0;
+        var hitsForMessage = 0;
+        string? currentMessage = null;
         var highlightBuffer = new List<MatchSpan>(4);
         var context = new TextExtractionContext(options.EnableOcr);
 
-        await foreach (var line in extractor.ExtractWithContextAsync(path, context, token).ConfigureAwait(false))
+        var extracted = extractor is MsgExtractor or OutlookStoreExtractor && extractor is IDiagnosticTextExtractor diagnostic
+            ? diagnostic.ExtractAsync(path, new SearchExtractionIssueSink(status, Path.GetFileName(path)), token)
+            : extractor.ExtractWithContextAsync(path, context, token);
+        await foreach (var line in extracted.ConfigureAwait(false))
         {
+            var messageId = line.Anchor?.MailMessage?.StoreFingerprint is not null ? line.Anchor.MailMessage.Id : null;
+            if (!string.Equals(currentMessage, messageId, StringComparison.Ordinal))
+            {
+                currentMessage = messageId;
+                hitsForMessage = 0;
+            }
+            if (messageId is not null && hitsForMessage >= _options.MaxHitsPerFile)
+                continue;
             highlightBuffer.Clear();
             if (!query.TryCollectHighlights(line.Content, highlightBuffer))
                 continue;
@@ -237,10 +254,17 @@ public sealed class Searcher : ISearcher
 
             await writer.WriteAsync(hit, token).ConfigureAwait(false);
 
-            if (++hitsForFile >= _options.MaxHitsPerFile) break;
+            hitsForFile++;
+            hitsForMessage++;
+            if (messageId is null && hitsForFile >= _options.MaxHitsPerFile) break;
         }
 
         return hitsForFile;
+    }
+
+    private sealed class SearchExtractionIssueSink(Action<string>? status, string fileName) : IExtractionIssueSink
+    {
+        public void Report(ExtractionIssue issue) => status?.Invoke($"{fileName}: {issue.Message}");
     }
 
     private async IAsyncEnumerable<Hit> SearchUnifiedFileMetadataAsync(

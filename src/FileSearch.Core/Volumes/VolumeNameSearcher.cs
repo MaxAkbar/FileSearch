@@ -279,7 +279,7 @@ internal sealed class VolumeNameSearcher : ISearcher
                 return null;
 
             if (options.MinFileSizeBytes > 0 && file.Length < options.MinFileSizeBytes) return null;
-            if (options.MaxFileSizeBytes > 0 && file.Length > options.MaxFileSizeBytes) return null;
+            if (options.ExceedsSizeLimit(path, file.Length)) return null;
             if (options.ModifiedAfterUtc is { } after && file.LastWriteTimeUtc < after) return null;
             if (options.ModifiedBeforeUtc is { } before && file.LastWriteTimeUtc > before) return null;
 

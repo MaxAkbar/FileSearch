@@ -67,7 +67,7 @@ public sealed class FileWalker : IFileWalker
         }
 
         if (options.MinFileSizeBytes > 0 && e.Length < options.MinFileSizeBytes) return false;
-        if (options.MaxFileSizeBytes > 0 && e.Length > options.MaxFileSizeBytes) return false;
+        if (e.Length > options.MaxFileSizeBytes && options.ExceedsSizeLimit(e.FileName.ToString(), e.Length)) return false;
 
         if (options.ModifiedAfterUtc is { } after && e.LastWriteTimeUtc < after) return false;
         if (options.ModifiedBeforeUtc is { } before && e.LastWriteTimeUtc > before) return false;

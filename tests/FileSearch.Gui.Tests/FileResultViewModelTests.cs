@@ -8,6 +8,18 @@ namespace FileSearch.Gui.Tests;
 public sealed class FileResultViewModelTests
 {
     [Fact]
+    public async Task OpeningContextLineKeepsItsStoreMessageIdentity()
+    {
+        var launcher = new FakeFileLauncher { OpenAtLocationResult = true };
+        var result = new FileResultViewModel(@"C:\mail\archive.pst", launcher);
+        var mail = new MailMessageMetadata("1", "subject", "sender", "recipient", "", null, "Inbox", "stamp");
+        result.AddHit(new Hit(result.FullPath, 12, "needle", [], Locator: new SourceLocator(MailMessage: mail)));
+        await result.OpenAtLineAsync(13);
+        Assert.Equal(mail, launcher.LastOpenedAtHit!.MailMessage);
+        Assert.Null(launcher.LastOpenedPath);
+    }
+
+    [Fact]
     public void SuppliedMetadataIsCachedWithoutAFileSystemRead()
     {
         var result = new FileResultViewModel(@"Z:\unavailable\needle.txt", new FakeFileLauncher(), isDirectory: false);

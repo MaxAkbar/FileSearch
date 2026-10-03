@@ -12,6 +12,24 @@ namespace FileSearch.Gui.Services;
 
 public sealed class FilePreviewService : IFilePreviewService
 {
+    public Task<string> LoadMailMessagePreviewAsync(string path, MailMessageMetadata message,
+        IReadOnlyList<int> hitLineNumbers, int contextLines, CancellationToken cancellationToken) =>
+        Task.Run(() => BuildHitsPreviewAsync(new SingleMailMessageExtractor(message), path, hitLineNumbers,
+            contextLines, cancellationToken), cancellationToken);
+
+    private sealed class SingleMailMessageExtractor(MailMessageMetadata message) : ITextExtractor
+    {
+        public IReadOnlyCollection<string> SupportedExtensions { get; } = Array.Empty<string>();
+
+        public async IAsyncEnumerable<TextLine> ExtractAsync(string path,
+            [System.Runtime.CompilerServices.EnumeratorCancellation] CancellationToken cancellationToken)
+        {
+            foreach (var line in OutlookMailReader.ReadMessageLines(path, message, cancellationToken))
+                yield return line;
+            await Task.CompletedTask.ConfigureAwait(false);
+        }
+    }
+
     private const int MaxPreviewCacheEntries = 64;
 
     private readonly IExtractorRegistry _extractorRegistry;

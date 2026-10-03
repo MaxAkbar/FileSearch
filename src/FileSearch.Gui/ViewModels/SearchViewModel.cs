@@ -89,6 +89,7 @@ public sealed partial class SearchViewModel : ObservableObject, IDisposable
     private bool _suppressResultViewMaintenance;
     private bool _updatingSearchTargets;
     private int _nextResultRank;
+    private bool _hasMailResults;
 
     public SearchViewModel(
         ISearcher searcher,
@@ -352,7 +353,7 @@ public sealed partial class SearchViewModel : ObservableObject, IDisposable
     private void OnFavoriteResultsChanged(object? sender, NotifyCollectionChangedEventArgs e)
     {
         foreach (var file in Files)
-            file.IsFavorite = _history.IsFavorite(file.FullPath);
+            file.IsFavorite = !file.IsStoreMessage && _history.IsFavorite(file.FullPath);
     }
 
     [RelayCommand]
@@ -456,7 +457,7 @@ public sealed partial class SearchViewModel : ObservableObject, IDisposable
     public string ResultsSublineText =>
         FilesMatched == 0
             ? string.Empty
-            : (IsContentSearch ? $"in {FilesMatched:n0} {(FilesMatched == 1 ? "file" : "files")}" : string.Empty) +
+            : (IsContentSearch ? $"in {FilesMatched:n0} {(FilesMatched == 1 ? ResultItemNounSingular : ResultItemNounPlural)}" : string.Empty) +
               (HiddenHits > 0
                   ? $"{(IsContentSearch ? " · " : string.Empty)}first {TotalHits:n0} of {MaxRetainedHits + HiddenHits:n0} shown"
                   : string.Empty);
@@ -648,7 +649,8 @@ public sealed partial class SearchViewModel : ObservableObject, IDisposable
             ? "Search contents, file names, or folder names"
             : "Search file or folder names";
 
-    private string ResultItemNounPlural => IsContentSearch ? "files" : "items";
+    private string ResultItemNounSingular => IsContentSearch && !_hasMailResults ? "file" : "item";
+    private string ResultItemNounPlural => IsContentSearch && !_hasMailResults ? "files" : "items";
 
     public string FilePatternSummary =>
         string.IsNullOrWhiteSpace(FileNamePattern) ? "All files" : FileNamePattern;
@@ -661,7 +663,7 @@ public sealed partial class SearchViewModel : ObservableObject, IDisposable
     public string SubfoldersSummary => IncludeSubfolders ? "Subfolders on" : "Subfolders off";
 
     public string DocumentExtractionSummary =>
-        EnableDocumentExtraction ? "Office/PDF on" : "Office/PDF off";
+        EnableDocumentExtraction ? "Documents on" : "Documents off";
 
     public string ImageOcrSummary =>
         EnableImageOcr ? "Image OCR on" : "Image OCR off";
@@ -1020,9 +1022,10 @@ public sealed partial class SearchViewModel : ObservableObject, IDisposable
         try
         {
             _status.Text = "Reading file content...";
-            var text = await _previewService
-                .LoadFullTextAsync(file.FullPath, CancellationToken.None)
-                .ConfigureAwait(true);
+            var text = file.MailMessage is { } mail
+                ? await Task.Run(() => string.Join(Environment.NewLine,
+                    OutlookMailReader.ReadMessageLines(file.FullPath, mail, CancellationToken.None).Select(line => line.Content))).ConfigureAwait(true)
+                : await _previewService.LoadFullTextAsync(file.FullPath, CancellationToken.None).ConfigureAwait(true);
 
             if (string.IsNullOrEmpty(text))
             {
@@ -1094,7 +1097,7 @@ public sealed partial class SearchViewModel : ObservableObject, IDisposable
     [RelayCommand(CanExecute = nameof(CanTogglePinResult))]
     private void TogglePinResult(FileResultViewModel? file)
     {
-        if (file is null)
+        if (file is null || file.IsStoreMessage)
             return;
 
         _settingsService.Update(settings =>
@@ -1113,19 +1116,19 @@ public sealed partial class SearchViewModel : ObservableObject, IDisposable
         _status.Text = file.IsPinned ? "Pinned result." : "Unpinned result.";
     }
 
-    private bool CanTogglePinResult(FileResultViewModel? file) => file is not null;
+    private bool CanTogglePinResult(FileResultViewModel? file) => file is not null && !file.IsStoreMessage;
 
     [RelayCommand(CanExecute = nameof(CanToggleFavoriteResult))]
     private void ToggleFavoriteResult(FileResultViewModel? file)
     {
-        if (file is null)
+        if (file is null || file.IsStoreMessage)
             return;
 
         file.IsFavorite = _history.ToggleFavorite(file.FullPath);
         _status.Text = file.IsFavorite ? "Added favorite." : "Removed favorite.";
     }
 
-    private bool CanToggleFavoriteResult(FileResultViewModel? file) => file is not null;
+    private bool CanToggleFavoriteResult(FileResultViewModel? file) => file is not null && !file.IsStoreMessage;
 
     [RelayCommand]
     private void SaveWorkspace()
@@ -1181,7 +1184,7 @@ public sealed partial class SearchViewModel : ObservableObject, IDisposable
     [RelayCommand(CanExecute = nameof(CanRenameResult))]
     private async Task RenameResultAsync(FileResultViewModel? file)
     {
-        if (file is null || _fileOperationService is null)
+        if (file is null || file.IsStoreMessage || _fileOperationService is null)
             return;
 
         var oldPath = file.FullPath;
@@ -1209,12 +1212,12 @@ public sealed partial class SearchViewModel : ObservableObject, IDisposable
     }
 
     private bool CanRenameResult(FileResultViewModel? file) =>
-        _fileOperationService is not null && file is not null && !file.IsDirectory;
+        _fileOperationService is not null && file is not null && !file.IsDirectory && !file.IsStoreMessage;
 
     [RelayCommand(CanExecute = nameof(CanDeleteResult))]
     private async Task DeleteResultAsync(FileResultViewModel? file)
     {
-        if (file is null || _fileOperationService is null)
+        if (file is null || file.IsStoreMessage || _fileOperationService is null)
             return;
 
         var result = await _fileOperationService
@@ -1247,7 +1250,7 @@ public sealed partial class SearchViewModel : ObservableObject, IDisposable
     }
 
     private bool CanDeleteResult(FileResultViewModel? file) =>
-        _fileOperationService is not null && file is not null && !file.IsDirectory;
+        _fileOperationService is not null && file is not null && !file.IsDirectory && !file.IsStoreMessage;
 
     [RelayCommand]
     private void Browse()
@@ -1275,6 +1278,7 @@ public sealed partial class SearchViewModel : ObservableObject, IDisposable
         foreach (var file in Files)
             file.MetadataLoaded -= OnResultMetadataLoaded;
         _filesByPath.Clear();
+        _hasMailResults = false;
         Files.Clear();
         SelectedFile = null;
         PreviewContent = string.Empty;
@@ -1443,11 +1447,11 @@ public sealed partial class SearchViewModel : ObservableObject, IDisposable
             var staged = 0;
             while (staged < _drainBatchSize && pendingHits.TryRead(out var pending))
             {
-                if (!groups.TryGetValue(pending.Hit.Path, out var group))
+                if (!groups.TryGetValue(pending.Hit.ResultKey, out var group))
                 {
                     group = (new List<Hit>(), pending.IsDirectory);
-                    groups[pending.Hit.Path] = group;
-                    order.Add(pending.Hit.Path);
+                    groups[pending.Hit.ResultKey] = group;
+                    order.Add(pending.Hit.ResultKey);
                 }
 
                 group.Hits.Add(pending.Hit);
@@ -1484,10 +1488,10 @@ public sealed partial class SearchViewModel : ObservableObject, IDisposable
                 var recordOpened = _indexUsageStore is null
                     ? null
                     : new Func<string, CancellationToken, Task>(_indexUsageStore.RecordFileOpenedAsync);
-                file = new FileResultViewModel(path, _fileLauncher, recordOpened, _nextResultRank++, isDirectory)
+                file = new FileResultViewModel(hits[0].Path, _fileLauncher, recordOpened, _nextResultRank++, isDirectory)
                 {
-                    IsPinned = IsPinned(path),
-                    IsFavorite = _history.IsFavorite(path),
+                    IsPinned = hits[0].MailMessage?.StoreFingerprint is null && IsPinned(hits[0].Path),
+                    IsFavorite = hits[0].MailMessage?.StoreFingerprint is null && _history.IsFavorite(hits[0].Path),
                 };
                 _filesByPath[path] = file;
 
@@ -1497,6 +1501,7 @@ public sealed partial class SearchViewModel : ObservableObject, IDisposable
                 // Adding an empty row first made the filter judge a blank
                 // and hide it until the next full view refresh.
                 file.AddHits(hits);
+                _hasMailResults |= file.HasMailMessage;
                 file.MetadataLoaded += OnResultMetadataLoaded;
                 if (NeedsMetadataForArrangement())
                     file.EnsureMetadataLoading();
@@ -1778,8 +1783,8 @@ public sealed partial class SearchViewModel : ObservableObject, IDisposable
 
         foreach (var file in Files)
         {
-            file.IsPinned = IsPinned(file.FullPath);
-            file.IsFavorite = _history.IsFavorite(file.FullPath);
+            file.IsPinned = !file.IsStoreMessage && IsPinned(file.FullPath);
+            file.IsFavorite = !file.IsStoreMessage && _history.IsFavorite(file.FullPath);
         }
 
         RefreshFilesView();
@@ -1892,7 +1897,7 @@ public sealed partial class SearchViewModel : ObservableObject, IDisposable
     private async void OnResultMetadataLoaded(object? sender, EventArgs e)
     {
         if (_isDisposed || IsSearching || sender is not FileResultViewModel file ||
-            !_filesByPath.TryGetValue(file.FullPath, out var current) || !ReferenceEquals(file, current) ||
+            !_filesByPath.TryGetValue(file.ResultKey, out var current) || !ReferenceEquals(file, current) ||
             _metadataRefreshPending)
             return;
 
@@ -2345,6 +2350,7 @@ public sealed partial class SearchViewModel : ObservableObject, IDisposable
             MaxFileSizeBytes = MaxSizeKB > 0
                 ? (long)MaxSizeKB * 1024
                 : WalkerOptions.DefaultMaxFileSizeBytes,
+            AllowLargeMailStores = MaxSizeKB <= 0,
             ModifiedAfterUtc = ModifiedAfterEnabled ? ModifiedAfter.ToUniversalTime() : null,
             ModifiedBeforeUtc = ModifiedBeforeEnabled
                 ? ModifiedBefore.AddDays(1).AddSeconds(-1).ToUniversalTime() // inclusive end-of-day
@@ -2394,6 +2400,8 @@ public sealed partial class SearchViewModel : ObservableObject, IDisposable
         {
             foreach (var extension in _fileTypeOptions.DocumentExtensions)
                 extensions.Add(extension);
+            // Also respect the toggle with file-type settings saved before mail support.
+            extensions.UnionWith([".msg", ".pst", ".ost"]);
         }
 
         if (!settings.EnableImageOcr)
@@ -2444,8 +2452,11 @@ public sealed partial class SearchViewModel : ObservableObject, IDisposable
     {
         var extensions = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         if (!enableDocumentExtraction)
+        {
             foreach (var extension in _fileTypeOptions.DocumentExtensions)
                 extensions.Add(extension);
+            extensions.UnionWith([".msg", ".pst", ".ost"]);
+        }
 
         if (!enableImageOcr)
             foreach (var extension in ImageOcrFileTypes.SupportedExtensions)
@@ -2488,6 +2499,15 @@ public sealed partial class SearchViewModel : ObservableObject, IDisposable
             ImageOcrPreview = await ImageOcrPreviewViewModel
                 .TryCreateAsync(file.FullPath, file.Hits, token)
                 .ConfigureAwait(true);
+            if (file.MailMessage is { } mail)
+            {
+                var mailPreview = await _previewService.LoadMailMessagePreviewAsync(file.FullPath, mail,
+                    file.Hits.Select(hit => hit.LineNumber).ToArray(), IsWholeFilePreview ? WholeFileContextLines : 3, token)
+                    .ConfigureAwait(true);
+                if (!token.IsCancellationRequested)
+                    PreviewContent = string.IsNullOrWhiteSpace(mailPreview) ? file.BuildStoredHitPreview() : mailPreview;
+                return;
+            }
             if (IsWholeFilePreview)
             {
                 var wholeFile = await LoadWholeFilePreviewAsync(file, token).ConfigureAwait(true);

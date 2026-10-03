@@ -13,7 +13,7 @@ internal sealed class CliState
 
     private static readonly string[] s_documentExtensions =
     [
-        ".pdf", ".docx", ".xlsx", ".pptx", ".rtf", ".odt", ".ods", ".odp", ".epub", ".eml",
+        ".pdf", ".docx", ".xlsx", ".pptx", ".rtf", ".odt", ".ods", ".odp", ".epub", ".eml", ".msg", ".pst", ".ost",
     ];
 
     public string Root { get; set; } = Directory.GetCurrentDirectory();
@@ -53,6 +53,7 @@ internal sealed class CliState
     public long MinFileSizeBytes { get; set; }
 
     public long MaxFileSizeBytes { get; set; } = WalkerOptions.DefaultMaxFileSizeBytes;
+    public bool AllowLargeMailStores { get; set; } = true;
 
     public DateTime? ModifiedAfterUtc { get; set; }
 
@@ -94,6 +95,7 @@ internal sealed class CliState
             IncludeHidden = IncludeHidden,
             MinFileSizeBytes = MinFileSizeBytes,
             MaxFileSizeBytes = MaxFileSizeBytes,
+            AllowLargeMailStores = AllowLargeMailStores,
             ModifiedAfterUtc = ModifiedAfterUtc,
             ModifiedBeforeUtc = ModifiedBeforeUtc,
             EnableOcr = EnableImageOcr,
@@ -111,6 +113,7 @@ internal sealed class CliState
         AdditionalPlainTextExtensions.Clear();
         MinFileSizeBytes = 0;
         MaxFileSizeBytes = WalkerOptions.DefaultMaxFileSizeBytes;
+        AllowLargeMailStores = true;
         ModifiedAfterUtc = null;
         ModifiedBeforeUtc = null;
     }

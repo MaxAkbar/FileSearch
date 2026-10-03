@@ -22,7 +22,9 @@
                 <a href="search.html">Run a Search</a>
                 <a href="quick-search.html">Quick Search</a>
                 <a class="active" href="query-syntax.html">Query Syntax</a>
+                <a href="smart-search.html">Smart Search (ONNX)</a>
                 <a href="results.html">Results and Preview</a>
+                <a href="mail.html">Outlook Mail Search</a>
                 <a href="indexing.html">Indexed Search</a>
                 <a href="workflows.html">Workflows</a>
                 <a href="cli.html">Command Line</a>
@@ -37,7 +39,7 @@
                 <div class="eyebrow">Search Expressions</div>
                 <h1>Use one query for text and file filters.</h1>
                 <p class="lead">Unified mode is the default for the full search window. It combines normal text search with fields such as <code>type:</code>, <code>name:</code>, <code>modified:</code>, and <code>size:</code>.</p>
-                <p>AI is optional. FileSearch can interpret simple natural-language queries with built-in rules, and <code>semantic:</code> records semantic intent as an explained chip. Real semantic matching requires an installed local Smart Search model pack; FileSearch does not call paid embedding services.</p>
+                <p>FileSearch interprets simple natural-language queries with built-in rules. Real semantic matching requires a usable local Smart Search model pack, vectors built for the folder, and <strong>Use index</strong>. FileSearch does not call paid embedding services. See <a href="smart-search.html">Smart Search with ONNX</a> for setup and examples.</p>
             </section>
 
             <h2>Modes</h2>
@@ -105,12 +107,12 @@
                         <tr>
                             <td><code>semantic:</code></td>
                             <td><code>semantic:"authentication migration"</code></td>
-                            <td>Uses the local semantic index when a Smart Search model pack is installed. Otherwise the chip is shown as unavailable instead of being ignored.</td>
+                            <td>Requests local semantic matching over indexed vectors with a usable model pack and Use index enabled. The current parser can label this chip Unavailable even when the runtime model is ready; check model and vector status.</td>
                         </tr>
                         <tr>
                             <td><code>ext:</code>, <code>type:</code></td>
-                            <td><code>ext:pdf</code>, <code>type:excel</code>, <code>type:image</code></td>
-                            <td>Only files with matching extensions or broad file categories.</td>
+                            <td><code>ext:pdf</code>, <code>type:excel</code>, <code>type:image</code>, <code>type:email</code></td>
+                            <td>Only files with matching extensions or broad file categories. Email includes EML, MSG, PST, and OST.</td>
                         </tr>
                         <tr>
                             <td><code>modified:</code>, <code>created:</code></td>
@@ -131,6 +133,8 @@
                 </table>
             </div>
 
+            <p>For mail searches, size and date fields apply to the physical file or store. <code>from:</code>, <code>subject:</code>, and message-date filters are not available; search sender and subject words as ordinary content terms. See <a href="mail.html">Outlook Mail Search</a>.</p>
+
             <h2>Unified Examples</h2>
             <div class="table-wrap">
                 <table>
@@ -142,6 +146,10 @@
                     </thead>
                     <tbody>
                         <tr>
+                            <td><code>type:email invoice</code></td>
+                            <td>Search email content, including messages inside local PST/OST files, with document extraction enabled.</td>
+                        </tr>
+                        <tr>
                             <td><code>invoice acme modified:last-year type:pdf</code></td>
                             <td>Find PDF content containing both words, limited to files modified in the last year.</td>
                         </tr>
@@ -151,7 +159,7 @@
                         </tr>
                         <tr>
                             <td><code>PDFs about authentication migration modified last year</code></td>
-                            <td>Interprets <code>about authentication migration</code> as a semantic chip and uses the local semantic index when a model pack is installed.</td>
+                            <td>Interprets <code>about authentication migration</code> as a semantic chip. With a usable model, indexed vectors, and Use index, it requests semantic retrieval. Type/date restrictions are not consistently applied to semantic candidates; see <a href="smart-search.html#results">current result limits</a>.</td>
                         </tr>
                         <tr>
                             <td><code>name:report path:finance size:&gt;5mb</code></td>

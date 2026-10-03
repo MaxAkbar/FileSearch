@@ -15,6 +15,7 @@ public sealed class OutOfProcessExtractionOptions
     public Dictionary<string, TimeSpan> ExtractorTimeouts { get; } = new(StringComparer.Ordinal)
     {
         ["filesearch.ifilter"] = TimeSpan.FromSeconds(15),
+        ["filesearch.outlook-store"] = TimeSpan.FromMinutes(5),
     };
 
     public HashSet<string> ExtractorIds { get; } = new(StringComparer.Ordinal)
@@ -27,6 +28,8 @@ public sealed class OutOfProcessExtractionOptions
         "filesearch.epub",
         "filesearch.zip",
         "filesearch.ifilter",
+        "filesearch.outlook-msg",
+        "filesearch.outlook-store",
     };
 
     public TimeSpan GetTimeoutForExtractor(string extractorId)

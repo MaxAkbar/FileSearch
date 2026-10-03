@@ -1,0 +1,116 @@
+<!doctype html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Smart Search with ONNX - FileSearch Help</title>
+    <link rel="stylesheet" href="css/help.css">
+</head>
+<body>
+    <div class="shell">
+        <aside class="sidebar">
+            <a class="brand" href="index.html" aria-label="FileSearch help home">
+                <img src="../Assets/FileSearch-256.png" alt="">
+                <span>
+                    <span class="brand-title">FileSearch</span>
+                    <span class="brand-subtitle">User help</span>
+                </span>
+            </a>
+            <div class="nav-heading">Using FileSearch</div>
+            <nav class="nav">
+                <a href="index.html">Overview</a>
+                <a href="search.html">Run a Search</a>
+                <a href="quick-search.html">Quick Search</a>
+                <a href="query-syntax.html">Query Syntax</a>
+                <a class="active" href="smart-search.html">Smart Search (ONNX)</a>
+                <a href="results.html">Results and Preview</a>
+                <a href="mail.html">Outlook Mail Search</a>
+                <a href="indexing.html">Indexed Search</a>
+                <a href="workflows.html">Workflows</a>
+                <a href="cli.html">Command Line</a>
+                <a href="executables.html">Release Executables</a>
+                <a href="options.html">Options</a>
+                <a href="troubleshooting.html">Troubleshooting</a>
+            </nav>
+        </aside>
+
+        <main class="content">
+            <section class="hero">
+                <div class="eyebrow">Smart Search with ONNX</div>
+                <h1>Search indexed text by meaning.</h1>
+                <p class="lead">Smart Search uses a local ONNX embedding model to find related passages even when they use different words. You need a usable model pack and Smart Search vectors for the folder you are searching.</p>
+            </section>
+
+            <h2 id="model">1. Select or Install a Model</h2>
+            <p>Open <strong>File &gt; Settings &gt; Smart Search</strong>. The <strong>Local embedding model</strong> list offers <strong>BGE small English v1.5</strong> and <strong>all-MiniLM-L6-v2</strong>; <strong>Disabled</strong> turns semantic search off.</p>
+            <p>Selecting a model starts its installation automatically. <strong>Install model</strong> also starts or retries installation. Wait for the installed model and successful smoke-validation status. Installation downloads model assets; embedding and retrieval then run locally without paid embedding services.</p>
+            <p>If the selected pack is already on disk, set <strong>Model folder</strong> to its parent model-packs directory and click <strong>Refresh</strong> to check it. The default parent is <code>%LocalAppData%\FileSearch\Models</code>. Keep the complete pack, including its vocabulary and any external ONNX weight files.</p>
+            <pre><code>Models\
+  bge-small-en-v1.5-onnx\
+    model-pack.json
+    vocab.txt
+    onnx\
+      model.onnx
+      model.onnx_data</code></pre>
+            <div class="callout">
+                <strong>Have a standalone .onnx file?</strong> The current desktop UI selects the two catalog model packs; it has no arbitrary-ONNX import dialog. A bare file is not a complete text embedding setup: it also needs a compatible tokenizer, vocabulary, and model-pack configuration. <strong>Model folder</strong> is the parent of pack directories, not the path to an ONNX file.
+            </div>
+            <p>After changing an already-loaded model or its folder, restart FileSearch and any running tray indexer before rebuilding vectors. Model sessions are retained for the lifetime of their process.</p>
+
+            <h2 id="vectors">2. Build the Folder's Smart Search Index</h2>
+            <ol class="plain-list">
+                <li>Open <strong>Index &gt; Manage indexed locations</strong> and add the folder you want to search.</li>
+                <li>Build its normal content index. Enable document extraction for Office, PDF, and mail; enable OCR before indexing if you need recognized image text.</li>
+                <li>Select the location and open its <strong>Location</strong> details. Under <strong>Smart Search</strong>, click <strong>Rebuild Smart Search</strong>.</li>
+                <li>Allow the background rebuild to finish, then click <strong>Refresh status</strong>. Look for <strong>Smart Search ready</strong> and vector coverage for the location.</li>
+            </ol>
+            <p><strong>Rebuild Smart Search</strong> creates vectors from existing indexed content without rebuilding the content index. If that content is missing or stale, first use <strong>Rebuild selected</strong> for the normal index. Installing a model alone does not make unindexed files searchable by meaning.</p>
+            <p>Vectors must match the selected model. After switching models, rebuild Smart Search for your locations. A drive file-name index supplies names only and cannot supply semantic document or mail content.</p>
+
+            <h2 id="queries">3. Run a Semantic Query</h2>
+            <ol class="plain-list">
+                <li>Set the folder in the main search bar to the indexed location or a folder inside it.</li>
+                <li>Open search options, select <strong>Contents</strong>, choose <strong>Unified</strong> under <strong>Match</strong>, and enable <strong>Use index</strong>.</li>
+                <li>Enter <code>semantic:"authentication migration"</code> and click <strong>Search</strong>.</li>
+                <li>Select a result card to read the cited source passage in the preview pane.</li>
+            </ol>
+            <div class="table-wrap">
+                <table>
+                    <thead><tr><th>Query</th><th>Use</th></tr></thead>
+                    <tbody>
+                        <tr><td><code>semantic:"authentication migration"</code></td><td>Find passages related to a concept, including different wording.</td></tr>
+                        <tr><td><code>semantic:"termination of an agreement"</code></td><td>Find related wording in the indexed folder chosen in the search bar.</td></tr>
+                        <tr><td><code>semantic:"renewal pricing discussion"</code></td><td>Find related indexed mail or document text within the selected folder. Mail content follows the <a href="mail.html">extraction limits</a>.</td></tr>
+                    </tbody>
+                </table>
+            </div>
+            <p>Use the explicit <code>semantic:</code> form when you want to request meaning-based matching directly. Ordinary search words still perform lexical matching; selecting a model does not make every query semantic. Quick Search uses plain text and does not run <code>semantic:</code> queries.</p>
+
+            <h2 id="results">Understand the Results</h2>
+            <p>Semantic retrieval supplies a ranked selection of related passages. It currently considers up to 25 file candidates and 50 semantic matches before result fusion. This is not an exhaustive count of every relevant passage; use literal, Boolean, or regex searches when you need exact terms.</p>
+            <p>Combined results can include metadata or lexical candidates too; a displayed item does not necessarily come from vector similarity. Hybrid fusion currently groups candidates by physical file, so semantic results from a PST/OST can show only a selected message from that store.</p>
+            <p>The semantic provider scopes vectors to the selected search roots, but does not consistently apply Unified type/path/date/size fields or the scan's file filters to semantic candidates. Choose a specific indexed folder to narrow the search and use result facets to refine visible items. Do not rely on a combined <code>type:pdf semantic:...</code> query as a strict file-type restriction.</p>
+            <p><strong>Local reranker</strong> in Settings applies a local heuristic ranking pass after result fusion; it does not install a second ONNX model. Preview the source text to judge whether a match answers your question. <strong>Answer</strong> creates an extractive draft from visible results rather than generating new facts.</p>
+
+            <h2 id="troubleshooting">If Smart Search Does Not Work</h2>
+            <ul class="plain-list">
+                <li><strong>Model missing or not ready:</strong> check the selected model, parent model folder, vocabulary, external weights, and installation/validation status. Retry <strong>Install model</strong> for incomplete packs.</li>
+                <li><strong>No vectors or partial coverage:</strong> check the location's Smart Search status. Wait for pending work or use <strong>Rebuild Smart Search</strong>. A usable model without indexed vectors cannot return semantic matches.</li>
+                <li><strong>Wrong search setup:</strong> select Contents, Unified mode, and Use index in the main window. Search inside the indexed location.</li>
+                <li><strong>Changed model or initialization failure:</strong> restart FileSearch and any tray indexer, then rebuild vectors with the selected model.</li>
+                <li><strong>Unavailable query chip:</strong> the current query parser can label a semantic chip Unavailable even when the model is installed. Check model and vector status; that chip label alone does not confirm runtime availability.</li>
+                <li><strong>CLI query returns no semantic matches:</strong> the current CLI search process does not load the GUI's selected model configuration. The desktop main window is the documented Smart Search entry point.</li>
+            </ul>
+
+            <h2>Local Storage</h2>
+            <p>Model assets are kept in the configured model folder. Semantic vectors are stored beside the content database in <code>%LocalAppData%\FileSearch\Index\filesearch.vectors.json</code> and <code>filesearch.vectors.segments</code>. Selecting Disabled stops semantic search; model and index files remain on disk.</p>
+
+            <div class="next-links">
+                <a href="indexing.html">Indexed Search</a>
+                <a href="query-syntax.html">Query Syntax</a>
+                <a href="options.html">Options</a>
+            </div>
+        </main>
+    </div>
+</body>
+</html>

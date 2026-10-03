@@ -18,6 +18,8 @@ CSharpDB 4.0.2 supplies bounded, chunked full-text postings for hot terms and in
 
 Smart Search stores semantic vectors beside the lexical database:
 
+For model selection, vector builds, `semantic:` queries, and current desktop/CLI limits, follow [Smart Search with ONNX](src/FileSearch.Gui/Help/smart-search.html).
+
 ```text
 %LocalAppData%\FileSearch\Index\filesearch.vectors.json
 %LocalAppData%\FileSearch\Index\filesearch.vectors.segments\
@@ -28,6 +30,10 @@ The vector manifest uses immutable root snapshots and small per-file overlay seg
 Vector formats 1 and 2 remain readable and migrate to format 3 on the first semantic mutation. Older vectors without root ownership are intentionally excluded from root-scoped Smart Search and discarded during migration; roots with incomplete semantic coverage automatically queue a semantic-only rebuild after startup catch-up. The lexical CSharpDB index does not need to be rebuilt for this vector-store migration.
 
 ## What Gets Indexed
+
+Local MSG/PST/OST mail content is supported when document extraction is enabled. Store messages retain individual identities and source metadata in the index. A changed store is re-extracted as a whole file; live Outlook stores should be closed or copied before extraction. See [Mail search](README.Mail.md) for cache coverage, limits, warnings, and message previews. Drive file-name indexes do not index mail bodies.
+
+Schema 27 stores physical file sizes and NTFS USN values as 64-bit integers, including large PST/OST stores and journal checkpoints beyond the 32-bit range. Schema 26 remains readable and upgrades these columns in place on the next index write, preserving existing locations and extracted content. Close older FileSearch processes before using the updated indexer.
 
 Each indexed location stores the root folder plus the recursive, hidden-file, document-extraction, image-OCR, unknown-file-type, watcher, and basic stats settings used for that location. A build intentionally ignores transient search filters such as file name pattern, size, and modified date so later searches can narrow against the same folder index.
 

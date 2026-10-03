@@ -156,8 +156,10 @@
                                 </Border>
 
                                 <StackPanel Grid.Column="1" Margin="12,0,14,0">
-                                    <TextBlock Text="{Binding FileName}" Style="{StaticResource ResultNameStyle}"/>
-                                    <TextBlock Text="{Binding Directory}" Style="{StaticResource ResultPathStyle}"/>
+                                    <TextBlock Text="{Binding DisplayName}" Style="{StaticResource ResultNameStyle}"/>
+                                    <TextBlock Text="{Binding DisplayDirectory}" Style="{StaticResource ResultPathStyle}"/>
+                                    <TextBlock Text="{Binding MailSummaryText}" Style="{StaticResource ResultPathStyle}"
+                                               Visibility="{Binding HasMailMessage, Converter={StaticResource BoolToVisibility}}"/>
                                     <ItemsControl ItemsSource="{Binding VisibleHits}" Margin="0,6,0,0">
                                         <ItemsControl.ItemTemplate>
                                             <DataTemplate>

@@ -28,10 +28,11 @@ internal static class MarkupText
     {
         if (string.IsNullOrWhiteSpace(value)) return string.Empty;
 
-        var withoutScripts = s_scriptAndStyleRegex.Replace(value, " ");
-        var withoutComments = s_commentRegex.Replace(withoutScripts, " ");
-        return FromXml(withoutComments);
+        return FromXml(WithoutScriptsAndComments(value));
     }
+
+    internal static string WithoutScriptsAndComments(string value) =>
+        s_commentRegex.Replace(s_scriptAndStyleRegex.Replace(value, " "), " ");
 
     public static string Normalize(string value)
     {

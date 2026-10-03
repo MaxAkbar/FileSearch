@@ -16,6 +16,52 @@ namespace FileSearch.Gui.Tests;
 public sealed class SearchViewModelTests
 {
     [Fact]
+    public void MessagesWithTheSameStoreAndSubjectRemainSeparateAndCannotMutateTheStore()
+    {
+        var operations = new FakeFileOperationService();
+        RunWithPump((pump, vm, history, status, settings) =>
+        {
+            vm.QueryText = "needle";
+            vm.SearchPath = Path.GetTempPath();
+            var task = vm.SearchCommand.ExecuteAsync(null);
+            pump.PumpUntil(() => task.IsCompleted, TimeSpan.FromSeconds(10));
+            Assert.Equal(2, vm.Files.Count);
+            Assert.Equal(3, vm.TotalHits);
+            Assert.Equal(2, vm.Files.Select(file => file.ResultKey).Distinct().Count());
+            foreach (var file in vm.Files)
+            {
+                Assert.Equal("Same subject", file.DisplayName);
+                Assert.Equal(@"C:\mail\archive.pst", file.FullPath);
+                Assert.True(file.IsStoreMessage);
+                Assert.False(vm.RenameResultCommand.CanExecute(file));
+                Assert.False(vm.DeleteResultCommand.CanExecute(file));
+                Assert.False(vm.TogglePinResultCommand.CanExecute(file));
+                Assert.False(vm.ToggleFavoriteResultCommand.CanExecute(file));
+                var delete = vm.DeleteResultCommand.ExecuteAsync(file);
+                pump.PumpUntil(() => delete.IsCompleted, TimeSpan.FromSeconds(10));
+            }
+            Assert.Equal(2, vm.Files.Count);
+        }, new MailSearcher(), fileOperationService: operations);
+    }
+
+    private sealed class MailSearcher : ISearcher
+    {
+        public async IAsyncEnumerable<Hit> SearchAsync(SearchRequest request,
+            [EnumeratorCancellation] CancellationToken cancellationToken)
+        {
+            await Task.Yield();
+            var first = new MailMessageMetadata("1", "Same subject", "first sender", "to", "", null, "Inbox", "stamp");
+            var second = first with { Id = "2", From = "second sender" };
+            yield return new Hit(@"C:\mail\archive.pst", 1, "needle one", Array.Empty<MatchSpan>(),
+                Anchor: new SourceAnchor(SourceAnchorKind.Email, "message 1", MailMessage: first));
+            yield return new Hit(@"C:\mail\archive.pst", 2, "needle two", Array.Empty<MatchSpan>(),
+                Anchor: new SourceAnchor(SourceAnchorKind.Email, "message 2", MailMessage: second));
+            yield return new Hit(@"C:\mail\archive.pst", 3, "needle three", Array.Empty<MatchSpan>(),
+                Locator: new SourceLocator(MailMessage: second));
+        }
+    }
+
+    [Fact]
     public void SearchPopulatesResultsRecordsHistoryAndPersists()
     {
         RunWithPump((pump, vm, history, status, settings) =>

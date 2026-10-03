@@ -1,6 +1,7 @@
 using System.Collections.Generic;
 using System.Threading;
 using System.Threading.Tasks;
+using FileSearch.Core.Extractors;
 
 namespace FileSearch.Gui.Services;
 
@@ -11,6 +12,10 @@ namespace FileSearch.Gui.Services;
 /// </summary>
 public interface IFilePreviewService
 {
+    Task<string> LoadMailMessagePreviewAsync(string path, MailMessageMetadata message,
+        IReadOnlyList<int> hitLineNumbers, int contextLines, CancellationToken cancellationToken) =>
+        Task.FromResult(string.Empty);
+
     Task<string> LoadHitsPreviewAsync(
         string path,
         IReadOnlyList<int> hitLineNumbers,

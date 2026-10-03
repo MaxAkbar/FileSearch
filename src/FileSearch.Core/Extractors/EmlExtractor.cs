@@ -23,7 +23,7 @@ public sealed class EmlExtractor : IContextualTextExtractor
 
     public string ExtractorId => "filesearch.eml";
 
-    public string ExtractorVersion => "2";
+    public string ExtractorVersion => "3";
 
     /// <summary>Cap on how much of a message is read; the rest isn't searched.</summary>
     private const int MaxContentChars = 10 * 1024 * 1024;
@@ -227,9 +227,9 @@ public sealed class EmlExtractor : IContextualTextExtractor
 
     private static string DecodeBody(string body, string headers)
     {
-        var decoded = headers.Contains("Content-Transfer-Encoding: quoted-printable", StringComparison.OrdinalIgnoreCase)
-            ? GetCharset(headers).GetString(DecodeQuotedPrintableBytes(body))
-            : body;
+        var encoded = headers.Contains("Content-Transfer-Encoding: quoted-printable", StringComparison.OrdinalIgnoreCase) ||
+            headers.Contains("Content-Transfer-Encoding: base64", StringComparison.OrdinalIgnoreCase);
+        var decoded = encoded ? GetCharset(headers).GetString(DecodePartBytes(body, headers)) : body;
 
         return headers.Contains("Content-Type: text/html", StringComparison.OrdinalIgnoreCase)
             ? MarkupText.FromHtml(decoded)

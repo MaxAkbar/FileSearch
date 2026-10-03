@@ -2106,15 +2106,18 @@
                                                 </Grid>
                                                 <StackPanel Grid.Column="1" Margin="10,0,10,0" VerticalAlignment="Center">
                                                     <DockPanel>
-                                                        <TextBlock Text="{Binding FileName}" Style="{StaticResource ResultCardNameStyle}"
+                                                        <TextBlock Text="{Binding DisplayName}" Style="{StaticResource ResultCardNameStyle}"
                                                                    DockPanel.Dock="Left" ToolTip="{Binding FullPath}"/>
-                                                        <TextBlock Text="{Binding Directory}"
+                                                        <TextBlock Text="{Binding DisplayDirectory}"
                                                                    FontFamily="{DynamicResource Atlas.MonoFont}" FontSize="11"
                                                                    Foreground="{DynamicResource Atlas.Ink3Brush}"
                                                                    TextTrimming="CharacterEllipsis"
                                                                    VerticalAlignment="Center" Margin="10,2,0,0"
                                                                    Visibility="{Binding DataContext.Search.IsGroupedByFolder, RelativeSource={RelativeSource AncestorType=ListBox}, Converter={StaticResource InverseBoolToVisibility}}"/>
                                                     </DockPanel>
+                                                    <TextBlock Text="{Binding MailSummaryText}" FontSize="11"
+                                                               Foreground="{DynamicResource Atlas.Ink3Brush}" TextTrimming="CharacterEllipsis"
+                                                               Visibility="{Binding HasMailMessage, Converter={StaticResource BoolToVisibility}}"/>
                                                     <WrapPanel Visibility="{DynamicResource AppStyle.ResultMetadataVisibility}">
                                                         <Border Style="{DynamicResource ResultMetaPillStyle}">
                                                             <StackPanel Orientation="Horizontal">

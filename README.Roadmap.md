@@ -8,6 +8,7 @@ FileSearch has already closed two major gaps from the older competitive analysis
 
 Completed since the older roadmap:
 
+- Local MSG/PST/OST search with individual message cards, sender/date/folder metadata, selected-message previews, and text-only EML opening without Outlook or an IFilter. Attachment contents, mail field operators, profile discovery, and per-message incremental indexing remain future work; see [Mail search](README.Mail.md).
 - Hybrid live/indexed search with CSharpDB-backed extracted line storage.
 - Multi-location indexed folders with GUI and tray-indexer background updates.
 - Per-user tray indexer with optional Windows sign-in startup.
@@ -28,7 +29,7 @@ Still missing or partial:
 - Retrying failed index files from the CLI remains future work.
 - Saved searches, custom scopes, and shareable workspace import/export exist; workspaces can optionally run their saved search when loaded.
 - Results now have GUI facets, indexed/live source route filtering, grouping, sort presets, direct CSV/JSON/JSON Lines/Markdown export, drag-and-drop, persistent favorites, shared pinned paths, safe result rename/delete, and configurable main-window and Quick Search action shortcuts; richer reporting remains missing.
-- Unified query syntax now records `semantic:` intent as an explained disabled chip, but real semantic ranking is not implemented yet.
+- Local ONNX semantic indexing and ranking are implemented for desktop `semantic:` queries. Remaining gaps include runtime-aware chip availability, consistent semantic file filters, per-message hybrid fusion, arbitrary-model import, and CLI model configuration. See [Smart Search usage](src/FileSearch.Gui/Help/smart-search.html).
 - Durable USN replay is NTFS-only. ReFS remains on snapshot validation until 128-bit file identifiers are supported and tested.
 - Hard-link-aware path identity is not fully implemented; ambiguous USN deletes fall back to root validation.
 - There is no true Windows Service yet. Background indexing is a per-user tray process that starts after user sign-in.
@@ -53,9 +54,7 @@ Still missing or partial:
 - Add default excluded folders for large noisy trees: `.git`, `.vs`, `bin`, `obj`, `node_modules`, package caches, and build outputs.
 - Add optional **Search all indexed locations** mode separate from folder-specific search.
 - Add ranking and snippets for indexed results while still rechecking every hit with the existing query engine.
-- Add optional local-only semantic indexing and ranking for `semantic:` queries. This should be disabled by default, never call paid embedding services, and store model id/license/hash with the local semantic index. First candidates to evaluate:
-  - `sentence-transformers/all-MiniLM-L6-v2` as the fast default candidate: Apache-2.0, ONNX, 384-dimensional vectors, small desktop footprint.
-  - `BAAI/bge-small-en-v1.5` as a stronger retrieval candidate: MIT, ONNX, 384-dimensional vectors, larger than MiniLM.
+- Extend the existing local-only ONNX Smart Search: complete semantic filtering and CLI model selection, reflect actual runtime availability in query chips, preserve individual mail-message identities through hybrid fusion, and add a supported custom-pack import flow. The desktop catalog already offers BGE small English v1.5 and all-MiniLM-L6-v2. Additional models to evaluate:
   - `intfloat/e5-small-v2` as an alternate retrieval candidate: MIT, ONNX, 384-dimensional vectors, but requires query/passage prefixes for best behavior.
   - `sentence-transformers/all-mpnet-base-v2` as a quality candidate: Apache-2.0, ONNX, 768-dimensional vectors, heavier index and runtime cost.
   - `sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2` or `intfloat/multilingual-e5-small` if multilingual semantic search becomes a product requirement.

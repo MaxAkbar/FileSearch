@@ -257,7 +257,7 @@ internal sealed class FileSearchRepl
                 SetSize(tokens, "minimum file size", value => _state.MinFileSizeBytes = value);
                 return true;
             case "max-size":
-                SetSize(tokens, "maximum file size", value => _state.MaxFileSizeBytes = value);
+                SetSize(tokens, "maximum file size", value => { _state.MaxFileSizeBytes = value; _state.AllowLargeMailStores = false; });
                 return true;
             case "after":
                 SetDate(tokens, "modified after", value => _state.ModifiedAfterUtc = value);
@@ -718,6 +718,7 @@ internal sealed class FileSearchRepl
                     if (!CliState.TryParseSize(NextValue(args, ref i, arg), out var maxSize))
                         throw new ArgumentException("Maximum size must be a number with an optional kb, mb, or gb suffix.");
                     state.MaxFileSizeBytes = maxSize;
+                    state.AllowLargeMailStores = false;
                     break;
                 case "--after":
                     state.ModifiedAfterUtc = ParseOneShotDate(NextValue(args, ref i, arg));
@@ -874,6 +875,7 @@ internal sealed class FileSearchRepl
                     if (!CliState.TryParseSize(NextValue(args, ref i, arg), out var maxSize))
                         throw new ArgumentException("Maximum size must be a number with an optional kb, mb, or gb suffix.");
                     state.MaxFileSizeBytes = maxSize;
+                    state.AllowLargeMailStores = false;
                     break;
                 case "--after":
                     EnsureOneShotWalkerOptionsAllowed(allowWalkerOptions, arg);
@@ -1058,7 +1060,7 @@ internal sealed class FileSearchRepl
     private static string RenderOneShotCsv(IReadOnlyList<Hit> hits)
     {
         var sb = new StringBuilder();
-        sb.AppendLine("path,lineNumber,kind,score,sizeBytes,modifiedUtc,line");
+        sb.AppendLine("path,lineNumber,kind,score,sizeBytes,modifiedUtc,line,mailMessageId,mailSubject,mailFrom,mailFolder,mailDateUtc");
         foreach (var hit in hits)
         {
             sb.Append(CsvField(hit.Path)).Append(',');
@@ -1067,7 +1069,12 @@ internal sealed class FileSearchRepl
             sb.Append(hit.Score.ToString(CultureInfo.InvariantCulture)).Append(',');
             sb.Append(hit.SizeBytes?.ToString(CultureInfo.InvariantCulture) ?? string.Empty).Append(',');
             sb.Append(CsvField(hit.ModifiedUtc?.ToString("O", CultureInfo.InvariantCulture) ?? string.Empty)).Append(',');
-            sb.AppendLine(CsvField(hit.LineContent));
+            sb.Append(CsvField(hit.LineContent)).Append(',');
+            sb.Append(CsvField(hit.MailMessage?.Id ?? string.Empty)).Append(',');
+            sb.Append(CsvField(hit.MailMessage?.Subject ?? string.Empty)).Append(',');
+            sb.Append(CsvField(hit.MailMessage?.From ?? string.Empty)).Append(',');
+            sb.Append(CsvField(hit.MailMessage?.Folder ?? string.Empty)).Append(',');
+            sb.AppendLine(CsvField(hit.MailMessage?.DateUtc?.ToString("O", CultureInfo.InvariantCulture) ?? string.Empty));
         }
 
         return sb.ToString();
@@ -1095,10 +1102,12 @@ internal sealed class FileSearchRepl
         foreach (var message in statusMessages.Distinct())
             sb.AppendLine(CultureInfo.InvariantCulture, $"- Status: {message}");
 
-        foreach (var group in hits.GroupBy(hit => hit.Path, StringComparer.OrdinalIgnoreCase))
+        foreach (var group in hits.GroupBy(hit => hit.ResultKey, StringComparer.OrdinalIgnoreCase))
         {
             sb.AppendLine();
-            sb.AppendLine(CultureInfo.InvariantCulture, $"## {group.Key}");
+            sb.AppendLine(CultureInfo.InvariantCulture, $"## {group.First().Path}");
+            if (group.First().MailMessage is { } mail)
+                sb.AppendLine(CultureInfo.InvariantCulture, $"{mail.Subject} · {mail.From} · {mail.Folder} · {mail.Id}");
             sb.AppendLine();
             foreach (var hit in group)
                 sb.AppendLine(CultureInfo.InvariantCulture, $"- L{hit.LineNumber}: {hit.LineContent.Trim()}");
@@ -1402,7 +1411,8 @@ internal sealed class FileSearchRepl
             hit.Score,
             hit.SizeBytes,
             hit.ModifiedUtc,
-            hit.LineContent);
+            hit.LineContent,
+            hit.MailMessage);
 
     private static OneShotIndexLocation ToOneShotIndexLocation(IndexedLocationInfo location) =>
         new(
@@ -2929,7 +2939,9 @@ internal sealed class FileSearchRepl
         double Score,
         long? SizeBytes,
         DateTime? ModifiedUtc,
-        string Line);
+        string Line,
+        [property: System.Text.Json.Serialization.JsonIgnore(Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull)]
+        MailMessageMetadata? MailMessage);
 
     private sealed record OneShotIndexLocationsDocument(
         int Count,

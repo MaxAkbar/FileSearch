@@ -23,6 +23,11 @@
   </ItemGroup>
 
   <ItemGroup>
+    <None Include="..\FileSearch.Core.Tests\Fixtures\Outlook\mail-samples.zip" Link="Fixtures\Outlook\mail-samples.zip" CopyToOutputDirectory="PreserveNewest" />
+    <Compile Include="..\FileSearch.Core.Tests\OutlookTestFiles.cs" Link="OutlookTestFiles.cs" />
+  </ItemGroup>
+
+  <ItemGroup>
     <ProjectReference Include="..\..\src\FileSearch.Gui\FileSearch.Gui.csproj" />
     <ProjectReference Include="..\..\src\FileSearch.WindowsOcr\FileSearch.WindowsOcr.csproj" />
   </ItemGroup>

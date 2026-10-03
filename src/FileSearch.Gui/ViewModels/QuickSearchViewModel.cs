@@ -247,11 +247,11 @@ public sealed partial class QuickSearchViewModel : ObservableObject, IDisposable
         RequestHide?.Invoke(this, EventArgs.Empty);
     }
 
-    [RelayCommand(CanExecute = nameof(CanUseResult))]
+    [RelayCommand(CanExecute = nameof(CanPinResult))]
     private void PinResult(FileResultViewModel? result)
     {
         result ??= SelectedResult;
-        if (result is null)
+        if (result is null || result.IsStoreMessage)
             return;
 
         if (IsPinned(result.FullPath))
@@ -314,9 +314,9 @@ public sealed partial class QuickSearchViewModel : ObservableObject, IDisposable
                 .Where(hit => hit.Kind == HitKind.Content && hit.LineNumber > 0)
                 .Select(hit => hit.LineNumber)
                 .ToList();
-            var preview = await _previewService
-                .LoadHitsPreviewAsync(result.FullPath, lines, contextLines: 2, token)
-                .ConfigureAwait(true);
+            var preview = result.MailMessage is { } mail
+                ? await _previewService.LoadMailMessagePreviewAsync(result.FullPath, mail, lines, contextLines: 2, token).ConfigureAwait(true)
+                : await _previewService.LoadHitsPreviewAsync(result.FullPath, lines, contextLines: 2, token).ConfigureAwait(true);
             if (!token.IsCancellationRequested)
             {
                 var previewText = string.IsNullOrWhiteSpace(preview)
@@ -348,6 +348,7 @@ public sealed partial class QuickSearchViewModel : ObservableObject, IDisposable
     }
 
     private bool CanUseResult(FileResultViewModel? result) => result is not null || SelectedResult is not null;
+    private bool CanPinResult(FileResultViewModel? result) => (result ?? SelectedResult) is { IsStoreMessage: false };
 
     private bool CanOpenOcrPreview(FileResultViewModel? result) =>
         (result ?? SelectedResult)?.HasImageOcrPreview == true;
@@ -563,16 +564,16 @@ public sealed partial class QuickSearchViewModel : ObservableObject, IDisposable
             if (!_seenHits.Add(key))
                 continue;
 
-            if (!_filesByPath.TryGetValue(hit.Path, out var file))
+            if (!_filesByPath.TryGetValue(hit.ResultKey, out var file))
             {
                 var recordOpened = _indexUsageStore is null ? null
                     : new Func<string, CancellationToken, Task>(_indexUsageStore.RecordFileOpenedAsync);
                 file = new FileResultViewModel(hit.Path, _fileLauncher, recordOpened, isDirectory: pending.IsDirectory)
                 {
-                    IsPinned = IsPinned(hit.Path),
+                    IsPinned = hit.MailMessage?.StoreFingerprint is null && IsPinned(hit.Path),
                 };
                 file.AddHit(hit);
-                _filesByPath[hit.Path] = file;
+                _filesByPath[hit.ResultKey] = file;
                 Results.Add(file);
                 SelectedResult ??= file;
             }
@@ -597,7 +598,7 @@ public sealed partial class QuickSearchViewModel : ObservableObject, IDisposable
         if (drained > 0)
         {
             OnPropertyChanged(nameof(ResultCountText));
-            StatusText = $"{Results.Count:n0} files, {_seenHits.Count:n0} hits";
+            StatusText = $"{Results.Count:n0} results, {_seenHits.Count:n0} hits";
         }
     }
 
@@ -606,10 +607,10 @@ public sealed partial class QuickSearchViewModel : ObservableObject, IDisposable
     private void FinishSearchStatus()
     {
         StatusText = _hitLimitReached
-            ? $"Showing first {Results.Count:n0} files"
+            ? $"Showing first {Results.Count:n0} results"
             : Results.Count == 0
                 ? "No matches"
-                : $"{Results.Count:n0} files, {_seenHits.Count:n0} hits";
+                : $"{Results.Count:n0} results, {_seenHits.Count:n0} hits";
         StageText = Results.Count == 0 ? string.Empty : StageText;
     }
 

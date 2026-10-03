@@ -18,7 +18,8 @@ public sealed record SourceLocator(
     int? Width = null,
     int? Height = null,
     int? SourceWidth = null,
-    int? SourceHeight = null)
+    int? SourceHeight = null,
+    MailMessageMetadata? MailMessage = null)
 {
     public static SourceLocator FromAnchor(SourceAnchor? anchor, int? lineNumber = null)
     {
@@ -41,7 +42,8 @@ public sealed record SourceLocator(
             Width: anchor.Width,
             Height: anchor.Height,
             SourceWidth: anchor.SourceWidth,
-            SourceHeight: anchor.SourceHeight);
+            SourceHeight: anchor.SourceHeight,
+            MailMessage: anchor.MailMessage);
     }
 
     private static SourceLocator FromLine(int? lineNumber) =>

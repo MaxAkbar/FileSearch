@@ -9,6 +9,7 @@ FileSearch is a Windows desktop application for searching text across files and 
 - Include or exclude subfolders.
 - Filter by file name glob patterns such as `*.cs;*.txt`.
 - Choose query modes:
+  - **Unified** (GUI default): combines content terms with structured fields such as `type:`, `name:`, and `modified:`.
   - **Plain text**: treats the whole search box as one literal substring.
   - **Regular expression**: treats the whole search box as a regex.
   - **Boolean**: supports Boolean-style expressions with `AND`, `OR`, `NOT`, and parentheses.
@@ -17,7 +18,9 @@ FileSearch is a Windows desktop application for searching text across files and 
 - Preview matching lines and context for selected results.
 - Refine, facet, sort, group, favorite, pin, drag, export, and save or share workspace bundles, with optional workspace run-on-load.
 - Optional CSharpDB-backed indexing for faster repeat searches across multiple locations, with GUI or tray-indexer background updates.
+- Optional local ONNX Smart Search over indexed vectors; see the [setup and search walkthrough](src/FileSearch.Gui/Help/smart-search.html) for model packs, `semantic:` queries, and current limitations.
 - Optional whole-drive file-name index for NTFS drives, built from the master file table and kept live by the change journal, for instant name search across millions of files in Quick Search, indexed name searches, and the CLI.
+- Local Outlook MSG/PST/OST content search with individual message results, previews, and folder indexing; see [Mail search](README.Mail.md).
 - Open matched files, reveal them in Explorer, copy file or folder paths, rename files, or move files to the Recycle Bin.
 - Configure the Quick Search global hotkey, Quick Search action shortcuts, and main-window keyboard shortcuts.
 - Light, dark, system, and Visual Studio-inspired themes.
@@ -38,6 +41,7 @@ The core project includes extractors for many common text and document formats, 
 - RTF files.
 - HTML/XML-style text files.
 - Email/calendar/contact-style files.
+- Outlook MSG messages and local PST/OST stores, including headers, body text, and attachment names, without requiring Outlook or an Outlook IFilter.
 - ZIP-based formats.
 - Optional Windows OCR for PNG, JPEG, BMP, TIFF, scanned/image-only PDF files, and embedded images in Office, OpenDocument, EPUB, email, and ZIP/archive files.
 

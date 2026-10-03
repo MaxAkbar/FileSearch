@@ -4,6 +4,7 @@ using System.IO;
 using System.Linq;
 using System.Windows;
 using FileSearch.Core.Engine;
+using FileSearch.Core.Extractors;
 using FileSearch.Gui.ViewModels;
 
 namespace FileSearch.Gui.Services;
@@ -23,6 +24,24 @@ public sealed class FileLauncher : IFileLauncher
     {
         if (string.IsNullOrWhiteSpace(path) || !File.Exists(path))
             return false;
+
+        if (hit.MailMessage is { StoreFingerprint: not null } mail)
+        {
+            try
+            {
+                var directory = Path.Combine(Path.GetTempPath(), "FileSearch", "MailPreview");
+                System.IO.Directory.CreateDirectory(directory);
+                RemoveExpiredMailPreviews(directory);
+                var previewPath = Path.Combine(directory, Guid.NewGuid().ToString("N") + ".eml");
+                await OutlookMailReader.WriteMessagePreviewAsync(path, mail, previewPath, cancellationToken).ConfigureAwait(true);
+                Open(previewPath);
+            }
+            catch (Exception ex) when (ex is not OperationCanceledException)
+            {
+                System.Windows.MessageBox.Show(ex.Message, "Could not open mail message", MessageBoxButton.OK, MessageBoxImage.Information);
+            }
+            return true;
+        }
 
         var ocrPreview = await ImageOcrPreviewViewModel
             .TryCreateAsync(path, new[] { hit }, cancellationToken)
@@ -58,6 +77,21 @@ public sealed class FileLauncher : IFileLauncher
 
         window.Show();
         window.Activate();
+    }
+
+    private static void RemoveExpiredMailPreviews(string directory)
+    {
+        foreach (var path in System.IO.Directory.EnumerateFiles(directory, "*.eml").Take(1000))
+        {
+            // Only remove files created by this launcher, without following directories.
+            if (!Guid.TryParseExact(Path.GetFileNameWithoutExtension(path), "N", out _)) continue;
+            try
+            {
+                if (File.GetLastWriteTimeUtc(path) < DateTime.UtcNow.AddDays(-1)) File.Delete(path);
+            }
+            catch (IOException) { }
+            catch (UnauthorizedAccessException) { }
+        }
     }
 
     public void RevealInExplorer(string path)

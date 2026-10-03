@@ -12,6 +12,32 @@ namespace FileSearch.Gui.Tests;
 public sealed class QuickSearchViewModelTests
 {
     [Fact]
+    public void StoreMessagesRemainDistinctInQuickSearchAndCannotPinTheStore()
+    {
+        var root = CreateTempDirectory();
+        var path = Path.Combine(root, "mail.pst");
+        File.WriteAllText(path, "fixture placeholder");
+        var first = new MailMessageMetadata("1", "Same subject", "sender", "recipient", "", null, "Inbox", "stamp");
+        var second = first with { Id = "2" };
+        var searcher = new ContentHitSearcher(
+            new Hit(path, 1, "needle", [], Anchor: new SourceAnchor(SourceAnchorKind.Email, "mail", MailMessage: first)),
+            new Hit(path, 2, "needle", [], Locator: new SourceLocator(MailMessage: second)));
+        RunWithPump((pump, vm, settings) =>
+        {
+            settings.Current.IndexedLocations.Add(new IndexedLocationSettings { Root = root });
+            settings.Current.QuickSearchIncludeContent = true;
+            vm.PrepareForShow();
+            vm.SelectedScope = vm.ScopeOptions.Single(option => option.Value == QuickSearchScopeKind.AllIndexedLocations);
+            vm.SearchText = "needle";
+            pump.PumpUntil(() => !vm.IsSearching && vm.Results.Count == 2, TimeSpan.FromSeconds(10));
+            Assert.All(vm.Results, result => Assert.Equal("Same subject", result.DisplayName));
+            Assert.False(vm.PinResultCommand.CanExecute(vm.Results[0]));
+            vm.PinResultCommand.Execute(vm.Results[0]);
+            Assert.Empty(settings.Current.QuickSearchPinnedPaths);
+        }, searcher);
+    }
+
+    [Fact]
     public void SelectedIndexedLocationScopeUsesConfiguredRootsAndPersistsLastScope()
     {
         var root1 = CreateTempDirectory();
@@ -474,9 +500,9 @@ public sealed class QuickSearchViewModelTests
 
     private sealed class ContentHitSearcher : ISearcher
     {
-        private readonly Hit _hit;
+        private readonly Hit[] _hits;
 
-        public ContentHitSearcher(Hit hit) => _hit = hit;
+        public ContentHitSearcher(params Hit[] hits) => _hits = hits;
 
         public SearchRequest? Request { get; private set; }
 
@@ -486,7 +512,7 @@ public sealed class QuickSearchViewModelTests
         {
             Request = request;
             await Task.Yield();
-            yield return _hit;
+            foreach (var hit in _hits) yield return hit;
         }
     }
 }

@@ -2771,7 +2771,9 @@ public sealed class CSharpDbFileIndex : IFileIndex, IIndexReplayWriter, IIndexUs
         CancellationToken cancellationToken)
     {
         var fallback = _windowsIFilterExtraction;
-        if (fallback is null ||
+        // Store extraction must preserve per-message identities. An IFilter
+        // cannot supply our store locators, so surface the primary failure.
+        if (OutlookMailReader.IsStore(path) || fallback is null ||
             !fallback.CanTryFallback(path, primaryExtractor, primaryFailure, primaryLineCount))
         {
             return null;
@@ -3135,7 +3137,10 @@ public sealed class CSharpDbFileIndex : IFileIndex, IIndexReplayWriter, IIndexUs
             return true;
         }
 
-        return _windowsIFilterExtraction is not null &&
+        // Adopt native mail metadata even when an unchanged file previously used
+        // IFilter. Anonymous fallback lines cannot identify store messages.
+        return extractor is not (MsgExtractor or OutlookStoreExtractor) &&
+            _windowsIFilterExtraction is not null &&
             string.Equals(row.ExtractorId, _windowsIFilterExtraction.ExtractorId, StringComparison.Ordinal) &&
             string.Equals(row.ExtractorVersion, _windowsIFilterExtraction.ExtractorVersion, StringComparison.Ordinal);
     }
@@ -3286,7 +3291,8 @@ public sealed class CSharpDbFileIndex : IFileIndex, IIndexReplayWriter, IIndexUs
         if (!fileAllowed)
             return false;
 
-        hitsByPath.TryGetValue(line.Path, out var hitsForFile);
+        var resultKey = Hit.GetResultKey(line.Path, line.Anchor);
+        hitsByPath.TryGetValue(resultKey, out var hitsForFile);
         if (hitsForFile >= _searchOptions.MaxHitsPerFile)
             return false;
 
@@ -3294,7 +3300,7 @@ public sealed class CSharpDbFileIndex : IFileIndex, IIndexReplayWriter, IIndexUs
         if (!query.TryCollectHighlights(line.Content, highlightBuffer))
             return false;
 
-        hitsByPath[line.Path] = hitsForFile + 1;
+        hitsByPath[resultKey] = hitsForFile + 1;
         hit = new Hit(
             line.Path,
             line.LineNumber,

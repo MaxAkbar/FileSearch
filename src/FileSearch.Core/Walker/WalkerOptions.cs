@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using FileSearch.Core.Extractors;
 
 namespace FileSearch.Core.Walker;
 
@@ -35,8 +36,15 @@ public sealed record WalkerOptions
     /// <summary>Files smaller than this are skipped. 0 disables the filter.</summary>
     public long MinFileSizeBytes { get; init; }
 
-    /// <summary>Files larger than this are skipped. 0 disables the filter.</summary>
+    /// <summary>Files larger than this are skipped. 0 disables the filter. The default cap exempts Outlook stores, whose messages are read individually.</summary>
     public long MaxFileSizeBytes { get; init; } = DefaultMaxFileSizeBytes;
+
+    /// <summary>Exempt PST/OST from the default size cap. Set false when supplying an explicit maximum.</summary>
+    public bool AllowLargeMailStores { get; init; } = true;
+
+    internal bool ExceedsSizeLimit(string path, long sizeBytes) =>
+        MaxFileSizeBytes > 0 && sizeBytes > MaxFileSizeBytes &&
+        !(AllowLargeMailStores && MaxFileSizeBytes == DefaultMaxFileSizeBytes && OutlookMailReader.IsStore(path));
 
     /// <summary>Only include files modified at or after this UTC time.</summary>
     public DateTime? ModifiedAfterUtc { get; init; }

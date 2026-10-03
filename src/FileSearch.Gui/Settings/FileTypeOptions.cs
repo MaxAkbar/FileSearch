@@ -6,7 +6,7 @@ public sealed class FileTypeOptions
 {
     public List<string> DocumentExtensions { get; set; } = new()
     {
-        ".pdf", ".docx", ".xlsx", ".pptx", ".rtf", ".odt", ".ods", ".odp", ".epub", ".eml",
+        ".pdf", ".docx", ".xlsx", ".pptx", ".rtf", ".odt", ".ods", ".odp", ".epub", ".eml", ".msg", ".pst", ".ost",
     };
 
     public List<string> AdditionalPlainTextExtensions { get; set; } = new();

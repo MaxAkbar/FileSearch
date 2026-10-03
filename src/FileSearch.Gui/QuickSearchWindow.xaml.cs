@@ -122,7 +122,7 @@ public partial class QuickSearchWindow : Window
             return;
         }
 
-        if (ResultsList.SelectedItem is not FileResultViewModel file)
+        if (ResultsList.SelectedItem is not FileResultViewModel file || file.IsStoreMessage)
             return;
 
         var data = new DataObject(System.Windows.DataFormats.FileDrop, new[] { file.FullPath });

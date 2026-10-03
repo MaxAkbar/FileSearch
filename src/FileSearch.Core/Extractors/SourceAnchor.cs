@@ -29,7 +29,8 @@ public sealed record SourceAnchor(
     int? Width = null,
     int? Height = null,
     int? SourceWidth = null,
-    int? SourceHeight = null)
+    int? SourceHeight = null,
+    MailMessageMetadata? MailMessage = null)
 {
     public static SourceAnchor ImageOcrRegion(
         int x,

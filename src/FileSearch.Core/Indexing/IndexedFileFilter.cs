@@ -24,7 +24,7 @@ internal static class IndexedFileFilter
         if (options.MinFileSizeBytes > 0 && sizeBytes < options.MinFileSizeBytes)
             return false;
 
-        if (options.MaxFileSizeBytes > 0 && sizeBytes > options.MaxFileSizeBytes)
+        if (options.ExceedsSizeLimit(path, sizeBytes))
             return false;
 
         if (options.ModifiedAfterUtc is { } after && modifiedUtcTicks < after.Ticks)

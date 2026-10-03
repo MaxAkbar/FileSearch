@@ -22,7 +22,9 @@
                 <a href="search.html">Run a Search</a>
                 <a href="quick-search.html">Quick Search</a>
                 <a href="query-syntax.html">Query Syntax</a>
+                <a href="smart-search.html">Smart Search (ONNX)</a>
                 <a href="results.html">Results and Preview</a>
+                <a href="mail.html">Outlook Mail Search</a>
                 <a href="indexing.html">Indexed Search</a>
                 <a href="workflows.html">Workflows</a>
                 <a href="cli.html">Command Line</a>
@@ -41,11 +43,11 @@
 
             <h2>No Results</h2>
             <ul class="plain-list">
-                <li>Confirm the <strong>Look in</strong> folder exists and contains the files you expect.</li>
-                <li>Turn on <strong>Include subfolders</strong> if the files are below the selected folder.</li>
+                <li>Confirm the folder in the search bar exists and contains the files you expect.</li>
+                <li>Turn on <strong>Subfolders</strong> in search options if the files are below the selected folder.</li>
                 <li>Clear <strong>File name pattern</strong> or broaden it to include the target file types.</li>
-                <li>Check whether <strong>Skip unknown file types</strong>, <strong>Office &amp; PDF documents</strong>, or <strong>Image OCR</strong> is excluding files.</li>
-                <li>For scanned or image-only PDFs, <code>*.pdf</code> only selects PDF files. Keep <strong>Office &amp; PDF documents</strong> enabled and turn on <strong>Image OCR</strong> to search recognized text inside those pages.</li>
+                <li>Check whether unknown-file-type filtering, <strong>Office &amp; PDF text</strong>, or <strong>Text in images (OCR)</strong> is excluding files.</li>
+                <li>For scanned or image-only PDFs, <code>*.pdf</code> only selects PDF files. Keep <strong>Office &amp; PDF text</strong> enabled and turn on <strong>Text in images (OCR)</strong> to search recognized text inside those pages.</li>
                 <li>For indexed image, scanned-PDF-page, or embedded document image text, enable <strong>Image OCR</strong> before indexing the location, then use <strong>Rebuild selected</strong> after changing that option.</li>
                 <li>Switch to Plain text mode if Boolean operators or regex syntax are not intended.</li>
             </ul>
@@ -71,11 +73,11 @@
 
             <h2>Index Is Not Being Used</h2>
             <ul class="plain-list">
-                <li>Confirm <strong>Use index</strong> is enabled next to the search controls or in the Manage indexed locations window.</li>
-                <li>The <strong>Look in</strong> folder must be inside an indexed location. Check the sidebar's Indexed locations section.</li>
+                <li>Confirm <strong>Use index</strong> is enabled in search options or in the Manage indexed locations window.</li>
+                <li>For content searches, the folder in the search bar must be inside an indexed location. Check the sidebar's Indexed locations section.</li>
                 <li>A location indexed without subfolders does not cover a recursive search below it. Check the location's <strong>Coverage</strong> in Manage indexed locations.</li>
                 <li>The search options must match what the location was indexed with (see <strong>Indexed with</strong> in the location details). After changing extraction options, use <strong>Rebuild selected</strong>.</li>
-                <li>When a search is not covered, FileSearch falls back to a live scan automatically — results are still correct, just slower.</li>
+                <li>When a search is not covered, FileSearch falls back to a live scan. Name searches can use a separate drive name index; message content still requires a folder content index or live extraction.</li>
             </ul>
 
             <h2>Indexed Results Look Stale</h2>
@@ -96,7 +98,27 @@
             </ul>
 
             <h2>Preview Fails or Looks Incomplete</h2>
-            <p>The Hits preview loads the selected file after the search. It can fail if the file was moved, deleted, locked, or cannot be decoded as text. For generated document formats, extracted text may not have the same layout as the original document.</p>
+            <p>The preview pane loads the selected file or message after the search. It can fail if the file was moved, deleted, locked, or cannot be decoded as text. For generated document formats, extracted text may not have the same layout as the original document.</p>
+
+            <h2 id="mail-search">Mail Search Is Missing Messages</h2>
+            <ul class="plain-list">
+                <li>Select <strong>Contents</strong> and enable document extraction (<strong>Office &amp; PDF text</strong>). Include <code>*.eml;*.msg;*.pst;*.ost</code> in the file pattern, or use <code>type:email</code> in Unified mode.</li>
+                <li>Quick Search needs an indexed content scope with <strong>Content</strong> enabled. The Entire machine metadata scope and drive name index only find store filenames.</li>
+                <li>Close Outlook or search a stable copy. Locked, changing, corrupt, or unsupported stores can fail; inspect index failures and extraction warnings.</li>
+                <li>OST search sees the local cache only. Unsynchronized and online-only items are unavailable. MSG/PST/OST attachment contents, embedded messages, and mail attachment OCR are not searched.</li>
+                <li>Check explicit maximum sizes, store extraction limits, and the five-minute timeout. Large stores can return truncated output with warnings. See <a href="mail.html#limits">Large Stores and Extraction Limits</a>.</li>
+                <li>If FileSearch reports that the store changed, refresh the content index or rerun the search before opening the message. Rebuild a location to replace older IFilter-only mail extraction with native message metadata.</li>
+                <li>Opening PST/OST results requires a registered application for EML files. The generated copy contains text and attachment names, not original formatting or attachment files. Preview remains available in FileSearch.</li>
+            </ul>
+
+            <h2>Drive Name Results Are Missing or Stale</h2>
+            <ul class="plain-list">
+                <li>Check <strong>File &gt; Settings &gt; Drive file-name index</strong>. Only local fixed NTFS drives are supported; enable the drive and let its build finish.</li>
+                <li>A folder scan skips unreadable folders. The administrator scan can include more names, but later unelevated updates in unreadable folders may remain incomplete.</li>
+                <li>A recreated or expired journal needs a rebuild. A drive without a journal does not update live; use <strong>Rebuild</strong> to refresh its snapshot.</li>
+                <li>Quick Search uses a bounded live metadata scan on drives without a ready index, so that fallback may miss names in a large drive.</li>
+                <li>Hard-linked files have one indexed name; file-name searches that could follow directory links can fall back to live traversal. See <a href="indexing.html#drive-name-index">Drive File-Name Index</a>.</li>
+            </ul>
 
             <h2>Windows Integration Does Not Appear</h2>
             <ul class="plain-list">

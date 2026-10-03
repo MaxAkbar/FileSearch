@@ -22,7 +22,9 @@
                 <a href="search.html">Run a Search</a>
                 <a href="quick-search.html">Quick Search</a>
                 <a href="query-syntax.html">Query Syntax</a>
+                <a href="smart-search.html">Smart Search (ONNX)</a>
                 <a class="active" href="results.html">Results and Preview</a>
+                <a href="mail.html">Outlook Mail Search</a>
                 <a href="indexing.html">Indexed Search</a>
                 <a href="workflows.html">Workflows</a>
                 <a href="cli.html">Command Line</a>
@@ -36,22 +38,23 @@
             <section class="hero">
                 <div class="eyebrow">Results</div>
                 <h1>Review, refine, and open matching files.</h1>
-                <p class="lead">Search results are grouped by matched file or folder. Select a result to see matching lines or name-match details, use the Filter tab to narrow the current result set, or open items directly from the grid.</p>
+                <p class="lead">Select a file, folder, or message card to preview its matches. Use the results toolbar to refine, group, or sort the current results, or open items directly from their cards.</p>
             </section>
 
-            <h2>Results Grid</h2>
+            <h2>Result Cards</h2>
+            <p>The result list shows file, folder, or message cards with matching lines. Only visible cards are rendered, and results arrive in batches while searching. Use the toolbar to choose grouping, sorting, and how many matching lines to show.</p>
             <div class="table-wrap">
                 <table>
                     <thead>
                         <tr>
-                            <th>Column</th>
+                            <th>Detail</th>
                             <th>Description</th>
                         </tr>
                     </thead>
                     <tbody>
                         <tr>
                             <td><strong>Name</strong></td>
-                            <td>The matched file or folder name.</td>
+                            <td>The matched file or folder name, or the subject of an Outlook message.</td>
                         </tr>
                         <tr>
                             <td><strong>Hits</strong></td>
@@ -69,15 +72,19 @@
                 </table>
             </div>
 
-            <h2>Hits Tab</h2>
-            <p>Selecting a result automatically opens the Hits tab. Content searches show matching line numbers and nearby context. File-name and folder-name searches show stored name-match details. For large or binary-backed document formats, the preview may be simplified depending on the extractor. OCR image hits include the recognized line's image-region label and can show standalone images with the OCR region highlighted. OCR PDF hits include the page and region label and can render the page with the OCR region highlighted. Embedded-image OCR hits from documents, emails, EPUBs, and archives include the member path and OCR-region label; when the embedded image can be read from the parent file, preview extracts it and highlights the OCR region.</p>
+            <h2>Matching Lines and Context</h2>
+            <p>Select a card to load the preview pane. Content searches show matching line numbers and nearby context; name searches show name-match details. For large or binary-backed document formats, the preview may be simplified depending on the extractor. OCR image hits include the recognized line's image-region label and can show standalone images with the OCR region highlighted. OCR PDF hits include the page and region label and can render the page with the OCR region highlighted. Embedded-image OCR hits from documents, EML, EPUBs, and archives include the member path and OCR-region label; when the embedded image can be read from the parent file, preview extracts it and highlights the OCR region.</p>
             <p>Use <strong>Open OCR preview</strong> on OCR-backed results to open a dedicated FileSearch preview window at the exact highlighted region. The normal <strong>Open</strong> action now tries the best available source target first: OCR region preview for OCR hits, a PDF page link for page-anchored PDF hits, or a line-and-column editor target when Visual Studio Code is installed. If no exact target is available, FileSearch opens the parent file in its default app.</p>
 
-            <h2>Summary Tab</h2>
-            <p>The Summary tab shows search statistics: files matched, total hits, and elapsed time. The status bar gives additional live progress while a scan is running.</p>
+            <h2>Mail Messages</h2>
+            <p>Each matching PST/OST message has a separate card with subject, sender, date, and mail folder. Preview and <strong>Copy file content</strong> read only that message. <strong>Open</strong> creates a text-only EML copy in the registered mail app; opening MSG uses the original file's registered app. Individual store messages cannot be renamed, deleted, pinned, favorited, or dragged as files. Copy path and Reveal refer to the store. See <a href="mail.html#results">Mail Results and Preview</a>.</p>
 
-            <h2>Filter Tab</h2>
-            <p>The Filter tab narrows the current results in memory. It matches against file names and hit lines, so it is useful after a broad search.</p>
+            <h2>Search Statistics</h2>
+            <p>The results toolbar and status bar show match counts, elapsed time, and live progress. Individual store messages count as separate result items. Workflow file counts refer to physical files and count their containing stores instead.</p>
+            <p>The main window retains up to 100,000 hits. Further hits are counted but not displayed; the status reports when only the first hits are shown. Narrow the search to review more of a large result set.</p>
+
+            <h2>Refine Current Results</h2>
+            <p>The <strong>filter results</strong> box narrows the current results in memory. It matches against names and hit lines, so it is useful after a broad search.</p>
             <ul class="plain-list">
                 <li>Filtering does not re-open or rescan files.</li>
                 <li>Clear the filter field to show all results from the search again.</li>
@@ -121,13 +128,13 @@
             <p>Use <strong>Import workspace</strong> to load a shared workspace JSON file. Use <strong>Export workspaces</strong> to write all saved workspaces, or the export button beside a workspace to share just that one workspace.</p>
 
             <h2>Exporting</h2>
-            <p>Use <strong>Export</strong> to write the visible results to CSV, JSON, JSON Lines, or Markdown. Active filters and facets are respected, so export after narrowing the list when you only need a subset.</p>
+            <p>Use <strong>Export</strong> to write the visible retained results to CSV, JSON, JSON Lines, or Markdown. Active filters and facets are respected; hits beyond the display cap are not included. Narrow the search first when you need a complete export of a large result set.</p>
 
             <h2>Grounded Answer Drafts</h2>
             <p>Use <strong>Answer</strong> to copy an extractive Markdown draft from the visible results. The draft includes cited snippets and source locations only; it does not infer beyond the search evidence. Apply filters and facets first when you want the draft grounded in a narrower result set.</p>
 
             <h2>Quick Search Results</h2>
-            <p><a href="quick-search.html">Quick Search</a> uses compact result cards with open, reveal, copy, and pin buttons. Keyboard shortcuts are available for the selected row, and dragging a result starts a Windows file drag-and-drop operation.</p>
+            <p><a href="quick-search.html">Quick Search</a> uses compact result cards with open, reveal, copy, and pin buttons. Keyboard shortcuts are available for the selected row, and physical-file results can be dragged to another app. Individual store messages have the mail action restrictions described above.</p>
 
             <div class="next-links">
                 <a href="quick-search.html">Quick Search</a>

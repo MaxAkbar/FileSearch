@@ -14,7 +14,7 @@ internal static class FileTypeCategory
     private static readonly HashSet<string> s_documents = new(StringComparer.OrdinalIgnoreCase)
     {
         ".txt", ".md", ".rtf", ".pdf", ".doc", ".docx", ".odt", ".xls", ".xlsx", ".ppt",
-        ".pptx", ".csv", ".tsv", ".epub", ".eml", ".ics", ".vcf",
+        ".pptx", ".csv", ".tsv", ".epub", ".eml", ".msg", ".pst", ".ost", ".ics", ".vcf",
     };
 
     private static readonly HashSet<string> s_images = new(StringComparer.OrdinalIgnoreCase)

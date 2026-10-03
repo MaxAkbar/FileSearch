@@ -22,6 +22,7 @@ FileSearch is a local desktop search application. It reads files from folders se
 Important local-risk areas:
 
 - document parsing for PDFs, Office files, archives, email, and markup formats,
+- local MSG/PST/OST parsing, which reads stores without Outlook automation and does not modify source mail; store messages cannot invoke whole-store rename/delete commands. Indexed mail text and temporary EML preview copies contain readable mail data; see [Mail search](README.Mail.md) and [Privacy](PRIVACY.md),
 - shell integration through per-user Explorer registry keys,
 - MSIX packaging with `runFullTrust`,
 - local index storage under `%LocalAppData%\FileSearch\Index`,

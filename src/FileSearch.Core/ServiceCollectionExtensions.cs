@@ -57,6 +57,9 @@ public static class ServiceCollectionExtensions
         services.AddSingleton<ITextExtractor, RtfExtractor>();
         services.AddSingleton<ITextExtractor, HtmlExtractor>();
         services.AddSingleton<ITextExtractor, EmlExtractor>();
+        services.TryAddSingleton<OutlookMailOptions>();
+        services.AddSingleton<ITextExtractor, MsgExtractor>();
+        services.AddSingleton<ITextExtractor, OutlookStoreExtractor>();
         services.AddSingleton<ITextExtractor, XmlTextExtractor>();
         services.AddSingleton<ITextExtractor, CalendarContactExtractor>();
         services.AddSingleton<ITextExtractor, ZipExtractor>();

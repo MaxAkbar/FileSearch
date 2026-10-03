@@ -21,7 +21,8 @@ namespace FileSearch.Core.Indexing;
 /// </summary>
 internal sealed class IndexDatabase : IDisposable
 {
-    internal const string CurrentSchemaVersion = "26";
+    internal const string CurrentSchemaVersion = "27";
+    private const string UpgradeableSchemaVersion = "26";
     private static readonly TimeSpan CompactLeaseDrainTimeout = TimeSpan.FromSeconds(5);
 
     /// <summary>
@@ -523,7 +524,7 @@ internal sealed class IndexDatabase : IDisposable
         try
         {
             var version = await GetMetaAsync(db, "schema_version", cancellationToken).ConfigureAwait(false);
-            if (version == CurrentSchemaVersion &&
+            if ((version == CurrentSchemaVersion || version == UpgradeableSchemaVersion) &&
                 await HasCurrentSchemaShapeAsync(db, cancellationToken).ConfigureAwait(false))
             {
                 return db;
@@ -561,6 +562,26 @@ internal sealed class IndexDatabase : IDisposable
             // process is noticed, but the schema DDL (and its meta rewrite)
             // only runs until it has succeeded once against the current file.
             var version = await GetMetaAsync(db, "schema_version", cancellationToken).ConfigureAwait(false);
+            if (version == UpgradeableSchemaVersion &&
+                await HasCurrentSchemaShapeAsync(db, cancellationToken).ConfigureAwait(false))
+            {
+                // Widen metadata in place: retain all locations, lines, and vectors.
+                // Each ALTER is atomic and can be retried after interruption. Only
+                // advance the version after every column has been widened.
+                try
+                {
+                    await db.ExecuteAsync("ALTER TABLE index_volumes ALTER COLUMN last_committed_usn TYPE BIGINT", cancellationToken).ConfigureAwait(false);
+                    await db.ExecuteAsync("ALTER TABLE files ALTER COLUMN size_bytes TYPE BIGINT", cancellationToken).ConfigureAwait(false);
+                    await db.ExecuteAsync("ALTER TABLE files ALTER COLUMN last_observed_usn TYPE BIGINT", cancellationToken).ConfigureAwait(false);
+                    await db.ExecuteAsync(Sql.Format($"UPDATE meta SET value = {CurrentSchemaVersion} WHERE name = 'schema_version'"), cancellationToken).ConfigureAwait(false);
+                }
+                catch
+                {
+                    await CloseQuietlyAsync(db).ConfigureAwait(false);
+                    throw;
+                }
+                version = CurrentSchemaVersion;
+            }
             if (version == CurrentSchemaVersion &&
                 (_schemaEnsured || await HasCurrentSchemaShapeAsync(db, cancellationToken).ConfigureAwait(false)))
             {
@@ -715,10 +736,10 @@ internal sealed class IndexDatabase : IDisposable
 
     private async Task EnsureSchemaAsync(Database db, CancellationToken cancellationToken)
     {
-        await db.ExecuteAsync("CREATE TABLE IF NOT EXISTS index_volumes (id INTEGER PRIMARY KEY, volume_key TEXT, volume_serial TEXT, filesystem_name TEXT, is_remote INTEGER, usn_supported INTEGER, drive_kind TEXT, journal_id TEXT, last_committed_usn INTEGER, health TEXT, last_checked_utc_ticks BIGINT, last_error TEXT)", cancellationToken).ConfigureAwait(false);
+        await db.ExecuteAsync("CREATE TABLE IF NOT EXISTS index_volumes (id INTEGER PRIMARY KEY, volume_key TEXT, volume_serial TEXT, filesystem_name TEXT, is_remote INTEGER, usn_supported INTEGER, drive_kind TEXT, journal_id TEXT, last_committed_usn BIGINT, health TEXT, last_checked_utc_ticks BIGINT, last_error TEXT)", cancellationToken).ConfigureAwait(false);
         await db.ExecuteAsync("CREATE TABLE IF NOT EXISTS index_roots (id INTEGER PRIMARY KEY, root_path TEXT, indexed_utc_ticks BIGINT, options_hash TEXT, volume_id INTEGER, last_full_scan_utc_ticks BIGINT, root_file_reference_number TEXT, root_parent_file_reference_number TEXT, content_version TEXT, location_kind TEXT, update_strategy TEXT, strategy_warning TEXT, usn_catch_up_enabled INTEGER, watcher_recommended INTEGER, last_full_validation_utc_ticks BIGINT, last_validation_status TEXT, last_validation_message TEXT, last_validation_files_checked INTEGER, last_validation_missing_from_index_count INTEGER, last_validation_changed_count INTEGER, last_validation_missing_from_disk_count INTEGER, last_validation_failed_count INTEGER)", cancellationToken).ConfigureAwait(false);
         await db.ExecuteAsync("CREATE TABLE IF NOT EXISTS index_directories (id INTEGER PRIMARY KEY, root_id INTEGER, path TEXT, volume_id INTEGER, directory_reference_number TEXT, parent_file_reference_number TEXT, observed_utc_ticks BIGINT)", cancellationToken).ConfigureAwait(false);
-        await db.ExecuteAsync("CREATE TABLE IF NOT EXISTS files (id INTEGER PRIMARY KEY, root_id INTEGER, path TEXT, path_lower TEXT, directory_path TEXT, directory_path_lower TEXT, file_name TEXT, file_name_lower TEXT, extension TEXT, size_bytes INTEGER, created_utc_ticks BIGINT, modified_utc_ticks BIGINT, attributes INTEGER, file_type_category TEXT, indexed_utc_ticks BIGINT, status TEXT, error TEXT, volume_id INTEGER, file_reference_number TEXT, parent_file_reference_number TEXT, last_observed_usn INTEGER, content_version TEXT, open_count INTEGER, last_opened_utc_ticks BIGINT, extractor_id TEXT, extractor_version TEXT, extraction_attempt_count INTEGER, last_extraction_attempt_utc_ticks BIGINT)", cancellationToken).ConfigureAwait(false);
+        await db.ExecuteAsync("CREATE TABLE IF NOT EXISTS files (id INTEGER PRIMARY KEY, root_id INTEGER, path TEXT, path_lower TEXT, directory_path TEXT, directory_path_lower TEXT, file_name TEXT, file_name_lower TEXT, extension TEXT, size_bytes BIGINT, created_utc_ticks BIGINT, modified_utc_ticks BIGINT, attributes INTEGER, file_type_category TEXT, indexed_utc_ticks BIGINT, status TEXT, error TEXT, volume_id INTEGER, file_reference_number TEXT, parent_file_reference_number TEXT, last_observed_usn BIGINT, content_version TEXT, open_count INTEGER, last_opened_utc_ticks BIGINT, extractor_id TEXT, extractor_version TEXT, extraction_attempt_count INTEGER, last_extraction_attempt_utc_ticks BIGINT)", cancellationToken).ConfigureAwait(false);
         await db.ExecuteAsync("CREATE TABLE IF NOT EXISTS extraction_issues (id INTEGER PRIMARY KEY, file_id INTEGER, member_path TEXT, code TEXT, message TEXT, severity TEXT, created_utc_ticks BIGINT)", cancellationToken).ConfigureAwait(false);
         await db.ExecuteAsync("CREATE TABLE IF NOT EXISTS validation_drifts (id INTEGER PRIMARY KEY, root_id INTEGER, path TEXT, kind TEXT, message TEXT, observed_utc_ticks BIGINT)", cancellationToken).ConfigureAwait(false);
         await db.ExecuteAsync("CREATE TABLE IF NOT EXISTS file_metadata_tokens (id BIGINT PRIMARY KEY, root_id INTEGER, file_id INTEGER, token TEXT)", cancellationToken).ConfigureAwait(false);

@@ -32,4 +32,16 @@ public sealed record Hit(
     SourceAnchor? Anchor = null,
     long? ContentUnitId = null,
     SourceLocator? Locator = null,
-    SearchSnippet? Snippet = null);
+    SearchSnippet? Snippet = null)
+{
+    [System.Text.Json.Serialization.JsonIgnore]
+    public MailMessageMetadata? MailMessage => Anchor?.MailMessage ?? Locator?.MailMessage ?? Snippet?.Locator?.MailMessage;
+
+    [System.Text.Json.Serialization.JsonIgnore]
+    public string ResultKey => MailMessage is { StoreFingerprint: not null } message ? Path + "\0" + message.Id : Path;
+
+    internal static string GetResultKey(string path, SourceAnchor? anchor) =>
+        anchor?.MailMessage is { StoreFingerprint: not null } message
+            ? path + "\0" + message.Id
+            : path;
+}

@@ -533,7 +533,7 @@ public partial class MainWindow : Window
             return;
         }
 
-        if (ResultsList.SelectedItem is not FileResultViewModel file)
+        if (ResultsList.SelectedItem is not FileResultViewModel file || file.IsStoreMessage)
             return;
 
         var data = new System.Windows.DataObject(System.Windows.DataFormats.FileDrop, new[] { file.FullPath });
