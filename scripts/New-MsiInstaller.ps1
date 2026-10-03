@@ -77,6 +77,7 @@ function Publish-Project(
         $RuntimeIdentifier,
         "--self-contained",
         "true",
+        "-p:Version=$Version",
         "-p:PublishSingleFile=false",
         "-p:PublishReadyToRun=true",
         "-p:DebugType=portable",
