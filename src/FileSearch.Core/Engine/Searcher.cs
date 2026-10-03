@@ -545,9 +545,33 @@ public sealed class Searcher : ISearcher
         List<MatchSpan> highlightBuffer,
         out Hit hit)
     {
+        if (!TryMatchName(path, root, isDirectory, query, out var line, out var score))
+        {
+            hit = null!;
+            return false;
+        }
+
+        var (sizeBytes, modifiedUtc) = TryReadMetadata(path, isDirectory);
+        hit = CreateNameHit(path, line, score, query, highlightBuffer, sizeBytes, modifiedUtc);
+        return true;
+    }
+
+    /// <summary>
+    /// Name-target matching shared with the drive name index searcher, so
+    /// both routes accept the same items and format them identically: files
+    /// match on their name; folders on their name, then their path relative
+    /// to the search root, then their full path.
+    /// </summary>
+    internal static bool TryMatchName(
+        string path,
+        string root,
+        bool isDirectory,
+        Query query,
+        out string line,
+        out double score)
+    {
         var name = GetItemName(path, isDirectory);
-        var relativePath = GetRelativePath(root, path);
-        var score = 0d;
+        score = 0d;
         string? displayText = null;
 
         if (query.IsMatch(name))
@@ -555,33 +579,46 @@ public sealed class Searcher : ISearcher
             displayText = name;
             score = 900;
         }
-        else if (isDirectory &&
-                 !string.Equals(relativePath, name, StringComparison.OrdinalIgnoreCase) &&
-                 query.IsMatch(relativePath))
+        else if (isDirectory)
         {
-            displayText = relativePath;
-            score = 600;
-        }
-        else if (isDirectory && query.IsMatch(path))
-        {
-            displayText = path;
-            score = 300;
+            var relativePath = GetRelativePath(root, path);
+            if (!string.Equals(relativePath, name, StringComparison.OrdinalIgnoreCase) &&
+                query.IsMatch(relativePath))
+            {
+                displayText = relativePath;
+                score = 600;
+            }
+            else if (query.IsMatch(path))
+            {
+                displayText = path;
+                score = 300;
+            }
         }
 
         if (displayText is null)
         {
-            hit = null!;
+            line = string.Empty;
             return false;
         }
 
-        var line = isDirectory
+        line = isDirectory
             ? $"Folder name match: {displayText}"
             : $"File name match: {displayText}";
+        return true;
+    }
+
+    internal static Hit CreateNameHit(
+        string path,
+        string line,
+        double score,
+        Query query,
+        List<MatchSpan> highlightBuffer,
+        long? sizeBytes,
+        DateTime? modifiedUtc)
+    {
         highlightBuffer.Clear();
         query.CollectHighlights(line, highlightBuffer);
-
-        var (sizeBytes, modifiedUtc) = TryReadMetadata(path, isDirectory);
-        hit = new Hit(
+        return new Hit(
             path,
             0,
             line,
@@ -590,7 +627,6 @@ public sealed class Searcher : ISearcher
             score,
             sizeBytes,
             modifiedUtc);
-        return true;
     }
 
     private static string GetItemName(string path, bool isDirectory)

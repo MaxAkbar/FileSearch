@@ -62,6 +62,13 @@ internal static class Program
                     Console.WriteLine($"Minimum batch-vs-single cosine: {modelSmoke.MinimumCosineSimilarity:n6}");
                     return modelSmoke.MinimumCosineSimilarity >= 0.9999 && modelSmoke.LargestInferenceBatchSize > 1 ? 0 : 4;
 
+                case "volume":
+                    return await new VolumeIndexBenchmarkRunner().RunAsync(
+                        options.Drive ?? @"C:\",
+                        options.VolumeMethod,
+                        options.ParityScope,
+                        CancellationToken.None).ConfigureAwait(false);
+
                 case null:
                 case "":
                 case "help":
@@ -93,6 +100,7 @@ internal static class Program
         Console.WriteLine("  bench     Run BenchmarkDotNet benchmarks.");
         Console.WriteLine("  semantic  Measure exact int8 semantic-vector search and evaluate the HNSW gate.");
         Console.WriteLine("  semantic-model  Smoke-test real batched ONNX embeddings against single inference.");
+        Console.WriteLine("  volume    Build a drive name index for a real volume and measure scan, snapshot, query, and journal costs.");
         Console.WriteLine();
         Console.WriteLine("Options:");
         Console.WriteLine("  --profile smoke|standard|full");
@@ -104,6 +112,9 @@ internal static class Program
         Console.WriteLine("  --model-id <id>      Semantic model catalog ID.");
         Console.WriteLine("  --model-directory <path>  Explicit model-pack directory.");
         Console.WriteLine("  --install-model      Install the model before the semantic-model smoke.");
+        Console.WriteLine("  --drive <C:>         Volume for the volume benchmark (default C:).");
+        Console.WriteLine("  --method auto|mft|walk  Volume scan method; mft needs an elevated prompt.");
+        Console.WriteLine("  --parity-scope <dir>  Folder to compare indexed and live name searches under.");
     }
 
     private sealed record CommandOptions(
@@ -115,7 +126,10 @@ internal static class Program
         int? Queries,
         string? ModelId,
         string? ModelDirectory,
-        bool InstallModel)
+        bool InstallModel,
+        string? Drive = null,
+        FileSearch.Core.Volumes.VolumeBuildMethod VolumeMethod = FileSearch.Core.Volumes.VolumeBuildMethod.Auto,
+        string? ParityScope = null)
     {
         public static CommandOptions Parse(IEnumerable<string> args)
         {
@@ -128,6 +142,9 @@ internal static class Program
             string? modelId = null;
             string? modelDirectory = null;
             var installModel = false;
+            string? drive = null;
+            var volumeMethod = FileSearch.Core.Volumes.VolumeBuildMethod.Auto;
+            string? parityScope = null;
             var queue = new Queue<string>(args);
 
             while (queue.Count > 0)
@@ -170,6 +187,23 @@ internal static class Program
                     case "--install-model":
                         installModel = true;
                         break;
+
+                    case "--drive" when queue.Count > 0:
+                        drive = queue.Dequeue();
+                        break;
+
+                    case "--method" when queue.Count > 0:
+                        volumeMethod = queue.Dequeue().ToLowerInvariant() switch
+                        {
+                            "mft" => FileSearch.Core.Volumes.VolumeBuildMethod.MasterFileTable,
+                            "walk" => FileSearch.Core.Volumes.VolumeBuildMethod.DirectoryWalk,
+                            _ => FileSearch.Core.Volumes.VolumeBuildMethod.Auto,
+                        };
+                        break;
+
+                    case "--parity-scope" when queue.Count > 0:
+                        parityScope = queue.Dequeue();
+                        break;
                 }
             }
 
@@ -182,7 +216,10 @@ internal static class Program
                 queries,
                 modelId,
                 modelDirectory,
-                installModel);
+                installModel,
+                drive,
+                volumeMethod,
+                parityScope);
         }
     }
 }

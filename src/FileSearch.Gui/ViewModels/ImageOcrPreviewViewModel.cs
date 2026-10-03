@@ -67,10 +67,12 @@ public sealed class ImageOcrPreviewViewModel
     }
 
     public static bool HasPreviewAnchor(IEnumerable<Hit> hits) =>
-        hits.Select(hit => hit.Anchor).Any(anchor =>
-            IsStandaloneImageOcrAnchor(anchor) ||
-            IsPdfOcrAnchor(anchor) ||
-            IsEmbeddedOcrAnchor(anchor));
+        hits.Any(hit => IsPreviewAnchor(hit.Anchor));
+
+    public static bool IsPreviewAnchor(SourceAnchor? anchor) =>
+        IsStandaloneImageOcrAnchor(anchor) ||
+        IsPdfOcrAnchor(anchor) ||
+        IsEmbeddedOcrAnchor(anchor);
 
     public static async Task<ImageOcrPreviewViewModel?> TryCreateAsync(
         string path,

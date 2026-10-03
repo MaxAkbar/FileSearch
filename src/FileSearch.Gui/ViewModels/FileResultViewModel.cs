@@ -33,19 +33,28 @@ public sealed partial class FileResultViewModel : ObservableObject
     private string? _sizeText;
     private string? _modifiedText;
     private bool _metadataLoaded;
+    private int _metadataVersion;
+    private static readonly SemaphoreSlim MetadataWorkers = new(4);
     private long? _sizeBytes;
     private DateTime? _modifiedUtc;
     private bool _hasIndexedHits;
     private bool _hasLiveHits;
+    private bool _hasImageOcrPreview;
+    private bool _hasStructuredSnippets;
 
     public FileResultViewModel(
         string fullPath,
         IFileLauncher launcher,
         Func<string, CancellationToken, Task>? recordOpenedAsync = null,
-        int searchRank = 0)
+        int searchRank = 0,
+        bool? isDirectory = null)
     {
         FullPath = fullPath;
-        IsDirectory = System.IO.Directory.Exists(fullPath) && !File.Exists(fullPath);
+
+        // Callers that already know (the search pipeline works it out off the
+        // UI thread) pass it in; probing the disk here ran once per new row
+        // on the dispatcher.
+        IsDirectory = isDirectory ?? (System.IO.Directory.Exists(fullPath) && !File.Exists(fullPath));
         FileName = GetDisplayName(fullPath, IsDirectory);
         Directory = Path.GetDirectoryName(fullPath) ?? string.Empty;
         Extension = IsDirectory ? string.Empty : Path.GetExtension(fullPath).TrimStart('.').ToLowerInvariant();
@@ -59,6 +68,9 @@ public sealed partial class FileResultViewModel : ObservableObject
     public string Directory { get; private set; }
     public bool IsDirectory { get; private set; }
     public int SearchRank { get; }
+    // Assigned before a grouped refresh; it preserves the order of groups'
+    // first ranked files and is independent of the engine's score/rank.
+    public int ResultGroupRank { get; internal set; }
 
     /// <summary>Lower-cased extension without the leading dot (e.g. "cs").</summary>
     public string Extension { get; private set; }
@@ -71,9 +83,11 @@ public sealed partial class FileResultViewModel : ObservableObject
 
     public IReadOnlyList<Hit> Hits => _hits;
 
-    public bool HasImageOcrPreview => ImageOcrPreviewViewModel.HasPreviewAnchor(_hits);
+    // Tracked as hits arrive: rescanning every hit on each add made streaming
+    // a file with thousands of matches quadratic on the UI thread.
+    public bool HasImageOcrPreview => _hasImageOcrPreview;
 
-    public bool HasStructuredSnippets => _hits.Any(hit => hit.Snippet is not null);
+    public bool HasStructuredSnippets => _hasStructuredSnippets;
 
     [ObservableProperty] private int _hitCount;
     [ObservableProperty] private string _firstMatch = string.Empty;
@@ -204,28 +218,28 @@ public sealed partial class FileResultViewModel : ObservableObject
     public string FavoriteGlyph => IsFavorite ? "\uE735" : "\uE734";
 
     /// <summary>Human-readable file size, loaded lazily on first access.</summary>
-    public string SizeText => _sizeText ??= ComputeSizeText();
+    public string SizeText
+    {
+        get
+        {
+            EnsureMetadataLoading();
+            return _sizeText ??= ComputeSizeText();
+        }
+    }
 
     /// <summary>Last-modified timestamp, loaded lazily on first access.</summary>
-    public string ModifiedText => _modifiedText ??= ComputeModifiedText();
-
-    public long? SizeBytes
+    public string ModifiedText
     {
         get
         {
-            EnsureMetadataLoaded();
-            return _sizeBytes;
+            EnsureMetadataLoading();
+            return _modifiedText ??= ComputeModifiedText();
         }
     }
 
-    public DateTime? ModifiedUtc
-    {
-        get
-        {
-            EnsureMetadataLoaded();
-            return _modifiedUtc;
-        }
-    }
+    public long? SizeBytes => _sizeBytes;
+
+    public DateTime? ModifiedUtc => _modifiedUtc;
 
     public long ModifiedSortTicks => ModifiedUtc?.Ticks ?? 0;
 
@@ -254,27 +268,63 @@ public sealed partial class FileResultViewModel : ObservableObject
         }
     }
 
-    public void AddHit(Hit hit)
+    public void AddHit(Hit hit) => AddHits([hit]);
+
+    /// <summary>
+    /// Appends a batch of hits and raises each change notification at most
+    /// once. Every notification re-runs bindings on the UI thread, so a
+    /// streaming search applies hits per file per drain, not one at a time.
+    /// </summary>
+    public void AddHits(IReadOnlyList<Hit> hits)
     {
-        var hadImageOcrPreview = HasImageOcrPreview;
-        _hits.Add(hit);
-        HitCount = _hits.Count;
-        if (_hits.Count == 1)
-            FirstMatch = hit.LineContent.Trim();
-        if (hit.Score > BestScore)
-            BestScore = hit.Score;
-        if (hit.SizeBytes is { } size)
+        if (hits.Count == 0)
+            return;
+
+        var previousCount = _hits.Count;
+        var hadImageOcrPreview = _hasImageOcrPreview;
+        var hadStructuredSnippets = _hasStructuredSnippets;
+        var oldSource = SourceGroup;
+        var bestScore = BestScore;
+        var sizeChanged = false;
+        var modifiedChanged = false;
+        foreach (var hit in hits)
         {
-            _sizeBytes = size;
+            _hits.Add(hit);
+            if (hit.Score > bestScore)
+                bestScore = hit.Score;
+            if (hit.SizeBytes is { } size)
+            {
+                _sizeBytes = size;
+                sizeChanged = true;
+            }
+
+            if (hit.ModifiedUtc is { } modified)
+            {
+                _modifiedUtc = modified;
+                modifiedChanged = true;
+            }
+
+            _hasIndexedHits |= hit.Route == HitRoute.Indexed;
+            _hasLiveHits |= hit.Route == HitRoute.Live;
+            _hasImageOcrPreview |= !_hasImageOcrPreview && ImageOcrPreviewViewModel.IsPreviewAnchor(hit.Anchor);
+            _hasStructuredSnippets |= hit.Snippet is not null;
+        }
+
+        HitCount = _hits.Count;
+        if (previousCount == 0)
+            FirstMatch = hits[0].LineContent.Trim();
+        BestScore = bestScore;
+        if (sizeChanged)
+        {
             _sizeText = null;
             OnPropertyChanged(nameof(SizeBytes));
             OnPropertyChanged(nameof(SizeText));
             OnPropertyChanged(nameof(SizeGroup));
             OnPropertyChanged(nameof(SizeFacet));
         }
-        if (hit.ModifiedUtc is { } modified)
+
+        if (modifiedChanged)
         {
-            _modifiedUtc = modified;
             _modifiedText = null;
             OnPropertyChanged(nameof(ModifiedUtc));
             OnPropertyChanged(nameof(ModifiedSortTicks));
@@ -283,34 +333,40 @@ public sealed partial class FileResultViewModel : ObservableObject
             OnPropertyChanged(nameof(ModifiedDateFacet));
         }
 
-        var oldSource = SourceGroup;
-        _hasIndexedHits |= hit.Route == HitRoute.Indexed;
-        _hasLiveHits |= hit.Route == HitRoute.Live;
         if (!string.Equals(oldSource, SourceGroup, StringComparison.Ordinal))
             OnPropertyChanged(nameof(SourceGroup));
 
         // Refresh the rendered lines only while they can still change:
         // collapsed cards freeze at the first few, expanded cards keep growing.
-        if (IsExpanded || _hits.Count <= CollapsedHitLimit)
+        if (IsExpanded || previousCount < CollapsedHitLimit)
             OnPropertyChanged(nameof(VisibleHits));
-        if (_hits.Count <= PreviewHitLimit + 1)
+        if (previousCount <= PreviewHitLimit)
             OnPropertyChanged(nameof(PreviewHits));
-        if (!hadImageOcrPreview && HasImageOcrPreview)
+        if (!hadImageOcrPreview && _hasImageOcrPreview)
         {
             OnPropertyChanged(nameof(HasImageOcrPreview));
             OpenImageOcrPreviewCommand.NotifyCanExecuteChanged();
         }
 
-        if (hit.Snippet is not null)
+        if (!hadStructuredSnippets && _hasStructuredSnippets)
             OnPropertyChanged(nameof(HasStructuredSnippets));
 
-        OnPropertyChanged(nameof(HasMoreHits));
-        OnPropertyChanged(nameof(ExtraHitCount));
-        OnPropertyChanged(nameof(MoreText));
-        OnPropertyChanged(nameof(HasPreviewHits));
-        OnPropertyChanged(nameof(ExtraPreviewHitCount));
-        OnPropertyChanged(nameof(HasMorePreviewHits));
-        OnPropertyChanged(nameof(PreviewMoreText));
+        if (previousCount == 0)
+            OnPropertyChanged(nameof(HasPreviewHits));
+
+        if (_hits.Count > CollapsedHitLimit)
+        {
+            OnPropertyChanged(nameof(HasMoreHits));
+            OnPropertyChanged(nameof(ExtraHitCount));
+            OnPropertyChanged(nameof(MoreText));
+        }
+
+        if (_hits.Count > PreviewHitLimit)
+        {
+            OnPropertyChanged(nameof(ExtraPreviewHitCount));
+            OnPropertyChanged(nameof(HasMorePreviewHits));
+            OnPropertyChanged(nameof(PreviewMoreText));
+        }
     }
 
     public void UpdatePath(string fullPath)
@@ -325,6 +381,7 @@ public sealed partial class FileResultViewModel : ObservableObject
             _hits[i] = _hits[i] with { Path = fullPath };
 
         _metadataLoaded = false;
+        _metadataVersion++;
         _sizeText = null;
         _modifiedText = null;
         _sizeBytes = null;
@@ -476,32 +533,67 @@ public sealed partial class FileResultViewModel : ObservableObject
         }
     }
 
-    private void EnsureMetadataLoaded()
+    internal event EventHandler? MetadataLoaded;
+
+    internal void EnsureMetadataLoading()
     {
-        if (_metadataLoaded)
+        if (_metadataLoaded || (_modifiedUtc.HasValue && (IsDirectory || _sizeBytes.HasValue)))
             return;
 
         _metadataLoaded = true;
+        _ = LoadMetadataAsync(FullPath, IsDirectory, _metadataVersion);
+    }
+
+    private async Task LoadMetadataAsync(string path, bool isDirectory, int version)
+    {
+        await MetadataWorkers.WaitAsync().ConfigureAwait(true);
+        (long? Size, DateTime? Modified) metadata;
         try
         {
-            if (IsDirectory)
+            metadata = await Task.Run(() =>
             {
-                var directory = new DirectoryInfo(FullPath);
-                if (directory.Exists)
-                    _modifiedUtc ??= directory.LastWriteTimeUtc;
-                return;
-            }
+                try
+                {
+                    if (isDirectory)
+                    {
+                        var directory = new DirectoryInfo(path);
+                        return ((long?)null, directory.Exists ? (DateTime?)directory.LastWriteTimeUtc : null);
+                    }
 
-            var info = new FileInfo(FullPath);
-            if (info.Exists)
-            {
-                _sizeBytes ??= info.Length;
-                _modifiedUtc ??= info.LastWriteTimeUtc;
-            }
+                    var file = new FileInfo(path);
+                    return file.Exists ? ((long?)file.Length, (DateTime?)file.LastWriteTimeUtc) : (null, null);
+                }
+                catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or ArgumentException or System.Security.SecurityException)
+                {
+                    return ((long?)null, (DateTime?)null);
+                }
+            }).ConfigureAwait(true);
         }
-        catch
+        finally
         {
+            MetadataWorkers.Release();
         }
+
+        if (version != _metadataVersion)
+            return;
+        if (metadata.Size is null && metadata.Modified is null)
+            return;
+        // A newer indexed hit remains authoritative if it arrived while the
+        // best-effort filesystem read was in flight.
+        _sizeBytes ??= metadata.Size;
+        _modifiedUtc ??= metadata.Modified;
+        _sizeText = null;
+        _modifiedText = null;
+        OnPropertyChanged(nameof(SizeBytes));
+        OnPropertyChanged(nameof(SizeText));
+        OnPropertyChanged(nameof(SizeGroup));
+        OnPropertyChanged(nameof(SizeFacet));
+        OnPropertyChanged(nameof(ModifiedUtc));
+        OnPropertyChanged(nameof(ModifiedText));
+        OnPropertyChanged(nameof(ModifiedSortTicks));
+        OnPropertyChanged(nameof(ModifiedDateGroup));
+        OnPropertyChanged(nameof(ModifiedDateFacet));
+        MetadataLoaded?.Invoke(this, EventArgs.Empty);
     }
 
     private static string GetDisplayName(string path, bool isDirectory)

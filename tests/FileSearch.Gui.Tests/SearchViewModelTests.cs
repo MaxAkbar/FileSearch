@@ -45,7 +45,7 @@ public sealed class SearchViewModelTests
     [Fact]
     public void LargeResultSetDrainsCompletelyAcrossBatches()
     {
-        // 2,500 hits force more than one capped drain (2,000/tick) plus the
+        // 2,500 hits force more than one capped drain (256/tick) plus the
         // consumer-finished-but-queue-nonempty branch of the drain loop.
         RunWithPump((pump, vm, history, status, settings) =>
         {
@@ -59,6 +59,163 @@ public sealed class SearchViewModelTests
             Assert.Single(vm.Files);
             Assert.StartsWith("Done", status.Text);
         }, new BulkSearcher(2500));
+    }
+
+    [Fact]
+    public void HitsBeyondTheRetentionCapAreCountedButNotKept()
+    {
+        const int extra = 1_500;
+        RunWithPump((pump, vm, history, status, settings) =>
+        {
+            vm.QueryText = "needle";
+            vm.SearchPath = Path.GetTempPath();
+
+            var task = vm.SearchCommand.ExecuteAsync(null);
+            pump.PumpUntil(() => task.IsCompleted, TimeSpan.FromSeconds(60));
+
+            Assert.Equal(SearchViewModel.MaxRetainedHits, vm.TotalHits);
+            Assert.Equal(extra, vm.HiddenHits);
+            Assert.Equal(SearchViewModel.MaxRetainedHits, vm.Files.Sum(file => file.HitCount));
+            Assert.Contains("first", vm.ResultsSublineText, StringComparison.Ordinal);
+            Assert.Contains($"of {SearchViewModel.MaxRetainedHits + extra:n0}", status.Text, StringComparison.Ordinal);
+        }, new SpreadSearcher(SearchViewModel.MaxRetainedHits + extra, files: 400));
+    }
+
+    [Fact]
+    public void HitsForOneFileAreAppliedInBatchesNotOneNotificationPerHit()
+    {
+        RunWithPump((pump, vm, history, status, settings) =>
+        {
+            vm.QueryText = "needle";
+            vm.SearchPath = Path.GetTempPath();
+            var hitCountNotifications = 0;
+            vm.Files.CollectionChanged += (_, args) =>
+            {
+                foreach (FileResultViewModel file in args.NewItems ?? Array.Empty<FileResultViewModel>())
+                {
+                    file.PropertyChanged += (_, e) =>
+                    {
+                        if (e.PropertyName == nameof(FileResultViewModel.HitCount))
+                            hitCountNotifications++;
+                    };
+                }
+            };
+
+            var task = vm.SearchCommand.ExecuteAsync(null);
+            pump.PumpUntil(() => task.IsCompleted, TimeSpan.FromSeconds(10));
+
+            Assert.Equal(5_000, Assert.Single(vm.Files).HitCount);
+            Assert.InRange(hitCountNotifications, 1, 100);
+        }, new BulkSearcher(5_000));
+    }
+
+    [Fact]
+    public void FolderGroupingWaitsUntilTheSearchFinishes()
+    {
+        var searcher = new GatedSearcher();
+        RunWithPump((pump, vm, history, status, settings) =>
+        {
+            vm.QueryText = "needle";
+            vm.SearchPath = Path.GetTempPath();
+            Assert.True(vm.IsGroupedByFolder);
+
+            var task = vm.SearchCommand.ExecuteAsync(null);
+            pump.PumpUntil(() => vm.Files.Count == 2, TimeSpan.FromSeconds(10));
+
+            Assert.False(vm.IsGroupedByFolder);
+            Assert.Empty(vm.FilesView.GroupDescriptions);
+
+            searcher.Release();
+            pump.PumpUntil(() => task.IsCompleted, TimeSpan.FromSeconds(10));
+
+            Assert.True(vm.IsGroupedByFolder);
+            var group = Assert.Single(vm.FilesView.GroupDescriptions);
+            Assert.Equal(nameof(FileResultViewModel.Directory), ((System.Windows.Data.PropertyGroupDescription)group).PropertyName);
+            Assert.Equal(2, vm.FilesView.Groups!.Count);
+            Assert.Equal(3, vm.Files.Count);
+        }, searcher);
+    }
+
+    [Fact]
+    public void ManyFilesDrainCompletelyAfterTheBoundedWriterFinishes()
+    {
+        RunWithPump((pump, vm, history, status, settings) =>
+        {
+            vm.QueryText = "needle";
+            vm.SearchPath = Path.GetTempPath();
+            var task = vm.SearchCommand.ExecuteAsync(null);
+            pump.PumpUntil(() => task.IsCompleted, TimeSpan.FromSeconds(30));
+            Assert.Equal(9_000, vm.TotalHits);
+            Assert.Equal(9_000, vm.Files.Count);
+            Assert.All(vm.Files, file => Assert.Equal(1, file.HitCount));
+            Assert.True(vm.IsGroupedByFolder);
+            Assert.StartsWith("Done", status.Text);
+        }, new SpreadSearcher(9_000, 9_000));
+    }
+
+    [Fact]
+    public void GroupStateSurvivesRefreshAndCountsOnlyVisibleMatches()
+    {
+        RunWithPump((pump, vm, history, status, settings) =>
+        {
+            vm.QueryText = "needle";
+            vm.SearchPath = Path.GetTempPath();
+            var task = vm.SearchCommand.ExecuteAsync(null);
+            pump.PumpUntil(() => task.IsCompleted, TimeSpan.FromSeconds(10));
+            var group = Assert.IsType<System.Windows.Data.CollectionViewGroup>(Assert.Single(vm.FilesView.Groups!), exactMatch: false);
+            var state = vm.GetResultGroupState(group);
+            Assert.Equal("4 files · 12 matches", state.SummaryText);
+            state.IsExpanded = false;
+            vm.RefinementQuery = "file-0000";
+            pump.PumpUntil(() => vm.FilesVisible == 1, TimeSpan.FromSeconds(10));
+            group = Assert.IsType<System.Windows.Data.CollectionViewGroup>(Assert.Single(vm.FilesView.Groups!), exactMatch: false);
+            Assert.Same(state, vm.GetResultGroupState(group));
+            Assert.Equal("1 file · 3 matches", state.SummaryText);
+            vm.RefinementQuery = string.Empty;
+            Assert.Equal("4 files · 12 matches", state.SummaryText);
+            Assert.False(state.IsExpanded);
+            vm.SelectedGroupOption = vm.ResultGroupOptions.Single(option => option.Value == ResultGroupMode.Source);
+            vm.SelectedGroupOption = vm.ResultGroupOptions.Single(option => option.Value == ResultGroupMode.Folder);
+            Assert.Same(state, vm.GetResultGroupState((System.Windows.Data.CollectionViewGroup)vm.FilesView.Groups![0]));
+
+            task = vm.SearchCommand.ExecuteAsync(null);
+            pump.PumpUntil(() => task.IsCompleted, TimeSpan.FromSeconds(10));
+            var freshState = vm.GetResultGroupState((System.Windows.Data.CollectionViewGroup)vm.FilesView.Groups![0]);
+            Assert.NotSame(state, freshState);
+            Assert.True(freshState.IsExpanded);
+        }, new SpreadSearcher(12, 4));
+    }
+
+    [Theory]
+    [InlineData(ResultSortMode.Size)]
+    [InlineData(ResultSortMode.Recency)]
+    public void AsyncMetadataSettlesSortingAndDateGroups(ResultSortMode sort)
+    {
+        var root = Path.Combine(Path.GetTempPath(), "filesearch-metadata-" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(root);
+        var small = Path.Combine(root, "small.txt");
+        var large = Path.Combine(root, "large.txt");
+        File.WriteAllText(small, "x");
+        File.WriteAllText(large, "twenty characters!!!");
+        File.SetLastWriteTimeUtc(small, DateTime.UtcNow.AddDays(-60));
+        try
+        {
+            RunWithPump((pump, vm, history, status, settings) =>
+            {
+                vm.QueryText = "needle";
+                vm.SearchPath = root;
+                vm.SelectedSortOption = vm.ResultSortOptions.Single(option => option.Value == sort);
+                vm.SelectedGroupOption = vm.ResultGroupOptions.Single(option => option.Value == ResultGroupMode.ModifiedDate);
+                var task = vm.SearchCommand.ExecuteAsync(null);
+                pump.PumpUntil(() => task.IsCompleted, TimeSpan.FromSeconds(10));
+                pump.PumpUntil(() => vm.FilesView.Groups!.Count == 2 &&
+                    vm.FilesView.Cast<FileResultViewModel>().First().FullPath == large, TimeSpan.FromSeconds(10));
+                Assert.All(vm.Files, file => Assert.NotNull(file.ModifiedUtc));
+                Assert.Equal(1, vm.Files.Single(file => file.FullPath == small).SizeBytes);
+                Assert.Equal(2, vm.ModifiedFacetOptions.Where(option => option.Value != ResultFacetOption.AllValue).Count());
+            }, new PathsSearcher([small, large]));
+        }
+        finally { Directory.Delete(root, recursive: true); }
     }
 
     [Fact]
@@ -234,6 +391,7 @@ public sealed class SearchViewModelTests
             Assert.StartsWith("Error:", status.Text);
             Assert.Contains("boom", status.Text);
             Assert.False(vm.IsSearching);
+            Assert.True(vm.IsGroupedByFolder);
         }, new FaultingSearcher());
     }
 
@@ -276,6 +434,7 @@ public sealed class SearchViewModelTests
 
             Assert.StartsWith("Canceled", status.Text);
             Assert.False(vm.IsSearching);
+            Assert.True(vm.IsGroupedByFolder);
             Assert.Equal("needle", history.RecentQueries[0]);
         }, new EndlessSearcher());
     }
@@ -1028,7 +1187,7 @@ public sealed class SearchViewModelTests
             var settings = new FakeSettingsService();
             var appSettings = new ApplicationSettingsViewModel(settings, status);
             var history = new HistoryViewModel(settings, appSettings, status);
-            var vm = new SearchViewModel(
+            using var vm = new SearchViewModel(
                 searcher ?? new StubSearcher(),
                 new ExtractorRegistry(Array.Empty<ITextExtractor>()),
                 new QueryFactory(),
@@ -1064,6 +1223,16 @@ public sealed class SearchViewModelTests
         }
     }
 
+    private sealed class PathsSearcher(IReadOnlyList<string> paths) : ISearcher
+    {
+        public async IAsyncEnumerable<Hit> SearchAsync(SearchRequest request, [EnumeratorCancellation] CancellationToken cancellationToken)
+        {
+            await Task.Yield();
+            foreach (var path in paths)
+                yield return new Hit(path, 1, "needle", []);
+        }
+    }
+
     /// <summary>Yields N hits for one file as fast as possible.</summary>
     private sealed class BulkSearcher : ISearcher
     {
@@ -1078,6 +1247,38 @@ public sealed class SearchViewModelTests
             await Task.Yield();
             for (var i = 1; i <= _count; i++)
                 yield return new Hit(@"C:\results\bulk.txt", i, "needle", Array.Empty<MatchSpan>());
+        }
+    }
+
+    /// <summary>Yields two hits, waits for <see cref="Release"/>, then yields one more.</summary>
+    private sealed class GatedSearcher : ISearcher
+    {
+        private readonly TaskCompletionSource _gate = new(TaskCreationOptions.RunContinuationsAsynchronously);
+
+        public void Release() => _gate.TrySetResult();
+
+        public async IAsyncEnumerable<Hit> SearchAsync(
+            SearchRequest request,
+            [EnumeratorCancellation] CancellationToken cancellationToken)
+        {
+            await Task.Yield();
+            yield return new Hit(@"C:\results\one\a.txt", 1, "needle", Array.Empty<MatchSpan>(), HitKind.Content);
+            yield return new Hit(@"C:\results\two\b.txt", 1, "needle", Array.Empty<MatchSpan>(), HitKind.Content);
+            await _gate.Task.WaitAsync(cancellationToken).ConfigureAwait(false);
+            yield return new Hit(@"C:\results\one\c.txt", 1, "needle", Array.Empty<MatchSpan>(), HitKind.Content);
+        }
+    }
+
+    /// <summary>Yields N hits round-robin across a fixed number of files.</summary>
+    private sealed class SpreadSearcher(int count, int files) : ISearcher
+    {
+        public async IAsyncEnumerable<Hit> SearchAsync(
+            SearchRequest request,
+            [EnumeratorCancellation] CancellationToken cancellationToken)
+        {
+            await Task.Yield();
+            for (var i = 0; i < count; i++)
+                yield return new Hit($@"C:\results\file-{i % files:D4}.txt", i / files + 1, "needle", Array.Empty<MatchSpan>(), HitKind.Content);
         }
     }
 

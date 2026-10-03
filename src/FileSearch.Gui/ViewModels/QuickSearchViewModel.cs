@@ -1,5 +1,4 @@
 using System;
-using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.Collections.ObjectModel;
 using System.Collections.Specialized;
@@ -7,12 +6,14 @@ using System.Diagnostics;
 using System.IO;
 using System.Linq;
 using System.Threading;
+using System.Threading.Channels;
 using System.Threading.Tasks;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 using FileSearch.Core.Engine;
 using FileSearch.Core.Indexing;
 using FileSearch.Core.Queries;
+using FileSearch.Core.Volumes;
 using FileSearch.Core.Walker;
 using FileSearch.Gui.Services;
 using FileSearch.Gui.Settings;
@@ -27,7 +28,7 @@ public sealed record QuickSearchScopeOption(QuickSearchScopeKind Value, string D
 public sealed partial class QuickSearchViewModel : ObservableObject, IDisposable
 {
     private const int SearchDebounceMilliseconds = 35;
-    private const int DrainDelayMilliseconds = 35;
+    private const int DrainDelayMilliseconds = 16;
     private const int MaxResultFiles = 80;
     private const int MaxHits = 500;
     private const int MaxPinnedResults = 20;
@@ -42,6 +43,7 @@ public sealed partial class QuickSearchViewModel : ObservableObject, IDisposable
     private readonly SearchViewModel _mainSearch;
     private readonly IFolderPicker _folderPicker;
     private readonly IIndexUsageStore? _indexUsageStore;
+    private readonly IVolumeNameIndex? _volumeNameIndex;
     private readonly Dictionary<string, FileResultViewModel> _filesByPath = new(StringComparer.OrdinalIgnoreCase);
     private readonly HashSet<string> _seenHits = new(StringComparer.OrdinalIgnoreCase);
 
@@ -49,6 +51,7 @@ public sealed partial class QuickSearchViewModel : ObservableObject, IDisposable
     private CancellationTokenSource? _previewCts;
     private bool _isPreparing;
     private bool _hitLimitReached;
+    private long _searchGeneration;
 
     public QuickSearchViewModel(
         ISearcher searcher,
@@ -58,8 +61,10 @@ public sealed partial class QuickSearchViewModel : ObservableObject, IDisposable
         ISettingsService settingsService,
         SearchViewModel mainSearch,
         IFolderPicker folderPicker,
-        IIndexUsageStore? indexUsageStore = null)
+        IIndexUsageStore? indexUsageStore = null,
+        IVolumeNameIndex? volumeNameIndex = null)
     {
+        _volumeNameIndex = volumeNameIndex;
         _searcher = searcher;
         _queryFactory = queryFactory;
         _previewService = previewService;
@@ -110,6 +115,8 @@ public sealed partial class QuickSearchViewModel : ObservableObject, IDisposable
 
     public void PrepareForShow()
     {
+        CancelSearch();
+        IsSearching = false;
         _isPreparing = true;
         try
         {
@@ -132,7 +139,7 @@ public sealed partial class QuickSearchViewModel : ObservableObject, IDisposable
 
     public void Dismiss()
     {
-        _searchCts?.Cancel();
+        CancelSearch();
         _previewCts?.Cancel();
         IsSearching = false;
     }
@@ -142,7 +149,7 @@ public sealed partial class QuickSearchViewModel : ObservableObject, IDisposable
         if (_isPreparing)
             return;
 
-        _searchCts?.Cancel();
+        CancelSearch();
         _previewCts?.Cancel();
         IsPreviewVisible = false;
         PreviewContent = string.Empty;
@@ -158,7 +165,7 @@ public sealed partial class QuickSearchViewModel : ObservableObject, IDisposable
         var cts = new CancellationTokenSource();
         _searchCts?.Dispose();
         _searchCts = cts;
-        _ = SearchAfterDebounceAsync(value.Trim(), cts.Token);
+        _ = SearchAfterDebounceAsync(value.Trim(), _searchGeneration, cts.Token);
     }
 
     partial void OnSelectedScopeChanged(QuickSearchScopeOption? value)
@@ -404,25 +411,44 @@ public sealed partial class QuickSearchViewModel : ObservableObject, IDisposable
 
     public void Dispose()
     {
-        _searchCts?.Cancel();
+        CancelSearch();
         _previewCts?.Cancel();
         _searchCts?.Dispose();
         _previewCts?.Dispose();
     }
 
-    private async Task SearchAfterDebounceAsync(string text, CancellationToken token)
+    private async Task SearchAfterDebounceAsync(string text, long generation, CancellationToken token)
     {
         try
         {
             await Task.Delay(SearchDebounceMilliseconds, token).ConfigureAwait(true);
-            await SearchAsync(text, token).ConfigureAwait(true);
+            if (IsCurrentSearch(generation, token))
+                await SearchAsync(text, generation, token).ConfigureAwait(true);
         }
         catch (OperationCanceledException)
         {
         }
     }
 
-    private async Task SearchAsync(string text, CancellationToken token)
+    private bool IsCurrentSearch(long generation, CancellationToken token) =>
+        generation == _searchGeneration && !token.IsCancellationRequested;
+
+    private void CancelSearch()
+    {
+        _searchGeneration++;
+        _searchCts?.Cancel();
+    }
+
+    private void RestartSearch(string text)
+    {
+        CancelSearch();
+        var cts = new CancellationTokenSource();
+        _searchCts?.Dispose();
+        _searchCts = cts;
+        _ = SearchAfterDebounceAsync(text, _searchGeneration, cts.Token);
+    }
+
+    private async Task SearchAsync(string text, long generation, CancellationToken token)
     {
         ResetResults();
         IsSearching = true;
@@ -431,9 +457,14 @@ public sealed partial class QuickSearchViewModel : ObservableObject, IDisposable
         StatusText = "Searching...";
 
         var scope = SelectedScope?.Value ?? CurrentConfiguredScope();
-        if (scope == QuickSearchScopeKind.EntireMachineMetadata)
+        var machine = scope == QuickSearchScopeKind.EntireMachineMetadata;
+        var roots = machine ? GetMachineMetadataRoots() : ResolveRoots(scope);
+        if (roots.Count == 0)
         {
-            await SearchMachineMetadataAsync(text, token).ConfigureAwait(true);
+            IsSearching = false;
+            StatusText = machine ? "No ready fixed drives were found."
+                : scope == QuickSearchScopeKind.CurrentFolder ? "Choose an existing folder to search."
+                : "No searchable roots are configured.";
             return;
         }
 
@@ -449,170 +480,118 @@ public sealed partial class QuickSearchViewModel : ObservableObject, IDisposable
             return;
         }
 
-        var roots = ResolveRoots(scope);
-        if (roots.Count == 0)
+        using var producerCts = CancellationTokenSource.CreateLinkedTokenSource(token);
+        var producerToken = producerCts.Token;
+        var pendingHits = Channel.CreateBounded<QueuedHit>(new BoundedChannelOptions(512)
         {
-            IsSearching = false;
-            StatusText = scope == QuickSearchScopeKind.CurrentFolder
-                ? "Choose an existing folder to search."
-                : "No searchable roots are configured.";
-            return;
-        }
-
-        var pendingHits = new ConcurrentQueue<Hit>();
-        var includeContent = IncludeContentMatches && CanSearchContent;
-        var metadataProducer = Task.Run(
-            () => EnqueueFilesystemMetadataMatches(
-                roots,
-                text,
-                pendingHits,
-                ScopedMetadataScanBudgetMilliseconds,
-                token),
-            token);
-        var contentProducer = includeContent
+            SingleReader = true,
+            SingleWriter = false,
+            FullMode = BoundedChannelFullMode.Wait,
+        });
+        var metadataProducer = Task.Run(() => EnqueueMetadataMatchesAsync(
+            roots, text, pendingHits.Writer,
+            machine ? MachineMetadataScanBudgetMilliseconds : ScopedMetadataScanBudgetMilliseconds,
+            producerToken), producerToken);
+        var includeContent = !machine && IncludeContentMatches && CanSearchContent;
+        var request = includeContent ? new SearchRequest(
+            query, roots, _mainSearch.BuildQuickSearchWalkerOptions(),
+            Progress: null, UseIndex: true, Status: null, RawQuery: text, Mode: QueryMode.PlainText) : null;
+        var contentProducer = request is not null
             ? Task.Run(async () =>
             {
-                var request = new SearchRequest(
-                    query,
-                    roots,
-                    _mainSearch.BuildQuickSearchWalkerOptions(),
-                    Progress: null,
-                    UseIndex: true,
-                    Status: null,
-                    RawQuery: text,
-                    Mode: QueryMode.PlainText);
-
-                await foreach (var hit in _searcher.SearchAsync(request, token).ConfigureAwait(false))
-                    pendingHits.Enqueue(hit);
-            }, token)
+                await foreach (var hit in _searcher.SearchAsync(request, producerToken).ConfigureAwait(false))
+                    await pendingHits.Writer.WriteAsync(new QueuedHit(hit, false), producerToken).ConfigureAwait(false);
+            }, producerToken)
             : Task.CompletedTask;
+        var producers = Task.WhenAll(metadataProducer, contentProducer);
 
         try
         {
-            while (true)
+            while (IsCurrentSearch(generation, token))
             {
-                DrainPendingHits(pendingHits);
-                if ((metadataProducer.IsCompleted && contentProducer.IsCompleted && pendingHits.IsEmpty) || _hitLimitReached)
+                DrainPendingHits(pendingHits.Reader, producerCts);
+                if (_hitLimitReached || (producers.IsCompleted && !pendingHits.Reader.TryPeek(out _)))
                     break;
-
                 await Task.Delay(DrainDelayMilliseconds, token).ConfigureAwait(true);
             }
 
-            await Task.WhenAll(metadataProducer, contentProducer).ConfigureAwait(true);
-            DrainPendingHits(pendingHits);
-            FinishSearchStatus();
+            await producers.ConfigureAwait(true);
+            if (IsCurrentSearch(generation, token))
+                FinishSearchStatus();
         }
         catch (OperationCanceledException)
         {
-            if (_hitLimitReached || !token.IsCancellationRequested)
+            if (IsCurrentSearch(generation, token) && _hitLimitReached)
                 FinishSearchStatus();
         }
         catch (Exception ex)
         {
-            StatusText = $"Search failed: {ex.Message}";
+            if (IsCurrentSearch(generation, token))
+                StatusText = $"{(machine ? "Metadata search" : "Search")} failed: {ex.Message}";
         }
         finally
         {
-            IsSearching = false;
+            // Cancel and observe both writers, including a writer waiting on
+            // a full channel. An obsolete search must never publish UI state.
+            producerCts.Cancel();
+            try { await producers.ConfigureAwait(true); }
+            catch (OperationCanceledException) { }
+            catch (Exception) { }
+            pendingHits.Writer.TryComplete();
+            if (IsCurrentSearch(generation, token))
+                IsSearching = false;
         }
     }
 
-    private async Task SearchMachineMetadataAsync(string text, CancellationToken token)
+    private void DrainPendingHits(ChannelReader<QueuedHit> pendingHits, CancellationTokenSource producerCts)
     {
-        var pendingHits = new ConcurrentQueue<Hit>();
-        var roots = GetMachineMetadataRoots();
-        if (roots.Count == 0)
-        {
-            IsSearching = false;
-            StatusText = "No ready fixed drives were found.";
-            return;
-        }
-
-        var producer = Task.Run(
-            () => EnqueueFilesystemMetadataMatches(
-                roots,
-                text,
-                pendingHits,
-                MachineMetadataScanBudgetMilliseconds,
-                token),
-            token);
-
-        try
-        {
-            while (true)
-            {
-                DrainPendingHits(pendingHits);
-                if ((producer.IsCompleted && pendingHits.IsEmpty) || _hitLimitReached)
-                    break;
-
-                await Task.Delay(DrainDelayMilliseconds, token).ConfigureAwait(true);
-            }
-
-            await producer.ConfigureAwait(true);
-            DrainPendingHits(pendingHits);
-            FinishSearchStatus();
-        }
-        catch (OperationCanceledException)
-        {
-            if (_hitLimitReached)
-                FinishSearchStatus();
-        }
-        catch (Exception ex)
-        {
-            StatusText = $"Metadata search failed: {ex.Message}";
-        }
-        finally
-        {
-            IsSearching = false;
-        }
-    }
-
-    private void RestartSearch(string text)
-    {
-        _searchCts?.Cancel();
-        var cts = new CancellationTokenSource();
-        _searchCts?.Dispose();
-        _searchCts = cts;
-        _ = SearchAfterDebounceAsync(text, cts.Token);
-    }
-
-    private void DrainPendingHits(ConcurrentQueue<Hit> pendingHits)
-    {
+        var started = Stopwatch.GetTimestamp();
         var drained = 0;
-        while (drained < 250 && pendingHits.TryDequeue(out var hit))
+        while (drained < 128 && Stopwatch.GetElapsedTime(started) < TimeSpan.FromMilliseconds(8) &&
+               pendingHits.TryRead(out var pending))
         {
             if (_seenHits.Count >= MaxHits || _filesByPath.Count >= MaxResultFiles)
             {
                 _hitLimitReached = true;
-                _searchCts?.Cancel();
+                producerCts.Cancel();
                 break;
             }
 
+            var hit = pending.Hit;
             var key = $"{hit.Path}\0{hit.Kind}\0{hit.LineNumber}\0{hit.LineContent}";
+            drained++;
             if (!_seenHits.Add(key))
-            {
-                drained++;
                 continue;
-            }
 
             if (!_filesByPath.TryGetValue(hit.Path, out var file))
             {
-                var recordOpened = _indexUsageStore is null
-                    ? null
+                var recordOpened = _indexUsageStore is null ? null
                     : new Func<string, CancellationToken, Task>(_indexUsageStore.RecordFileOpenedAsync);
-                file = new FileResultViewModel(hit.Path, _fileLauncher, recordOpened);
-                file.IsPinned = IsPinned(hit.Path);
+                file = new FileResultViewModel(hit.Path, _fileLauncher, recordOpened, isDirectory: pending.IsDirectory)
+                {
+                    IsPinned = IsPinned(hit.Path),
+                };
+                file.AddHit(hit);
                 _filesByPath[hit.Path] = file;
                 Results.Add(file);
-                if (SelectedResult is null)
-                    SelectedResult = file;
+                SelectedResult ??= file;
+            }
+            else
+            {
+                file.AddHit(hit);
             }
 
-            file.AddHit(hit);
             if (hit.Kind == HitKind.Content)
                 StageText = "Indexed lexical content matches";
+            else if (hit.Route == HitRoute.Indexed && StageText.Length > 0 && !StageText.StartsWith("Indexed", StringComparison.Ordinal))
+                StageText = "Drive name index matches";
 
-            drained++;
+            if (_seenHits.Count >= MaxHits || _filesByPath.Count >= MaxResultFiles)
+            {
+                _hitLimitReached = true;
+                producerCts.Cancel();
+                break;
+            }
         }
 
         if (drained > 0)
@@ -621,6 +600,8 @@ public sealed partial class QuickSearchViewModel : ObservableObject, IDisposable
             StatusText = $"{Results.Count:n0} files, {_seenHits.Count:n0} hits";
         }
     }
+
+    private readonly record struct QueuedHit(Hit Hit, bool IsDirectory);
 
     private void FinishSearchStatus()
     {
@@ -730,10 +711,48 @@ public sealed partial class QuickSearchViewModel : ObservableObject, IDisposable
         }
     }
 
-    private static void EnqueueFilesystemMetadataMatches(
+    /// <summary>
+    /// Answers filename matches from the drive name index for roots on
+    /// indexed drives (complete and ranked), and falls back to the
+    /// time-boxed folder walk only for roots the index does not cover.
+    /// </summary>
+    private async Task EnqueueMetadataMatchesAsync(
         IReadOnlyList<string> roots,
         string text,
-        ConcurrentQueue<Hit> pendingHits,
+        ChannelWriter<QueuedHit> pendingHits,
+        int scanBudgetMilliseconds,
+        CancellationToken token)
+    {
+        var uncovered = roots;
+        if (_volumeNameIndex is not null)
+        {
+            var result = await _volumeNameIndex
+                .SearchAsync(new VolumeTermSearchRequest(text, MaxResultFiles, ScopeRoots: roots), token)
+                .ConfigureAwait(false);
+            foreach (var match in result.Matches)
+            {
+                token.ThrowIfCancellationRequested();
+                await pendingHits.WriteAsync(new QueuedHit(new Hit(
+                    match.Path,
+                    0,
+                    match.IsDirectory ? "Folder name match" : "Filename/path match",
+                    Array.Empty<MatchSpan>(),
+                    HitKind.Metadata,
+                    Score: match.Score,
+                    Route: HitRoute.Indexed), match.IsDirectory), token).ConfigureAwait(false);
+            }
+
+            uncovered = result.UncoveredRoots;
+        }
+
+        if (uncovered.Count > 0)
+            await EnqueueFilesystemMetadataMatchesAsync(uncovered, text, pendingHits, scanBudgetMilliseconds, token).ConfigureAwait(false);
+    }
+
+    private static async Task EnqueueFilesystemMetadataMatchesAsync(
+        IReadOnlyList<string> roots,
+        string text,
+        ChannelWriter<QueuedHit> pendingHits,
         int scanBudgetMilliseconds,
         CancellationToken token)
     {
@@ -761,13 +780,13 @@ public sealed partial class QuickSearchViewModel : ObservableObject, IDisposable
                 if (!MetadataMatches(path, terms))
                     continue;
 
-                pendingHits.Enqueue(new Hit(
+                await pendingHits.WriteAsync(new QueuedHit(new Hit(
                     path,
                     0,
                     "Filename/path match",
                     Array.Empty<MatchSpan>(),
                     HitKind.Metadata,
-                    Score: 1));
+                    Score: 1), false), token).ConfigureAwait(false);
                 emitted++;
                 if (emitted >= MaxResultFiles)
                     return;

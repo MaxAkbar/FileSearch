@@ -87,6 +87,15 @@ public sealed class AppSettings
 
     public List<IndexedLocationSettings> IndexedLocations { get; set; } = new();
 
+    /// <summary>Drive roots (for example <c>C:\</c>) with a whole-drive file name index.</summary>
+    public List<string> DriveNameIndexVolumes { get; set; } = new();
+
+    /// <summary>
+    /// Build drive name indexes from the master file table, which asks for
+    /// administrator permission; otherwise scan folders without elevation.
+    /// </summary>
+    public bool DriveNameIndexUseAdministratorScan { get; set; } = true;
+
     public List<IndexFilterListSettings> IndexInclusionLists { get; set; } = new();
 
     public List<IndexFilterListSettings> IndexExclusionLists { get; set; } = new();

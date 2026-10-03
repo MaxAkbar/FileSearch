@@ -66,8 +66,10 @@ public sealed partial class ApplicationSettingsViewModel : ObservableObject
         IEmbeddingModelPackCatalog? semanticModelCatalog = null,
         IEmbeddingModelPackStore? semanticModelStore = null,
         IEmbeddingModelPackInstaller? semanticModelInstaller = null,
-        EmbeddingModelPackOptions? semanticModelOptions = null)
+        EmbeddingModelPackOptions? semanticModelOptions = null,
+        DriveNameIndexViewModel? driveNameIndex = null)
     {
+        DriveNameIndex = driveNameIndex;
         _settingsService = settingsService;
         _startupRegistration = startupRegistration;
         _themeService = themeService;
@@ -183,6 +185,9 @@ public sealed partial class ApplicationSettingsViewModel : ObservableObject
     public ObservableCollection<CustomThemeInfo> CustomThemes { get; } = new();
 
     public ObservableCollection<QuickIndexedLocationSelection> QuickIndexedLocationSelections { get; } = new();
+
+    /// <summary>Whole-drive file name index settings; null in hosts that do not own one.</summary>
+    public DriveNameIndexViewModel? DriveNameIndex { get; }
 
     public string CustomThemeFolderPath => _themeService?.CustomThemeFolderPath ?? string.Empty;
 

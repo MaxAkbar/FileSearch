@@ -17,6 +17,7 @@ FileSearch is a Windows desktop application for searching text across files and 
 - Preview matching lines and context for selected results.
 - Refine, facet, sort, group, favorite, pin, drag, export, and save or share workspace bundles, with optional workspace run-on-load.
 - Optional CSharpDB-backed indexing for faster repeat searches across multiple locations, with GUI or tray-indexer background updates.
+- Optional whole-drive file-name index for NTFS drives, built from the master file table and kept live by the change journal, for instant name search across millions of files in Quick Search, indexed name searches, and the CLI.
 - Open matched files, reveal them in Explorer, copy file or folder paths, rename files, or move files to the Recycle Bin.
 - Configure the Quick Search global hotkey, Quick Search action shortcuts, and main-window keyboard shortcuts.
 - Light, dark, system, and Visual Studio-inspired themes.
@@ -259,6 +260,18 @@ Background indexer controls are available as `indexer` commands. They use the sa
 .\FileSearch.Cli.exe indexer refresh C:\src
 .\FileSearch.Cli.exe indexer validate C:\src
 ```
+
+Whole-drive file-name indexes are managed with `volumes` commands. `build` reads the master file table when the CLI is elevated or with `--admin` (Windows asks for permission); otherwise it scans folders without elevation:
+
+```powershell
+.\FileSearch.Cli.exe volumes list
+.\FileSearch.Cli.exe volumes build C: --admin
+.\FileSearch.Cli.exe volumes search invoice 2026 --limit 20
+.\FileSearch.Cli.exe volumes search config json --path C:\src --files --json
+.\FileSearch.Cli.exe volumes remove C:
+```
+
+Once a drive is indexed, one-shot name searches with `--index` (for example `search report --target files --index`) are answered from it. Details are in [README.Indexing.md](README.Indexing.md#drive-file-name-index).
 
 The CLI uses the same `FileSearch.Core` search pipeline, Windows OCR package, workflow runner, and CSharpDB index database as the desktop app. Indexed search is opt-in with `index on`; when the current search is not covered by the index, the CLI falls back to live scan.
 

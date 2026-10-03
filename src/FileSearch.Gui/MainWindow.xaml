@@ -7,6 +7,7 @@
         xmlns:vm="clr-namespace:FileSearch.Gui.ViewModels"
         xmlns:conv="clr-namespace:FileSearch.Gui.Converters"
         xmlns:hl="clr-namespace:FileSearch.Gui.Highlighting"
+        xmlns:controls="clr-namespace:FileSearch.Gui.Controls"
         mc:Ignorable="d"
         d:DataContext="{d:DesignInstance Type=vm:MainViewModel}"
         ui:WindowHelper.UseModernWindowStyle="True"
@@ -30,7 +31,7 @@
         <conv:FileTypeToTintBrushConverter x:Key="TypeTint"/>
         <conv:FileTypeToInkBrushConverter x:Key="TypeInk"/>
         <conv:FileTypeToLabelConverter x:Key="TypeLabel"/>
-        <conv:GroupSummaryConverter x:Key="GroupSummary"/>
+        <conv:ResultGroupStateConverter x:Key="ResultGroupState"/>
         <conv:FolderPathPartConverter x:Key="FolderPart"/>
         <conv:PathsEqualConverter x:Key="PathsEqual"/>
         <conv:InverseBoolToVisibilityConverter x:Key="InverseBoolToVisibility"/>
@@ -1942,23 +1943,46 @@
                         </Grid.ColumnDefinitions>
 
                         <Grid Grid.Column="0" Margin="{DynamicResource AppDensity.ResultsListMargin}">
-                            <ListBox x:Name="ResultsList"
+                            <!-- Keep CanContentScroll local: the theme's grouping trigger
+                                 overrides style setters and otherwise disables virtualization. -->
+                            <controls:ResultsListBox x:Name="ResultsList"
                                      ItemsSource="{Binding Search.FilesView}"
                                      SelectedItem="{Binding Search.SelectedFile}"
                                      Style="{StaticResource ResultsListStyle}"
                                      Padding="{DynamicResource AppDensity.SearchResultsListPadding}"
                                      VirtualizingPanel.IsVirtualizingWhenGrouping="True"
+                                     VirtualizingPanel.CacheLength="0"
+                                     ScrollViewer.CanContentScroll="True"
                                      VirtualizingPanel.ScrollUnit="Pixel"
                                      AutomationProperties.Name="Results"
                                      PreviewMouseMove="OnResultsPreviewMouseMove">
+                                <ListBox.ItemsPanel>
+                                    <ItemsPanelTemplate>
+                                        <VirtualizingStackPanel/>
+                                    </ItemsPanelTemplate>
+                                </ListBox.ItemsPanel>
                                 <ListBox.GroupStyle>
                                     <GroupStyle>
+                                        <GroupStyle.Panel>
+                                            <ItemsPanelTemplate>
+                                                <VirtualizingStackPanel/>
+                                            </ItemsPanelTemplate>
+                                        </GroupStyle.Panel>
                                         <GroupStyle.ContainerStyle>
                                             <Style TargetType="GroupItem">
                                                 <Setter Property="Template">
                                                     <Setter.Value>
                                                         <ControlTemplate TargetType="GroupItem">
-                                                            <Expander Style="{StaticResource ResultGroupExpanderStyle}" Margin="0,2,10,2">
+                                                            <!-- Avoid a collapsed first measure before the
+                                                                 recycled group's state binding resolves. -->
+                                                            <Expander Style="{StaticResource ResultGroupExpanderStyle}" Margin="0,2,10,2"
+                                                                      IsExpanded="{Binding Tag.IsExpanded, RelativeSource={RelativeSource Self}, Mode=TwoWay, FallbackValue=True}">
+                                                                <Expander.Tag>
+                                                                    <MultiBinding Converter="{StaticResource ResultGroupState}">
+                                                                        <Binding/>
+                                                                        <Binding Path="DataContext.Search" RelativeSource="{RelativeSource AncestorType=ListBox}"/>
+                                                                    </MultiBinding>
+                                                                </Expander.Tag>
                                                                 <Expander.Header>
                                                                     <Grid>
                                                                         <Grid.ColumnDefinitions>
@@ -1984,10 +2008,7 @@
                                                                                    Foreground="{DynamicResource Atlas.Ink2Brush}"
                                                                                    VerticalAlignment="Center">
                                                                             <TextBlock.Text>
-                                                                                <MultiBinding Converter="{StaticResource GroupSummary}">
-                                                                                    <Binding Path="Items"/>
-                                                                                    <Binding Path="ItemCount"/>
-                                                                                </MultiBinding>
+                                                                                <Binding Path="Tag.SummaryText" RelativeSource="{RelativeSource AncestorType=Expander}"/>
                                                                             </TextBlock.Text>
                                                                         </TextBlock>
                                                                     </Grid>
@@ -2168,7 +2189,7 @@
                                         </StackPanel>
                                     </DataTemplate>
                                 </ListBox.ItemTemplate>
-                            </ListBox>
+                            </controls:ResultsListBox>
 
                             <StackPanel HorizontalAlignment="Center" VerticalAlignment="Center" MaxWidth="360">
                                 <StackPanel.Style>

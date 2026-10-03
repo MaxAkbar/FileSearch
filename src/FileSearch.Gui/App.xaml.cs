@@ -7,6 +7,7 @@ using FileSearch.Core;
 using FileSearch.Core.Engine;
 using FileSearch.Core.Indexing;
 using FileSearch.Core.Logging;
+using FileSearch.Core.Volumes;
 using FileSearch.Gui.Services;
 using FileSearch.Gui.Settings;
 using FileSearch.Gui.ViewModels;
@@ -95,6 +96,7 @@ public partial class App : System.Windows.Application
                 services.AddSingleton<IUiDispatcher, WpfUiDispatcher>();
                 services.AddSingleton<StatusBarViewModel>();
                 services.AddSingleton<IStyleService, StyleService>();
+                services.AddSingleton<DriveNameIndexViewModel>();
                 services.AddSingleton<ApplicationSettingsViewModel>();
                 services.AddSingleton<HistoryViewModel>();
                 services.AddSingleton<SearchViewModel>();
@@ -169,6 +171,7 @@ public partial class App : System.Windows.Application
             window.Show();
 
         _ = viewModel.StartBackgroundIndexingAsync();
+        _ = _host.Services.GetRequiredService<DriveNameIndexViewModel>().InitializeAsync();
     }
 
     private void CreateTrayIcon(MainWindow window, MainViewModel viewModel, QuickSearchWindow quickWindow)
@@ -299,6 +302,17 @@ public partial class App : System.Windows.Application
                     _host.Services.GetService<Microsoft.Extensions.Logging.ILoggerFactory>()
                         ?.CreateLogger<App>()
                         .LogWarning("Background indexing did not stop within the exit grace period.");
+                }
+
+                // Saves changed drive name index snapshots so the next start
+                // only replays the journal since now. Same off-dispatcher,
+                // bounded pattern as above; host disposal later is a no-op.
+                var volumeIndex = _host.Services.GetRequiredService<IVolumeNameIndex>();
+                if (!Task.Run(() => volumeIndex.DisposeAsync().AsTask()).Wait(TimeSpan.FromSeconds(10)))
+                {
+                    _host.Services.GetService<Microsoft.Extensions.Logging.ILoggerFactory>()
+                        ?.CreateLogger<App>()
+                        .LogWarning("Drive name index snapshots were not saved within the exit grace period.");
                 }
             }
             catch

@@ -24,6 +24,12 @@ When indexing is enabled, FileSearch stores extracted searchable content locally
 
 The index can include file paths, file metadata, extracted line text, indexing status, and failed-file error information.
 
+When a drive file-name index is enabled, FileSearch also stores a list of the file and folder names on that drive:
+
+- `%LocalAppData%\FileSearch\Index\Volumes\*.fsvol`
+
+A drive index built with the administrator (master file table) scan contains the names of **every** file and folder on the drive. That includes folders the current user cannot open, such as other users' profiles, the same as Everything's database. The folder scan only records folders the user can read. Remove a drive's index from **Settings > Drive file-name index** or with `filesearch volumes remove C:`.
+
 ## Telemetry
 
 FileSearch does not currently send telemetry or search data to a remote service.

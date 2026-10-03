@@ -12,6 +12,7 @@ using System.Text;
 using System.Text.Json;
 using System.Text.Json.Serialization;
 using System.Threading;
+using System.Threading.Channels;
 using System.Threading.Tasks;
 using System.Windows.Data;
 using CommunityToolkit.Mvvm.ComponentModel;
@@ -122,7 +123,7 @@ public sealed partial class SearchViewModel : ObservableObject, IDisposable
         _status = status;
 
         // Set up the filtered view used by the "Filter" tab.
-        FilesView = CollectionViewSource.GetDefaultView(Files);
+        FilesView = new ResultCollectionView(Files);
         FilesView.Filter = FilterFiles;
         Files.CollectionChanged += OnFilesChanged;
         _history.FavoriteResults.CollectionChanged += OnFavoriteResultsChanged;
@@ -204,10 +205,8 @@ public sealed partial class SearchViewModel : ObservableObject, IDisposable
         };
 
     /// <summary>
-    /// Filtered view of <see cref="Files"/>. The results list binds to
-    /// <c>Files</c> directly; WPF resolves to this same default view, so
-    /// changing the filter here filters what the list shows without
-    /// touching the underlying collection.
+    /// Filtered, sorted and grouped view of <see cref="Files"/>. The results
+    /// list binds to this view without changing the underlying collection.
     /// </summary>
     public ICollectionView FilesView { get; }
 
@@ -260,6 +259,9 @@ public sealed partial class SearchViewModel : ObservableObject, IDisposable
     // --- runtime state ---
     [ObservableProperty] private bool _isSearching;
     [ObservableProperty] private int _totalHits;
+
+    /// <summary>Hits the search found beyond <see cref="MaxRetainedHits"/>; counted, not shown.</summary>
+    [ObservableProperty] private long _hiddenHits;
     [ObservableProperty] private int _filesMatched;
     [ObservableProperty] private string _elapsedText = "—";
     [ObservableProperty] private string _previewContent = string.Empty;
@@ -327,6 +329,12 @@ public sealed partial class SearchViewModel : ObservableObject, IDisposable
     private void RefreshFilesView()
     {
         FilesView.Refresh();
+        NotifyFilesViewChanged();
+    }
+
+    private void NotifyFilesViewChanged()
+    {
+        RefreshResultGroupStates();
         OnPropertyChanged(nameof(FilesVisible));
         ExportResultsCommand.NotifyCanExecuteChanged();
         CopyGroundedAnswerCommand.NotifyCanExecuteChanged();
@@ -446,9 +454,12 @@ public sealed partial class SearchViewModel : ObservableObject, IDisposable
 
     /// <summary>Muted line beside the heading ("in 199 files").</summary>
     public string ResultsSublineText =>
-        FilesMatched == 0 || !IsContentSearch
+        FilesMatched == 0
             ? string.Empty
-            : $"in {FilesMatched:n0} {(FilesMatched == 1 ? "file" : "files")}";
+            : (IsContentSearch ? $"in {FilesMatched:n0} {(FilesMatched == 1 ? "file" : "files")}" : string.Empty) +
+              (HiddenHits > 0
+                  ? $"{(IsContentSearch ? " · " : string.Empty)}first {TotalHits:n0} of {MaxRetainedHits + HiddenHits:n0} shown"
+                  : string.Empty);
 
     /// <summary>The ".*" toggle in the query box. Off returns to structured (Unified) matching.</summary>
     public bool IsRegexMode
@@ -473,8 +484,12 @@ public sealed partial class SearchViewModel : ObservableObject, IDisposable
         _ => "Flat list",
     };
 
-    /// <summary>Folder headers already name the folder, so cards hide their path line.</summary>
-    public bool IsGroupedByFolder => SelectedGroupOption?.Value == ResultGroupMode.Folder;
+    /// <summary>
+    /// True when the list is actually showing folder groups (the cards then
+    /// leave the folder to the group header). False while a search streams,
+    /// because grouping is applied only once it finishes.
+    /// </summary>
+    public bool IsGroupedByFolder => SelectedGroupOption?.Value == ResultGroupMode.Folder && !_resultGroupingDeferred;
 
     public bool HasPreviewLines => PreviewLines.Count > 0;
 
@@ -1257,15 +1272,22 @@ public sealed partial class SearchViewModel : ObservableObject, IDisposable
         _history.RecordSearch(CreateSavedSearch());
 
         RefinementQuery = string.Empty;
+        foreach (var file in Files)
+            file.MetadataLoaded -= OnResultMetadataLoaded;
         _filesByPath.Clear();
         Files.Clear();
         SelectedFile = null;
         PreviewContent = string.Empty;
         ImageOcrPreview = null;
         TotalHits = 0;
+        HiddenHits = 0;
         FilesMatched = 0;
         ElapsedText = "—";
         _nextResultRank = 0;
+        _resultGroupStates.Clear();
+        _pendingFileBatches.Clear();
+        _drainBatchSize = 256;
+        _nextResultViewRefreshUtc = DateTime.MinValue;
         RebuildFacetOptions();
 
         Query query;
@@ -1281,6 +1303,7 @@ public sealed partial class SearchViewModel : ObservableObject, IDisposable
 
         IsSearching = true;
         _status.Text = "Searching...";
+        SetResultGroupingDeferred(true);
         SearchCommand.NotifyCanExecuteChanged();
         CancelCommand.NotifyCanExecuteChanged();
         ExcludeFileExtensionPatternCommand.NotifyCanExecuteChanged();
@@ -1301,50 +1324,85 @@ public sealed partial class SearchViewModel : ObservableObject, IDisposable
             var searchTargets = CurrentSearchTargets;
 
             // Consume the hit stream on the thread pool and flush to the UI
-            // in timed batches — applying hits one at a time marshalled every
-            // result through the dispatcher and stuttered on large result sets.
-            var pendingHits = new System.Collections.Concurrent.ConcurrentQueue<Hit>();
+            // in timed batches. The hand-off channel is bounded so the engine
+            // waits whenever the UI falls behind; an unbounded queue let a
+            // broad query pile up gigabytes of hits faster than the
+            // dispatcher could apply them, and the GC pauses froze the UI.
+            var pendingHits = Channel.CreateBounded<PendingHit>(new BoundedChannelOptions(PendingHitCapacity)
+            {
+                SingleReader = true,
+                SingleWriter = true,
+                FullMode = BoundedChannelFullMode.Wait,
+            });
+            long hitsFound = 0;
             var consumer = Task.Run(async () =>
             {
-                foreach (var searchTarget in searchTargets)
+                try
                 {
-                    var request = new SearchRequest(
-                        query,
-                        new[] { SearchPath },
-                        BuildWalkerOptions(searchTarget),
-                        progress.Report,
-                        UseIndex,
-                        routeProgress.Report,
-                        QueryText,
-                        SearchMode,
-                        searchTarget);
+                    foreach (var searchTarget in searchTargets)
+                    {
+                        var request = new SearchRequest(
+                            query,
+                            new[] { SearchPath },
+                            BuildWalkerOptions(searchTarget),
+                            progress.Report,
+                            UseIndex,
+                            routeProgress.Report,
+                            QueryText,
+                            SearchMode,
+                            searchTarget);
 
-                    await foreach (var hit in _searcher.SearchAsync(request, token).ConfigureAwait(false))
-                        pendingHits.Enqueue(hit);
+                        await foreach (var hit in _searcher.SearchAsync(request, token).ConfigureAwait(false))
+                        {
+                            // Past the cap the stream is only counted, so memory
+                            // and UI work stay bounded however broad the query.
+                            if (Interlocked.Increment(ref hitsFound) > MaxRetainedHits)
+                                continue;
+
+                            await pendingHits.Writer
+                                .WriteAsync(new PendingHit(hit, ResolveIsDirectory(hit)), token)
+                                .ConfigureAwait(false);
+                        }
+                    }
+                }
+                finally
+                {
+                    pendingHits.Writer.TryComplete();
                 }
             }, token);
 
+            var dispatcherLag = TimeSpan.Zero;
             while (true)
             {
-                DrainPendingHits(pendingHits);
-                if (consumer.IsCompleted && pendingHits.IsEmpty)
+                if (token.IsCancellationRequested)
+                {
+                    _pendingFileBatches.Clear();
                     break;
-                await Task.Delay(33).ConfigureAwait(true);
+                }
+                // Time between drains beyond the requested delay is the layout
+                // and rendering the previous drain caused; budget for it too.
+                DrainPendingHits(pendingHits.Reader, Interlocked.Read(ref hitsFound), dispatcherLag);
+                if (consumer.IsCompleted && !pendingHits.Reader.TryPeek(out _) && _pendingFileBatches.Count == 0)
+                    break;
+                var delayStarted = Stopwatch.GetTimestamp();
+                await Task.Delay(DrainInterval).ConfigureAwait(true);
+                dispatcherLag = Stopwatch.GetElapsedTime(delayStarted) - DrainInterval;
             }
 
             await consumer.ConfigureAwait(true); // surface cancellation/errors
+            UpdateHiddenHits(Interlocked.Read(ref hitsFound));
 
             stopwatch.Stop();
             ElapsedText = $"{stopwatch.Elapsed.TotalSeconds:0.00}s";
             _status.Text = string.IsNullOrEmpty(routeStatus)
-                ? $"Done — {TotalHits} hits in {FilesMatched} {ResultItemNounPlural}"
-                : $"{routeStatus}; done — {TotalHits} hits in {FilesMatched} {ResultItemNounPlural}";
+                ? $"Done — {DescribeHitTotals()}"
+                : $"{routeStatus}; done — {DescribeHitTotals()}";
         }
         catch (OperationCanceledException)
         {
             stopwatch.Stop();
             ElapsedText = $"{stopwatch.Elapsed.TotalSeconds:0.00}s";
-            _status.Text = $"Canceled — {TotalHits} hits in {FilesMatched} {ResultItemNounPlural}";
+            _status.Text = $"Canceled — {DescribeHitTotals()}";
         }
         catch (Exception ex)
         {
@@ -1353,11 +1411,12 @@ public sealed partial class SearchViewModel : ObservableObject, IDisposable
         }
         finally
         {
-            // Streaming refreshes are throttled to once per second; settle
-            // the final sort/facets exactly once however the search ended.
-            _lastResultViewRefreshUtc = DateTime.MinValue;
+            // Streaming refreshes are throttled; settle the final
+            // sort/facets/grouping exactly once however the search ended.
+            _nextResultViewRefreshUtc = DateTime.MinValue;
             RebuildFacetOptions();
-            RefreshFilesView();
+            if (!SetResultGroupingDeferred(false))
+                RefreshFilesView();
 
             IsSearching = false;
             SearchCommand.NotifyCanExecuteChanged();
@@ -1369,52 +1428,79 @@ public sealed partial class SearchViewModel : ObservableObject, IDisposable
     private bool CanSearch() => !IsSearching;
 
     /// <summary>
-    /// Applies queued hits to the UI collections. Runs on the UI thread; the
-    /// per-drain cap keeps a huge backlog from freezing a frame.
+    /// Applies queued hits to the UI collections. Runs on the UI thread.
+    /// Hits are grouped by file first so each row raises its change
+    /// notifications once per drain instead of once per hit, and the batch
+    /// size adapts so a drain stays within a frame budget.
     /// </summary>
-    private void DrainPendingHits(System.Collections.Concurrent.ConcurrentQueue<Hit> pendingHits)
+    private void DrainPendingHits(ChannelReader<PendingHit> pendingHits, long hitsFound, TimeSpan dispatcherLag)
     {
-        const int maxPerDrain = 300;
-        const int minPerDrain = 25;
         var drainStarted = Stopwatch.GetTimestamp();
-        var drainBudget = TimeSpan.FromMilliseconds(8);
-        var total = TotalHits;
-        var drained = 0;
+        if (_pendingFileBatches.Count == 0)
+        {
+            var order = new List<string>();
+            var groups = new Dictionary<string, (List<Hit> Hits, bool? IsDirectory)>(_filesByPath.Comparer);
+            var staged = 0;
+            while (staged < _drainBatchSize && pendingHits.TryRead(out var pending))
+            {
+                if (!groups.TryGetValue(pending.Hit.Path, out var group))
+                {
+                    group = (new List<Hit>(), pending.IsDirectory);
+                    groups[pending.Hit.Path] = group;
+                    order.Add(pending.Hit.Path);
+                }
 
+                group.Hits.Add(pending.Hit);
+                staged++;
+            }
+
+            foreach (var path in order)
+                _pendingFileBatches.Enqueue(new PendingFileBatch(path, groups[path].Hits, groups[path].IsDirectory));
+        }
+
+        if (_pendingFileBatches.Count == 0)
+        {
+            UpdateHiddenHits(hitsFound);
+            return;
+        }
+
+        var drained = 0;
         _suppressResultViewMaintenance = true;
         try
         {
-            while (drained < maxPerDrain && pendingHits.TryDequeue(out var hit))
+            // Keep the unapplied portion of the batch for the next UI turn.
+            // Even after the writer completes, every staged hit must be drained.
+            while (_pendingFileBatches.TryPeek(out var batch) && Stopwatch.GetElapsedTime(drainStarted) < DrainBudget)
             {
-                if (!_filesByPath.TryGetValue(hit.Path, out var file))
+                var (path, hits, isDirectory) = batch;
+                _pendingFileBatches.Dequeue();
+                drained += hits.Count;
+                if (_filesByPath.TryGetValue(path, out var file))
                 {
-                    var recordOpened = _indexUsageStore is null
-                        ? null
-                        : new Func<string, CancellationToken, Task>(_indexUsageStore.RecordFileOpenedAsync);
-                    file = new FileResultViewModel(hit.Path, _fileLauncher, recordOpened, _nextResultRank++)
-                    {
-                        IsPinned = IsPinned(hit.Path),
-                        IsFavorite = _history.IsFavorite(hit.Path),
-                    };
-                    _filesByPath[hit.Path] = file;
-
-                    // Populate BEFORE publishing: the collection view's filter
-                    // runs the moment the item is added, against the file's
-                    // extension/size/date/source — which come from its hits.
-                    // Adding an empty row first made the filter judge a blank
-                    // and hide it until the next full view refresh.
-                    file.AddHit(hit);
-                    Files.Add(file);
-                }
-                else
-                {
-                    file.AddHit(hit);
+                    file.AddHits(hits);
+                    continue;
                 }
 
-                total++;
-                drained++;
-                if (drained >= minPerDrain && Stopwatch.GetElapsedTime(drainStarted) >= drainBudget)
-                    break;
+                var recordOpened = _indexUsageStore is null
+                    ? null
+                    : new Func<string, CancellationToken, Task>(_indexUsageStore.RecordFileOpenedAsync);
+                file = new FileResultViewModel(path, _fileLauncher, recordOpened, _nextResultRank++, isDirectory)
+                {
+                    IsPinned = IsPinned(path),
+                    IsFavorite = _history.IsFavorite(path),
+                };
+                _filesByPath[path] = file;
+
+                // Populate BEFORE publishing: the collection view's filter
+                // runs the moment the item is added, against the file's
+                // extension/size/date/source — which come from its hits.
+                // Adding an empty row first made the filter judge a blank
+                // and hide it until the next full view refresh.
+                file.AddHits(hits);
+                file.MetadataLoaded += OnResultMetadataLoaded;
+                if (NeedsMetadataForArrangement())
+                    file.EnsureMetadataLoading();
+                Files.Add(file);
             }
         }
         finally
@@ -1422,31 +1508,148 @@ public sealed partial class SearchViewModel : ObservableObject, IDisposable
             _suppressResultViewMaintenance = false;
         }
 
-        if (drained == 0)
-            return;
-
-        TotalHits = total;
+        TotalHits += drained;
         FilesMatched = Files.Count;
+        UpdateHiddenHits(hitsFound);
 
-        // Rebuilding facets and refreshing the collection view re-sort the
-        // ENTIRE accumulated result set. Doing that on every 75 ms drain tick
-        // froze the UI solid during hit floods (live scans stream tens of
-        // thousands of hits): each tick got costlier as results grew until
-        // the dispatcher did nothing but sort. Refresh at most once per
-        // second while streaming; the search's finally block does a final
-        // refresh so the finished view is never stale.
-        var nowUtc = DateTime.UtcNow;
-        if (nowUtc - _lastResultViewRefreshUtc >= TimeSpan.FromSeconds(1))
-        {
-            _lastResultViewRefreshUtc = nowUtc;
-            RebuildFacetOptions();
-            RefreshFilesView();
-        }
+        // Grow the batch while the UI thread has slack and shrink it when the
+        // drain plus the layout it triggers overrun, so input and rendering
+        // always get time. Task.Delay alone overshoots by a timer tick, which
+        // the thresholds allow for.
+        var busy = Stopwatch.GetElapsedTime(drainStarted) + (dispatcherLag > TimeSpan.Zero ? dispatcherLag : TimeSpan.Zero);
+        if (busy > TimeSpan.FromMilliseconds(45) && _drainBatchSize > MinDrainBatchSize)
+            _drainBatchSize /= 2;
+        else if (busy < TimeSpan.FromMilliseconds(20) && _drainBatchSize < MaxDrainBatchSize)
+            _drainBatchSize *= 2;
 
-        _status.Text = $"Searching... {TotalHits:n0} hits in {FilesMatched:n0} {ResultItemNounPlural}";
+        RebuildFacetOptionsIfDue();
+        _status.Text = $"Searching... {DescribeHitTotals()}";
     }
 
-    private DateTime _lastResultViewRefreshUtc = DateTime.MinValue;
+    /// <summary>
+    /// While results stream in, only the facet counts are refreshed, at most
+    /// once a second and never more often than twenty times their own cost.
+    /// The collection view is NOT refreshed here: new rows are already
+    /// inserted in sort order and filtered as they are added, and a refresh
+    /// resets the whole list (re-sorting, re-grouping, and re-templating
+    /// every visible card), which is what froze the UI on large result sets.
+    /// The search's finally block does one full refresh when it ends.
+    /// </summary>
+    private void RebuildFacetOptionsIfDue()
+    {
+        var nowUtc = DateTime.UtcNow;
+        if (nowUtc < _nextResultViewRefreshUtc)
+            return;
+
+        var started = Stopwatch.GetTimestamp();
+        RebuildFacetOptions();
+        var cost = Stopwatch.GetElapsedTime(started);
+        _nextResultViewRefreshUtc = nowUtc + TimeSpan.FromTicks(Math.Max(TimeSpan.TicksPerSecond, cost.Ticks * 20));
+    }
+
+    /// <summary>
+    /// Holds back the selected grouping while a search streams. WPF's grouped
+    /// collection view re-measures and re-templates the visible groups every
+    /// time rows are inserted into them, which kept the UI thread saturated
+    /// during large searches; a flat list sorted by rank only appends below
+    /// the fold. Re-enabling regroups the finished results in one refresh.
+    /// Returns true when the view was reshaped (and so already refreshed).
+    /// </summary>
+    private bool SetResultGroupingDeferred(bool deferred)
+    {
+        if (_resultGroupingDeferred == deferred ||
+            (deferred && (SelectedGroupOption?.Value ?? ResultGroupMode.File) == ResultGroupMode.File))
+        {
+            return false;
+        }
+
+        _resultGroupingDeferred = deferred;
+        ApplyResultViewShape();
+        OnPropertyChanged(nameof(IsGroupedByFolder));
+        return true;
+    }
+
+    private void UpdateHiddenHits(long hitsFound) =>
+        HiddenHits = Math.Max(0, hitsFound - MaxRetainedHits);
+
+    // Once anything is hidden the search has found exactly the cap plus the
+    // hidden count; TotalHits may still trail the cap while hits are queued.
+    private string DescribeHitTotals() =>
+        HiddenHits > 0
+            ? $"showing the first {TotalHits:n0} of {MaxRetainedHits + HiddenHits:n0} hits in {FilesMatched:n0} {ResultItemNounPlural}"
+            : $"{TotalHits:n0} hits in {FilesMatched:n0} {ResultItemNounPlural}";
+
+    /// <summary>
+    /// Folder results only come from name searches; work it out on the
+    /// consumer thread so the UI never touches the disk to build a row.
+    /// </summary>
+    private static bool ResolveIsDirectory(Hit hit)
+    {
+        if (hit.Kind == HitKind.Content)
+            return false;
+
+        try
+        {
+            return Directory.Exists(hit.Path) && !File.Exists(hit.Path);
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or ArgumentException)
+        {
+            return false;
+        }
+    }
+
+    /// <summary>
+    /// Hits kept and shown per search. A broad query can match hundreds of
+    /// thousands of lines; past this the search keeps counting but stops
+    /// retaining, so memory and UI work stay bounded.
+    /// </summary>
+    internal const int MaxRetainedHits = 100_000;
+
+    private const int PendingHitCapacity = 8_192;
+    private const int MinDrainBatchSize = 32;
+    private const int MaxDrainBatchSize = 256;
+    private static readonly TimeSpan DrainBudget = TimeSpan.FromMilliseconds(8);
+    private static readonly TimeSpan DrainInterval = TimeSpan.FromMilliseconds(33);
+
+    private int _drainBatchSize = 256;
+    private readonly Dictionary<(ResultGroupMode Mode, string Key), ResultGroupState> _resultGroupStates = new();
+
+    internal ResultGroupState GetResultGroupState(CollectionViewGroup group)
+    {
+        var key = (SelectedGroupOption?.Value ?? ResultGroupMode.File, Convert.ToString(group.Name, CultureInfo.CurrentCulture) ?? string.Empty);
+        if (!_resultGroupStates.TryGetValue(key, out var state))
+        {
+            state = new ResultGroupState();
+            _resultGroupStates.Add(key, state);
+            UpdateResultGroupState(group, state);
+        }
+        return state;
+    }
+
+    private void RefreshResultGroupStates()
+    {
+        if (FilesView.Groups is null)
+            return;
+        foreach (var group in FilesView.Groups.OfType<CollectionViewGroup>())
+            UpdateResultGroupState(group, GetResultGroupState(group));
+    }
+
+    private static void UpdateResultGroupState(CollectionViewGroup group, ResultGroupState state)
+    {
+        long matches = 0;
+        foreach (var item in group.Items)
+            if (item is FileResultViewModel file)
+                matches += file.HitCount;
+        state.Update(group.ItemCount, matches);
+    }
+    private bool _resultGroupingDeferred;
+    private DateTime _nextResultViewRefreshUtc = DateTime.MinValue;
+
+    private readonly record struct PendingHit(Hit Hit, bool? IsDirectory);
+    private readonly record struct PendingFileBatch(string Path, IReadOnlyList<Hit> Hits, bool? IsDirectory);
+    private readonly Queue<PendingFileBatch> _pendingFileBatches = new();
+    private bool _metadataRefreshPending;
+    private bool _isDisposed;
 
     [RelayCommand(CanExecute = nameof(CanCancel))]
     private void Cancel()
@@ -1604,6 +1807,9 @@ public sealed partial class SearchViewModel : ObservableObject, IDisposable
 
     public void Dispose()
     {
+        _isDisposed = true;
+        foreach (var file in Files)
+            file.MetadataLoaded -= OnResultMetadataLoaded;
         _searchCts?.Dispose();
         _previewCts?.Dispose();
         _refinementDebounceCts?.Dispose();
@@ -1614,12 +1820,13 @@ public sealed partial class SearchViewModel : ObservableObject, IDisposable
 
     private void ApplyResultViewShape()
     {
+        RequestArrangementMetadata();
         using (FilesView.DeferRefresh())
         {
             FilesView.SortDescriptions.Clear();
             FilesView.GroupDescriptions.Clear();
 
-            switch (SelectedGroupOption?.Value ?? ResultGroupMode.File)
+            switch (_resultGroupingDeferred ? ResultGroupMode.File : SelectedGroupOption?.Value ?? ResultGroupMode.File)
             {
                 case ResultGroupMode.Folder:
                     FilesView.GroupDescriptions.Add(new PropertyGroupDescription(nameof(FileResultViewModel.Directory)));
@@ -1662,11 +1869,40 @@ public sealed partial class SearchViewModel : ObservableObject, IDisposable
                     FilesView.SortDescriptions.Add(new SortDescription(nameof(FileResultViewModel.SearchRank), ListSortDirection.Ascending));
                     break;
             }
+            if (FilesView.GroupDescriptions.Count > 0)
+                FilesView.SortDescriptions.Insert(0, new SortDescription(nameof(FileResultViewModel.ResultGroupRank), ListSortDirection.Ascending));
         }
 
-        OnPropertyChanged(nameof(FilesVisible));
-        ExportResultsCommand.NotifyCanExecuteChanged();
-        CopyGroundedAnswerCommand.NotifyCanExecuteChanged();
+        NotifyFilesViewChanged();
+    }
+
+    private bool NeedsMetadataForArrangement() =>
+        SelectedSortOption?.Value is ResultSortMode.Size or ResultSortMode.Recency ||
+        SelectedGroupOption?.Value == ResultGroupMode.ModifiedDate ||
+        HasModifiedFacetSelection || HasSizeFacetSelection;
+
+    private void RequestArrangementMetadata()
+    {
+        if (!NeedsMetadataForArrangement())
+            return;
+        foreach (var file in Files)
+            file.EnsureMetadataLoading();
+    }
+
+    private async void OnResultMetadataLoaded(object? sender, EventArgs e)
+    {
+        if (_isDisposed || IsSearching || sender is not FileResultViewModel file ||
+            !_filesByPath.TryGetValue(file.FullPath, out var current) || !ReferenceEquals(file, current) ||
+            _metadataRefreshPending)
+            return;
+
+        _metadataRefreshPending = true;
+        await Task.Delay(100).ConfigureAwait(true);
+        _metadataRefreshPending = false;
+        if (_isDisposed || IsSearching)
+            return;
+        RebuildFacetOptions();
+        RefreshFilesView();
     }
 
     private void ApplyResultSort(string? value)
@@ -1690,6 +1926,7 @@ public sealed partial class SearchViewModel : ObservableObject, IDisposable
         if (_isRebuildingFacetOptions)
             return;
 
+        RequestArrangementMetadata();
         RefreshFilesView();
         NotifyActiveResultFacetChipsChanged();
     }
@@ -2231,7 +2468,7 @@ public sealed partial class SearchViewModel : ObservableObject, IDisposable
 
         var skipped = progress.FilesSkipped > 0 ? $", {progress.FilesSkipped:n0} skipped" : string.Empty;
         var failed = progress.FilesFailed > 0 ? $", {progress.FilesFailed:n0} failed" : string.Empty;
-        _status.Text = $"Searching... {TotalHits:n0} hits in {FilesMatched:n0} {ResultItemNounPlural}; {progress.FilesProcessed:n0}/{progress.FilesEnumerated:n0} scanned{skipped}{failed}";
+        _status.Text = $"Searching... {DescribeHitTotals()}; {progress.FilesProcessed:n0}/{progress.FilesEnumerated:n0} scanned{skipped}{failed}";
     }
 
     private async Task LoadPreviewAsync(FileResultViewModel? file)
@@ -2611,5 +2848,10 @@ public sealed partial class SearchViewModel : ObservableObject, IDisposable
     {
         OnPropertyChanged(nameof(ResultsSummaryText));
         OnPropertyChanged(nameof(ResultsHeadlineText));
+        if (HiddenHits > 0)
+            OnPropertyChanged(nameof(ResultsSublineText));
     }
+
+    partial void OnHiddenHitsChanged(long value) =>
+        OnPropertyChanged(nameof(ResultsSublineText));
 }

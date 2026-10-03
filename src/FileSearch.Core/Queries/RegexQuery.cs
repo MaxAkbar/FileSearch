@@ -19,6 +19,8 @@ public sealed class RegexQuery : Query
 
     public string Pattern => _regex.ToString();
 
+    internal Regex Regex => _regex;
+
     public override bool IsMatch(string line) => _regex.IsMatch(line);
 
     public override bool TryCollectHighlights(string line, List<MatchSpan> sink) =>

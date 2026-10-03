@@ -8,6 +8,7 @@ using FileSearch.Core.Engine;
 using FileSearch.Core.Extractors;
 using FileSearch.Core.Indexing;
 using FileSearch.Core.Queries;
+using FileSearch.Core.Volumes;
 using FileSearch.Core.Workflows;
 using Spectre.Console;
 
@@ -23,6 +24,7 @@ internal sealed class FileSearchRepl
     private readonly IExtractorRegistry _extractorRegistry;
     private readonly IWorkflowStore _workflowStore;
     private readonly IWorkflowRunner _workflowRunner;
+    private readonly DriveIndexCommands _driveIndex;
     private readonly CliState _state = new();
     private CancellationTokenSource? _activeCommand;
 
@@ -32,8 +34,10 @@ internal sealed class FileSearchRepl
         IQueryFactory queryFactory,
         IExtractorRegistry extractorRegistry,
         IWorkflowStore workflowStore,
-        IWorkflowRunner workflowRunner)
+        IWorkflowRunner workflowRunner,
+        IVolumeNameIndex volumeNameIndex)
     {
+        _driveIndex = new DriveIndexCommands(volumeNameIndex);
         _searcher = searcher;
         _index = index;
         _queryFactory = queryFactory;
@@ -82,6 +86,21 @@ internal sealed class FileSearchRepl
             {
                 return await RunOneShotWorkflowAsync(args.Skip(1).ToArray(), CancellationToken.None)
                     .ConfigureAwait(false);
+            }
+            catch (Exception ex) when (ex is not OperationCanceledException)
+            {
+                Console.Error.WriteLine($"Error: {ex.Message}");
+                return 1;
+            }
+        }
+
+        if (args.Length > 0 &&
+            (args[0].Equals("volumes", StringComparison.OrdinalIgnoreCase) ||
+             args[0].Equals("volume", StringComparison.OrdinalIgnoreCase)))
+        {
+            try
+            {
+                return await _driveIndex.RunAsync(args.Skip(1).ToArray(), CancellationToken.None).ConfigureAwait(false);
             }
             catch (Exception ex) when (ex is not OperationCanceledException)
             {
@@ -263,6 +282,10 @@ internal sealed class FileSearchRepl
                 return true;
             case "indexer":
                 await ExecuteIndexerCommandAsync(tokens, cancellationToken).ConfigureAwait(false);
+                return true;
+            case "volumes":
+            case "volume":
+                await _driveIndex.RunAsync(tokens.Skip(1).ToArray(), cancellationToken).ConfigureAwait(false);
                 return true;
             case "locations":
                 await RenderLocationsAsync(cancellationToken).ConfigureAwait(false);
@@ -2427,6 +2450,7 @@ internal sealed class FileSearchRepl
         table.AddRow("[cyan]index failures export[/] PATH [[csv|json]]", "Export failed index extractions.");
         table.AddRow("[cyan]workflow list|run|dry-run|validate[/]", "List, validate, or run saved workflow JSON files.");
         table.AddRow("[cyan]indexer status|start|pause|resume[/]", "Control the background indexer process.");
+        table.AddRow("[cyan]volumes list|build|remove|search[/]", "Whole-drive file name index (instant name search on NTFS drives).");
         table.AddRow("[cyan]options[/]", "Show current REPL settings.");
         table.AddRow("[cyan]clear-filters[/]", "Reset filters to defaults.");
         table.AddRow("[cyan]exit[/]", "Quit the REPL.");

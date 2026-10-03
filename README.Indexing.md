@@ -162,6 +162,69 @@ Health statuses mean:
 - **Offline**: the folder is not reachable; cached index entries are retained.
 - **Too many extractor failures**: failed files exceed the current warning threshold.
 
+## Drive File-Name Index
+
+Besides the per-folder content index, FileSearch can keep a **whole-drive file and folder name index** for local NTFS drives, the same idea as Everything's MFT index. It holds names only (no contents) and answers filename searches across millions of entries in tens of milliseconds.
+
+Turn it on per drive in **Settings > Drive file-name index**, or from the CLI with `volumes build C:`.
+
+### Building
+
+- **Master file table (fast).** FileSearch enumerates the NTFS master file table with `FSCTL_ENUM_USN_DATA`. Windows only allows that for administrators, so an unelevated app starts `FileSearch.Indexer.exe --scan-volume` through a UAC prompt. The elevated helper writes one snapshot file and exits; nothing else runs elevated. Declining the prompt falls back to the folder scan.
+- **Folder scan (no elevation).** FileSearch walks every folder the user can open and reads each entry's NTFS file ID with `GetFileInformationByHandleEx(FileIdBothDirectoryInfo)`. This produces the same file-ID-keyed index, but it is slower and skips folders the user cannot read.
+
+**Use fast administrator scan** chooses between them. Drives enabled in settings that have no index yet are built automatically with the folder scan at startup; FileSearch never shows a UAC prompt without a click.
+
+### Staying current
+
+The index is keyed by NTFS file reference numbers, so the change journal can update it in place. The GUI reads the journal unprivileged (`FSCTL_READ_UNPRIVILEGED_USN_JOURNAL`) about once a second. Those records carry file IDs, parent IDs, reasons, and attributes but no names, so the name of each created or renamed file is looked up with `OpenFileById`. A folder rename or move updates every path beneath it at no cost, because paths are rebuilt from parent links.
+
+Changes are merged per file before they are applied, so a build that creates and deletes thousands of temporary files costs almost nothing. Searches from the main window always replay the journal first, so a file created a moment earlier is found.
+
+If the journal was recreated, or has wrapped past the saved checkpoint, the drive is marked **needs rebuild** and rebuilt automatically with the folder scan.
+
+### Storage
+
+```text
+%LocalAppData%\FileSearch\Index\Volumes\Volume{GUID}.fsvol
+```
+
+Each snapshot is a Brotli-compressed file holding every entry's record number, parent, attributes, and name, plus the journal ID and checkpoint it matches. The GUI rewrites a changed snapshot every five minutes and on exit. On the next start it loads the snapshot (about a second for 5 million entries) and replays the journal from the checkpoint.
+
+In memory, names are stored once in a shared pool, one byte per character for ASCII names, and every other column is an array indexed by record number. That works out to about 38 bytes per entry.
+
+### Where it is used
+
+- **Quick Search.** The *Entire machine* scope searches the drive index of every indexed drive and is complete instead of time-boxed. Other scopes use it for any root on an indexed drive. Every term must appear in the entry's name or one of its folders, at least one term must appear in the entry's own name, and a term containing `\` must appear in the full path. Results are ranked by name match, then shallower paths.
+- **Main window and CLI name searches.** File-name, folder-name, and file-and-folder-name searches with **Use index** on (or `--index` in the CLI) are answered from the drive index whenever every root is on an indexed drive. Results are designed to equal the live walk: the same hidden, system, and excluded folders are skipped, the same filters apply, and matching and result formatting share the live searcher's code. The integration tests compare both routes on a real folder.
+- **CLI.** `volumes list`, `volumes build DRIVE [--admin|--walk]`, `volumes remove DRIVE`, and `volumes search TEXT [--drive DRIVE] [--path FOLDER] [--files|--folders] [--json|--jsonl|--csv|--markdown]`.
+
+The CLI never tracks drives live and never writes snapshots except from `volumes build`. It loads a snapshot the first time a search needs it and replays the journal in memory. The MCP server's tools do not request index use for name searches, so they do not load drive indexes.
+
+### Limits
+
+- **Folder links.** The live file walker follows junctions and directory symlinks, but the index stores their contents under the link target. A file-name search that could reach such a link therefore falls back to the live walk. Folder-name searches never enter reparse points, so they stay on the index. OneDrive placeholder folders are real folders and are fully indexed.
+- **Hard links.** A file with several hard links is indexed under one of its names.
+- **Unreadable folders.** After an administrator scan, changes inside folders the user cannot open are only partly tracked unprivileged: deletes and moves apply, but new names cannot be read.
+- **Supported drives.** Only local fixed NTFS drives can be indexed. A drive without a change journal can be indexed but does not update live.
+- **Store package.** The Store (MSIX) package may not be allowed to elevate the helper; there the folder scan is used.
+
+### Measured
+
+These numbers come from a developer workstation with 5.24 million entries on C:, measured with `dotnet run -c Release --project .\benchmarks\FileSearch.Benchmarks -- volume --drive C: --method walk --parity-scope <folder>`:
+
+| Metric | Value |
+| --- | ---: |
+| Master file table build from the CLI (`volumes build C: --admin`), end to end including the UAC prompt, snapshot write, and load | 15.7 s, 5.72M entries |
+| Folder scan, cold / warm file cache | 127 s / 21 s, 5.24M entries |
+| Memory | 188 MiB (38 bytes/entry) |
+| Snapshot size, write / load | 64.5 MiB, 1.1 s / 1.1 s |
+| Ranked query over the whole drive, P50 | 19–84 ms (84 ms for a one-letter query with 1.7M matches) |
+| Journal catch-up after 2,000 new files | 178 ms |
+| Main-window name search vs live walk, same results | 0.76 s vs 5.2 s (6,300 hits); 1.1 s vs 8.5 s (19,193 folders) |
+
+The master file table finds more entries than the folder scan (5.72M vs 5.24M here) because it includes folders the user cannot open. The benchmark's other rows used the folder scan; run it with `--method mft` from an elevated terminal to measure the scan alone.
+
 ## Query Semantics
 
 Indexed search preserves the existing plain text, regex, and Boolean query behavior. The index uses app-level trigram postings to find candidate files when a query has required literals, and falls back to scanning indexed line rows for patterns that cannot be safely bounded. Every candidate is rechecked with FileSearch's existing query engine before a hit is returned, and highlights are generated the same way as live search.

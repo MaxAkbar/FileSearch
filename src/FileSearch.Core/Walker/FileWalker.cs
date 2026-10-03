@@ -86,7 +86,7 @@ public sealed class FileWalker : IFileWalker
         return true;
     }
 
-    private static bool HasDirectorySegment(
+    internal static bool HasDirectorySegment(
         string path,
         string root,
         IReadOnlySet<string> directoryNames)
@@ -114,7 +114,7 @@ public sealed class FileWalker : IFileWalker
         return false;
     }
 
-    private static bool MatchesGlobs(
+    internal static bool MatchesGlobs(
         ReadOnlySpan<char> fileName,
         IReadOnlyList<string> globs,
         bool defaultIfEmpty)

@@ -1711,6 +1711,7 @@
         <Setter Property="ScrollViewer.VerticalScrollBarVisibility" Value="Auto"/>
         <Setter Property="VirtualizingPanel.IsVirtualizing" Value="True"/>
         <Setter Property="VirtualizingPanel.VirtualizationMode" Value="Recycling"/>
+        <Setter Property="ScrollViewer.CanContentScroll" Value="True"/>
     </Style>
 
     <!-- Result card = ListBoxItem chrome; the DataTemplate fills the inside. -->
@@ -2675,7 +2676,7 @@
             <Setter.Value>
                 <ControlTemplate TargetType="Expander">
                     <DockPanel>
-                        <ToggleButton DockPanel.Dock="Top"
+                        <ToggleButton x:Name="HeaderSite" DockPanel.Dock="Top"
                                       Content="{TemplateBinding Header}"
                                       IsChecked="{Binding IsExpanded, Mode=TwoWay, RelativeSource={RelativeSource TemplatedParent}}"
                                       Style="{StaticResource ResultGroupHeaderToggleStyle}"

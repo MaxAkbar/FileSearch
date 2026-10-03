@@ -49,6 +49,7 @@ public sealed class BindingPathAuditTests
         typeof(WorkflowConditionViewModel),
         typeof(WorkflowParameterSetViewModel),
         typeof(QuickIndexedLocationSelection),
+        typeof(DriveNameIndexItemViewModel),
         typeof(AppShortcutBindingViewModel),
         typeof(QuickSearchShortcutBindingViewModel),
         typeof(QueryChipViewModel),
@@ -207,7 +208,12 @@ public sealed class BindingPathAuditTests
                 {
                     var pathAttribute = reader.GetAttribute("Path");
                     if (pathAttribute is not null && Regex.IsMatch(pathAttribute, "^[A-Za-z_][A-Za-z0-9_.]*$"))
-                        sites.Add(new BindingSite(file, reader.GetAttribute("ElementName") is null ? "" : "ElementName=", pathAttribute, outerScope));
+                    {
+                        var source = reader.GetAttribute("ElementName") is not null ? "ElementName="
+                            : reader.GetAttribute("RelativeSource") is not null ? "RelativeSource"
+                            : reader.GetAttribute("Source") is not null ? "Source=" : "";
+                        sites.Add(new BindingSite(file, source, pathAttribute, outerScope));
+                    }
                 }
 
                 if (reader.HasAttributes)

@@ -3,6 +3,7 @@ using FileSearch.Core.Engine;
 using FileSearch.Core.Extractors;
 using FileSearch.Core.Indexing;
 using FileSearch.Core.Queries;
+using FileSearch.Core.Volumes;
 using FileSearch.Core.Walker;
 using FileSearch.Core.Workflows;
 using Microsoft.Extensions.DependencyInjection;
@@ -133,10 +134,32 @@ public static class ServiceCollectionExtensions
             sp.GetRequiredService<IFileIndex>(),
             sp.GetRequiredService<IndexCoverageService>(),
             sp.GetService<IIndexingSearchCoordinator>()));
-        services.TryAddSingleton<ISearcher>(sp => new ConfigurableSearcher(
-            sp.GetRequiredService<IndexedSearcher>(),
-            sp.GetRequiredService<IHybridSearcher>(),
-            sp.GetService<SearchOptions>()));
+        services.TryAddSingleton(sp => new VolumeNameIndexOptions
+        {
+            SnapshotDirectory = VolumeNameIndexOptions.GetDefaultSnapshotDirectory(
+                sp.GetService<FileIndexOptions>()?.DatabasePath),
+        });
+        services.TryAddSingleton<IVolumeScanner, WindowsVolumeScanner>();
+        services.TryAddSingleton<IVolumeFileIdResolverFactory, WindowsVolumeFileIdResolverFactory>();
+        services.TryAddSingleton<IVolumeScanLauncher>(_ => new ProcessVolumeScanLauncher());
+        services.TryAddSingleton(sp => new VolumeNameIndexService(
+            sp.GetRequiredService<IIndexVolumeResolver>(),
+            sp.GetRequiredService<IUsnJournalReader>(),
+            sp.GetRequiredService<IVolumeScanner>(),
+            sp.GetRequiredService<IVolumeFileIdResolverFactory>(),
+            sp.GetService<IVolumeScanLauncher>(),
+            sp.GetRequiredService<VolumeNameIndexOptions>(),
+            sp.GetService<ILogger<VolumeNameIndexService>>()));
+        services.TryAddSingleton<IVolumeNameIndex>(sp => sp.GetRequiredService<VolumeNameIndexService>());
+
+        // Name searches on drives with a drive name index are answered from
+        // it; everything else flows through to the configurable searcher.
+        services.TryAddSingleton<ISearcher>(sp => new VolumeNameSearcher(
+            new ConfigurableSearcher(
+                sp.GetRequiredService<IndexedSearcher>(),
+                sp.GetRequiredService<IHybridSearcher>(),
+                sp.GetService<SearchOptions>()),
+            sp.GetRequiredService<VolumeNameIndexService>()));
 
         services.TryAddSingleton<IWorkflowStore>(_ => new JsonWorkflowStore());
         services.TryAddSingleton<IWorkflowRunner>(sp => new WorkflowRunner(

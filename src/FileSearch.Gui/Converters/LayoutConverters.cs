@@ -32,6 +32,18 @@ public sealed class GroupSummaryConverter : IMultiValueConverter
         throw new NotSupportedException();
 }
 
+/// <summary>Resolves cached group counts and expansion state owned by the search.</summary>
+public sealed class ResultGroupStateConverter : IMultiValueConverter
+{
+    public object Convert(object[] values, Type targetType, object? parameter, CultureInfo culture) =>
+        values.Length >= 2 && values[0] is CollectionViewGroup group && values[1] is SearchViewModel search
+            ? search.GetResultGroupState(group)
+            : Binding.DoNothing;
+
+    public object[] ConvertBack(object value, Type[] targetTypes, object? parameter, CultureInfo culture) =>
+        throw new NotSupportedException();
+}
+
 /// <summary>
 /// Splits a folder path for two-part sidebar rows: <c>ConverterParameter=leaf</c>
 /// gives the last segment ("src"), anything else the shortened parent ("…\viking").

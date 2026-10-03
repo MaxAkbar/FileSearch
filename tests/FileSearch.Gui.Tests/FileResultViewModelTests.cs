@@ -8,6 +8,53 @@ namespace FileSearch.Gui.Tests;
 public sealed class FileResultViewModelTests
 {
     [Fact]
+    public void SuppliedMetadataIsCachedWithoutAFileSystemRead()
+    {
+        var result = new FileResultViewModel(@"Z:\unavailable\needle.txt", new FakeFileLauncher(), isDirectory: false);
+        var modified = new DateTime(2026, 1, 1, 0, 0, 0, DateTimeKind.Utc);
+        result.AddHit(new Hit(result.FullPath, 1, "needle", [], SizeBytes: 2048, ModifiedUtc: modified));
+        Assert.Equal(2048, result.SizeBytes);
+        Assert.Equal(modified, result.ModifiedUtc);
+        Assert.Equal("2 KB", result.SizeText);
+        Assert.NotEqual("—", result.ModifiedText);
+    }
+
+    [Fact]
+    public void MissingMetadataLoadsOffThreadAndNotifiesOnTheOwningContext()
+    {
+        var path = Path.GetTempFileName();
+        File.WriteAllText(path, "needle");
+        var previous = SynchronizationContext.Current;
+        var pump = new PumpingSynchronizationContext();
+        SynchronizationContext.SetSynchronizationContext(pump);
+        try
+        {
+            var ownerThread = Environment.CurrentManagedThreadId;
+            var result = new FileResultViewModel(path, new FakeFileLauncher(), isDirectory: false);
+            Assert.Null(result.SizeBytes);
+            Assert.Null(result.ModifiedUtc);
+            var loaded = false;
+            result.MetadataLoaded += (_, _) =>
+            {
+                Assert.Equal(ownerThread, Environment.CurrentManagedThreadId);
+                loaded = true;
+            };
+            result.EnsureMetadataLoading();
+            // The continuation is queued to the owner, so the getter cannot
+            // synchronously open the file while sorting or evaluating facets.
+            Assert.Null(result.SizeBytes);
+            pump.PumpUntil(() => loaded, TimeSpan.FromSeconds(10));
+            Assert.Equal(6, result.SizeBytes);
+            Assert.NotNull(result.ModifiedUtc);
+        }
+        finally
+        {
+            SynchronizationContext.SetSynchronizationContext(previous);
+            File.Delete(path);
+        }
+    }
+
+    [Fact]
     public void BuildStoredHitPreviewIncludesAnchors()
     {
         var result = new FileResultViewModel(@"C:\docs\scan.pdf", new FakeFileLauncher());

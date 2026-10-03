@@ -638,6 +638,82 @@
                             Background="{DynamicResource Atlas.LineBrush}"
                             Margin="0,18"/>
 
+                    <TextBlock Text="DRIVE FILE-NAME INDEX" Style="{StaticResource SectionHeaderStyle}"/>
+                    <TextBlock Text="Index every file and folder name on a drive. Quick Search's Entire machine scope and name searches with Use index on then answer instantly, and the NTFS change journal keeps the index current."
+                               Style="{StaticResource MutedValueStyle}"
+                               TextWrapping="Wrap"
+                               Margin="0,8,0,0"/>
+
+                    <Grid Margin="0,14,0,0">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="*"/>
+                            <ColumnDefinition Width="Auto"/>
+                        </Grid.ColumnDefinitions>
+
+                        <StackPanel Grid.Column="0" Margin="0,0,20,0">
+                            <TextBlock Text="Use fast administrator scan"
+                                       Style="{StaticResource FieldLabelStyle}"/>
+                            <TextBlock Text="{Binding DriveNameIndex.ScanMethodSummary}"
+                                       Style="{StaticResource MutedValueStyle}"
+                                       TextWrapping="Wrap"
+                                       Margin="0,4,0,0"/>
+                        </StackPanel>
+
+                        <CheckBox Grid.Column="1"
+                                  IsChecked="{Binding DriveNameIndex.UseAdministratorScan, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
+                                  VerticalAlignment="Center"/>
+                    </Grid>
+
+                    <Border BorderBrush="{DynamicResource Atlas.LineBrush}"
+                            BorderThickness="1"
+                            CornerRadius="8"
+                            Background="{DynamicResource Atlas.Surface2Brush}"
+                            Padding="10"
+                            Margin="0,10,0,0">
+                        <ItemsControl ItemsSource="{Binding DriveNameIndex.Drives}">
+                            <ItemsControl.ItemTemplate>
+                                <DataTemplate>
+                                    <Grid Margin="0,3">
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="*"/>
+                                            <ColumnDefinition Width="Auto"/>
+                                        </Grid.ColumnDefinitions>
+
+                                        <CheckBox Grid.Column="0"
+                                                  IsChecked="{Binding IsIndexed, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
+                                                  IsEnabled="{Binding CanChange}"
+                                                  AutomationProperties.Name="{Binding Label}">
+                                            <StackPanel>
+                                                <TextBlock Text="{Binding Label}" Style="{StaticResource FieldLabelStyle}" Margin="0"/>
+                                                <TextBlock Text="{Binding StatusText}"
+                                                           Style="{StaticResource ResultPathStyle}"
+                                                           TextWrapping="Wrap"/>
+                                            </StackPanel>
+                                        </CheckBox>
+
+                                        <Button Grid.Column="1"
+                                                Command="{Binding RebuildCommand}"
+                                                IsEnabled="{Binding CanRebuild}"
+                                                Style="{StaticResource SecondaryButtonStyle}"
+                                                Height="{DynamicResource AppDensity.DialogButtonHeight}"
+                                                MinWidth="84"
+                                                Margin="12,0,0,0"
+                                                VerticalAlignment="Center">
+                                            <StackPanel Orientation="Horizontal">
+                                                <ui:FontIcon Glyph="&#xE72C;" FontSize="12" Margin="0,0,7,0"/>
+                                                <TextBlock Text="Rebuild"/>
+                                            </StackPanel>
+                                        </Button>
+                                    </Grid>
+                                </DataTemplate>
+                            </ItemsControl.ItemTemplate>
+                        </ItemsControl>
+                    </Border>
+
+                    <Border Height="1"
+                            Background="{DynamicResource Atlas.LineBrush}"
+                            Margin="0,18"/>
+
                     <TextBlock Text="BACKGROUND" Style="{StaticResource SectionHeaderStyle}"/>
                     <Grid Margin="0,8,0,0">
                         <Grid.ColumnDefinitions>

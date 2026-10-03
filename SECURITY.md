@@ -24,7 +24,8 @@ Important local-risk areas:
 - document parsing for PDFs, Office files, archives, email, and markup formats,
 - shell integration through per-user Explorer registry keys,
 - MSIX packaging with `runFullTrust`,
-- local index storage under `%LocalAppData%\FileSearch\Index`.
+- local index storage under `%LocalAppData%\FileSearch\Index`,
+- the elevated drive-scan helper (`FileSearch.Indexer.exe --scan-volume`). It runs only after the user accepts a UAC prompt, reads the NTFS master file table, writes one snapshot file, and exits. To keep that elevated write from being redirected, it only accepts a fully qualified output path ending in `.fsvol.scan` inside an existing folder that is not a link, and creates the file with create-new semantics, so it never overwrites anything.
 
 ## Release Security
 
