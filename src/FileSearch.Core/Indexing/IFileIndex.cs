@@ -41,6 +41,10 @@ public interface IContentUnitReader
 
     Task<IReadOnlyList<long>> GetContentUnitIdsForRootAsync(string root, CancellationToken cancellationToken) =>
         Task.FromResult<IReadOnlyList<long>>(System.Array.Empty<long>());
+
+    /// <summary>Content units with text that can contribute to semantic vectors.</summary>
+    Task<IReadOnlyList<long>> GetSemanticContentUnitIdsForRootAsync(string root, CancellationToken cancellationToken) =>
+        GetContentUnitIdsForRootAsync(root, cancellationToken);
 }
 
 /// <summary>Write side: building, refreshing, and removing indexed content.</summary>

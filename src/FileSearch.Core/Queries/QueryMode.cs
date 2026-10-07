@@ -17,4 +17,7 @@ public enum QueryMode
 
     /// <summary>Input is parsed as a structured query with field filters.</summary>
     Unified,
+
+    /// <summary>Whole input describes a concept to find in the local vector index.</summary>
+    Semantic,
 }

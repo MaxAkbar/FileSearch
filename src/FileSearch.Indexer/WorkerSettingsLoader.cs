@@ -63,17 +63,7 @@ internal sealed class WorkerSettingsLoader
 
     public EmbeddingModelPackOptions LoadEmbeddingModelOptions()
     {
-        if (!File.Exists(_settingsPath))
-            return new EmbeddingModelPackOptions();
-
-        var settings = LoadAppSettings(_settingsPath);
-        return new EmbeddingModelPackOptions
-        {
-            SelectedModelPackId = settings.SemanticModelPackId ?? string.Empty,
-            ModelPacksDirectory = string.IsNullOrWhiteSpace(settings.SemanticModelPacksDirectory)
-                ? EmbeddingModelPackOptions.GetDefaultModelPacksDirectory()
-                : settings.SemanticModelPacksDirectory,
-        };
+        return EmbeddingModelSettings.Load(_settingsPath);
     }
 
     private IEnumerable<IndexedLocation> LoadLocations(WorkerAppSettings settings)

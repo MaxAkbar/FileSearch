@@ -58,7 +58,11 @@ internal sealed record IndexStatusDocument(
     IReadOnlyList<IndexLocationDocument> Locations,
     int HiddenLocationCount,
     IndexRootStatsDocument? RootStats,
-    ServerInfoDocument Server);
+    ServerInfoDocument Server,
+    DocumentModelsDocument? DocumentModels = null);
+
+internal sealed record DocumentModelsDocument(bool Enabled, string SelectedModelId, IReadOnlyList<DocumentModelDocument> Installed);
+internal sealed record DocumentModelDocument(string Id, string DisplayName, int Dimension, string Version, string Variant, bool Usable, string Status);
 
 internal sealed record IndexDatabaseDocument(
     string Path,
@@ -82,7 +86,8 @@ internal sealed record IndexLocationDocument(
     string? LastValidationStatus,
     bool? OcrEnabled,
     IReadOnlyList<string>? ExcludedDirectories,
-    IReadOnlyList<string>? ExcludedExtensions);
+    IReadOnlyList<string>? ExcludedExtensions,
+    FileSearch.Core.Engine.SemanticIndexRootStatus? SmartSearch = null);
 
 internal sealed record IndexRootStatsDocument(
     string Root,

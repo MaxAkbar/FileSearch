@@ -1,5 +1,6 @@
 using System.Net.Http;
 using System.Security.Cryptography;
+using System.Text;
 using System.Text.Json;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
@@ -10,10 +11,13 @@ public enum EmbeddingModelPooling
 {
     Mean,
     Cls,
+    SentenceEmbedding,
 }
 
 public sealed class EmbeddingModelPackOptions
 {
+    public string? SettingsFilePath { get; set; }
+
     public string ModelPacksDirectory { get; set; } = GetDefaultModelPacksDirectory();
 
     public string SelectedModelPackId { get; set; } = string.Empty;
@@ -89,10 +93,20 @@ public sealed record EmbeddingModelPackManifest
 
     public string QuantizationVersion { get; init; } = string.Empty;
 
+    public bool RequiresLicenseAcceptance { get; init; }
+
+    public int MaximumBatchSize { get; init; } = 32;
+
+    public int MaximumPaddedTokensPerBatch { get; init; } = 4096;
+
     public IReadOnlyList<EmbeddingModelPackFile> Files { get; init; } = Array.Empty<EmbeddingModelPackFile>();
 
+    [System.Text.Json.Serialization.JsonIgnore]
+    public string Fingerprint => Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(
+        JsonSerializer.Serialize(this)))).ToLowerInvariant();
+
     public EmbeddingModelInfo ToModelInfo() =>
-        new(Id, Version, Dimension, QuantizationVersion);
+        new(Id, FormatVersion >= 2 ? $"{Version}:{Fingerprint[..16]}" : Version, Dimension, QuantizationVersion);
 }
 
 public sealed record EmbeddingModelPackCatalogEntry(
@@ -113,9 +127,9 @@ public sealed record InstalledEmbeddingModelPack(
     bool IsUsable,
     string Status)
 {
-    public string ModelPath => Path.Combine(DirectoryPath, Manifest.ModelFile);
+    public string ModelPath => EmbeddingModelPackStore.GetArtifactPath(DirectoryPath, Manifest.ModelFile);
 
-    public string VocabularyPath => Path.Combine(DirectoryPath, Manifest.VocabularyFile);
+    public string VocabularyPath => EmbeddingModelPackStore.GetArtifactPath(DirectoryPath, Manifest.VocabularyFile);
 }
 
 public sealed record EmbeddingModelPackValidationResult(
@@ -140,6 +154,8 @@ public sealed record EmbeddingModelPackValidationStamp(
 {
     public const string FileName = "model-pack.validation.json";
 
+    public string Fingerprint { get; init; } = string.Empty;
+
     public static EmbeddingModelPackValidationStamp FromResult(
         EmbeddingModelPackManifest manifest,
         EmbeddingModelPackValidationResult result) =>
@@ -150,10 +166,12 @@ public sealed record EmbeddingModelPackValidationStamp(
             manifest.Dimension,
             result.IsValid,
             result.Status,
-            DateTime.UtcNow);
+            DateTime.UtcNow)
+        { Fingerprint = manifest.Fingerprint };
 
     public bool Matches(EmbeddingModelPackManifest manifest) =>
         FormatVersion == 1 &&
+        (manifest.FormatVersion < 2 || string.Equals(Fingerprint, manifest.Fingerprint, StringComparison.Ordinal)) &&
         Dimension == manifest.Dimension &&
         string.Equals(ModelId, manifest.Id, StringComparison.OrdinalIgnoreCase) &&
         string.Equals(ModelVersion, manifest.Version, StringComparison.OrdinalIgnoreCase);
@@ -243,6 +261,7 @@ public sealed class EmbeddingModelPackCatalog : IEmbeddingModelPackCatalog
             },
             IsRecommended: false,
             InstallSizeLabel: "About 221 MB"),
+        EmbeddingGemmaModelPack.Entry,
     ];
 
     public EmbeddingModelPackCatalogEntry? GetById(string id) =>
@@ -254,6 +273,8 @@ public sealed class EmbeddingModelPackCatalog : IEmbeddingModelPackCatalog
 
 public interface IEmbeddingModelPackStore
 {
+    string SelectedModelPackId => string.Empty;
+
     string ModelPacksDirectory { get; }
 
     Task<IReadOnlyList<InstalledEmbeddingModelPack>> GetInstalledPacksAsync(CancellationToken cancellationToken);
@@ -277,7 +298,13 @@ public sealed class EmbeddingModelPackStore : IEmbeddingModelPackStore
         _logger = logger ?? NullLogger<EmbeddingModelPackStore>.Instance;
     }
 
-    public string ModelPacksDirectory => NormalizeModelPacksDirectory(_options.ModelPacksDirectory);
+    private EmbeddingModelPackOptions CurrentOptions => _options.SettingsFilePath is { Length: > 0 } path
+        ? EmbeddingModelSettings.Load(path)
+        : _options;
+
+    public string ModelPacksDirectory => NormalizeModelPacksDirectory(CurrentOptions.ModelPacksDirectory);
+
+    public string SelectedModelPackId => CurrentOptions.SelectedModelPackId;
 
     public async Task<IReadOnlyList<InstalledEmbeddingModelPack>> GetInstalledPacksAsync(
         CancellationToken cancellationToken)
@@ -287,10 +314,10 @@ public sealed class EmbeddingModelPackStore : IEmbeddingModelPackStore
             return Array.Empty<InstalledEmbeddingModelPack>();
 
         var packs = new List<InstalledEmbeddingModelPack>();
-        foreach (var manifestPath in Directory.EnumerateFiles(root, EmbeddingModelPackManifest.FileName, SearchOption.AllDirectories))
+        foreach (var directory in Directory.EnumerateDirectories(root).Where(path => !Path.GetFileName(path).StartsWith('.')))
         {
             cancellationToken.ThrowIfCancellationRequested();
-            var pack = await ReadInstalledPackAsync(Path.GetDirectoryName(manifestPath) ?? root, cancellationToken)
+            var pack = await ReadInstalledPackAsync(directory, cancellationToken)
                 .ConfigureAwait(false);
             if (pack is not null)
                 packs.Add(pack);
@@ -303,10 +330,11 @@ public sealed class EmbeddingModelPackStore : IEmbeddingModelPackStore
 
     public async Task<InstalledEmbeddingModelPack?> GetSelectedPackAsync(CancellationToken cancellationToken)
     {
-        if (!_options.IsEnabled)
+        var options = CurrentOptions;
+        if (!options.IsEnabled)
             return null;
 
-        var directory = GetPackDirectory(_options.SelectedModelPackId);
+        var directory = Path.Combine(NormalizeModelPacksDirectory(options.ModelPacksDirectory), SanitizePathSegment(options.SelectedModelPackId));
         return await ReadInstalledPackAsync(directory, cancellationToken).ConfigureAwait(false);
     }
 
@@ -349,6 +377,8 @@ public sealed class EmbeddingModelPackStore : IEmbeddingModelPackStore
                 else
                 {
                     status = "Installed. Smoke validation has not run.";
+                    if (manifest.FormatVersion >= 2)
+                        isUsable = false;
                 }
             }
 
@@ -383,6 +413,8 @@ public sealed class EmbeddingModelPackStore : IEmbeddingModelPackStore
 
     internal static string SanitizePathSegment(string value)
     {
+        if (value.Trim() is "." or "..")
+            throw new ArgumentException("Model ID cannot be a parent directory.", nameof(value));
         var invalid = Path.GetInvalidFileNameChars().ToHashSet();
         var chars = value.Trim()
             .Select(ch => invalid.Contains(ch) || ch is '/' or '\\' ? '-' : ch)
@@ -395,24 +427,57 @@ public sealed class EmbeddingModelPackStore : IEmbeddingModelPackStore
             ? EmbeddingModelPackOptions.GetDefaultModelPacksDirectory()
             : directory);
 
-    private static bool IsUsable(EmbeddingModelPackManifest manifest, string directory, out string status)
+    internal static bool IsUsable(EmbeddingModelPackManifest manifest, string directory, out string status)
     {
-        var modelPath = Path.Combine(directory, manifest.ModelFile);
+        var modelPath = GetArtifactPath(directory, manifest.ModelFile);
         if (!File.Exists(modelPath))
         {
             status = "Model file is missing.";
             return false;
         }
 
-        var vocabularyPath = Path.Combine(directory, manifest.VocabularyFile);
+        var vocabularyPath = GetArtifactPath(directory, manifest.VocabularyFile);
         if (!File.Exists(vocabularyPath))
         {
             status = "Vocabulary file is missing.";
             return false;
         }
 
+        foreach (var file in manifest.Files)
+        {
+            var path = GetArtifactPath(directory, file.RelativePath);
+            if (!File.Exists(path) || (file.SizeBytes > 0 && new FileInfo(path).Length != file.SizeBytes))
+            {
+                status = $"Required model artifact is missing or incomplete: {file.RelativePath}.";
+                return false;
+            }
+        }
+
         status = "Installed.";
         return true;
+    }
+
+    internal static string GetArtifactPath(string directory, string relativePath)
+    {
+        var root = Path.GetFullPath(directory) + Path.DirectorySeparatorChar;
+        var path = Path.GetFullPath(Path.Combine(directory, relativePath));
+        if (Path.IsPathRooted(relativePath) || !path.StartsWith(root, StringComparison.OrdinalIgnoreCase))
+            throw new InvalidDataException($"Model artifact must remain inside its pack: {relativePath}.");
+        return path;
+    }
+
+    internal static async Task VerifyArtifactsAsync(InstalledEmbeddingModelPack pack, CancellationToken cancellationToken)
+    {
+        foreach (var file in pack.Manifest.Files)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            if (string.IsNullOrWhiteSpace(file.Sha256))
+                continue;
+            await using var stream = File.OpenRead(GetArtifactPath(pack.DirectoryPath, file.RelativePath));
+            var hash = Convert.ToHexString(await SHA256.HashDataAsync(stream, cancellationToken).ConfigureAwait(false));
+            if (!hash.Equals(file.Sha256, StringComparison.OrdinalIgnoreCase))
+                throw new InvalidDataException($"Checksum mismatch for {file.RelativePath}. Reinstall the model pack.");
+        }
     }
 }
 
@@ -422,6 +487,12 @@ public interface IEmbeddingModelPackInstaller
         string modelId,
         IProgress<EmbeddingModelInstallProgress>? progress,
         CancellationToken cancellationToken);
+
+    Task<InstalledEmbeddingModelPack> InstallAsync(
+        string modelId,
+        IProgress<EmbeddingModelInstallProgress>? progress,
+        bool acceptLicense,
+        CancellationToken cancellationToken) => InstallAsync(modelId, progress, cancellationToken);
 }
 
 public interface IEmbeddingModelPackValidator
@@ -538,45 +609,90 @@ public sealed class EmbeddingModelPackInstaller : IEmbeddingModelPackInstaller, 
         string modelId,
         IProgress<EmbeddingModelInstallProgress>? progress,
         CancellationToken cancellationToken)
+        => await InstallAsync(modelId, progress, acceptLicense: false, cancellationToken).ConfigureAwait(false);
+
+    public async Task<InstalledEmbeddingModelPack> InstallAsync(
+        string modelId,
+        IProgress<EmbeddingModelInstallProgress>? progress,
+        bool acceptLicense,
+        CancellationToken cancellationToken)
     {
+        cancellationToken.ThrowIfCancellationRequested();
         var entry = _catalog.GetById(modelId)
             ?? throw new ArgumentException($"Unknown embedding model pack '{modelId}'.", nameof(modelId));
 
-        var directory = _store.GetPackDirectory(entry.Id);
+        if (entry.Manifest.RequiresLicenseAcceptance && !acceptLicense)
+            throw new InvalidOperationException($"Review and accept the {entry.Manifest.License} before installing: {entry.Manifest.LicenseUrl}");
+
+        var targetDirectory = _store.GetPackDirectory(entry.Id);
+        var parent = Path.GetDirectoryName(targetDirectory)!;
+        Directory.CreateDirectory(parent);
+        using var installLease = new FileStream(Path.Combine(parent, $".install-{entry.Id}.lock"),
+            FileMode.OpenOrCreate, FileAccess.ReadWrite, FileShare.None, 1, FileOptions.DeleteOnClose);
+        var directory = Path.Combine(parent, $".install-{entry.Id}-{Guid.NewGuid():N}");
         Directory.CreateDirectory(directory);
-
-        var files = entry.Manifest.Files.ToArray();
-        for (var i = 0; i < files.Length; i++)
+        try
         {
-            cancellationToken.ThrowIfCancellationRequested();
-            var file = files[i];
-            progress?.Report(new EmbeddingModelInstallProgress(entry.Id, file.RelativePath, i, files.Length, 0, file.SizeBytes > 0 ? file.SizeBytes : null));
-            await DownloadFileAsync(directory, entry.Id, file, i, files.Length, progress, cancellationToken)
-                .ConfigureAwait(false);
+
+            var files = entry.Manifest.Files.ToArray();
+            for (var i = 0; i < files.Length; i++)
+            {
+                cancellationToken.ThrowIfCancellationRequested();
+                var file = files[i];
+                progress?.Report(new EmbeddingModelInstallProgress(entry.Id, file.RelativePath, i, files.Length, 0, file.SizeBytes > 0 ? file.SizeBytes : null));
+                await DownloadFileAsync(directory, entry.Id, file, i, files.Length, progress, cancellationToken)
+                    .ConfigureAwait(false);
+            }
+
+            var manifestPath = Path.Combine(directory, EmbeddingModelPackManifest.FileName);
+            await using (var stream = new FileStream(manifestPath, FileMode.Create, FileAccess.Write, FileShare.None))
+            {
+                await JsonSerializer.SerializeAsync(stream, entry.Manifest, s_jsonOptions, cancellationToken)
+                    .ConfigureAwait(false);
+            }
+
+            var installed = new InstalledEmbeddingModelPack(
+                entry.Manifest,
+                directory,
+                EmbeddingModelPackStore.IsUsable(entry.Manifest, directory, out var status),
+                status);
+            if (!installed.IsUsable)
+                throw new InvalidDataException(installed.Status);
+
+            var validation = await _validator.ValidateAsync(installed, cancellationToken).ConfigureAwait(false);
+            await WriteValidationStampAsync(directory, entry.Manifest, validation, cancellationToken).ConfigureAwait(false);
+            if (!validation.IsValid)
+            {
+                if (!Directory.Exists(targetDirectory))
+                {
+                    Directory.Move(directory, targetDirectory);
+                    return installed with { DirectoryPath = targetDirectory, IsUsable = false, Status = validation.Status };
+                }
+                throw new InvalidDataException(validation.Status);
+            }
+
+            // Publish only a complete, verified pack. A failed or cancelled reinstall preserves the previous installation.
+            var backupDirectory = Path.Combine(parent, $".backup-{entry.Id}-{Guid.NewGuid():N}");
+            var hadPrevious = Directory.Exists(targetDirectory);
+            if (hadPrevious) Directory.Move(targetDirectory, backupDirectory);
+            try { Directory.Move(directory, targetDirectory); }
+            catch
+            {
+                if (hadPrevious) Directory.Move(backupDirectory, targetDirectory);
+                throw;
+            }
+            if (hadPrevious)
+            {
+                try { Directory.Delete(backupDirectory, recursive: true); }
+                catch (IOException) { /* An existing session may still hold the previous weights. */ }
+                catch (UnauthorizedAccessException) { }
+            }
+            return installed with { DirectoryPath = targetDirectory, IsUsable = true, Status = validation.Status };
         }
-
-        var manifestPath = Path.Combine(directory, EmbeddingModelPackManifest.FileName);
-        await using (var stream = new FileStream(manifestPath, FileMode.Create, FileAccess.Write, FileShare.None))
+        finally
         {
-            await JsonSerializer.SerializeAsync(stream, entry.Manifest, s_jsonOptions, cancellationToken)
-                .ConfigureAwait(false);
+            if (Directory.Exists(directory)) Directory.Delete(directory, recursive: true);
         }
-
-        var installed = new InstalledEmbeddingModelPack(
-            entry.Manifest,
-            directory,
-            IsUsable(entry.Manifest, directory, out var status),
-            status);
-        if (!installed.IsUsable)
-            return installed;
-
-        var validation = await _validator.ValidateAsync(installed, cancellationToken).ConfigureAwait(false);
-        await WriteValidationStampAsync(directory, entry.Manifest, validation, cancellationToken).ConfigureAwait(false);
-        return installed with
-        {
-            IsUsable = validation.IsValid,
-            Status = validation.Status,
-        };
     }
 
     private async Task DownloadFileAsync(
@@ -594,7 +710,7 @@ public sealed class EmbeddingModelPackInstaller : IEmbeddingModelPackInstaller, 
         using var response = await GetDownloadResponseAsync(file.DownloadUrl, cancellationToken).ConfigureAwait(false);
         response.EnsureSuccessStatusCode();
 
-        var targetPath = Path.Combine(directory, file.RelativePath);
+        var targetPath = EmbeddingModelPackStore.GetArtifactPath(directory, file.RelativePath);
         var targetDirectory = Path.GetDirectoryName(targetPath);
         if (!string.IsNullOrWhiteSpace(targetDirectory))
             Directory.CreateDirectory(targetDirectory);
@@ -634,6 +750,9 @@ public sealed class EmbeddingModelPackInstaller : IEmbeddingModelPackInstaller, 
                 throw new InvalidOperationException($"Checksum mismatch for {file.RelativePath}.");
             }
 
+            if (file.SizeBytes > 0 && new FileInfo(tempPath).Length != file.SizeBytes)
+                throw new InvalidDataException($"Size mismatch for {file.RelativePath}.");
+
             File.Move(tempPath, targetPath, overwrite: true);
         }
         finally
@@ -647,6 +766,11 @@ public sealed class EmbeddingModelPackInstaller : IEmbeddingModelPackInstaller, 
         string downloadUrl,
         CancellationToken cancellationToken)
     {
+        if (downloadUrl.StartsWith("embedded:", StringComparison.Ordinal))
+        {
+            var stream = new MemoryStream(Encoding.UTF8.GetBytes(EmbeddingLicenseResources.GetText(downloadUrl[9..])));
+            return new HttpResponseMessage(System.Net.HttpStatusCode.OK) { Content = new StreamContent(stream) };
+        }
         try
         {
             return await _httpClient.GetAsync(
@@ -667,26 +791,6 @@ public sealed class EmbeddingModelPackInstaller : IEmbeddingModelPackInstaller, 
                 ex,
                 ex.StatusCode);
         }
-    }
-
-    private static bool IsUsable(EmbeddingModelPackManifest manifest, string directory, out string status)
-    {
-        var modelPath = Path.Combine(directory, manifest.ModelFile);
-        var vocabularyPath = Path.Combine(directory, manifest.VocabularyFile);
-        if (!File.Exists(modelPath))
-        {
-            status = "Model file is missing.";
-            return false;
-        }
-
-        if (!File.Exists(vocabularyPath))
-        {
-            status = "Vocabulary file is missing.";
-            return false;
-        }
-
-        status = "Installed.";
-        return true;
     }
 
     private static async Task WriteValidationStampAsync(

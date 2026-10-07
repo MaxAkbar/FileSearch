@@ -1,4 +1,5 @@
 using System.ComponentModel;
+using FileSearch.Core.Engine;
 using FileSearch.Core.Extractors;
 using FileSearch.Core.Indexing;
 using ModelContextProtocol.Server;
@@ -11,15 +12,24 @@ internal sealed class IndexTools
     private readonly IIndexMaintenance _indexMaintenance;
     private readonly IExtractorRegistry _extractorRegistry;
     private readonly RootPolicy _rootPolicy;
+    private readonly IEmbeddingModelPackStore? _modelPacks;
+    private readonly ISemanticIndexStatusService? _semanticStatus;
+    private readonly EmbeddingModelPackOptions? _modelOptions;
 
     public IndexTools(
         IIndexMaintenance indexMaintenance,
         IExtractorRegistry extractorRegistry,
-        RootPolicy rootPolicy)
+        RootPolicy rootPolicy,
+        IEmbeddingModelPackStore? modelPacks = null,
+        ISemanticIndexStatusService? semanticStatus = null,
+        EmbeddingModelPackOptions? modelOptions = null)
     {
         _indexMaintenance = indexMaintenance;
         _extractorRegistry = extractorRegistry;
         _rootPolicy = rootPolicy;
+        _modelPacks = modelPacks;
+        _semanticStatus = semanticStatus;
+        _modelOptions = modelOptions;
     }
 
     [McpServerTool(
@@ -60,7 +70,8 @@ internal sealed class IndexTools
                     string.IsNullOrEmpty(location.LastValidationStatus) ? null : location.LastValidationStatus,
                     hasProfile ? profile.EnableOcr : null,
                     hasProfile ? profile.ExcludeDirectories.Order(StringComparer.OrdinalIgnoreCase).ToArray() : null,
-                    hasProfile ? profile.ExcludeExtensions.Order(StringComparer.OrdinalIgnoreCase).ToArray() : null));
+                    hasProfile ? profile.ExcludeExtensions.Order(StringComparer.OrdinalIgnoreCase).ToArray() : null,
+                    _semanticStatus is null ? null : await _semanticStatus.GetRootStatusAsync(location.Root, cancellationToken).ConfigureAwait(false)));
             }
             else
             {
@@ -85,6 +96,16 @@ internal sealed class IndexTools
             ? null
             : await _rootPolicy.GetAllowedRootsAsync(cancellationToken).ConfigureAwait(false);
 
+        DocumentModelsDocument? models = null;
+        if (_modelPacks is not null && _modelOptions is not null)
+        {
+            var options = _modelOptions.SettingsFilePath is { Length: > 0 } path ? EmbeddingModelSettings.Load(path) : _modelOptions;
+            var installed = await _modelPacks.GetInstalledPacksAsync(cancellationToken).ConfigureAwait(false);
+            models = new DocumentModelsDocument(options.IsEnabled, options.SelectedModelPackId,
+                installed.Select(pack => new DocumentModelDocument(pack.Manifest.Id, pack.Manifest.DisplayName,
+                    pack.Manifest.Dimension, pack.Manifest.ToModelInfo().ModelVersion, pack.Manifest.QuantizationVersion,
+                    pack.IsUsable, pack.Status)).ToArray());
+        }
         return McpJson.Serialize(new IndexStatusDocument(
             new IndexDatabaseDocument(
                 database.DatabasePath,
@@ -106,7 +127,7 @@ internal sealed class IndexTools
                 ReadOnly: true,
                 _rootPolicy.AllowsAnyRoot,
                 allowedRoots,
-                _extractorRegistry.SupportedExtensions.Order(StringComparer.Ordinal).ToArray())));
+                _extractorRegistry.SupportedExtensions.Order(StringComparer.Ordinal).ToArray()), models));
     }
 
     [McpServerTool(

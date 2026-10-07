@@ -70,33 +70,54 @@
             <h2 id="queries">3. Run a Semantic Query</h2>
             <ol class="plain-list">
                 <li>Set the folder in the main search bar to the indexed location or a folder inside it.</li>
-                <li>Open search options, select <strong>Contents</strong>, choose <strong>Unified</strong> under <strong>Match</strong>, and enable <strong>Use index</strong>.</li>
-                <li>Enter <code>semantic:"authentication migration"</code> and click <strong>Search</strong>.</li>
+                <li>Click <strong>Semantic</strong> beside the <strong>.*</strong> regex toggle in the search box, or choose <strong>Semantic</strong> under <strong>Match</strong> in search options. This selects <strong>Contents</strong> and <strong>Use index</strong> automatically.</li>
+                <li>Use the controls below the search box to set <strong>Minimum score</strong> and <strong>Maximum files</strong>. The defaults are 0.60 and 25 files. Click <strong>Search</strong> after changing them.</li>
+                <li>Enter an ordinary phrase such as <code>authentication migration</code> and click <strong>Search</strong>. No query prefix is needed.</li>
                 <li>Select a result card to read the cited source passage in the preview pane.</li>
             </ol>
             <div class="table-wrap">
                 <table>
                     <thead><tr><th>Query</th><th>Use</th></tr></thead>
                     <tbody>
-                        <tr><td><code>semantic:"authentication migration"</code></td><td>Find passages related to a concept, including different wording.</td></tr>
-                        <tr><td><code>semantic:"termination of an agreement"</code></td><td>Find related wording in the indexed folder chosen in the search bar.</td></tr>
-                        <tr><td><code>semantic:"renewal pricing discussion"</code></td><td>Find related indexed mail or document text within the selected folder. Mail content follows the <a href="mail.html">extraction limits</a>.</td></tr>
+                        <tr><td><code>authentication migration</code></td><td>With Semantic selected, find passages related to a concept, including different wording.</td></tr>
+                        <tr><td><code>termination of an agreement</code></td><td>With Semantic selected, find related wording in the indexed folder chosen in the search bar.</td></tr>
+                        <tr><td><code>renewal pricing discussion</code></td><td>With Semantic selected, find related indexed mail or document text within the selected folder. Mail content follows the <a href="mail.html">extraction limits</a>.</td></tr>
                     </tbody>
                 </table>
             </div>
-            <p>Use the explicit <code>semantic:</code> form when you want to request meaning-based matching directly. Ordinary search words still perform lexical matching; selecting a model does not make every query semantic. Quick Search uses plain text and does not run <code>semantic:</code> queries.</p>
+            <p>Semantic mode treats your entire input as the concept to search for, including quotes, punctuation, and words such as AND; it does not parse query fields or operators. It searches vector matches without a match-all file scan. Saved searches and workspace bundles remember the mode. Turning the toggle off returns to Unified mode; selecting regex, a file/folder-name target, or turning off Use index leaves Semantic mode.</p>
+            <p>The explicit <code>semantic:"your concept"</code> syntax remains available in <strong>Unified</strong> mode with Contents and Use index enabled. Ordinary words in other modes still perform lexical matching; selecting a model does not make every query semantic. Quick Search uses plain text and does not offer Semantic mode.</p>
 
             <h2 id="results">Understand the Results</h2>
             <p>Semantic retrieval supplies a ranked selection of related passages. It currently considers up to 25 file candidates and 50 semantic matches before result fusion. This is not an exhaustive count of every relevant passage; use literal, Boolean, or regex searches when you need exact terms.</p>
-            <p>Combined results can include metadata or lexical candidates too; a displayed item does not necessarily come from vector similarity. Hybrid fusion currently groups candidates by physical file, so semantic results from a PST/OST can show only a selected message from that store.</p>
+            <p>Each file contributes its strongest semantic passage to the ranking, so a longer file does not rank higher just because it has more indexed chunks. In dedicated Semantic mode, <strong>Minimum score</strong> removes candidates below your chosen similarity score (0.00–1.00); a higher value is stricter. <strong>Maximum files</strong> returns the best 1–25 distinct files that meet that minimum. A result card shows its similarity score, rounded to two decimals; filtering uses the full score. These are model-dependent similarity scores, not probabilities or confidence percentages.</p>
+            <p>Start at 0.60, then raise the minimum if weak matches remain or lower it if relevant matches disappear. For example, in the docs test with BGE small English v1.5, <code>Determines whether filename/path search feels instant</code> returned four documentation files at 0.60 and only BENCHMARKS.md at 0.70, excluding the license files. A broad word such as <code>query</code> scored lower, so it required a minimum around 0.58 to return BENCHMARKS.md. More specific phrases usually give a clearer ranking. Use 0.00 to inspect the full candidate selection. No index rebuild is needed when changing these controls.</p>
+            <p>The controls are remembered across sessions, saved searches, and workspace bundles. They apply to the dedicated Semantic mode; advanced <code>semantic:</code> queries in Unified mode retain their existing candidate limits and do not use these controls.</p>
+            <h3 id="false-positives">Why an Unrelated Passage Can Still Appear</h3>
+            <p>Semantic search can return false positives: passages that score above your minimum but do not address the concept you meant. A similarity score measures the embedding model's similarity between the query and indexed text; it does not verify that a passage answers the query. Minimum score filters those scores, and Maximum files caps the result count. Neither control guarantees that every returned passage is relevant.</p>
+            <p>For example, searching the eight-file docs test index with BGE small English v1.5 for <code>query breakdown</code> returned these two leading results:</p>
+            <div class="table-wrap">
+                <table>
+                    <thead><tr><th>Result</th><th>Similarity score</th><th>Relevance to the phrase</th></tr></thead>
+                    <tbody>
+                        <tr><td>BENCHMARKS.md, line 32</td><td>0.647</td><td>Directly explains the indexed query phase breakdown: database open, metadata lookup, trigram lookup, row fetch, and recheck.</td></tr>
+                        <tr><td>IFILTER_VALIDATION.md, line 22</td><td>0.603</td><td>A false positive: discusses reducing a third-party extractor's timeout, not breaking down query processing.</td></tr>
+                    </tbody>
+                </table>
+            </div>
+            <p>The default minimum of 0.60 admits both. A minimum of 0.62 retains only BENCHMARKS.md for this example. That cutoff is not a universal relevance threshold: scores vary with the model, query, and indexed content, and raising it can also remove useful matches. Preview the matched passage, adjust the minimum, and click Search again. For exact occurrences of words or phrases, use plain text, Boolean, or regex matching instead.</p>
+            <p>In Unified mode, combined results can include metadata or lexical candidates too; a displayed item does not necessarily come from vector similarity. The dedicated Semantic mode uses vector candidates only. Result fusion currently groups candidates by physical file, so semantic results from a PST/OST can show only a selected message from that store.</p>
             <p>The semantic provider scopes vectors to the selected search roots, but does not consistently apply Unified type/path/date/size fields or the scan's file filters to semantic candidates. Choose a specific indexed folder to narrow the search and use result facets to refine visible items. Do not rely on a combined <code>type:pdf semantic:...</code> query as a strict file-type restriction.</p>
-            <p><strong>Local reranker</strong> in Settings applies a local heuristic ranking pass after result fusion; it does not install a second ONNX model. Preview the source text to judge whether a match answers your question. <strong>Answer</strong> creates an extractive draft from visible results rather than generating new facts.</p>
+            <p><strong>Local reranker</strong> in Settings applies a local heuristic ranking pass after result fusion in other search modes; it does not install a second ONNX model. Dedicated Semantic mode preserves vector relevance without keyword, filename, or hit-count bonuses. Preview the source text to judge whether a match answers your question. <strong>Answer</strong> creates an extractive draft from visible results rather than generating new facts.</p>
 
             <h2 id="troubleshooting">If Smart Search Does Not Work</h2>
             <ul class="plain-list">
+                <li><strong>No results met the minimum score:</strong> lower Minimum score or use a more specific phrase, then click Search. This message means similarity filtering rejected the candidates; it does not mean the index needs rebuilding.</li>
+                <li><strong>Unrelated passage above the cutoff:</strong> review the source passage and raise Minimum score if needed. The model can assign an irrelevant passage enough similarity to pass the cutoff; see the <a href="#false-positives">query breakdown example</a>. Rebuilding an unchanged index with the same model does not improve that relevance judgment.</li>
                 <li><strong>Model missing or not ready:</strong> check the selected model, parent model folder, vocabulary, external weights, and installation/validation status. Retry <strong>Install model</strong> for incomplete packs.</li>
                 <li><strong>No vectors or partial coverage:</strong> check the location's Smart Search status. Wait for pending work or use <strong>Rebuild Smart Search</strong>. A usable model without indexed vectors cannot return semantic matches.</li>
-                <li><strong>Wrong search setup:</strong> select Contents, Unified mode, and Use index in the main window. Search inside the indexed location.</li>
+                <li><strong>Content index read errors:</strong> Smart Search builds vectors from the content index. If that database cannot read its indexed rows, fix or recover the content index before rebuilding Smart Search. Check the location's status and the GUI log in <code>%LocalAppData%\FileSearch\logs</code>. Back up the existing index database before resetting it; it can contain other indexed locations too.</li>
+                <li><strong>Wrong search setup:</strong> select Semantic in the main window and search inside the indexed location. It enables indexed content search automatically. An explicit <code>semantic:</code> query instead needs Unified mode, Contents, and Use index.</li>
                 <li><strong>Changed model or initialization failure:</strong> restart FileSearch and any tray indexer, then rebuild vectors with the selected model.</li>
                 <li><strong>Unavailable query chip:</strong> the current query parser can label a semantic chip Unavailable even when the model is installed. Check model and vector status; that chip label alone does not confirm runtime availability.</li>
                 <li><strong>CLI query returns no semantic matches:</strong> the current CLI search process does not load the GUI's selected model configuration. The desktop main window is the documented Smart Search entry point.</li>

@@ -31,6 +31,10 @@ public sealed class SavedSearchSettings
 
     public bool UseIndex { get; set; }
 
+    public double SemanticMinimumScore { get; set; } = SemanticSearchOptions.DefaultMinimumScore;
+
+    public int SemanticMaximumResults { get; set; } = SemanticSearchOptions.DefaultMaximumResults;
+
     public SearchTarget SearchTarget { get; set; } = SearchTarget.Content;
 
     public List<SearchTarget> SearchTargets { get; set; } = [];

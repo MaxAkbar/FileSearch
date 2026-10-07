@@ -48,6 +48,24 @@ public sealed class FileIndexTests : IDisposable
     }
 
     [Fact]
+    public async Task SemanticCoverageExcludesBlankContentUnitsWithoutRemovingThemFromTheIndex()
+    {
+        await File.WriteAllTextAsync(Path.Combine(_root, "blank-lines.txt"), "alpha\n\n   \nbeta\n", TestContext.Current.CancellationToken);
+        await BuildAsync();
+
+        var allIds = await _index.GetContentUnitIdsForRootAsync(_root, TestContext.Current.CancellationToken);
+        var semanticIds = await _index.GetSemanticContentUnitIdsForRootAsync(_root, TestContext.Current.CancellationToken);
+
+        Assert.Equal(4, allIds.Count);
+        Assert.Equal(2, semanticIds.Count);
+        foreach (var id in semanticIds)
+        {
+            var unit = await _index.GetContentUnitAsync(id, TestContext.Current.CancellationToken);
+            Assert.False(string.IsNullOrWhiteSpace(Assert.IsType<ContentUnit>(unit).Text));
+        }
+    }
+
+    [Fact]
     public async Task IndexedSearchMatchesLiveSearch_ForPlainRegexAndBooleanQueries()
     {
         File.WriteAllText(Path.Combine(_root, "a.txt"), "alpha\nbeta match\nfoo and bar\n");
@@ -1359,6 +1377,22 @@ public sealed class FileIndexTests : IDisposable
         File.WriteAllText(Path.Combine(otherRoot, "keep-too.txt"), "needle\n");
         await _index.BuildOrRefreshAsync(new IndexRequest(otherRoot, new WalkerOptions()), TestContext.Current.CancellationToken);
         _index.Dispose();
+        // Dispose retires the shared hybrid handle asynchronously. Wait for its checkpoint and WAL cleanup
+        // before a second database instance modifies the on-disk schema.
+        var retirement = Stopwatch.StartNew();
+        while (true)
+        {
+            TestContext.Current.CancellationToken.ThrowIfCancellationRequested();
+            try
+            {
+                using var probe = new FileStream(_dbPath, FileMode.Open, FileAccess.Read, FileShare.None);
+                if (!File.Exists(_dbPath + ".wal")) break;
+            }
+            catch (IOException) when (retirement.Elapsed < TimeSpan.FromSeconds(5)) { }
+            if (retirement.Elapsed >= TimeSpan.FromSeconds(5))
+                throw new TimeoutException("The retired index handle did not finish checkpointing.");
+            await Task.Delay(20, TestContext.Current.CancellationToken);
+        }
         var db = await Database.OpenAsync(_dbPath, TestContext.Current.CancellationToken);
         try
         {

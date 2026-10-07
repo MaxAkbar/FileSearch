@@ -993,8 +993,8 @@
                     <!-- Search row: folder | query | file types | Search | options -->
                     <Grid Grid.Row="0" Margin="{DynamicResource AppDensity.SearchRowMargin}">
                         <Grid.ColumnDefinitions>
-                            <ColumnDefinition Width="Auto"/>
-                            <ColumnDefinition Width="*"/>
+                            <ColumnDefinition Width="0.6*" MinWidth="140" MaxWidth="340"/>
+                            <ColumnDefinition Width="*" MinWidth="370"/>
                             <ColumnDefinition Width="Auto"/>
                             <ColumnDefinition Width="Auto"/>
                             <ColumnDefinition Width="Auto"/>
@@ -1006,7 +1006,7 @@
                             <Grid>
                                 <Grid.ColumnDefinitions>
                                     <ColumnDefinition Width="Auto"/>
-                                    <ColumnDefinition Width="Auto"/>
+                                    <ColumnDefinition Width="*"/>
                                     <ColumnDefinition Width="Auto"/>
                                 </Grid.ColumnDefinitions>
                                 <Button Command="{Binding Search.BrowseCommand}"
@@ -1115,6 +1115,7 @@
                                     <ColumnDefinition Width="Auto"/>
                                     <ColumnDefinition Width="Auto"/>
                                     <ColumnDefinition Width="Auto"/>
+                                    <ColumnDefinition Width="Auto"/>
                                 </Grid.ColumnDefinitions>
                                 <Path Data="{StaticResource Icon.Search}" Style="{StaticResource LineIconStyle}"
                                       StrokeThickness="1.5" Margin="12,0,10,0"/>
@@ -1138,18 +1139,24 @@
                                               IsChecked="{Binding Search.IsRegexMode}"
                                               Style="{StaticResource InlineToggleButtonStyle}"
                                               FontFamily="{DynamicResource Atlas.MonoFont}" FontWeight="Bold"
-                                              ToolTip="Use regular expression (other modes live under search options)"
+                                              ToolTip="Use regular expression"
                                               AutomationProperties.Name="Use regular expression"/>
-                                <Border Grid.Column="5" Width="1" Height="20" Margin="6,0,2,0"
+                                <ToggleButton x:Name="SemanticModeButton" Grid.Column="5" Content="Semantic"
+                                              IsChecked="{Binding Search.IsSemanticMode}"
+                                              Style="{StaticResource InlineToggleButtonStyle}"
+                                              Width="72"
+                                              ToolTip="Search indexed content by meaning using your local Smart Search model"
+                                              AutomationProperties.Name="Semantic search"/>
+                                <Border Grid.Column="6" Width="1" Height="20" Margin="6,0,2,0"
                                         Background="{DynamicResource Atlas.LineBrush}"/>
-                                <Button Grid.Column="6" Command="{Binding Search.ClearQueryCommand}"
+                                <Button Grid.Column="7" Command="{Binding Search.ClearQueryCommand}"
                                         Style="{StaticResource IconButtonStyle}"
                                         Width="28" Height="28" Margin="0,0,6,0"
                                         ToolTip="Clear search" AutomationProperties.Name="Clear search">
                                     <Path Data="{StaticResource Icon.Close}" Style="{StaticResource LineIcon14Style}" StrokeThickness="1.4"/>
                                 </Button>
                                 <!-- Search-in-flight underline. -->
-                                <ProgressBar Grid.ColumnSpan="7"
+                                <ProgressBar Grid.ColumnSpan="8"
                                              IsIndeterminate="{Binding Search.IsSearching}"
                                              Visibility="{Binding Search.IsSearching, Converter={StaticResource BoolToVisibility}}"
                                              Foreground="{DynamicResource Atlas.AccentBrush}"
@@ -1282,8 +1289,49 @@
                         </ToggleButton>
                     </Grid>
 
+                    <StackPanel Grid.Row="1">
+                        <Border x:Name="SemanticResultControls" Margin="20,0,20,8"
+                                Visibility="{Binding Search.IsSemanticMode, Converter={StaticResource BoolToVisibility}}">
+                            <Border.Style>
+                                <Style TargetType="Border">
+                                    <Style.Triggers>
+                                        <DataTrigger Binding="{Binding Search.IsSearching}" Value="True">
+                                            <Setter Property="IsEnabled" Value="False"/>
+                                        </DataTrigger>
+                                    </Style.Triggers>
+                                </Style>
+                            </Border.Style>
+                            <WrapPanel VerticalAlignment="Center">
+                                <StackPanel Orientation="Horizontal" Margin="0,0,20,0">
+                                    <TextBlock Text="Minimum score" Style="{StaticResource MutedValueStyle}" VerticalAlignment="Center" Margin="0,0,10,0"/>
+                                    <Slider x:Name="SemanticMinimumScoreSlider" Width="150" Minimum="0" Maximum="1"
+                                            TickFrequency="0.01" IsSnapToTickEnabled="True" VerticalAlignment="Center"
+                                            Foreground="{DynamicResource Atlas.AccentBrush}"
+                                            Value="{Binding Search.SemanticMinimumScore, Mode=TwoWay}"
+                                            ToolTip="Higher scores require a closer match. Similarity is model dependent, not a probability. Click Search to apply."
+                                            AutomationProperties.Name="Minimum semantic score"/>
+                                    <Border Style="{StaticResource SearchFieldShellStyle}" Width="56" Height="28" CornerRadius="5" Padding="5,0" Margin="10,0,0,0">
+                                    <TextBox x:Name="SemanticMinimumScoreBox" Style="{StaticResource SearchFieldTextBoxStyle}" FontSize="12.5"
+                                             Text="{Binding Search.SemanticMinimumScore, Mode=TwoWay, StringFormat=F2, UpdateSourceTrigger=LostFocus}"
+                                             ToolTip="Minimum similarity from 0.00 to 1.00; 0.00 includes all candidates. Click Search to apply."
+                                             AutomationProperties.Name="Minimum semantic score value"/>
+                                    </Border>
+                                </StackPanel>
+                                <StackPanel Orientation="Horizontal" Margin="0,0,20,0">
+                                    <TextBlock Text="Maximum files" Style="{StaticResource MutedValueStyle}" VerticalAlignment="Center" Margin="0,0,10,0"/>
+                                    <Border Style="{StaticResource SearchFieldShellStyle}" Width="48" Height="28" CornerRadius="5" Padding="5,0">
+                                    <TextBox x:Name="SemanticMaximumResultsBox" Style="{StaticResource SearchFieldTextBoxStyle}" FontSize="12.5"
+                                             Text="{Binding Search.SemanticMaximumResults, Mode=TwoWay, UpdateSourceTrigger=LostFocus}"
+                                             ToolTip="Return the best 1 to 25 files that meet Minimum score. Click Search to apply."
+                                             AutomationProperties.Name="Maximum semantic files"/>
+                                    </Border>
+                                </StackPanel>
+                                <TextBlock Text="Click Search to apply" Style="{StaticResource MutedValueStyle}" VerticalAlignment="Center" FontSize="11.5"/>
+                            </WrapPanel>
+                        </Border>
+
                     <!-- Interpreted query chips -->
-                    <ItemsControl Grid.Row="1"
+                    <ItemsControl
                                   ItemsSource="{Binding Search.QueryChips}"
                                   Visibility="{Binding Search.HasQueryChips, Converter={StaticResource BoolToVisibility}}"
                                   Margin="20,0,20,8">
@@ -1323,6 +1371,7 @@
                             </DataTemplate>
                         </ItemsControl.ItemTemplate>
                     </ItemsControl>
+                    </StackPanel>
 
                     <!-- Search options (SEARCH IN / MATCH pills, REFINE / INCLUDE chips) -->
                     <Border Grid.Row="2"
@@ -2158,8 +2207,23 @@
                                                     </Button>
                                                 </StackPanel>
                                                 <Border Grid.Column="3" Style="{StaticResource HitsPillStyle}" Margin="4,0,0,0">
-                                                    <TextBlock Text="{Binding MatchCountText}" Style="{StaticResource HitsPillTextStyle}"
-                                                               FontFamily="{DynamicResource Atlas.SansFont}" FontSize="11.5"/>
+                                                    <StackPanel>
+                                                        <TextBlock Text="{Binding MatchCountText}" FontFamily="{DynamicResource Atlas.SansFont}" FontSize="11.5">
+                                                            <TextBlock.Style>
+                                                                <Style TargetType="TextBlock" BasedOn="{StaticResource HitsPillTextStyle}">
+                                                                    <Style.Triggers>
+                                                                        <DataTrigger Binding="{Binding DataContext.Search.HasSemanticResults, RelativeSource={RelativeSource AncestorType=ListBox}}" Value="True">
+                                                                            <Setter Property="Visibility" Value="Collapsed"/>
+                                                                        </DataTrigger>
+                                                                    </Style.Triggers>
+                                                                </Style>
+                                                            </TextBlock.Style>
+                                                        </TextBlock>
+                                                        <TextBlock Text="{Binding BestScore, StringFormat='Score {0:F2}'}" Style="{StaticResource HitsPillTextStyle}"
+                                                                   FontFamily="{DynamicResource Atlas.SansFont}" FontSize="11.5"
+                                                                   ToolTip="Semantic similarity score; higher is more relevant. This is not a probability."
+                                                                   Visibility="{Binding DataContext.Search.HasSemanticResults, RelativeSource={RelativeSource AncestorType=ListBox}, Converter={StaticResource BoolToVisibility}}"/>
+                                                    </StackPanel>
                                                 </Border>
                                             </Grid>
 

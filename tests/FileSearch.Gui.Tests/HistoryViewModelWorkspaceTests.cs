@@ -24,6 +24,8 @@ public sealed class HistoryViewModelWorkspaceTests
                     QueryText = "needle",
                     SearchPath = @"C:\src",
                     SearchMode = QueryMode.Regex,
+                    SemanticMinimumScore = 0.72,
+                    SemanticMaximumResults = 3,
                 },
                 ResultSort = "HitCount",
                 ResultGroup = "Folder",
@@ -38,6 +40,8 @@ public sealed class HistoryViewModelWorkspaceTests
             Assert.Contains("\"Workspace\"", json);
             Assert.Contains("Daily Source", json);
             Assert.Contains("Regex", json);
+            Assert.Contains("\"SemanticMinimumScore\": 0.72", json);
+            Assert.Contains("\"SemanticMaximumResults\": 3", json);
             Assert.Equal("Export workspace", savePicker.LastTitle);
             Assert.EndsWith(".filesearch-workspace.json", savePicker.LastDefaultFileName);
             Assert.StartsWith("Exported workspace", status.Text);
@@ -61,7 +65,7 @@ public sealed class HistoryViewModelWorkspaceTests
             exportHistory.SaveWorkspace(new WorkspaceSettings
             {
                 Name = "Daily Source",
-                Search = new SavedSearchSettings { QueryText = "needle", SearchPath = @"C:\src" },
+                Search = new SavedSearchSettings { QueryText = "needle", SearchPath = @"C:\src", SemanticMinimumScore = 0.71, SemanticMaximumResults = 7 },
             });
             exportHistory.SaveWorkspace(new WorkspaceSettings
             {
@@ -79,6 +83,10 @@ public sealed class HistoryViewModelWorkspaceTests
             Assert.Contains(imported.Workspaces, workspace => workspace.Name == "Daily Source");
             Assert.Contains(imported.Workspaces, workspace => workspace.Name == "Docs");
             Assert.Equal(2, settings.Current.Workspaces.Count);
+            var restored = Assert.Single(imported.Workspaces, workspace => workspace.Name == "Daily Source");
+            Assert.Equal(0.71, restored.Search.SemanticMinimumScore);
+            Assert.Equal(7, restored.Search.SemanticMaximumResults);
+            Assert.Equal(0.71, Assert.Single(settings.Current.Workspaces, workspace => workspace.Name == "Daily Source").Search.SemanticMinimumScore);
             Assert.StartsWith("Imported 2 workspaces", status.Text);
         }
         finally

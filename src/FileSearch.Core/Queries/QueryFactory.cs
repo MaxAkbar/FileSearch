@@ -15,6 +15,10 @@ public sealed class QueryFactory : IQueryFactory
             QueryMode.Regex => new RegexQuery(input, caseSensitive),
             QueryMode.Boolean => new QueryParser(caseSensitive).Parse(input),
             QueryMode.Unified => new UnifiedQueryParser(caseSensitive).Parse(input),
+            QueryMode.Semantic => new UnifiedQuery(
+                MatchAllQuery.Instance,
+                UnifiedQueryFilters.Empty with { SemanticTerms = new[] { input } },
+                Array.Empty<UnifiedQueryChip>()),
             _ => throw new ArgumentOutOfRangeException(nameof(mode), mode, null),
         };
     }

@@ -8,6 +8,31 @@ namespace FileSearch.Core.Tests;
 public sealed class LocalHeuristicRerankerTests
 {
     [Fact]
+    public async Task RerankAsync_SemanticModePreservesSimilarityDespiteFilenameKeywordBoost()
+    {
+        var plan = new QueryPlanner().CreatePlan(new SearchRequest(
+            new QueryFactory().Build("query", QueryMode.Semantic, false),
+            new[] { @"C:\Docs" }, new WalkerOptions(), UseIndex: true, Mode: QueryMode.Semantic));
+        var results = new[]
+        {
+            new RankedSearchResult(1, @"C:\Docs\BENCHMARKS.md", 0.59,
+            [
+                new SearchCandidate(CandidateProviderKind.Semantic, "semantic", @"C:\Docs\BENCHMARKS.md", "search performance", 0.59),
+            ]),
+            new RankedSearchResult(2, @"C:\Docs\query.txt", 0.50,
+            [
+                new SearchCandidate(CandidateProviderKind.Semantic, "semantic", @"C:\Docs\query.txt", "unrelated query", 0.50),
+            ]),
+        };
+
+        var reranked = await new LocalHeuristicReranker().RerankAsync(plan, results, TestContext.Current.CancellationToken);
+
+        Assert.Same(results, reranked);
+        Assert.Equal(@"C:\Docs\BENCHMARKS.md", reranked[0].Path);
+        Assert.DoesNotContain(reranked.SelectMany(result => result.Explanations), explanation => explanation.Code == "local-reranker");
+    }
+
+    [Fact]
     public async Task RerankAsync_BoostsFilenameMatchesAndRenumbersResults()
     {
         var reranker = new LocalHeuristicReranker();

@@ -1269,6 +1269,146 @@ public sealed class SearchViewModelTests
         }
     }
 
+    [Fact]
+    public void SemanticToggleSearchesIndexedContentWithoutChangingTheInputAndRestoresFromHistory()
+    {
+        var searcher = new RecordingSearcher();
+        RunWithPump((pump, vm, history, status, settings) =>
+        {
+            const string concept = "renewal pricing \"discussion\" in C:\\Mail";
+            vm.QueryText = concept;
+            vm.SearchPath = Path.GetTempPath();
+            vm.SearchMode = QueryMode.Regex;
+            vm.SearchTargetOptions.Single(option => option.Value == SearchTarget.FileNames).IsSelected = true;
+            vm.SearchTargetOptions.Single(option => option.Value == SearchTarget.Content).IsSelected = false;
+            vm.UseIndex = false;
+
+            vm.IsSemanticMode = true;
+            vm.SemanticMinimumScore = 0.72;
+            vm.SemanticMaximumResults = 3;
+            var search = vm.SearchCommand.ExecuteAsync(null);
+            pump.PumpUntil(() => search.IsCompleted, TimeSpan.FromSeconds(10));
+
+            var request = Assert.IsType<SearchRequest>(searcher.Request);
+            var query = Assert.IsType<UnifiedQuery>(request.Expression);
+            Assert.Equal(concept, Assert.Single(query.Filters.SemanticTerms));
+            Assert.Equal(concept, request.RawQuery);
+            Assert.Equal(QueryMode.Semantic, request.Mode);
+            Assert.Equal(SearchTarget.Content, request.SearchTarget);
+            Assert.True(request.UseIndex);
+            Assert.Equal(new SemanticSearchOptions(0.72, 3), request.SemanticOptions);
+            Assert.True(vm.HasSemanticResults);
+            Assert.Equal(concept, vm.QueryText);
+            Assert.False(vm.IsRegexMode);
+            Assert.Empty(vm.QueryChips);
+            Assert.Contains(QueryMode.Semantic, vm.AvailableModes);
+            Assert.Equal("Describe what you want to find", vm.QueryPlaceholderText);
+
+            var saved = Assert.Single(history.SavedSearches);
+            Assert.Equal(QueryMode.Semantic, saved.SearchMode);
+            Assert.Equal(concept, saved.QueryText);
+            Assert.Equal(0.72, saved.SemanticMinimumScore);
+            Assert.Equal(3, saved.SemanticMaximumResults);
+            Assert.Equal(0.72, settings.Current.SemanticMinimumScore);
+            Assert.Equal(3, settings.Current.SemanticMaximumResults);
+            Assert.Equal(QueryMode.Semantic, Assert.Single(settings.Current.SavedSearches).SearchMode);
+
+            vm.IsRegexMode = true;
+            Assert.False(vm.IsSemanticMode);
+            Assert.True(vm.HasSemanticResults);
+            vm.QueryText = "other";
+            vm.UseIndex = false;
+            vm.SemanticMinimumScore = 0.40;
+            vm.SemanticMaximumResults = 25;
+            vm.SelectedSavedSearch = saved;
+
+            Assert.True(vm.IsSemanticMode);
+            Assert.False(vm.IsRegexMode);
+            Assert.Equal(concept, vm.QueryText);
+            Assert.True(vm.UseIndex);
+            Assert.True(vm.IsContentSearch);
+            Assert.Equal(0.72, vm.SemanticMinimumScore);
+            Assert.Equal(3, vm.SemanticMaximumResults);
+
+            vm.SaveWorkspaceCommand.Execute(null);
+            var workspace = Assert.Single(history.Workspaces);
+            Assert.Equal(0.72, workspace.Search.SemanticMinimumScore);
+            Assert.Equal(3, workspace.Search.SemanticMaximumResults);
+            vm.SemanticMinimumScore = 0;
+            vm.SemanticMaximumResults = 1;
+            vm.SelectedWorkspace = workspace;
+            Assert.Equal(0.72, vm.SemanticMinimumScore);
+            Assert.Equal(3, vm.SemanticMaximumResults);
+
+            vm.IsSemanticMode = false;
+            Assert.Equal(QueryMode.Unified, vm.SearchMode);
+        }, searcher);
+    }
+
+    [Fact]
+    public void SemanticModePickerNormalizesSavedOptionsAndChangingTheTargetLeavesSemanticMode()
+    {
+        RunWithPump((pump, vm, history, status, settings) =>
+        {
+            vm.SelectedSavedSearch = new SavedSearchSettings
+            {
+                QueryText = "renewal discussion",
+                SearchMode = QueryMode.Semantic,
+                UseIndex = false,
+                SearchTarget = SearchTarget.FileNames,
+            };
+
+            Assert.True(vm.IsSemanticMode);
+            Assert.True(vm.UseIndex);
+            Assert.True(vm.IsContentSearch);
+
+            vm.SearchTargetOptions.Single(option => option.Value == SearchTarget.FileNames).IsSelected = true;
+            Assert.False(vm.IsSemanticMode);
+            Assert.Equal(QueryMode.Unified, vm.SearchMode);
+
+            vm.SearchMode = QueryMode.Semantic;
+            Assert.True(vm.IsContentSearch);
+            vm.UseIndex = false;
+            Assert.False(vm.IsSemanticMode);
+            Assert.Equal(QueryMode.Unified, vm.SearchMode);
+
+            vm.SearchMode = QueryMode.Semantic;
+            vm.ResetSearchOptionsCommand.Execute(null);
+            Assert.False(vm.IsSemanticMode);
+            Assert.False(vm.UseIndex);
+            Assert.Equal(SemanticSearchOptions.DefaultMinimumScore, vm.SemanticMinimumScore);
+            Assert.Equal(SemanticSearchOptions.DefaultMaximumResults, vm.SemanticMaximumResults);
+        });
+    }
+
+    [Fact]
+    public void SemanticLimitsClampInvalidSettingsAndDoNotAffectLiteralSearches()
+    {
+        var searcher = new RecordingSearcher();
+        RunWithPump((pump, vm, history, status, settings) =>
+        {
+            vm.SelectedSavedSearch = new SavedSearchSettings
+            {
+                QueryText = "needle",
+                SearchPath = Path.GetTempPath(),
+                SemanticMinimumScore = double.NaN,
+                SemanticMaximumResults = int.MaxValue,
+            };
+            Assert.Equal(0.60, vm.SemanticMinimumScore);
+            Assert.Equal(25, vm.SemanticMaximumResults);
+            vm.SemanticMinimumScore = -0.1;
+            vm.SemanticMaximumResults = 0;
+            Assert.Equal(0, vm.SemanticMinimumScore);
+            Assert.Equal(1, vm.SemanticMaximumResults);
+            vm.SemanticMinimumScore = 2;
+            Assert.Equal(1, vm.SemanticMinimumScore);
+            var task = vm.SearchCommand.ExecuteAsync(null);
+            pump.PumpUntil(() => task.IsCompleted, TimeSpan.FromSeconds(10));
+            Assert.Null(searcher.Request!.SemanticOptions);
+            Assert.False(vm.HasSemanticResults);
+        }, searcher);
+    }
+
     private sealed class PathsSearcher(IReadOnlyList<string> paths) : ISearcher
     {
         public async IAsyncEnumerable<Hit> SearchAsync(SearchRequest request, [EnumeratorCancellation] CancellationToken cancellationToken)

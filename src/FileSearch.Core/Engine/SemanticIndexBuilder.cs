@@ -173,14 +173,35 @@ public sealed class SemanticIndexBuilder : ISemanticIndexBuilder, ISemanticBatch
 
         var states = new List<FileBuildState>(normalizedFileIds.Length);
         var pendingChunks = new List<PendingChunk>(MaximumChunksPerEmbeddingRequest);
-        EmbeddingModelInfo? batchModel = null;
+        EmbeddingModelInfo? batchModel = await _embedder.GetModelInfoAsync(cancellationToken).ConfigureAwait(false);
 
         foreach (var fileId in normalizedFileIds)
         {
             cancellationToken.ThrowIfCancellationRequested();
             var units = await _contentUnits.GetContentUnitsForFileAsync(fileId, cancellationToken).ConfigureAwait(false);
             var filePath = await _contentUnits.GetFilePathAsync(fileId, cancellationToken).ConfigureAwait(false);
-            var chunks = _chunker.CreateChunks(units);
+            var sourceChunks = _chunker.CreateChunks(units);
+            var chunks = new List<ContentChunk>();
+            foreach (var chunk in sourceChunks)
+            {
+                var parts = await _embedder.SplitDocumentAsync(chunk.Text, cancellationToken).ConfigureAwait(false);
+                for (var i = 0; i < parts.Count; i++)
+                {
+                    if (parts.Count == 1)
+                    {
+                        chunks.Add(chunk);
+                        continue;
+                    }
+                    var hash = Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(parts[i]))).ToLowerInvariant();
+                    chunks.Add(chunk with
+                    {
+                        ChunkKey = $"{chunk.ChunkKey}:token-part:{i}:{hash[..16]}",
+                        Text = parts[i],
+                        ContentHash = hash,
+                        ChunkerVersion = $"{chunk.ChunkerVersion}+token-budget-v1",
+                    });
+                }
+            }
             var state = new FileBuildState(
                 fileId,
                 filePath,

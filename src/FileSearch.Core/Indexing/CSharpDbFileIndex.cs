@@ -257,8 +257,15 @@ public sealed class CSharpDbFileIndex : IFileIndex, IIndexReplayWriter, IIndexUs
         }
     }
 
-    public async Task<IReadOnlyList<long>> GetContentUnitIdsForRootAsync(
+    public Task<IReadOnlyList<long>> GetContentUnitIdsForRootAsync(string root, CancellationToken cancellationToken) =>
+        GetContentUnitIdsForRootCoreAsync(root, includeEmpty: true, cancellationToken);
+
+    public Task<IReadOnlyList<long>> GetSemanticContentUnitIdsForRootAsync(string root, CancellationToken cancellationToken) =>
+        GetContentUnitIdsForRootCoreAsync(root, includeEmpty: false, cancellationToken);
+
+    private async Task<IReadOnlyList<long>> GetContentUnitIdsForRootCoreAsync(
         string root,
+        bool includeEmpty,
         CancellationToken cancellationToken)
     {
         if (string.IsNullOrWhiteSpace(root))
@@ -275,7 +282,7 @@ public sealed class CSharpDbFileIndex : IFileIndex, IIndexReplayWriter, IIndexUs
                 .ConfigureAwait(false);
             return rootId is null
                 ? Array.Empty<long>()
-                : await IndexTables.ReadContentUnitIdsForRootAsync(db, rootId.Value, cancellationToken)
+                : await IndexTables.ReadContentUnitIdsForRootAsync(db, rootId.Value, cancellationToken, includeEmpty)
                     .ConfigureAwait(false);
         }
         finally

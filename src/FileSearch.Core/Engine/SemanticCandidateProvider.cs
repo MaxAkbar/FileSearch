@@ -6,21 +6,24 @@ namespace FileSearch.Core.Engine;
 
 public sealed class SemanticCandidateProvider : IRoutedCandidateProvider
 {
-    private const int MaxSemanticFiles = 25;
+    private const int MaxSemanticFiles = SemanticSearchOptions.DefaultMaximumResults;
     private const int MaxSemanticMatches = 50;
 
     private readonly ITextEmbedder _embedder;
     private readonly IVectorIndex _vectorIndex;
     private readonly IContentUnitReader _contentUnits;
+    private readonly ISemanticIndexStatusService? _indexStatus;
 
     public SemanticCandidateProvider(
         ITextEmbedder embedder,
         IVectorIndex vectorIndex,
-        IContentUnitReader contentUnits)
+        IContentUnitReader contentUnits,
+        ISemanticIndexStatusService? indexStatus = null)
     {
         _embedder = embedder ?? throw new ArgumentNullException(nameof(embedder));
         _vectorIndex = vectorIndex ?? throw new ArgumentNullException(nameof(vectorIndex));
         _contentUnits = contentUnits ?? throw new ArgumentNullException(nameof(contentUnits));
+        _indexStatus = indexStatus;
     }
 
     public CandidateProviderKind Provider => CandidateProviderKind.Semantic;
@@ -66,14 +69,65 @@ public sealed class SemanticCandidateProvider : IRoutedCandidateProvider
         var embedding = await _embedder.EmbedAsync(semanticText, TextEmbeddingInputKind.Query, cancellationToken)
             .ConfigureAwait(false);
         var matches = await SearchTwoLevelAsync(embedding, plan.Request.Roots, cancellationToken).ConfigureAwait(false);
+        if (matches.Count == 0)
+        {
+            if (plan.Request.Status is not null)
+                plan.Request.Status(await GetEmptyIndexMessageAsync(plan.Request.Roots, cancellationToken).ConfigureAwait(false));
+            yield break;
+        }
 
-        foreach (var match in matches)
+        var options = plan.Request.SemanticOptions;
+        var minimumScore = options is null ? 0 : SemanticSearchOptions.NormalizeMinimumScore(options.MinimumScore);
+        if (!matches.Any(match => match.Score >= minimumScore))
+        {
+            plan.Request.Status?.Invoke(FormattableString.Invariant(
+                $"No semantic results met the minimum score of {minimumScore:0.00}. Lower Minimum score or use a more specific phrase, then search again."));
+            yield break;
+        }
+
+        var maximumResults = options is null ? MaxSemanticFiles : SemanticSearchOptions.NormalizeMaximumResults(options.MaximumResults);
+        var returnedPaths = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        foreach (var match in matches.OrderByDescending(match => match.Score).ThenBy(match => match.Id, StringComparer.Ordinal))
         {
             cancellationToken.ThrowIfCancellationRequested();
+            if (match.Score < minimumScore)
+                continue;
             var candidate = await CreateCandidateAsync(match, cancellationToken).ConfigureAwait(false);
-            if (candidate is not null)
-                yield return candidate;
+            if (candidate is null || (options is not null && !returnedPaths.Add(candidate.Path)))
+                continue;
+
+            yield return candidate;
+            if (options is not null && returnedPaths.Count >= maximumResults)
+                yield break;
         }
+    }
+
+    private async Task<string> GetEmptyIndexMessageAsync(
+        IReadOnlyList<string> roots,
+        CancellationToken cancellationToken)
+    {
+        if (_indexStatus is not null)
+        {
+            foreach (var root in roots)
+            {
+                try
+                {
+                    var status = await _indexStatus.GetRootStatusAsync(root, cancellationToken).ConfigureAwait(false);
+                    if (status.VectorCount == 0)
+                        return $"Smart Search: {status.Message} Build the content index, then use Rebuild Smart Search for the selected location.";
+                }
+                catch (OperationCanceledException)
+                {
+                    throw;
+                }
+                catch (Exception ex)
+                {
+                    return $"Smart Search could not read the content index. Check the selected location's index status and rebuild the content index before rebuilding Smart Search. {ex.Message}";
+                }
+            }
+        }
+
+        return "No Smart Search vectors matched this folder and model. Use Rebuild Smart Search for the selected indexed location.";
     }
 
     private async Task<SearchCandidate?> CreateCandidateAsync(

@@ -3,7 +3,7 @@ using System.Text;
 
 namespace FileSearch.Core.Engine;
 
-internal sealed class BertWordPieceTokenizer
+internal sealed class BertWordPieceTokenizer : IEmbeddingTokenizer
 {
     private readonly IReadOnlyDictionary<string, int> _vocabulary;
     private readonly int _unknownTokenId;
@@ -68,6 +68,8 @@ internal sealed class BertWordPieceTokenizer
             Enumerable.Repeat(1L, ids.Count).ToArray(),
             new long[ids.Count]);
     }
+
+    public void Dispose() { }
 
     private IEnumerable<string> BasicTokenize(string text)
     {

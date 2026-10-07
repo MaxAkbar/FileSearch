@@ -49,6 +49,21 @@ public sealed class QueryFactoryTests
         Assert.True(term.CaseSensitive);
     }
 
+    [Theory]
+    [InlineData("authentication migration")]
+    [InlineData("type:pdf AND NOT (draft)")]
+    [InlineData("a \"quoted\" phrase in C:\\reports\\2026")]
+    [InlineData("résumé — 東京\nrenewal")]
+    public void Semantic_TreatsTheWholeInputAsOneConcept(string input)
+    {
+        var query = Assert.IsType<UnifiedQuery>(_factory.Build(input, QueryMode.Semantic, caseSensitive: false));
+
+        Assert.Equal(input, Assert.Single(query.Filters.SemanticTerms));
+        Assert.False(query.HasContentCriteria);
+        Assert.False(query.Filters.HasFileFilters);
+        Assert.Empty(query.Chips);
+    }
+
     [Fact]
     public void Empty_Throws()
     {
@@ -56,5 +71,7 @@ public sealed class QueryFactoryTests
             () => _factory.Build("", QueryMode.PlainText, false));
         Assert.Throws<ArgumentException>(
             () => _factory.Build("   ", QueryMode.Regex, false));
+        Assert.Throws<ArgumentException>(
+            () => _factory.Build("   ", QueryMode.Semantic, false));
     }
 }

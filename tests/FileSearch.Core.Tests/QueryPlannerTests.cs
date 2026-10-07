@@ -33,6 +33,20 @@ public sealed class QueryPlannerTests
     }
 
     [Fact]
+    public void CreatePlan_SemanticMode_UsesOnlyVectorsEvenWhenOcrIsEnabled()
+    {
+        var query = new QueryFactory().Build("authentication migration", QueryMode.Semantic, false);
+        var request = new SearchRequest(query, new[] { @"C:\docs" }, new WalkerOptions { EnableOcr = true },
+            UseIndex: true, RawQuery: "authentication migration", Mode: QueryMode.Semantic);
+
+        var plan = new QueryPlanner().CreatePlan(request);
+
+        Assert.Equal(CandidateProviderKind.Semantic, plan.EnabledProviders);
+        Assert.Equal(RetrievalLayer.Smart, plan.EnabledLayers);
+        Assert.Contains(plan.Explanations, explanation => explanation.Code == "semantic-requested");
+    }
+
+    [Fact]
     public void CreatePlan_RegexMode_UsesRegexProvider()
     {
         var plan = CreatePlan(new TermQuery("TODO|FIXME"), mode: QueryMode.Regex);

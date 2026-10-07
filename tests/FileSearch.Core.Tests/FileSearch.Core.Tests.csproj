@@ -26,6 +26,7 @@
 
   <ItemGroup>
     <None Update="Fixtures\Outlook\mail-samples.zip" CopyToOutputDirectory="PreserveNewest" />
+    <None Update="Fixtures\Embeddings\*" CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>
 
   <ItemGroup>

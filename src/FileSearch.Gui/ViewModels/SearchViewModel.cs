@@ -49,7 +49,7 @@ public sealed partial class SearchTargetOption : ObservableObject
 
 /// <summary>
 /// Search inputs, options, execution, results, and the preview pane.
-/// Owns the UseIndex/SkipUnknownFileTypes slice of the persisted settings.
+/// Owns search preferences, including semantic result limits, in the persisted settings.
 /// </summary>
 public sealed partial class SearchViewModel : ObservableObject, IDisposable
 {
@@ -141,6 +141,8 @@ public sealed partial class SearchViewModel : ObservableObject, IDisposable
         SkipUnknownFileTypes = saved.SkipUnknownFileTypes;
         EnableImageOcr = saved.EnableImageOcr;
         UseIndex = saved.UseIndex;
+        SemanticMinimumScore = saved.SemanticMinimumScore;
+        SemanticMaximumResults = saved.SemanticMaximumResults;
         if (_fileTypeOptions.AdditionalPlainTextExtensions.Count == 0 && !string.IsNullOrWhiteSpace(saved.AdditionalPlainTextExtensions))
         {
             _fileTypeOptions.AdditionalPlainTextExtensions = ParseExtensions(saved.AdditionalPlainTextExtensions).ToList();
@@ -216,7 +218,7 @@ public sealed partial class SearchViewModel : ObservableObject, IDisposable
         (FilesView as ListCollectionView)?.Count ?? Files.Count;
 
     public IReadOnlyList<QueryMode> AvailableModes { get; } =
-        new[] { QueryMode.Unified, QueryMode.Boolean, QueryMode.Regex, QueryMode.PlainText };
+        new[] { QueryMode.Unified, QueryMode.Boolean, QueryMode.Regex, QueryMode.Semantic, QueryMode.PlainText };
 
     public IReadOnlyList<SearchTargetOption> SearchTargetOptions { get; } =
         new[]
@@ -241,6 +243,28 @@ public sealed partial class SearchViewModel : ObservableObject, IDisposable
     [ObservableProperty] private bool _enableImageOcr;
     [ObservableProperty] private bool _skipUnknownFileTypes;
     [ObservableProperty] private bool _useIndex;
+    private double _semanticMinimumScore = SemanticSearchOptions.DefaultMinimumScore;
+    private int _semanticMaximumResults = SemanticSearchOptions.DefaultMaximumResults;
+
+    public double SemanticMinimumScore
+    {
+        get => _semanticMinimumScore;
+        set
+        {
+            if (SetProperty(ref _semanticMinimumScore, SemanticSearchOptions.NormalizeMinimumScore(value)) && _isInitialized)
+                SaveOptions();
+        }
+    }
+
+    public int SemanticMaximumResults
+    {
+        get => _semanticMaximumResults;
+        set
+        {
+            if (SetProperty(ref _semanticMaximumResults, SemanticSearchOptions.NormalizeMaximumResults(value)) && _isInitialized)
+                SaveOptions();
+        }
+    }
     [ObservableProperty] private int _minSizeKB;
     [ObservableProperty] private int _maxSizeKB;
     private string _additionalPlainTextExtensions = string.Empty;
@@ -259,6 +283,7 @@ public sealed partial class SearchViewModel : ObservableObject, IDisposable
 
     // --- runtime state ---
     [ObservableProperty] private bool _isSearching;
+    [ObservableProperty] private bool _hasSemanticResults;
     [ObservableProperty] private int _totalHits;
 
     /// <summary>Hits the search found beyond <see cref="MaxRetainedHits"/>; counted, not shown.</summary>
@@ -475,6 +500,19 @@ public sealed partial class SearchViewModel : ObservableObject, IDisposable
         }
     }
 
+    /// <summary>The Semantic toggle treats the whole search box as a concept.</summary>
+    public bool IsSemanticMode
+    {
+        get => SearchMode == QueryMode.Semantic;
+        set
+        {
+            if (value)
+                SearchMode = QueryMode.Semantic;
+            else if (SearchMode == QueryMode.Semantic)
+                SearchMode = QueryMode.Unified;
+        }
+    }
+
     /// <summary>Current grouping as shown on the View button ("By folder").</summary>
     public string ResultViewButtonText => (SelectedGroupOption?.Value ?? ResultGroupMode.File) switch
     {
@@ -643,11 +681,13 @@ public sealed partial class SearchViewModel : ObservableObject, IDisposable
         .Where(option => option.IsSelected)
         .Select(option => option.DisplayName));
 
-    public string QueryPlaceholderText => IsContentSearch
-        ? "Search text or fields like type:pdf modified:last-month"
-        : CurrentSearchTargets.Contains(SearchTarget.Content)
-            ? "Search contents, file names, or folder names"
-            : "Search file or folder names";
+    public string QueryPlaceholderText => IsSemanticMode
+        ? "Describe what you want to find"
+        : IsContentSearch
+            ? "Search text or fields like type:pdf modified:last-month"
+            : CurrentSearchTargets.Contains(SearchTarget.Content)
+                ? "Search contents, file names, or folder names"
+                : "Search file or folder names";
 
     private string ResultItemNounSingular => IsContentSearch && !_hasMailResults ? "file" : "item";
     private string ResultItemNounPlural => IsContentSearch && !_hasMailResults ? "files" : "items";
@@ -868,6 +908,9 @@ public sealed partial class SearchViewModel : ObservableObject, IDisposable
 
     private void NotifySearchTargetsChanged()
     {
+        if (IsSemanticMode && !IsContentSearch)
+            SearchMode = QueryMode.Unified;
+
         OnPropertyChanged(nameof(CurrentSearchTargets));
         OnPropertyChanged(nameof(CurrentSearchTarget));
         OnPropertyChanged(nameof(IsContentSearch));
@@ -987,6 +1030,8 @@ public sealed partial class SearchViewModel : ObservableObject, IDisposable
         EnableDocumentExtraction = true;
         EnableImageOcr = false;
         UseIndex = false;
+        SemanticMinimumScore = SemanticSearchOptions.DefaultMinimumScore;
+        SemanticMaximumResults = SemanticSearchOptions.DefaultMaximumResults;
     }
 
     [RelayCommand]
@@ -1280,6 +1325,7 @@ public sealed partial class SearchViewModel : ObservableObject, IDisposable
         _filesByPath.Clear();
         _hasMailResults = false;
         Files.Clear();
+        HasSemanticResults = IsSemanticMode;
         SelectedFile = null;
         PreviewContent = string.Empty;
         ImageOcrPreview = null;
@@ -1326,6 +1372,9 @@ public sealed partial class SearchViewModel : ObservableObject, IDisposable
                 _status.Text = message;
             });
             var searchTargets = CurrentSearchTargets;
+            var semanticOptions = IsSemanticMode
+                ? new SemanticSearchOptions(SemanticMinimumScore, SemanticMaximumResults)
+                : null;
 
             // Consume the hit stream on the thread pool and flush to the UI
             // in timed batches. The hand-off channel is bounded so the engine
@@ -1354,7 +1403,8 @@ public sealed partial class SearchViewModel : ObservableObject, IDisposable
                             routeProgress.Report,
                             QueryText,
                             SearchMode,
-                            searchTarget);
+                            searchTarget,
+                            semanticOptions);
 
                         await foreach (var hit in _searcher.SearchAsync(request, token).ConfigureAwait(false))
                         {
@@ -1714,6 +1764,8 @@ public sealed partial class SearchViewModel : ObservableObject, IDisposable
             EnableImageOcr = EnableImageOcr,
             SkipUnknownFileTypes = SkipUnknownFileTypes,
             UseIndex = UseIndex,
+            SemanticMinimumScore = SemanticMinimumScore,
+            SemanticMaximumResults = SemanticMaximumResults,
             SearchTarget = legacySearchTarget,
             SearchTargets = searchTargets.ToList(),
             MinSizeKB = MinSizeKB,
@@ -1736,12 +1788,13 @@ public sealed partial class SearchViewModel : ObservableObject, IDisposable
         FileNamePattern = search.FileNamePattern;
         ExcludeFileNamePattern = search.ExcludeFileNamePattern;
         IncludeSubfolders = search.IncludeSubfolders;
-        SearchMode = search.SearchMode;
         MatchCase = search.MatchCase;
         EnableDocumentExtraction = search.EnableDocumentExtraction;
         EnableImageOcr = search.EnableImageOcr;
         SkipUnknownFileTypes = search.SkipUnknownFileTypes;
         UseIndex = search.UseIndex;
+        SemanticMinimumScore = search.SemanticMinimumScore;
+        SemanticMaximumResults = search.SemanticMaximumResults;
         SetSearchTargets(search.GetSearchTargets());
         MinSizeKB = Math.Max(0, search.MinSizeKB);
         MaxSizeKB = Math.Max(0, search.MaxSizeKB);
@@ -1750,6 +1803,8 @@ public sealed partial class SearchViewModel : ObservableObject, IDisposable
         ModifiedBeforeEnabled = search.ModifiedBeforeEnabled;
         ModifiedBefore = search.ModifiedBefore == default ? DateTime.Today : search.ModifiedBefore;
         AdditionalPlainTextExtensions = search.AdditionalPlainTextExtensions?.Trim() ?? string.Empty;
+        SearchMode = search.SearchMode;
+        EnsureSemanticSearchOptions();
 
         if (_isInitialized)
             _status.Text = "Saved search loaded.";
@@ -2763,6 +2818,8 @@ public sealed partial class SearchViewModel : ObservableObject, IDisposable
             settings.SkipUnknownFileTypes = SkipUnknownFileTypes;
             settings.EnableImageOcr = EnableImageOcr;
             settings.UseIndex = UseIndex;
+            settings.SemanticMinimumScore = SemanticMinimumScore;
+            settings.SemanticMaximumResults = SemanticMaximumResults;
         });
     }
 
@@ -2792,8 +2849,20 @@ public sealed partial class SearchViewModel : ObservableObject, IDisposable
 
     partial void OnSearchModeChanged(QueryMode value)
     {
+        EnsureSemanticSearchOptions();
         OnPropertyChanged(nameof(IsRegexMode));
+        OnPropertyChanged(nameof(IsSemanticMode));
+        OnPropertyChanged(nameof(QueryPlaceholderText));
         RefreshQueryChips();
+    }
+
+    private void EnsureSemanticSearchOptions()
+    {
+        if (!IsSemanticMode)
+            return;
+
+        SetSearchTargets([SearchTarget.Content]);
+        UseIndex = true;
     }
 
     partial void OnEnableDocumentExtractionChanged(bool value) =>
@@ -2818,6 +2887,9 @@ public sealed partial class SearchViewModel : ObservableObject, IDisposable
 
     partial void OnUseIndexChanged(bool value)
     {
+        if (!value && IsSemanticMode)
+            SearchMode = QueryMode.Unified;
+
         OnPropertyChanged(nameof(IndexSummaryText));
         if (_isInitialized)
             SaveOptions();

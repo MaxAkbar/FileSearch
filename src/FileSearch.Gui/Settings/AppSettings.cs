@@ -1,4 +1,5 @@
 using System.Collections.Generic;
+using FileSearch.Core.Engine;
 using FileSearch.Core.Indexing;
 using FileSearch.Gui.Services;
 
@@ -60,6 +61,10 @@ public sealed class AppSettings
     public bool EnableLocalReranker { get; set; } = true;
 
     public bool UseIndex { get; set; }
+
+    public double SemanticMinimumScore { get; set; } = SemanticSearchOptions.DefaultMinimumScore;
+
+    public int SemanticMaximumResults { get; set; } = SemanticSearchOptions.DefaultMaximumResults;
 
     public QuickSearchHotkey QuickSearchHotkey { get; set; } = QuickSearchHotkey.WinShiftF;
 

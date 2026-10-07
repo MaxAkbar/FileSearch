@@ -845,6 +845,8 @@ public sealed partial class HistoryViewModel : ObservableObject
             EnableImageOcr = search.EnableImageOcr,
             SkipUnknownFileTypes = search.SkipUnknownFileTypes,
             UseIndex = search.UseIndex,
+            SemanticMinimumScore = SemanticSearchOptions.NormalizeMinimumScore(search.SemanticMinimumScore),
+            SemanticMaximumResults = SemanticSearchOptions.NormalizeMaximumResults(search.SemanticMaximumResults),
             MinSizeKB = Math.Max(0, search.MinSizeKB),
             MaxSizeKB = Math.Max(0, search.MaxSizeKB),
             ModifiedAfterEnabled = search.ModifiedAfterEnabled,

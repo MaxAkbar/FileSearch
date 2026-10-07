@@ -62,7 +62,9 @@ public sealed class SemanticIndexStatusService : ISemanticIndexStatusService
                 0,
                 0,
                 0,
-                UnavailableTextEmbedder.Message);
+                string.IsNullOrWhiteSpace(_modelPacks.SelectedModelPackId)
+                    ? UnavailableTextEmbedder.Message
+                    : $"Selected model '{_modelPacks.SelectedModelPackId}' is not installed. Use Install model first.");
         }
 
         if (!selected.IsUsable)
@@ -80,7 +82,7 @@ public sealed class SemanticIndexStatusService : ISemanticIndexStatusService
         }
 
         var fileIds = await _contentUnits.GetFileIdsForRootAsync(root, cancellationToken).ConfigureAwait(false);
-        var contentUnitIds = await _contentUnits.GetContentUnitIdsForRootAsync(root, cancellationToken).ConfigureAwait(false);
+        var contentUnitIds = await _contentUnits.GetSemanticContentUnitIdsForRootAsync(root, cancellationToken).ConfigureAwait(false);
         if (fileIds.Count == 0)
         {
             return CreateStatus(

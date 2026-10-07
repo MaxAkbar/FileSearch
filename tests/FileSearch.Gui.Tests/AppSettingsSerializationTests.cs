@@ -38,6 +38,8 @@ public sealed class AppSettingsSerializationTests
             OcrMaxPdfPages = 100,
             SemanticModelPackId = "bge-small-en-v1.5-onnx",
             SemanticModelPacksDirectory = @"C:\FileSearch\Models",
+            SemanticMinimumScore = 0.68,
+            SemanticMaximumResults = 10,
             EnableLocalReranker = false,
             QuickSearchIncludeContent = false,
             QuickSearchFolderPath = @"C:\Quick",
@@ -68,6 +70,8 @@ public sealed class AppSettingsSerializationTests
                     EnableImageOcr = true,
                     SkipUnknownFileTypes = true,
                     UseIndex = true,
+                    SemanticMinimumScore = 0.72,
+                    SemanticMaximumResults = 3,
                     MinSizeKB = 4,
                     MaxSizeKB = 128,
                     ModifiedAfterEnabled = true,
@@ -94,6 +98,8 @@ public sealed class AppSettingsSerializationTests
                     Search = new SavedSearchSettings
                     {
                         QueryText = "daily",
+                        SemanticMinimumScore = 0.80,
+                        SemanticMaximumResults = 5,
                         SearchPath = @"C:\Daily",
                         FileNamePattern = "*.md",
                         SearchTarget = SearchTarget.FolderNames,
@@ -197,6 +203,8 @@ public sealed class AppSettingsSerializationTests
         Assert.Equal("en-US", loaded.OcrLanguageTag);
         Assert.Equal(100, loaded.OcrMaxPdfPages);
         Assert.Equal("bge-small-en-v1.5-onnx", loaded.SemanticModelPackId);
+        Assert.Equal(0.68, loaded.SemanticMinimumScore);
+        Assert.Equal(10, loaded.SemanticMaximumResults);
         Assert.Equal(@"C:\FileSearch\Models", loaded.SemanticModelPacksDirectory);
         Assert.False(loaded.EnableLocalReranker);
         Assert.False(loaded.QuickSearchIncludeContent);
@@ -221,6 +229,8 @@ public sealed class AppSettingsSerializationTests
         Assert.True(savedSearch.EnableImageOcr);
         Assert.True(savedSearch.SkipUnknownFileTypes);
         Assert.True(savedSearch.UseIndex);
+        Assert.Equal(0.72, savedSearch.SemanticMinimumScore);
+        Assert.Equal(3, savedSearch.SemanticMaximumResults);
         Assert.Equal(4, savedSearch.MinSizeKB);
         Assert.Equal(128, savedSearch.MaxSizeKB);
         Assert.True(savedSearch.ModifiedAfterEnabled);
@@ -236,6 +246,8 @@ public sealed class AppSettingsSerializationTests
         var workspace = Assert.Single(loaded.Workspaces);
         Assert.Equal("Daily", workspace.Name);
         Assert.Equal("daily", workspace.Search.QueryText);
+        Assert.Equal(0.80, workspace.Search.SemanticMinimumScore);
+        Assert.Equal(5, workspace.Search.SemanticMaximumResults);
         Assert.Equal(@"C:\Daily", workspace.Search.SearchPath);
         Assert.Equal("*.md", workspace.Search.FileNamePattern);
         Assert.Equal(SearchTarget.FolderNames, workspace.Search.SearchTarget);
@@ -291,6 +303,17 @@ public sealed class AppSettingsSerializationTests
         Assert.Equal(
             [SearchTarget.FileNames, SearchTarget.FolderNames],
             search.GetSearchTargets());
+    }
+
+    [Fact]
+    public void OlderSettingsDefaultSemanticLimitsWithoutMigration()
+    {
+        var settings = JsonSerializer.Deserialize<AppSettings>("{}", s_options)!;
+        var search = JsonSerializer.Deserialize<SavedSearchSettings>("{}", s_options)!;
+        Assert.Equal(0.60, settings.SemanticMinimumScore);
+        Assert.Equal(25, settings.SemanticMaximumResults);
+        Assert.Equal(0.60, search.SemanticMinimumScore);
+        Assert.Equal(25, search.SemanticMaximumResults);
     }
 
     [Fact]

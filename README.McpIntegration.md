@@ -532,13 +532,34 @@ Start a Codex session and run `/mcp` to confirm the server connected and lists t
 }
 ```
 
-### ChatGPT (desktop app and web) — remote connectors only
+### ChatGPT — Secure MCP Tunnel or HTTPS
 
-ChatGPT's MCP support (Developer mode → custom connectors, available on Pro/Plus/Business/Enterprise plans) accepts **remote HTTPS servers only** and calls them **from OpenAI's cloud**. It cannot launch or reach a local stdio process, so this server cannot be attached to the ChatGPT desktop app the way it attaches to Claude Desktop, Codex, or LM Studio.
+FileSearch exposes stdio, so ChatGPT needs a transport connection to the local process. OpenAI now documents **Secure MCP Tunnel** for private stdio/HTTP servers, alongside public HTTPS endpoints. The older claim that ChatGPT always requires a public endpoint is obsolete. Provider requirements were checked on 2026-10-03; access depends on your account and workspace.
 
-Technically you can bridge: run a stdio-to-Streamable-HTTP gateway (for example `mcp-remote`, `supergateway`, or `mcp-proxy`) in front of `FileSearch.Mcp.exe` and expose it through a tunnel (ngrok, Cloudflare Tunnel) so OpenAI's servers can reach it. **For this particular server that is discouraged**: it publishes an interface to your local files on the public internet, where the only protections are the tunnel's authentication and the `--root` allow-list. If you do it anyway, put OAuth or at minimum a long bearer token on the gateway, scope `--root` to a single low-sensitivity folder, and treat the tunnel as production attack surface. On the positive side, ChatGPT honors `readOnlyHint`, and every FileSearch tool carries it, so the connector's tools are all treated as read-only.
+#### Secure MCP Tunnel
 
-For OpenAI-ecosystem use today, Codex (above) is the supported local path, and the Agents SDK (below) is the path for your own applications.
+1. In OpenAI Platform tunnel settings, create a tunnel associated with your ChatGPT workspace. You need tunnel-management permission to create it, tunnel-use permission to run it, and ChatGPT developer-mode access.
+2. Download `tunnel-client` through Platform tunnel settings. Supply its runtime API key through `CONTROL_PLANE_API_KEY` and configure a stdio launch for FileSearch. This Windows example assumes the portable executable is in `C:\FileSearch`; replace the paths and tunnel ID:
+
+```powershell
+$env:CONTROL_PLANE_API_KEY = '<runtime-api-key>'
+tunnel-client init --sample sample_mcp_stdio_local --profile filesearch --tunnel-id tunnel_REPLACE_ME --mcp-command 'C:/FileSearch/FileSearch.Mcp.exe --root C:/Users/you/Documents'
+tunnel-client doctor --profile filesearch --explain
+tunnel-client run --profile filesearch
+```
+
+The client must keep running. It forwards requests over an outbound connection; FileSearch needs no public listener. Quote paths containing spaces inside the launch string. See [OpenAI's Secure MCP Tunnel guide](https://developers.openai.com/api/docs/guides/secure-mcp-tunnels).
+
+3. In ChatGPT, enable **Settings → Security and login → Developer mode**. Open **ChatGPT Plugins**, create a connection, choose **Tunnel**, and select the tunnel or enter its ID.
+4. Confirm discovery of `index_status`, `search_index`, `search_content`, `extract_text`, and `index_failures`. Start a conversation with the connection selected and ask it to list indexed locations, search an allowed folder, and read the matching passages. See [OpenAI's connection and testing guide](https://developers.openai.com/plugins/deploy/connect-chatgpt).
+
+If a tunnel is missing, check its workspace association and your tunnel-use permission. These instructions follow official provider documentation; a live ChatGPT tunnel connection has not been validated for this project.
+
+#### HTTPS alternative and other OpenAI clients
+
+An authenticated stdio-to-Streamable-HTTP bridge can expose FileSearch through an HTTPS MCP endpoint. FileSearch itself does not include that bridge. Restrict the allowed roots and authenticate access to the endpoint. Secure MCP Tunnel is the documented private-server path; public plugin distribution still requires a public endpoint, as described in [OpenAI's MCP quickstart](https://developers.openai.com/plugins/build/app-quickstart).
+
+For local OpenAI use without a ChatGPT tunnel, use [Codex](#openai-codex-cli-ide-extension-and-codex-app) or the [Agents SDK](#python--openai-agents-sdk). The MCP tools expose plain, regex, Boolean, and Unified searches; they do not expose the GUI's Semantic mode or relevance controls.
 
 ### Any other MCP host
 

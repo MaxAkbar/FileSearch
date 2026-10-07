@@ -592,6 +592,42 @@ public sealed class IndexingServiceTests
         }
     }
 
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task RootRefreshRetainsSemanticFailureInLocationStatus(bool semanticOnly)
+    {
+        var index = new BlockingFileIndex { CompleteRefreshImmediately = true };
+        var semantic = new RecordingSemanticIndexingCoordinator(new OperationRecorder())
+        {
+            RootFailure = new InvalidDataException("Indexed content cannot be decoded."),
+        };
+        var queue = new IndexQueue(index);
+        var service = new IndexingService(index, queue, new IndexWatcherService(queue), semanticIndexing: semantic);
+        var root = Path.Combine(Path.GetTempPath(), "filesearch-semantic-failure-" + Guid.NewGuid().ToString("N"));
+        var normalizedRoot = IndexPath.NormalizeRoot(root);
+
+        await service.StartAsync(Array.Empty<IndexedLocation>(), TestContext.Current.CancellationToken);
+        try
+        {
+            if (semanticOnly)
+                await service.EnqueueSemanticRootRefreshAsync(root, new WalkerOptions(), IndexQueuePriority.High, TestContext.Current.CancellationToken);
+            else
+                await service.EnqueueRootRefreshAsync(root, new WalkerOptions(), IndexQueuePriority.High, TestContext.Current.CancellationToken);
+
+            await WaitUntilAsync(() => !service.CurrentStatus.IsProcessing &&
+                service.CurrentStatus.RootStatusDetails is { } details &&
+                details.TryGetValue(normalizedRoot, out var detail) &&
+                detail.Contains("Smart Search rebuild failed", StringComparison.Ordinal), TestContext.Current.CancellationToken);
+
+            Assert.Contains("Indexed content cannot be decoded", service.CurrentStatus.RootStatusDetails![normalizedRoot], StringComparison.Ordinal);
+        }
+        finally
+        {
+            await service.StopAsync(TestContext.Current.CancellationToken);
+        }
+    }
+
     [Fact]
     public async Task PauseDefersProcessingUntilResume()
     {
@@ -765,6 +801,8 @@ public sealed class IndexingServiceTests
     {
         private readonly object _sync = new();
 
+        public Exception? RootFailure { get; init; }
+
         public List<string> UpsertedFiles { get; } = new();
 
         public List<string> DeletedFiles { get; } = new();
@@ -854,6 +892,8 @@ public sealed class IndexingServiceTests
             operations.Add("semantic-upsert-root");
             lock (_sync)
                 UpsertedRoots.Add(IndexPath.NormalizeRoot(root));
+            if (RootFailure is not null)
+                return Task.FromException<SemanticRootIndexBuildResult>(RootFailure);
             return Task.FromResult(SemanticRootIndexBuildResult.Completed(
                 IndexPath.NormalizeRoot(root),
                 fileCount: 1,

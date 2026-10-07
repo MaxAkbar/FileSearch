@@ -15,7 +15,8 @@ public sealed class QueryPlanner : IQueryPlanner
         var expression = request.Expression;
         var contentExpression = expression;
 
-        AddProvider(providers, CandidateProviderKind.Metadata, RetrievalLayer.Instant);
+        if (request.Mode != QueryMode.Semantic)
+            AddProvider(providers, CandidateProviderKind.Metadata, RetrievalLayer.Instant);
 
         if (expression is UnifiedQuery unified)
         {
@@ -37,6 +38,10 @@ public sealed class QueryPlanner : IQueryPlanner
                     RetrievalLayer.Smart));
             }
         }
+
+        // Dedicated semantic mode must not become a match-all metadata or OCR scan.
+        if (request.Mode == QueryMode.Semantic)
+            return new SearchPlan(request, providers.Values.ToArray(), explanations);
 
         if (request.SearchTarget != SearchTarget.Content)
         {

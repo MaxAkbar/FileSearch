@@ -1782,20 +1782,25 @@ internal static partial class IndexTables
     public static async Task<IReadOnlyList<long>> ReadContentUnitIdsForRootAsync(
         DbExec db,
         long rootId,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        bool includeEmpty = true)
     {
         var ids = new List<long>();
         var fileIds = await ReadCurrentFileIdsForRootAsync(db, rootId, IsOkStatus, cancellationToken).ConfigureAwait(false);
 
         foreach (var batch in fileIds.Chunk(DeleteIdBatchSize))
         {
+            var columns = includeEmpty ? "content_unit_id" : "content_unit_id, content";
             await using var result = await db.ExecuteAsync(
-                Sql.Format(
-                    $"SELECT content_unit_id FROM lines WHERE file_id IN ({new Sql.IdList(batch)}) ORDER BY id"),
+                $"SELECT {columns} FROM lines " +
+                Sql.Format($"WHERE file_id IN ({new Sql.IdList(batch)}) ORDER BY id"),
                 cancellationToken).ConfigureAwait(false);
 
             while (await result.MoveNextAsync(cancellationToken).ConfigureAwait(false))
-                ids.Add(result.Current[0].AsInteger);
+            {
+                if (includeEmpty || !string.IsNullOrWhiteSpace(result.Current[1].AsText))
+                    ids.Add(result.Current[0].AsInteger);
+            }
         }
 
         return ids;

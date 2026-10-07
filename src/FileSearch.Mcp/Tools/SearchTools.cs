@@ -54,7 +54,7 @@ internal sealed class SearchTools
         string query,
         [Description("Absolute folder paths to search (1-8). Must lie under the server's allowed roots.")]
         string[] roots,
-        [Description("Query mode: plain (default), regex, boolean, or unified.")]
+        [Description("Query mode: plain (default), regex, boolean, unified, or semantic (indexed search only).")]
         string? mode = null,
         [Description("Case-sensitive matching. Default false.")]
         bool caseSensitive = false,
@@ -83,6 +83,8 @@ internal sealed class SearchTools
         CancellationToken cancellationToken = default)
     {
         var parsedMode = ToolArguments.ParseMode(mode);
+        if (parsedMode == QueryMode.Semantic)
+            throw new McpException("Semantic search requires an existing Smart Search index. Use search_index with mode semantic.");
         var parsedTarget = ToolArguments.ParseTarget(target);
         var expression = ToolArguments.BuildQuery(_queryFactory, query, parsedMode, caseSensitive);
         var allowedRoots = await ValidateSearchRootsAsync(roots, cancellationToken).ConfigureAwait(false);
@@ -135,7 +137,7 @@ internal sealed class SearchTools
         string query,
         [Description("Absolute indexed folder paths to search (1-8). Omit to search all indexed locations.")]
         string[]? roots = null,
-        [Description("Query mode: plain (default), regex, boolean, or unified.")]
+        [Description("Query mode: plain (default), regex, boolean, unified, or semantic (indexed search only).")]
         string? mode = null,
         [Description("Case-sensitive matching. Default false.")]
         bool caseSensitive = false,
@@ -175,7 +177,8 @@ internal sealed class SearchTools
             Status: status.Enqueue,
             RawQuery: query,
             Mode: parsedMode,
-            SearchTarget: SearchTarget.Content);
+            SearchTarget: SearchTarget.Content,
+            SemanticOptions: parsedMode == QueryMode.Semantic ? EmbeddingModelSettings.LoadSearchOptions() : null);
 
         var profiles = await LoadIndexProfilesAsync(cancellationToken).ConfigureAwait(false);
         var coverage = new List<IndexCoverageDocument>(searchRoots.Count);
@@ -218,6 +221,11 @@ internal sealed class SearchTools
             stopwatch.Elapsed, status, coverage));
     }
 
+    private IAsyncEnumerable<Hit> SearchIndexedRequestAsync(SearchRequest request, CancellationToken cancellationToken) =>
+        request.Expression is UnifiedQuery { Filters.SemanticTerms.Count: > 0 }
+            ? _searcher.SearchAsync(request, cancellationToken)
+            : _indexSearch.SearchAsync(request, cancellationToken);
+
     private async IAsyncEnumerable<Hit> SearchCoveredRootsAsync(
         List<SearchRequest> coveredRequests,
         [EnumeratorCancellation] CancellationToken cancellationToken)
@@ -228,7 +236,7 @@ internal sealed class SearchTools
         if (coveredRequests.Count == 1)
         {
             var rootRequest = coveredRequests[0];
-            await foreach (var hit in _indexSearch.SearchAsync(rootRequest, cancellationToken).ConfigureAwait(false))
+            await foreach (var hit in SearchIndexedRequestAsync(rootRequest, cancellationToken).ConfigureAwait(false))
                 yield return hit;
             yield break;
         }
@@ -255,7 +263,7 @@ internal sealed class SearchTools
                         },
                         async (rootRequest, token) =>
                         {
-                            await foreach (var hit in _indexSearch.SearchAsync(rootRequest, token).ConfigureAwait(false))
+                            await foreach (var hit in SearchIndexedRequestAsync(rootRequest, token).ConfigureAwait(false))
                                 await channel.Writer.WriteAsync(hit, token).ConfigureAwait(false);
                         })
                     .ConfigureAwait(false);

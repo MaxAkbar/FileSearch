@@ -16,6 +16,7 @@ public sealed class ToolArgumentsTests
     [InlineData("Regex", QueryMode.Regex)]
     [InlineData("boolean", QueryMode.Boolean)]
     [InlineData("unified", QueryMode.Unified)]
+    [InlineData("semantic", QueryMode.Semantic)]
     public void ParseMode_AcceptsCliSpellings(string? value, QueryMode expected)
     {
         Assert.Equal(expected, ToolArguments.ParseMode(value));
@@ -26,7 +27,7 @@ public sealed class ToolArgumentsTests
     {
         var ex = Assert.Throws<McpException>(() => ToolArguments.ParseMode("fancy"));
 
-        Assert.Contains("plain, regex, boolean, or unified", ex.Message, StringComparison.Ordinal);
+        Assert.Contains("plain, regex, boolean, unified, or semantic", ex.Message, StringComparison.Ordinal);
     }
 
     [Theory]

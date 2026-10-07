@@ -46,6 +46,7 @@ builder.Services.AddSingleton(new SearchOptions
 // TryAdd of the real coordinator (which persists pending index changes
 // on cache-miss searches) is skipped.
 builder.Services.AddSingleton<IIndexingSearchCoordinator>(new NoOpIndexingSearchCoordinator());
+builder.Services.AddSingleton(EmbeddingModelSettings.Load());
 builder.Services.AddFileSearchCore();
 // Extractor parity with the GUI/CLI/tray hosts; without it, index coverage
 // checks reject every root ("extractor versions are out of date").

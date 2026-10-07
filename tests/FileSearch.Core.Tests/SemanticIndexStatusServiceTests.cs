@@ -50,7 +50,7 @@ public sealed class SemanticIndexStatusServiceTests
             TestContext.Current.CancellationToken);
         var service = new SemanticIndexStatusService(
             new StubModelPackStore(new InstalledEmbeddingModelPack(manifest, @"C:\Models\test-model", true, "Installed.")),
-            new StubContentUnitReader(new long[] { 7 }, new long[] { 10, 11 }),
+            new StubContentUnitReader(new long[] { 7 }, new long[] { 10, 11, 12 }, new long[] { 10, 11 }),
             vectorIndex);
 
         var status = await service.GetRootStatusAsync(@"C:\Docs", TestContext.Current.CancellationToken);
@@ -100,6 +100,38 @@ public sealed class SemanticIndexStatusServiceTests
         Assert.Contains("not built", status.Message, StringComparison.OrdinalIgnoreCase);
     }
 
+    [Theory]
+    [InlineData("id")]
+    [InlineData("version")]
+    [InlineData("variant")]
+    [InlineData("prefix")]
+    public async Task SameDimensionVectorsFromAnotherIdentityDoNotReportReady(string changedField)
+    {
+        var directory = Path.Combine(Path.GetTempPath(), "FileSearch.ModelSwitchTests", Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(directory);
+        try
+        {
+            var previous = new EmbeddingModelPackManifest { FormatVersion = 2, Id = "document-model", Version = "1", Dimension = 3, QuantizationVersion = "q4" };
+            using var vectors = new FileVectorIndex(new VectorIndexOptions { IndexPath = Path.Combine(directory, "vectors.json") });
+            await vectors.UpsertAsync(new[] { new VectorDocument("chunk", VectorDocumentKind.ContentChunk, 7, new long[] { 10 },
+                new float[] { 1, 0, 0 }, previous.ToModelInfo(), "1", "checksum", root: @"C:\Docs") }, TestContext.Current.CancellationToken);
+            var selected = changedField switch
+            {
+                "id" => previous with { Id = "another-model" },
+                "version" => previous with { Version = "2" },
+                "variant" => previous with { QuantizationVersion = "q8" },
+                _ => previous with { DocumentPrefix = "changed " },
+            };
+            var status = new SemanticIndexStatusService(new StubModelPackStore(new(selected, directory, true, "Installed")),
+                new StubContentUnitReader(new long[] { 7 }, new long[] { 10 }), vectors);
+            var root = await status.GetRootStatusAsync(@"C:\Docs", TestContext.Current.CancellationToken);
+            Assert.False(root.IsReady);
+            Assert.Equal(0, root.VectorCount);
+            Assert.Equal(1, (await vectors.GetStatsAsync(new long[] { 10 }, TestContext.Current.CancellationToken)).DocumentCount);
+        }
+        finally { Directory.Delete(directory, recursive: true); }
+    }
+
     private sealed class StubModelPackStore(InstalledEmbeddingModelPack? selected) : IEmbeddingModelPackStore
     {
         public string ModelPacksDirectory => @"C:\Models";
@@ -116,12 +148,16 @@ public sealed class SemanticIndexStatusServiceTests
 
     private sealed class StubContentUnitReader(
         IReadOnlyList<long>? fileIds = null,
-        IReadOnlyList<long>? contentUnitIds = null) : IContentUnitReader
+        IReadOnlyList<long>? contentUnitIds = null,
+        IReadOnlyList<long>? semanticContentUnitIds = null) : IContentUnitReader
     {
         public Task<IReadOnlyList<long>> GetFileIdsForRootAsync(string root, CancellationToken cancellationToken) =>
             Task.FromResult(fileIds ?? Array.Empty<long>());
 
         public Task<IReadOnlyList<long>> GetContentUnitIdsForRootAsync(string root, CancellationToken cancellationToken) =>
             Task.FromResult(contentUnitIds ?? Array.Empty<long>());
+
+        public Task<IReadOnlyList<long>> GetSemanticContentUnitIdsForRootAsync(string root, CancellationToken cancellationToken) =>
+            Task.FromResult(semanticContentUnitIds ?? contentUnitIds ?? Array.Empty<long>());
     }
 }

@@ -9,6 +9,23 @@ namespace FileSearch.Core.Tests;
 public sealed class EmbeddingModelPackTests
 {
     [Fact]
+    public void BundledLicenseResourcesMatchPinnedPackBytes()
+    {
+        var manifest = new EmbeddingModelPackCatalog().GetById("embeddinggemma-300m-q4-onnx")!.Manifest;
+        foreach (var file in manifest.Files.Where(file => file.DownloadUrl.StartsWith("embedded:", StringComparison.Ordinal)))
+        {
+            var bytes = Encoding.UTF8.GetBytes(EmbeddingLicenseResources.GetText(file.DownloadUrl[9..]));
+            Assert.Equal(file.SizeBytes, bytes.LongLength);
+            Assert.Equal(file.Sha256, Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(bytes)).ToLowerInvariant());
+        }
+        string[] names = ["Gemma-NOTICE.txt", "Gemma-Terms-of-Use.txt", "Gemma-Prohibited-Use-Policy.txt",
+            "Tokenizers-DotNet-MIT.txt", "HuggingFace-Tokenizers-Apache-2.0.txt", "Oniguruma-BSD.txt", "Mimalloc-MIT.txt"];
+        foreach (var name in names)
+            Assert.Equal(Encoding.UTF8.GetBytes(EmbeddingLicenseResources.GetText(name)),
+                File.ReadAllBytes(Path.Combine(AppContext.BaseDirectory, "docs", "licenses", name)));
+    }
+
+    [Fact]
     public void OnnxTextEmbedder_BatchRangesRespectPaddedTokenBudget()
     {
         var ranges = OnnxTextEmbedder.CreateBatchRanges(
@@ -27,6 +44,109 @@ public sealed class EmbeddingModelPackTests
     }
 
     private static readonly JsonSerializerOptions s_jsonOptions = new() { WriteIndented = true };
+
+    [Fact]
+    public void GemmaCatalogPinsSupportedArtifactsAndFullCompatibilityIdentity()
+    {
+        var entry = new EmbeddingModelPackCatalog().GetById("embeddinggemma-300m-q4-onnx")!;
+        var manifest = entry.Manifest;
+        Assert.False(entry.IsRecommended);
+        Assert.Equal(768, manifest.Dimension);
+        Assert.Equal(2048, manifest.MaxTokens);
+        Assert.Equal("sentence_embedding", manifest.OutputName);
+        Assert.Equal(EmbeddingModelPooling.SentenceEmbedding, manifest.Pooling);
+        Assert.Equal("huggingface-gemma", manifest.TokenizerKind);
+        Assert.True(manifest.RequiresLicenseAcceptance);
+        Assert.Equal("Gemma Terms of Use", manifest.License);
+        Assert.All(manifest.Files, file =>
+        {
+            Assert.Equal(64, file.Sha256.Length);
+            Assert.True(file.SizeBytes > 0);
+            Assert.DoesNotContain("fp16", file.RelativePath);
+            if (!file.DownloadUrl.StartsWith("embedded:", StringComparison.Ordinal))
+                Assert.Contains(manifest.Version, file.DownloadUrl, StringComparison.Ordinal);
+        });
+        Assert.Contains(manifest.Files, file => file.RelativePath == "onnx/model_q4.onnx_data");
+        Assert.Contains(manifest.Files, file => file.RelativePath == "NOTICE");
+        var stamp = EmbeddingModelPackValidationStamp.FromResult(manifest, EmbeddingModelPackValidationResult.Passed("validated"));
+        foreach (var changed in new[]
+        {
+            manifest with { QueryPrefix = "changed " }, manifest with { DocumentPrefix = "changed " },
+            manifest with { OutputName = "last_hidden_state" }, manifest with { QuantizationVersion = "q8" },
+            manifest with { TokenizerKind = "bert-wordpiece" }, manifest with { Dimension = 512 },
+        })
+        {
+            Assert.False(stamp.Matches(changed));
+            Assert.NotEqual(manifest.ToModelInfo(), changed.ToModelInfo());
+        }
+    }
+
+    [Fact]
+    public async Task FailedReinstallPreservesPreviouslyValidatedPack()
+    {
+        var directory = CreateTempDirectory();
+        try
+        {
+            var manifest = CreateManifest("atomic-test");
+            var store = new EmbeddingModelPackStore(new EmbeddingModelPackOptions { ModelPacksDirectory = directory, SelectedModelPackId = manifest.Id });
+            using var http = new HttpClient(new StaticHttpMessageHandler("file contents"));
+            var validator = new StubValidator(EmbeddingModelPackValidationResult.Passed("validated"));
+            using var first = new EmbeddingModelPackInstaller(new StubCatalog(new EmbeddingModelPackCatalogEntry(manifest, false, "1 KB")), store, http, validator);
+            await first.InstallAsync(manifest.Id, null, TestContext.Current.CancellationToken);
+            var changed = manifest with { Files = manifest.Files.Select(file => file with { Sha256 = new string('0', 64) }).ToArray() };
+            using var second = new EmbeddingModelPackInstaller(new StubCatalog(new EmbeddingModelPackCatalogEntry(changed, false, "1 KB")), store, http, validator);
+            await Assert.ThrowsAsync<InvalidOperationException>(() => second.InstallAsync(manifest.Id, null, TestContext.Current.CancellationToken));
+            var installed = await store.GetSelectedPackAsync(TestContext.Current.CancellationToken);
+            Assert.NotNull(installed);
+            Assert.True(installed.IsUsable);
+            Assert.Equal("file contents", await File.ReadAllTextAsync(installed.ModelPath, TestContext.Current.CancellationToken));
+            Assert.Single(Directory.GetDirectories(directory));
+        }
+        finally { Directory.Delete(directory, recursive: true); }
+    }
+
+    [Fact]
+    public async Task GemmaLicenseMustBeAcceptedBeforeAnyDownload()
+    {
+        var directory = CreateTempDirectory();
+        try
+        {
+            using var http = new HttpClient(new ThrowingHttpMessageHandler(new Exception("Must not download")));
+            using var installer = new EmbeddingModelPackInstaller(new EmbeddingModelPackCatalog(),
+                new EmbeddingModelPackStore(new EmbeddingModelPackOptions { ModelPacksDirectory = directory }), http);
+            var error = await Assert.ThrowsAsync<InvalidOperationException>(() => installer.InstallAsync("embeddinggemma-300m-q4-onnx", null, TestContext.Current.CancellationToken));
+            Assert.Contains("Review and accept", error.Message, StringComparison.Ordinal);
+            Assert.Empty(Directory.GetDirectories(directory));
+        }
+        finally { Directory.Delete(directory, recursive: true); }
+    }
+
+    [Fact]
+    public async Task MissingExternalWeightsAndUnvalidatedVersionTwoPackAreUnavailable()
+    {
+        var directory = CreateTempDirectory();
+        try
+        {
+            var manifest = CreateManifest("artifact-test") with { FormatVersion = 2 };
+            var packDirectory = Path.Combine(directory, manifest.Id);
+            Directory.CreateDirectory(Path.Combine(packDirectory, "onnx"));
+            await File.WriteAllTextAsync(Path.Combine(packDirectory, manifest.ModelFile), "model", TestContext.Current.CancellationToken);
+            await File.WriteAllTextAsync(Path.Combine(packDirectory, manifest.VocabularyFile), "vocab", TestContext.Current.CancellationToken);
+            await File.WriteAllTextAsync(Path.Combine(packDirectory, EmbeddingModelPackManifest.FileName), JsonSerializer.Serialize(manifest), TestContext.Current.CancellationToken);
+            var store = new EmbeddingModelPackStore(new EmbeddingModelPackOptions { ModelPacksDirectory = directory, SelectedModelPackId = manifest.Id });
+            var selected = await store.GetSelectedPackAsync(TestContext.Current.CancellationToken);
+            Assert.NotNull(selected);
+            Assert.False(selected.IsUsable);
+            Assert.Contains("Smoke validation has not run", selected.Status, StringComparison.Ordinal);
+            manifest = manifest with { Files = [.. manifest.Files, new("onnx/model.onnx_data", "https://example.invalid/weights")] };
+            await File.WriteAllTextAsync(Path.Combine(packDirectory, EmbeddingModelPackManifest.FileName), JsonSerializer.Serialize(manifest), TestContext.Current.CancellationToken);
+            selected = await store.GetSelectedPackAsync(TestContext.Current.CancellationToken);
+            Assert.NotNull(selected);
+            Assert.False(selected.IsUsable);
+            Assert.Contains("model.onnx_data", selected.Status, StringComparison.Ordinal);
+        }
+        finally { Directory.Delete(directory, recursive: true); }
+    }
 
     [Fact]
     public void Catalog_ExposesRecommendedAndLightweightModelPacks()

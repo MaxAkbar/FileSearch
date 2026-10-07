@@ -25,6 +25,7 @@ internal sealed class FileSearchRepl
     private readonly IWorkflowStore _workflowStore;
     private readonly IWorkflowRunner _workflowRunner;
     private readonly DriveIndexCommands _driveIndex;
+    private readonly DocumentModelCommands _models;
     private readonly CliState _state = new();
     private CancellationTokenSource? _activeCommand;
 
@@ -35,9 +36,11 @@ internal sealed class FileSearchRepl
         IExtractorRegistry extractorRegistry,
         IWorkflowStore workflowStore,
         IWorkflowRunner workflowRunner,
-        IVolumeNameIndex volumeNameIndex)
+        IVolumeNameIndex volumeNameIndex,
+        DocumentModelCommands models)
     {
         _driveIndex = new DriveIndexCommands(volumeNameIndex);
+        _models = models;
         _searcher = searcher;
         _index = index;
         _queryFactory = queryFactory;
@@ -49,19 +52,36 @@ internal sealed class FileSearchRepl
 
     public async Task<int> RunAsync(string[] args)
     {
+        if (args.FirstOrDefault()?.Equals("models", StringComparison.OrdinalIgnoreCase) == true)
+        {
+            using var modelCancellation = new CancellationTokenSource();
+            _activeCommand = modelCancellation;
+            try { return await _models.RunAsync(args.Skip(1).ToArray(), modelCancellation.Token).ConfigureAwait(false); }
+            catch (OperationCanceledException) { return 130; }
+            catch (Exception ex) when (ex is not OperationCanceledException)
+            {
+                Console.Error.WriteLine(ex.Message);
+                return 1;
+            }
+            finally { _activeCommand = null; }
+        }
         if (args.Length > 0 &&
             args[0].Equals("search", StringComparison.OrdinalIgnoreCase))
         {
+            using var searchCancellation = new CancellationTokenSource();
+            _activeCommand = searchCancellation;
             try
             {
-                return await RunOneShotSearchAsync(args.Skip(1).ToArray(), CancellationToken.None)
+                return await RunOneShotSearchAsync(args.Skip(1).ToArray(), searchCancellation.Token)
                     .ConfigureAwait(false);
             }
+            catch (OperationCanceledException) { return 130; }
             catch (Exception ex) when (ex is not OperationCanceledException)
             {
                 Console.Error.WriteLine($"Error: {ex.Message}");
                 return 1;
             }
+            finally { _activeCommand = null; }
         }
 
         if (args.Length > 0 &&
@@ -173,6 +193,9 @@ internal sealed class FileSearchRepl
         var command = tokens[0].ToLowerInvariant();
         switch (command)
         {
+            case "models":
+                await _models.RunAsync(tokens.Skip(1).ToArray(), cancellationToken).ConfigureAwait(false);
+                return true;
             case "exit":
             case "quit":
             case "q":
@@ -337,7 +360,8 @@ internal sealed class FileSearchRepl
             Status: message => statusMessages.Enqueue(message),
             RawQuery: queryText,
             Mode: _state.Mode,
-            SearchTarget: _state.SearchTarget);
+            SearchTarget: _state.SearchTarget,
+            SemanticOptions: _state.Mode == QueryMode.Semantic ? EmbeddingModelSettings.LoadSearchOptions() : null);
 
         await AnsiConsole.Status()
             .Spinner(Spinner.Known.Dots)
@@ -402,7 +426,8 @@ internal sealed class FileSearchRepl
             Status: message => statusMessages.Enqueue(message),
             RawQuery: options.QueryText,
             Mode: options.State.Mode,
-            SearchTarget: options.State.SearchTarget);
+            SearchTarget: options.State.SearchTarget,
+            SemanticOptions: options.State.Mode == QueryMode.Semantic ? EmbeddingModelSettings.LoadSearchOptions() : null);
 
         await foreach (var hit in _searcher.SearchAsync(request, cancellationToken)
                            .WithCancellation(cancellationToken).ConfigureAwait(false))
@@ -950,7 +975,8 @@ internal sealed class FileSearchRepl
             "regex" or "regexp" => QueryMode.Regex,
             "bool" or "boolean" => QueryMode.Boolean,
             "unified" or "query" or "structured" => QueryMode.Unified,
-            _ => throw new ArgumentException("Mode must be plain, regex, boolean, or unified."),
+            "semantic" => QueryMode.Semantic,
+            _ => throw new ArgumentException("Mode must be plain, regex, boolean, unified, or semantic."),
         };
 
     private static SearchTarget ParseSearchTarget(string value) =>
@@ -2436,7 +2462,8 @@ internal sealed class FileSearchRepl
         table.AddColumn("Description");
         table.AddRow("[cyan]search[/] QUERY", "Search current root. Unknown input is treated as a query.");
         table.AddRow("[cyan]path[/] FOLDER", "Set the current search root.");
-        table.AddRow("[cyan]mode plain|regex|boolean|unified[/]", "Choose query mode.");
+        table.AddRow("[cyan]mode plain|regex|boolean|unified|semantic[/]", "Choose query mode.");
+        table.AddRow("[cyan]models list|status|install[/]", "Inspect document models or explicitly install a pack. Gemma requires --accept-license.");
         table.AddRow("[cyan]target contents|files|folders|names[/]", "Search file contents, file names, folder names, or both name types.");
         table.AddRow("[cyan]case on|off[/]", "Toggle case-sensitive matching.");
         table.AddRow("[cyan]recursive on|off[/]", "Toggle subfolder traversal.");
@@ -2547,7 +2574,8 @@ internal sealed class FileSearchRepl
             "regex" or "regexp" => QueryMode.Regex,
             "bool" or "boolean" => QueryMode.Boolean,
             "unified" or "query" or "structured" => QueryMode.Unified,
-            _ => throw new ArgumentException("Mode must be plain, regex, boolean, or unified."),
+            "semantic" => QueryMode.Semantic,
+            _ => throw new ArgumentException("Mode must be plain, regex, boolean, unified, or semantic."),
         };
         AnsiConsole.MarkupLine($"[green]Mode set to {_state.Mode}.[/]");
     }
@@ -2886,7 +2914,8 @@ internal sealed class FileSearchRepl
     }
 
     private const string OneShotSearchUsage =
-        "Usage: filesearch search QUERY [--path FOLDER] [--mode plain|regex|boolean|unified] " +
+        "Usage: filesearch search QUERY [--path FOLDER] [--mode plain|regex|boolean|unified|semantic] " +
+        "[--index|--no-index] " +
         "[--target contents|files|folders|names] [--ocr] [--no-docs] [--known-only] " +
         "[--json|--jsonl|--csv|--markdown] [--output PATH] [--limit N]";
 

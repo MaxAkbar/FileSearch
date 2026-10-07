@@ -127,7 +127,7 @@ public sealed class ApplicationSettingsViewModelTests
     }
 
     [Fact]
-    public async Task SemanticModelSelectionPersistsAndStartsInstallation()
+    public async Task SemanticModelSelectionPersistsAndInstallationIsExplicit()
     {
         var settings = new FakeSettingsService();
         var options = new EmbeddingModelPackOptions();
@@ -141,12 +141,32 @@ public sealed class ApplicationSettingsViewModelTests
         var selected = appSettings.SemanticModelPackOptions.Single(option => !option.IsDisabled && option.IsRecommended);
 
         appSettings.SemanticModelPack = selected;
+        Assert.Equal(0, installer.InstallCallCount);
+        appSettings.InstallSemanticModelCommand.Execute(null);
         await installer.InstallStarted.Task.WaitAsync(TestContext.Current.CancellationToken);
 
         Assert.Equal(selected.Id, settings.Current.SemanticModelPackId);
         Assert.Equal(selected.Id, options.SelectedModelPackId);
         Assert.Equal(selected.Id, installer.LastModelId);
         Assert.Equal(1, installer.InstallCallCount);
+    }
+
+    [Fact]
+    public void GemmaSelectionRequiresLicenseBeforeInstallation()
+    {
+        var settings = new FakeSettingsService();
+        var installer = new FakeEmbeddingModelPackInstaller();
+        var appSettings = new ApplicationSettingsViewModel(settings, new StatusBarViewModel(),
+            semanticModelCatalog: new EmbeddingModelPackCatalog(), semanticModelInstaller: installer);
+        appSettings.SemanticModelPack = appSettings.SemanticModelPackOptions.Single(option => option.Id == "embeddinggemma-300m-q4-onnx");
+        Assert.True(appSettings.RequiresSemanticModelLicense);
+        Assert.False(appSettings.CanInstallSemanticModel);
+        Assert.Equal(0, installer.InstallCallCount);
+        appSettings.AcceptSemanticModelLicense = true;
+        Assert.True(appSettings.CanInstallSemanticModel);
+        appSettings.SemanticModelPack = SemanticModelPackOption.Disabled;
+        Assert.False(appSettings.AcceptSemanticModelLicense);
+        Assert.False(appSettings.CanInstallSemanticModel);
     }
 
     [Fact]

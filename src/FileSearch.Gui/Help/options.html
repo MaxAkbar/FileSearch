@@ -53,11 +53,15 @@
                     <tbody>
                         <tr>
                             <td><strong>Search mode</strong></td>
-                            <td>Controls whether the query is parsed as Unified (the default), Boolean, Regex, or PlainText. Choose it under <strong>Match</strong> in search options.</td>
+                            <td>Controls whether the query is interpreted as Unified (the default), Boolean, Regex, Semantic, or PlainText. Choose it under <strong>Match</strong> in search options. Semantic treats the entire input as a concept and selects indexed content search; its toggle is also beside <strong>.*</strong> in the search box.</td>
                         </tr>
                         <tr>
                             <td><strong>Match case</strong></td>
                             <td>When enabled, uppercase and lowercase letters must match exactly.</td>
+                        </tr>
+                        <tr>
+                            <td><strong>Semantic result limits</strong></td>
+                            <td>With Semantic enabled, the row below the search box offers Minimum score (0.00–1.00, default 0.60) and Maximum files (1–25, default 25). Higher minimum scores reject weaker matches. Click Search to apply. Settings, saved searches, and workspaces remember both values. Scores can still admit <a href="smart-search.html#false-positives">false positives</a>; see <a href="smart-search.html#results">semantic relevance scores</a> for examples and interpretation.</td>
                         </tr>
                     </tbody>
                 </table>
@@ -139,7 +143,7 @@
 
             <h2 id="smart-search">Smart Search Model Packs</h2>
             <p>Use <strong>File &gt; Settings &gt; Smart Search</strong> to choose an optional local embedding model. Selecting a model starts installation automatically; <strong>Install model</strong> also starts or retries it. After download, FileSearch loads the ONNX model and runs a document/query embedding smoke test. Semantic search then runs locally.</p>
-            <p>Build Smart Search vectors for an indexed folder, then use <code>semantic:"your concept"</code> in Unified mode with <strong>Contents</strong> and <strong>Use index</strong> enabled. See <a href="smart-search.html">Smart Search with ONNX</a> for the complete setup and search walkthrough, existing model folders, and troubleshooting.</p>
+            <p>Build Smart Search vectors for an indexed folder, then click <strong>Semantic</strong> beside <strong>.*</strong> and enter an ordinary phrase such as <code>renewal pricing discussion</code>. Contents and Use index are selected automatically. The explicit <code>semantic:"your concept"</code> syntax remains available in Unified mode. See <a href="smart-search.html">Smart Search with ONNX</a> for the complete setup and search walkthrough, existing model folders, and troubleshooting.</p>
             <ul class="plain-list">
                 <li><strong>Disabled</strong> keeps FileSearch in classic mode with filename, metadata, indexed content, OCR, Boolean, regex, fuzzy and proximity search.</li>
                 <li><strong>BGE small English v1.5</strong> is the recommended local semantic model for English documents.</li>

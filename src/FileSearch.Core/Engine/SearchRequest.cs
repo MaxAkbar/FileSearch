@@ -22,4 +22,5 @@ public sealed record SearchRequest(
     Action<string>? Status = null,
     string? RawQuery = null,
     QueryMode? Mode = null,
-    SearchTarget SearchTarget = SearchTarget.Content);
+    SearchTarget SearchTarget = SearchTarget.Content,
+    SemanticSearchOptions? SemanticOptions = null);

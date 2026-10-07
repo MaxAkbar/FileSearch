@@ -20,6 +20,9 @@
     <PackageReference Include="Microsoft.Extensions.DependencyInjection.Abstractions" Version="10.0.12" />
     <PackageReference Include="Microsoft.Extensions.Logging.Abstractions" Version="10.0.12" />
     <PackageReference Include="Microsoft.ML.OnnxRuntime" Version="1.30.0" />
+    <PackageReference Include="Tokenizers.DotNet" Version="1.4.1" />
+    <PackageReference Include="Tokenizers.DotNet.runtime.win-x64" Version="1.4.1" />
+    <PackageReference Include="Tokenizers.DotNet.runtime.win-arm64" Version="1.4.1" />
     <PackageReference Include="OpenMcdf" Version="3.3.0" />
     <PackageReference Include="RtfPipe" Version="2.0.7677.4303" />
     <PackageReference Include="System.Security.Cryptography.Pkcs" Version="10.0.12" />
@@ -32,4 +35,40 @@
     <None Include="..\..\docs\licenses\*.txt" Link="docs\licenses\%(Filename)%(Extension)" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
   </ItemGroup>
 
+  <UsingTask TaskName="WriteEmbeddingLicenseFiles" TaskFactory="RoslynCodeTaskFactory"
+             AssemblyFile="$(MSBuildToolsPath)/Microsoft.Build.Tasks.Core.dll">
+    <ParameterGroup>
+      <SourceFile ParameterType="System.String" Required="true" />
+      <DestinationDirectory ParameterType="System.String" Required="true" />
+    </ParameterGroup>
+    <Task>
+      <Using Namespace="System.IO" />
+      <Using Namespace="System.Text" />
+      <Using Namespace="System.Xml" />
+      <Code Type="Fragment" Language="cs"><![CDATA[
+        var document = new XmlDocument();
+        document.Load(SourceFile);
+        Directory.CreateDirectory(DestinationDirectory);
+        foreach (XmlElement entry in document.SelectNodes("/root/data"))
+        {
+            var name = entry.GetAttribute("name");
+            if (Path.GetFileName(name) != name)
+                throw new InvalidDataException("License names must be plain file names.");
+            File.WriteAllText(Path.Combine(DestinationDirectory, name),
+                entry["value"].InnerText, new UTF8Encoding(false));
+        }
+      ]]></Code>
+    </Task>
+  </UsingTask>
+
+  <Target Name="GenerateEmbeddingLicenseFiles" BeforeTargets="AssignTargetPaths">
+    <WriteEmbeddingLicenseFiles SourceFile="$(MSBuildProjectDirectory)/Engine/EmbeddingLicenses.resx"
+                                DestinationDirectory="$(IntermediateOutputPath)EmbeddingLicenses" />
+    <ItemGroup>
+      <_EmbeddingLicenseFile Include="$(IntermediateOutputPath)EmbeddingLicenses/*.txt" />
+      <None Include="@(_EmbeddingLicenseFile)"
+            Link="docs/licenses/%(_EmbeddingLicenseFile.Filename)%(_EmbeddingLicenseFile.Extension)"
+            CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
+    </ItemGroup>
+  </Target>
 </Project>

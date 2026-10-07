@@ -23,7 +23,13 @@ public sealed class WeightedResultFusion : IResultFusion
             .GroupBy(candidate => candidate.Path, StringComparer.OrdinalIgnoreCase)
             .Select(group =>
             {
+                // Semantic chunks are alternative passages from the same file.
+                // Summing them rewards document length instead of relevance.
                 var orderedCandidates = group
+                    .GroupBy(candidate => candidate.Provider)
+                    .SelectMany(providerGroup => providerGroup.Key == CandidateProviderKind.Semantic
+                        ? providerGroup.OrderByDescending(candidate => candidate.Score).Take(1)
+                        : providerGroup)
                     .OrderByDescending(candidate => candidate.Score)
                     .ThenBy(candidate => candidate.ProviderId, StringComparer.OrdinalIgnoreCase)
                     .ToArray();

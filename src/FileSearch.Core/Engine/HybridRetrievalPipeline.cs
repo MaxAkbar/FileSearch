@@ -69,6 +69,13 @@ public sealed class HybridRetrievalPipeline : IHybridRetrievalPipeline
             .ToArray();
         await Task.WhenAll(availabilityTasks).ConfigureAwait(false);
 
+        var unavailableSemantic = availabilityTasks
+            .Select(task => task.Result)
+            .FirstOrDefault(selection => selection.Provider.Provider == CandidateProviderKind.Semantic &&
+                                         !selection.Availability.IsAvailable);
+        if (unavailableSemantic is not null)
+            plan.Request.Status?.Invoke($"Smart Search unavailable: {unavailableSemantic.Availability.Message}");
+
         var availableProviders = availabilityTasks
             .Select(task => task.Result)
             .Where(selection => selection.Availability.IsAvailable)

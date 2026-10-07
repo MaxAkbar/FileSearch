@@ -17,9 +17,11 @@ services.AddLogging(logging => logging.AddProvider(new FileLoggerProvider(
         Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
         "FileSearch", "logs"),
     "filesearch-cli")));
+services.AddSingleton(EmbeddingModelSettings.Load());
 services.AddFileSearchCore();
 services.AddWindowsImageOcr();
 services.AddSingleton<FileSearchRepl>();
+services.AddSingleton<DocumentModelCommands>();
 
 using var provider = services.BuildServiceProvider();
 return await provider.GetRequiredService<FileSearchRepl>().RunAsync(args).ConfigureAwait(false);

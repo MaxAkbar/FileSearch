@@ -24,7 +24,8 @@ internal static class ToolArguments
             "regex" or "regexp" => QueryMode.Regex,
             "bool" or "boolean" => QueryMode.Boolean,
             "unified" or "query" or "structured" => QueryMode.Unified,
-            _ => throw new McpException($"Unknown mode '{value}'. Use plain, regex, boolean, or unified."),
+            "semantic" => QueryMode.Semantic,
+            _ => throw new McpException($"Unknown mode '{value}'. Use plain, regex, boolean, unified, or semantic."),
         };
 
     public static SearchTarget ParseTarget(string? value) =>

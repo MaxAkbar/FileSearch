@@ -20,6 +20,12 @@ public sealed record TextEmbedderAvailability(bool IsAvailable, string Message)
 
 public interface ITextEmbedder
 {
+    Task<EmbeddingModelInfo?> GetModelInfoAsync(CancellationToken cancellationToken) =>
+        Task.FromResult<EmbeddingModelInfo?>(null);
+
+    Task<IReadOnlyList<string>> SplitDocumentAsync(string text, CancellationToken cancellationToken) =>
+        Task.FromResult<IReadOnlyList<string>>(new[] { text });
+
     Task<TextEmbedderAvailability> GetAvailabilityAsync(CancellationToken cancellationToken);
 
     Task<TextEmbedding> EmbedAsync(string text, CancellationToken cancellationToken);

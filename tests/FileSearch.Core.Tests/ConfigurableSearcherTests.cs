@@ -67,6 +67,25 @@ public sealed class ConfigurableSearcherTests
         Assert.Equal(SearchEngineMode.Legacy, new SearchOptions().EngineMode);
     }
 
+    [Fact]
+    public async Task SearchAsync_SemanticModeRoutesToHybridWithoutAPrefix()
+    {
+        var legacy = new StubSearcher(new Hit("legacy.txt", 1, "legacy", Array.Empty<MatchSpan>()));
+        var hybrid = new StubHybridSearcher(new Hit("semantic.txt", 1, "semantic", Array.Empty<MatchSpan>()));
+        var searcher = new ConfigurableSearcher(legacy, hybrid);
+        var query = new QueryFactory().Build("authentication migration", QueryMode.Semantic, false);
+        var request = new SearchRequest(query, new[] { @"C:\docs" }, new WalkerOptions(),
+            UseIndex: true, RawQuery: "authentication migration", Mode: QueryMode.Semantic);
+        var hits = new List<Hit>();
+
+        await foreach (var hit in searcher.SearchAsync(request, TestContext.Current.CancellationToken))
+            hits.Add(hit);
+
+        Assert.Equal("semantic.txt", Assert.Single(hits).Path);
+        Assert.False(legacy.WasCalled);
+        Assert.True(hybrid.WasCalled);
+    }
+
     private static async Task<IReadOnlyList<Hit>> CollectAsync(ISearcher searcher)
     {
         var request = new SearchRequest(new TermQuery("match"), new[] { @"C:\docs" }, new WalkerOptions());

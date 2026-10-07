@@ -2,7 +2,7 @@
 
 `FileSearch.Mcp` is a stdio [Model Context Protocol](https://modelcontextprotocol.io/) server that gives AI assistants (Claude Code, Claude Desktop, LM Studio, VS Code, and any other MCP client) **read-only** access to FileSearch's engine: live content search, fast search over the folders FileSearch has already indexed, document text extraction, and index introspection.
 
-It is a thin host over `FileSearch.Core` — the same engine the GUI and CLI use — so results, query modes, and index coverage semantics match the other surfaces exactly. Phase 1 is deliberately read-only: the server never builds, refreshes, clears, or compacts an index, and never writes to disk. Index writes stay owned by the GUI and the tray indexer.
+It is a thin host over `FileSearch.Core` — the same engine the GUI and CLI use — exposing the query modes listed below and the same index coverage rules. Phase 1 is deliberately read-only: the server never builds, refreshes, clears, or compacts an index. Index writes stay owned by the GUI and the tray indexer; diagnostics are written to the log directory.
 
 Building an AI app or agent on top of the server? [README.McpIntegration.md](README.McpIntegration.md) is the wire-level integration reference: the full launch contract, per-tool parameter and response schemas with captured example JSON, the error catalog, VS Code/Cursor recipes, and programmatic C# and Python clients.
 
@@ -46,6 +46,8 @@ The intended agent flow: call `index_status` once to learn allowed roots, indexe
 
 `search_content` and `search_index` share the query surface of the CLI: `mode` (`plain` | `regex` | `boolean` | `unified`), `caseSensitive`, `includeExtensions`/`excludeExtensions`, `modifiedAfter`/`modifiedBefore` (ISO 8601, treated as UTC), `maxResults`, `maxResultsPerFile`, and `timeoutSeconds`. `search_content` adds `roots` (required), `target` (`content` | `files` | `folders` | `names`), `includeGlobs`/`excludeGlobs`, and `includeHidden`. `search_index` makes `roots` optional — omitted means "every indexed location inside the allowed roots" — and accepts content queries only.
 
+The MCP host does not load the GUI's selected ONNX model or expose its Semantic mode, Minimum score, or Maximum files controls. An assistant can interpret your request and choose tool queries, but that does not enable FileSearch's local vector search through these tools.
+
 ## Result shaping
 
 Tool output is JSON text: camelCase, `null`s omitted, compact (models pay per token; humans can pipe through a formatter). Field names line up with the CLI's one-shot automation DTOs (search hit, index location, index stats, index failure) so the two machine surfaces stay in lockstep; the MCP additions are the truncation flags, `coverage`, and the parsed profile fields that replace the raw options-hash string.
@@ -82,6 +84,21 @@ One consequence of index-coverage semantics: the coverage check hashes the full 
 ## Client configuration
 
 All snippets assume Windows paths; escape backslashes in JSON (`C:\\Users\\you`).
+
+### Choose a provider setup
+
+| Client | Connection to FileSearch | Setup guide |
+| --- | --- | --- |
+| Claude Desktop | Launch the Windows executable locally over stdio | [Claude Desktop configuration](#claude-desktop) |
+| Claude Code | Launch locally over stdio; the repo also includes `.mcp.json` | [Claude Code configuration](#claude-code) |
+| ChatGPT | Connect through Secure MCP Tunnel when available to your account/workspace, or an authenticated HTTPS bridge; ChatGPT does not launch the executable itself | [ChatGPT setup](README.McpIntegration.md#chatgpt--secure-mcp-tunnel-or-https) |
+| OpenAI Codex | Launch locally over stdio | [Codex configuration](README.McpIntegration.md#openai-codex-cli-ide-extension-and-codex-app) |
+| Your application using OpenAI models | Launch locally with the Agents SDK's stdio adapter | [OpenAI Agents SDK example](README.McpIntegration.md#python--openai-agents-sdk) |
+| LM Studio | Launch locally over stdio | [LM Studio configuration](#lm-studio) |
+
+Claude's web/mobile custom connectors use remote MCP servers; they cannot use the local executable configuration below. Local Claude Desktop configuration is a separate connection mechanism. See [Claude's remote connector documentation](https://support.claude.com/en/articles/11175166-get-started-with-custom-connectors-using-remote-mcp).
+
+After connecting, ask: **"Use FileSearch to list my indexed locations, search for query breakdown in my docs folder, and read the matching passages with file paths and line numbers."** The assistant should call `index_status`, search an allowed folder, then use `extract_text` for context. Build any needed content index in FileSearch first, or use live search for unindexed folders.
 
 ### Claude Code
 

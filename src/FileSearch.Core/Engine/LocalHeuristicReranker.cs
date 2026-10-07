@@ -41,6 +41,8 @@ public sealed class LocalHeuristicReranker : IReranker
 
         if (candidates.Count == 0)
             return Task.FromResult(candidates);
+        if (plan.Request.Mode == QueryMode.Semantic)
+            return Task.FromResult(candidates);
         if (!_options.GetIsEnabled())
             return Task.FromResult(candidates);
 

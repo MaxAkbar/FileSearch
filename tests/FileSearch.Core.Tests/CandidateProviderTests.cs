@@ -190,6 +190,28 @@ public sealed class CandidateProviderTests : IDisposable
         Assert.Contains("No local embedding model", availability.Message, StringComparison.OrdinalIgnoreCase);
     }
 
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task SemanticProvider_ReportsMissingVectorsAndContentIndexReadFailures(bool brokenContentIndex)
+    {
+        var messages = new List<string>();
+        var plan = CreateSemanticPlan();
+        plan = plan with { Request = plan.Request with { Status = messages.Add } };
+        var provider = new SemanticCandidateProvider(
+            new StubTextEmbedder(new EmbeddingModelInfo("test-embedding", "1", 2), new float[] { 1, 0 }),
+            new InMemoryVectorIndex(),
+            new StubContentUnitReader(),
+            brokenContentIndex ? new BrokenSemanticIndexStatusService() : null);
+
+        var results = await CollectAsync(provider, plan, TestContext.Current.CancellationToken);
+
+        Assert.Empty(results);
+        var message = Assert.Single(messages);
+        Assert.Contains(brokenContentIndex ? "could not read the content index" : "No Smart Search vectors", message, StringComparison.Ordinal);
+        Assert.Contains("rebuild", message, StringComparison.OrdinalIgnoreCase);
+    }
+
     [Fact]
     public async Task SemanticProvider_ReturnsVectorCandidatesWhenEmbedderIsAvailable()
     {
@@ -243,6 +265,64 @@ public sealed class CandidateProviderTests : IDisposable
         Assert.Equal(locator, candidate.Locator);
         Assert.Equal(HitRoute.Indexed, candidate.Route);
         Assert.Single(candidate.Explanations);
+    }
+
+    [Theory]
+    [InlineData(0.60, 2, 2)]
+    [InlineData(0.80, 25, 2)]
+    [InlineData(0.85, 25, 1)]
+    [InlineData(1.00, 25, 0)]
+    [InlineData(0.00, 1, 1)]
+    [InlineData(0.00, 25, 3)]
+    public async Task SemanticProvider_FiltersSimilarityAndLimitsDistinctFiles(
+        double minimumScore, int maximumResults, int expectedFiles)
+    {
+        var cancellationToken = TestContext.Current.CancellationToken;
+        var model = new EmbeddingModelInfo("test-embedding", "1", 2);
+        var vectorIndex = new InMemoryVectorIndex();
+        var passages = new[] { (1L, 0.90f), (1L, 0.95f), (2L, 0.80f), (3L, 0.40f) };
+        await vectorIndex.UpsertAsync(passages.Select((passage, i) => new VectorDocument(
+            $"chunk-{i}", VectorDocumentKind.ContentChunk, passage.Item1, new long[] { i + 1 },
+            new[] { passage.Item2, MathF.Sqrt(1 - passage.Item2 * passage.Item2) },
+            model, ContentUnitChunker.ChunkerVersion, $"checksum-{i}", root: _root)).ToArray(), cancellationToken);
+        var provider = new SemanticCandidateProvider(
+            new StubTextEmbedder(model, new float[] { 1, 0 }), vectorIndex,
+            new StubContentUnitReader(new Dictionary<long, string>
+            {
+                [1] = Path.Combine(_root, "best.md"),
+                [2] = Path.Combine(_root, "related.md"),
+                [3] = Path.Combine(_root, "weak.md"),
+            }));
+        var messages = new List<string>();
+        var plan = CreateSemanticPlan();
+        plan = plan with
+        {
+            Request = plan.Request with
+            {
+                SemanticOptions = new SemanticSearchOptions(minimumScore, maximumResults),
+                Status = messages.Add,
+            },
+        };
+
+        var candidates = await CollectAsync(provider, plan, cancellationToken);
+
+        Assert.Equal(expectedFiles, candidates.Count);
+        Assert.Equal(expectedFiles, candidates.Select(candidate => candidate.Path).Distinct().Count());
+        Assert.All(candidates, candidate => Assert.True(candidate.Score >= minimumScore));
+        Assert.Equal(candidates.OrderByDescending(candidate => candidate.Score), candidates);
+        if (expectedFiles > 0)
+        {
+            Assert.Equal("best.md", Path.GetFileName(candidates[0].Path));
+            Assert.Equal(2, candidates[0].ContentUnitId);
+            Assert.Empty(messages);
+        }
+        else
+        {
+            var message = Assert.Single(messages);
+            Assert.Contains("minimum score of 1.00", message, StringComparison.Ordinal);
+            Assert.Contains("search again", message, StringComparison.Ordinal);
+            Assert.DoesNotContain("rebuild", message, StringComparison.OrdinalIgnoreCase);
+        }
     }
 
     [Fact]
@@ -416,6 +496,24 @@ public sealed class CandidateProviderTests : IDisposable
         Assert.Equal(2, results[0].Candidates.Count);
         Assert.Equal(1, results[0].Rank);
         Assert.Equal(2, results[1].Rank);
+    }
+
+    [Fact]
+    public async Task HybridPipeline_ReportsWhySemanticProviderIsUnavailable()
+    {
+        var messages = new List<string>();
+        var semantic = new StubCandidateProvider(CandidateProviderKind.Semantic,
+            CandidateProviderRoute.Indexed, CandidateProviderAvailability.Unavailable("Model is disabled."));
+        var pipeline = new HybridRetrievalPipeline(new QueryPlanner(), new[] { semantic },
+            new WeightedResultFusion(), new PassthroughReranker());
+        var request = new SearchRequest(new QueryFactory().Build("contract termination", QueryMode.Semantic, false),
+            new[] { _root }, new WalkerOptions(), UseIndex: true, Status: messages.Add, Mode: QueryMode.Semantic);
+
+        var results = await pipeline.SearchAsync(request, TestContext.Current.CancellationToken);
+
+        Assert.Empty(results);
+        Assert.False(semantic.WasCalled);
+        Assert.Contains("Model is disabled", Assert.Single(messages), StringComparison.Ordinal);
     }
 
     [Fact]
@@ -670,6 +768,12 @@ public sealed class CandidateProviderTests : IDisposable
 
         public Task<TextEmbedding> EmbedAsync(string text, CancellationToken cancellationToken) =>
             Task.FromResult(new TextEmbedding(_vector, _model));
+    }
+
+    private sealed class BrokenSemanticIndexStatusService : ISemanticIndexStatusService
+    {
+        public Task<SemanticIndexRootStatus> GetRootStatusAsync(string root, CancellationToken cancellationToken) =>
+            Task.FromException<SemanticIndexRootStatus>(new InvalidDataException("Indexed content cannot be decoded."));
     }
 
     private sealed class StubContentUnitReader : IContentUnitReader

@@ -810,13 +810,13 @@ public sealed class IndexingService : IIndexingService
                             item.Root,
                             item.WalkerOptions,
                             progress => Publish(true, FormatProgress(progress), progress: progress),
-                            IndexingResourcePolicy.For(_resourceProfile, _runtimeOptions).Throttle),
+                        IndexingResourcePolicy.For(_resourceProfile, _runtimeOptions).Throttle),
                         item.RefreshMode,
                         cancellationToken).ConfigureAwait(false);
+                    SetRootStatusDetail(item.Root, "Snapshot scan complete");
                     await UpsertSemanticRootAsync(item.Root, cancellationToken).ConfigureAwait(false);
                     await _index.RemovePendingChangeAsync(item.Root, null, item.Kind, cancellationToken)
                         .ConfigureAwait(false);
-                    SetRootStatusDetail(item.Root, "Snapshot scan complete");
                     break;
                 case IndexChangeKind.RefreshSemanticRoot:
                     SetRootStatusDetail(item.Root, "Smart Search vectors running");
@@ -951,6 +951,7 @@ public sealed class IndexingService : IIndexingService
         }
         catch (Exception ex)
         {
+            SetRootStatusDetail(root, $"Smart Search rebuild failed: {ex.Message}");
             _logger.LogWarning(ex, "Semantic vector indexing failed for root {Root}.", root);
         }
     }

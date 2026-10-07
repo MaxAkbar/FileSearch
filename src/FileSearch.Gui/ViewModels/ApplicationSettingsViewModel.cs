@@ -424,13 +424,15 @@ public sealed partial class ApplicationSettingsViewModel : ObservableObject
 
             OnPropertyChanged(nameof(SemanticModelSummary));
             OnPropertyChanged(nameof(CanInstallSemanticModel));
+            AcceptSemanticModelLicense = false;
+            OnPropertyChanged(nameof(RequiresSemanticModelLicense));
 
             if (!_isInitialized)
                 return;
 
             SaveSettings(updateStartupRegistration: false);
-            if (CanInstallSemanticModel)
-                InstallSemanticModelCommand.Execute(null);
+            _semanticModelInstallStatus = "Model selected. Use Install model if needed, then Rebuild Smart Search for each location. Recheck Minimum score after switching models.";
+            OnPropertyChanged(nameof(SemanticModelSummary));
         }
     }
 
@@ -465,7 +467,22 @@ public sealed partial class ApplicationSettingsViewModel : ObservableObject
     }
 
     public bool CanInstallSemanticModel =>
-        !SemanticModelPack.IsDisabled && _semanticModelInstaller is not null;
+        !SemanticModelPack.IsDisabled && _semanticModelInstaller is not null &&
+        (!RequiresSemanticModelLicense || AcceptSemanticModelLicense);
+
+    public bool RequiresSemanticModelLicense =>
+        _semanticModelCatalog?.GetById(SemanticModelPack.Id)?.Manifest.RequiresLicenseAcceptance == true;
+
+    private bool _acceptSemanticModelLicense;
+    public bool AcceptSemanticModelLicense
+    {
+        get => _acceptSemanticModelLicense;
+        set
+        {
+            if (SetProperty(ref _acceptSemanticModelLicense, value))
+                OnPropertyChanged(nameof(CanInstallSemanticModel));
+        }
+    }
 
     public bool EnableLocalReranker
     {
@@ -674,10 +691,10 @@ public sealed partial class ApplicationSettingsViewModel : ObservableObject
             : "No custom theme files found.";
     }
 
-    [RelayCommand]
-    private async Task InstallSemanticModelAsync()
+    [RelayCommand(IncludeCancelCommand = true)]
+    private async Task InstallSemanticModelAsync(CancellationToken cancellationToken)
     {
-        if (SemanticModelPack.IsDisabled || _semanticModelInstaller is null)
+        if (!CanInstallSemanticModel || _semanticModelInstaller is null)
         {
             _status.Text = "Choose a Smart Search model before installing.";
             return;
@@ -698,11 +715,17 @@ public sealed partial class ApplicationSettingsViewModel : ObservableObject
             var installed = await _semanticModelInstaller.InstallAsync(
                     SemanticModelPack.Id,
                     progress,
-                    CancellationToken.None)
+                    AcceptSemanticModelLicense,
+                    cancellationToken)
                 .ConfigureAwait(true);
             _semanticModelInstallStatus = installed.IsUsable
                 ? $"Installed {installed.Manifest.DisplayName}. {installed.Status}"
                 : $"Installed files but model is not ready: {installed.Status}";
+            _status.Text = _semanticModelInstallStatus;
+        }
+        catch (OperationCanceledException)
+        {
+            _semanticModelInstallStatus = "Model installation cancelled.";
             _status.Text = _semanticModelInstallStatus;
         }
         catch (Exception ex) when (ex is not OperationCanceledException)

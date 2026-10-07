@@ -22,6 +22,9 @@
         ResizeMode="CanResize"
         WindowStartupLocation="CenterOwner">
 
+    <Window.Resources>
+        <BooleanToVisibilityConverter x:Key="BoolToVisibility"/>
+    </Window.Resources>
     <DockPanel Style="{StaticResource AppRootStyle}">
         <Border DockPanel.Dock="Top"
                 Background="{DynamicResource Atlas.PaperBrush}"
@@ -374,6 +377,16 @@
                                   VerticalAlignment="Center"/>
                     </Grid>
 
+                    <CheckBox IsChecked="{Binding AcceptSemanticModelLicense}"
+                              Visibility="{Binding RequiresSemanticModelLicense, Converter={StaticResource BoolToVisibility}}"
+                              Margin="0,14,0,0">
+                        <TextBlock TextWrapping="Wrap">
+                            I agree to the
+                            <Hyperlink NavigateUri="https://ai.google.dev/gemma/terms" RequestNavigate="OnLicenseNavigate">Gemma Terms of Use</Hyperlink>,
+                            including its
+                            <Hyperlink NavigateUri="https://ai.google.dev/gemma/prohibited_use_policy" RequestNavigate="OnLicenseNavigate">Prohibited Use Policy</Hyperlink>.
+                        </TextBlock>
+                    </CheckBox>
                     <StackPanel Orientation="Horizontal"
                                 HorizontalAlignment="Left"
                                 Margin="0,14,0,0">
@@ -397,6 +410,8 @@
                                 <TextBlock Text="Refresh"/>
                             </StackPanel>
                         </Button>
+                        <Button Command="{Binding InstallSemanticModelCancelCommand}"
+                                Content="Cancel download" Style="{StaticResource SecondaryButtonStyle}" Margin="8,0,0,0"/>
                     </StackPanel>
 
                     <Border Height="1"
