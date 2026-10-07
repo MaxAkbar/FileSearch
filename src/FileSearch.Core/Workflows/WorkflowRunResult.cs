@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using FileSearch.Core.Replacement;
 
 namespace FileSearch.Core.Workflows;
 
@@ -26,7 +27,9 @@ public sealed record WorkflowStepOutcome(
     bool Succeeded,
     string? Detail = null,
     long HitCount = 0,
-    int FileCount = 0);
+    int FileCount = 0,
+    long ChangeCount = 0,
+    ReplacementBatchResult? ReplacementBatch = null);
 
 public sealed record WorkflowRunResult
 {
@@ -42,6 +45,8 @@ public sealed record WorkflowRunResult
 
     /// <summary>Validation problems when <see cref="Status"/> is Failed before any step ran.</summary>
     public IReadOnlyList<string> ValidationErrors { get; init; } = Array.Empty<string>();
+    public string? RecoveryGroupId { get; init; }
+    public IReadOnlyList<ReplacementBatchResult> ReplacementBatches { get; init; } = [];
 }
 
 public sealed record WorkflowRunOptions
@@ -60,7 +65,10 @@ public sealed record WorkflowRunOptions
 
     /// <summary>
     /// Log what file operations and program launches would do instead of
-    /// doing it. Searches and exports still run.
+    /// doing it. Searches and replacement previews still run; exports are also previewed.
     /// </summary>
     public bool DryRun { get; init; }
+    /// <summary>Explicit authorization for replacement when the host does not provide item review.</summary>
+    public bool AllowReplacementApply { get; init; }
+    public IReadOnlyList<string> ProtectedReplacementRoots { get; init; } = [];
 }

@@ -2,6 +2,7 @@ using System;
 using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.Collections.ObjectModel;
+using System.ComponentModel;
 using System.IO;
 using System.Linq;
 using System.Threading;
@@ -10,7 +11,9 @@ using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 using FileSearch.Core.Engine;
 using FileSearch.Core.Workflows;
+using FileSearch.Core.Replacement;
 using FileSearch.Gui.Services;
+using FileSearch.Gui.Settings;
 
 namespace FileSearch.Gui.ViewModels;
 
@@ -62,6 +65,10 @@ public sealed partial class WorkflowsViewModel : ObservableObject, IWorkflowStep
     private readonly IWorkflowRunner _runner;
     private readonly IFileLauncher _fileLauncher;
     private readonly IFolderPicker _folderPicker;
+    private readonly IReplacementService? _replacementService;
+    private readonly ReplacementViewModel? _replacementView;
+    private readonly ISettingsService? _settings;
+    private ReplacementRecoveryGroup? _recoveryGroup;
 
     private CancellationTokenSource? _runCts;
     private bool _isLoadingEditor;
@@ -73,12 +80,18 @@ public sealed partial class WorkflowsViewModel : ObservableObject, IWorkflowStep
         IWorkflowStore store,
         IWorkflowRunner runner,
         IFileLauncher fileLauncher,
-        IFolderPicker folderPicker)
+        IFolderPicker folderPicker,
+        IReplacementService? replacementService = null,
+        ReplacementViewModel? replacementView = null,
+        ISettingsService? settings = null)
     {
         _store = store;
         _runner = runner;
         _fileLauncher = fileLauncher;
         _folderPicker = folderPicker;
+        _replacementService = replacementService; _replacementView = replacementView; _settings = settings;
+        if (_replacementView is not null) _replacementView.PropertyChanged += OnReplacementAvailabilityChanged;
+        _ = RefreshRecoveryAsync();
     }
 
     // ----- library -----
@@ -93,6 +106,7 @@ public sealed partial class WorkflowsViewModel : ObservableObject, IWorkflowStep
     /// </summary>
     public void OnOpened()
     {
+        _ = RefreshRecoveryAsync();
         RefreshLibrary(_currentFileName);
         if (StepRows.Count > 0 || IsDirty)
             return;
@@ -456,6 +470,7 @@ public sealed partial class WorkflowsViewModel : ObservableObject, IWorkflowStep
     public WorkflowStepViewModel CreateStep(string kind) => kind switch
     {
         "search" => new SearchStepViewModel(this, GenerateId("search")),
+        "replace" => new ReplacementStepViewModel(this, GenerateId("replace")),
         "if" => new IfStepViewModel(this, GenerateId("if")),
         "retry" => new RetryStepViewModel(this, GenerateId("retry")),
         "forEach" => new ForEachStepViewModel(this, GenerateId("forEach")),
@@ -525,6 +540,10 @@ public sealed partial class WorkflowsViewModel : ObservableObject, IWorkflowStep
     {
         switch (step)
         {
+            case ReplacementStep replacement:
+                var replacementEditor = new ReplacementStepViewModel(this, replacement.Id);
+                replacementEditor.Load(replacement);
+                return replacementEditor;
             case SearchStep search:
                 {
                     var viewModel = new SearchStepViewModel(this, search.Id)
@@ -663,7 +682,7 @@ public sealed partial class WorkflowsViewModel : ObservableObject, IWorkflowStep
         // rebuild clobbered.
         var restoreReferences = CaptureReferenceRestores();
 
-        var searchIds = StepRows.OfType<SearchStepViewModel>().Select(s => s.Id).ToArray();
+        var searchIds = StepRows.OfType<SearchStepViewModel>().Where(step => step is not ReplacementStepViewModel).Select(s => s.Id).ToArray();
         ReplaceOptions(ScopeStepOptions, WorkflowEditorOptions.NoScope, searchIds);
         ReplaceOptions(SourceStepOptions, WorkflowEditorOptions.LastSearch, searchIds);
         ReplaceOptions(ExportSourceOptions, WorkflowEditorOptions.AllSearches, searchIds);
@@ -814,6 +833,50 @@ public sealed partial class WorkflowsViewModel : ObservableObject, IWorkflowStep
     /// </summary>
     public IWorkflowInteraction? Interaction { get; set; }
 
+    [ObservableProperty] private bool _canUndoReplacementRun;
+    public string ReplacementRecoveryLabel => _recoveryGroup is null ? "" : $"Replacement recovery: {_recoveryGroup.Name} · {_recoveryGroup.BatchIds.Count} batches · {_recoveryGroup.ChangeCount} changes · {_recoveryGroup.SkippedItemCount} skipped";
+    partial void OnCanUndoReplacementRunChanged(bool value) => UndoReplacementRunCommand.NotifyCanExecuteChanged();
+    private bool CanUndoRun() => CanRun() && CanUndoReplacementRun;
+    [RelayCommand(CanExecute = nameof(CanUndoRun))]
+    private async Task UndoReplacementRunAsync()
+    {
+        if (_replacementService is null || _recoveryGroup is null) return;
+        IsRunning = true; _runCts?.Dispose(); _runCts = new();
+        try
+        {
+            var result = await _replacementService.UndoGroupAsync(_recoveryGroup.Id, _runCts.Token);
+            await HandleReplacementBatchAsync(result);
+            foreach (var outcome in result.Outcomes) AppendLog($"{outcome.Path}: {outcome.Message}");
+            var conflicts = result.Outcomes.Count - result.SucceededCount;
+            RunStatusText = $"Undo: {result.SucceededCount} items restored; {conflicts} conflicts{(result.Cancelled ? "; cancelled" : "")}." + (conflicts > 0 ? " Earlier dependent batches are retained." : "");
+        }
+        catch (Exception exception) { RunStatusText = "Undo failed: " + exception.Message + ". Recovery data is retained."; }
+        finally { IsRunning = false; await RefreshRecoveryAsync(); }
+    }
+    private async Task RefreshRecoveryAsync()
+    {
+        if (_replacementService is null) return;
+        try { _recoveryGroup = await _replacementService.GetLastRecoveryGroupAsync(CancellationToken.None); CanUndoReplacementRun = _recoveryGroup is not null; OnPropertyChanged(nameof(ReplacementRecoveryLabel)); }
+        catch (Exception exception) { AppendLog("Could not read workflow recovery: " + exception.Message); }
+    }
+
+    private async Task HandleReplacementBatchAsync(ReplacementBatchResult result)
+    {
+        RemapReplacementRunPaths(result);
+        if (_replacementView is not null) await _replacementView.HandleExternalBatchAsync(result);
+    }
+
+    internal void RemapReplacementRunPaths(ReplacementBatchResult result)
+    {
+        foreach (var outcome in result.Outcomes.Where(outcome => outcome.Succeeded && outcome.NewPath is not null))
+            for (var i = 0; i < RunHits.Count; i++)
+            {
+                var hit = RunHits[i];
+                var path = ReplacementViewModel.Remap(hit.Path, outcome.Path, outcome.NewPath!, outcome.IsDirectory);
+                if (path != hit.Path) RunHits[i] = hit with { Path = path };
+            }
+    }
+
     [RelayCommand(CanExecute = nameof(CanRun))]
     private Task RunWorkflowAsync() => RunCoreAsync(dryRun: false);
 
@@ -823,15 +886,22 @@ public sealed partial class WorkflowsViewModel : ObservableObject, IWorkflowStep
     [RelayCommand(CanExecute = nameof(CanCancelRun))]
     private void CancelRun() => _runCts?.Cancel();
 
-    private bool CanRun() => !IsRunning;
+    private bool CanRun() => !IsRunning && _replacementView?.CanStartExternalOperation != false;
+    private void OnReplacementAvailabilityChanged(object? sender, PropertyChangedEventArgs args)
+    {
+        if (args.PropertyName != nameof(ReplacementViewModel.CanStartExternalOperation)) return;
+        RunWorkflowCommand.NotifyCanExecuteChanged(); DryRunWorkflowCommand.NotifyCanExecuteChanged(); UndoReplacementRunCommand.NotifyCanExecuteChanged();
+    }
 
     private bool CanCancelRun() => IsRunning;
 
     partial void OnIsRunningChanged(bool value)
     {
+        _replacementView?.SetExternalBusy(value);
         RunWorkflowCommand.NotifyCanExecuteChanged();
         DryRunWorkflowCommand.NotifyCanExecuteChanged();
         CancelRunCommand.NotifyCanExecuteChanged();
+        UndoReplacementRunCommand.NotifyCanExecuteChanged();
     }
 
     partial void OnTotalRunHitsChanged(long value) => OnPropertyChanged(nameof(RunHitsSummary));
@@ -871,7 +941,8 @@ public sealed partial class WorkflowsViewModel : ObservableObject, IWorkflowStep
             // events and this loop drains them on the UI thread in timed
             // batches so a heavy hit stream can't flood the dispatcher.
             var runTask = Task.Run(
-                () => _runner.RunAsync(workflow, new WorkflowRunOptions { DryRun = dryRun }, observer, interaction, token),
+                () => _runner.RunAsync(workflow, new WorkflowRunOptions { DryRun = dryRun,
+                    ProtectedReplacementRoots = _settings?.Current.IndexedLocations.Select(location => location.Root).ToArray() ?? [] }, observer, interaction, token),
                 token);
 
             while (true)
@@ -892,6 +963,7 @@ public sealed partial class WorkflowsViewModel : ObservableObject, IWorkflowStep
             }
 
             var result = await runTask.ConfigureAwait(true);
+            foreach (var batch in result.ReplacementBatches) await HandleReplacementBatchAsync(batch);
             var summary = result.Status switch
             {
                 WorkflowRunStatus.Completed => "Completed",
@@ -901,7 +973,9 @@ public sealed partial class WorkflowsViewModel : ObservableObject, IWorkflowStep
                 _ => $"{result.Status}",
             };
             RunStatusText = string.IsNullOrWhiteSpace(result.Message)
-                ? $"{summary} — {TotalRunHits:n0} hit(s)."
+                ? result.StepOutcomes.Any(outcome => outcome.StepKind == "replace")
+                    ? $"{summary} — {result.StepOutcomes.Sum(outcome => outcome.ChangeCount):N0} {(dryRun ? "proposed" : "applied")} replacement changes · {TotalRunHits:n0} hit(s)."
+                    : $"{summary} — {TotalRunHits:n0} hit(s)."
                 : $"{summary} — {result.Message}";
             AppendLog($"=== {RunStatusText}");
         }
@@ -918,6 +992,7 @@ public sealed partial class WorkflowsViewModel : ObservableObject, IWorkflowStep
         finally
         {
             IsRunning = false;
+            await RefreshRecoveryAsync();
         }
     }
 
@@ -978,6 +1053,7 @@ public sealed partial class WorkflowsViewModel : ObservableObject, IWorkflowStep
 
     public void Dispose()
     {
+        if (_replacementView is not null) _replacementView.PropertyChanged -= OnReplacementAvailabilityChanged;
         _runCts?.Cancel();
         _runCts?.Dispose();
     }

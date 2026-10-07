@@ -20,6 +20,24 @@
 
     <Window.Resources>
         <BooleanToVisibilityConverter x:Key="BoolToVisibility"/>
+        <Style TargetType="TextBox" BasedOn="{StaticResource {x:Type TextBox}}">
+            <Setter Property="Foreground" Value="{DynamicResource Atlas.InkBrush}"/>
+            <Setter Property="Background" Value="{DynamicResource Atlas.SurfaceBrush}"/>
+            <Setter Property="BorderBrush" Value="{DynamicResource Atlas.LineBrush}"/>
+            <Setter Property="BorderThickness" Value="1"/>
+            <Setter Property="Padding" Value="8,5"/>
+        </Style>
+        <Style TargetType="ComboBox" BasedOn="{StaticResource {x:Type ComboBox}}">
+            <Setter Property="Foreground" Value="{DynamicResource Atlas.InkBrush}"/>
+            <Setter Property="Background" Value="{DynamicResource Atlas.SurfaceBrush}"/>
+        </Style>
+        <Style TargetType="CheckBox" BasedOn="{StaticResource {x:Type CheckBox}}">
+            <Setter Property="Foreground" Value="{DynamicResource Atlas.InkBrush}"/>
+        </Style>
+        <Style TargetType="DatePicker" BasedOn="{StaticResource {x:Type DatePicker}}">
+            <Setter Property="Foreground" Value="{DynamicResource Atlas.InkBrush}"/>
+            <Setter Property="Background" Value="{DynamicResource Atlas.SurfaceBrush}"/>
+        </Style>
 
         <!-- Compact rows for the log / hits / roots lists. -->
         <Style x:Key="CompactListItemStyle" TargetType="ListBoxItem" BasedOn="{StaticResource {x:Type ListBoxItem}}">
@@ -203,6 +221,126 @@
             </StackPanel>
         </DataTemplate>
 
+        <DataTemplate DataType="{x:Type vm:ReplacementStepViewModel}">
+            <StackPanel>
+                <TextBlock Text="Find" Style="{StaticResource WfLabelStyle}"/>
+                <TextBox Text="{Binding Find, UpdateSourceTrigger=PropertyChanged}"/>
+                <TextBlock Text="Replace with" Style="{StaticResource WfLabelStyle}"/>
+                <TextBox Text="{Binding ReplaceWith, UpdateSourceTrigger=PropertyChanged}"/>
+                <TextBlock Text="An empty replacement removes matches. Regex capture substitutions such as $1 are supported." Style="{StaticResource HintLabelStyle}"/>
+                <WrapPanel Margin="0,12,0,0">
+                    <CheckBox Content="Regex" IsChecked="{Binding UseRegex}" Margin="0,0,16,0"/>
+                    <CheckBox Content="Match case" IsChecked="{Binding CaseSensitive}"/>
+                </WrapPanel>
+                <TextBlock Text="Target" Style="{StaticResource WfLabelStyle}"/>
+                <ComboBox SelectedItem="{Binding Target}" ItemsSource="{x:Static vm:WorkflowEnumValues.ReplacementTargets}"/>
+                <TextBlock Text="Names: files, folders, or both" Style="{StaticResource WfLabelStyle}"/>
+                <ComboBox SelectedItem="{Binding NameTarget}" ItemsSource="{x:Static vm:WorkflowEnumValues.ReplacementNameTargets}"/>
+                <CheckBox Content="Include file extensions when renaming" IsChecked="{Binding IncludeExtensions}" Margin="0,8,0,0"/>
+                <CheckBox Content="Also replace in Excel formulas" IsChecked="{Binding IncludeFormulas}" Margin="0,8,0,0"/>
+                <TextBlock Text="Additional plain text extensions" Style="{StaticResource WfLabelStyle}"/>
+                <TextBox Text="{Binding AdditionalTextExtensions, UpdateSourceTrigger=PropertyChanged}" ui:ControlHelper.PlaceholderText=".cfg; .custom"/>
+                <TextBlock Text="Every run previews fresh data. Apply pauses for item review; dry run records previews without writing." Style="{StaticResource HintLabelStyle}"/>
+                <TextBlock Text="Scope" Style="{StaticResource WfLabelStyle}"/>
+                <ComboBox IsEditable="True"
+                          Text="{Binding ScopeStepId, UpdateSourceTrigger=PropertyChanged}"
+                          ItemsSource="{Binding DataContext.Workflows.ScopeStepOptions, RelativeSource={RelativeSource AncestorType=Window}}"
+                          ToolTip="Search only the files matched by an earlier search step instead of walking folders."/>
+
+                <TextBlock Text="Root folders" Style="{StaticResource WfLabelStyle}"/>
+                <ListBox ItemsSource="{Binding Roots}"
+                         SelectedItem="{Binding SelectedRoot, Mode=TwoWay}"
+                         ItemContainerStyle="{StaticResource CompactListItemStyle}"
+                         Height="78"
+                         FontFamily="{DynamicResource Atlas.MonoFont}"
+                         FontSize="12"/>
+                <Grid Margin="0,6,0,0">
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="*"/>
+                        <ColumnDefinition Width="Auto"/>
+                        <ColumnDefinition Width="Auto"/>
+                        <ColumnDefinition Width="Auto"/>
+                    </Grid.ColumnDefinitions>
+                    <TextBox Text="{Binding NewRoot, UpdateSourceTrigger=PropertyChanged}"
+                             ui:ControlHelper.PlaceholderText="Folder path — supports ${variable}"
+                             Margin="0,0,8,0"/>
+                    <Button Grid.Column="1" Content="Add" Command="{Binding AddRootCommand}"
+                            Style="{StaticResource ToolButtonStyle}"/>
+                    <Button Grid.Column="2" Content="Browse..." Command="{Binding BrowseRootCommand}"
+                            Style="{StaticResource ToolButtonStyle}"/>
+                    <Button Grid.Column="3" Content="Remove" Command="{Binding RemoveRootCommand}"
+                            Style="{StaticResource ToolButtonStyle}" Margin="0"/>
+                </Grid>
+                <TextBlock Text="Roots are ignored when a scope step is selected."
+                           Style="{StaticResource HintLabelStyle}"/>
+
+                <!-- The runner only applies the filters to filesystem walks;
+                     a search scoped to a previous step's results disables them. -->
+                <StackPanel IsEnabled="{Binding IsFileSystemScope}">
+                    <TextBlock Text="Include globs" Style="{StaticResource WfLabelStyle}"/>
+                    <TextBox Text="{Binding IncludeGlobs, UpdateSourceTrigger=PropertyChanged}"
+                             ui:ControlHelper.PlaceholderText="*.cs; *.md (empty = all files)"/>
+                    <TextBlock Text="Exclude globs" Style="{StaticResource WfLabelStyle}"/>
+                    <TextBox Text="{Binding ExcludeGlobs, UpdateSourceTrigger=PropertyChanged}"
+                             ui:ControlHelper.PlaceholderText="*.min.js; *.designer.cs (file names only)"/>
+
+                    <TextBlock Text="Excluded folders" Style="{StaticResource WfLabelStyle}"/>
+                    <CheckBox Content="Use default exclusions (.git, .vs, node_modules)"
+                              IsChecked="{Binding UseDefaultExcludedFolders}"/>
+                    <TextBox Text="{Binding ExcludeDirectories, UpdateSourceTrigger=PropertyChanged}"
+                             IsEnabled="{Binding CustomExcludedFoldersEnabled}"
+                             Margin="0,4,0,0"
+                             ui:ControlHelper.PlaceholderText="bin; obj; .git (empty = walk everything)"/>
+                    <TextBlock Text="Folder names are skipped with their whole subtree. A custom list replaces the defaults."
+                               Style="{StaticResource HintLabelStyle}"/>
+
+                    <StackPanel Orientation="Horizontal" Margin="0,12,0,0">
+                        <CheckBox Content="Include subfolders" IsChecked="{Binding Recursive}" Margin="0,0,16,0"/>
+                        <CheckBox Content="Include hidden files" IsChecked="{Binding IncludeHidden}"/>
+                    </StackPanel>
+
+                    <Grid Margin="0,12,0,0">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="*"/>
+                            <ColumnDefinition Width="12"/>
+                            <ColumnDefinition Width="*"/>
+                        </Grid.ColumnDefinitions>
+                        <StackPanel>
+                            <TextBlock Text="Min size (bytes)" Style="{StaticResource FieldLabelStyle}"/>
+                            <TextBox Text="{Binding MinFileSizeBytes}"/>
+                        </StackPanel>
+                        <StackPanel Grid.Column="2">
+                            <TextBlock Text="Max size (bytes)" Style="{StaticResource FieldLabelStyle}"/>
+                            <TextBox Text="{Binding MaxFileSizeBytes}" ToolTip="0 disables the size cap."/>
+                        </StackPanel>
+                    </Grid>
+
+                    <Grid Margin="0,12,0,0">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="*"/>
+                            <ColumnDefinition Width="12"/>
+                            <ColumnDefinition Width="*"/>
+                        </Grid.ColumnDefinitions>
+                        <StackPanel>
+                            <CheckBox Content="Modified after" IsChecked="{Binding ModifiedAfterEnabled}"/>
+                            <DatePicker SelectedDate="{Binding ModifiedAfter}"
+                                        IsEnabled="{Binding ModifiedAfterEnabled}"
+                                        Margin="0,4,0,0"/>
+                        </StackPanel>
+                        <StackPanel Grid.Column="2">
+                            <CheckBox Content="Modified before" IsChecked="{Binding ModifiedBeforeEnabled}"/>
+                            <DatePicker SelectedDate="{Binding ModifiedBefore}"
+                                        IsEnabled="{Binding ModifiedBeforeEnabled}"
+                                        Margin="0,4,0,0"/>
+                        </StackPanel>
+                    </Grid>
+                </StackPanel>
+                <TextBlock Text="Filters are ignored when a scope step is selected."
+                           Style="{StaticResource HintLabelStyle}"/>
+
+            </StackPanel>
+        </DataTemplate>
+
         <DataTemplate DataType="{x:Type vm:IfStepViewModel}">
             <StackPanel>
                 <TextBlock Text="Condition" Style="{StaticResource WfLabelStyle}"/>
@@ -218,6 +356,7 @@
                         <Button.ContextMenu>
                             <ContextMenu>
                                 <MenuItem Header="Search" Command="{Binding AddThenStepCommand}" CommandParameter="search"/>
+                            <MenuItem Header="Find and replace" Command="{Binding AddThenStepCommand}" CommandParameter="replace"/>
                                 <MenuItem Header="If (condition)" Command="{Binding AddThenStepCommand}" CommandParameter="if"/>
                                 <MenuItem Header="Retry loop" Command="{Binding AddThenStepCommand}" CommandParameter="retry"/>
                                 <MenuItem Header="For each file" Command="{Binding AddThenStepCommand}" CommandParameter="forEach"/>
@@ -236,6 +375,7 @@
                         <Button.ContextMenu>
                             <ContextMenu>
                                 <MenuItem Header="Search" Command="{Binding AddElseStepCommand}" CommandParameter="search"/>
+                            <MenuItem Header="Find and replace" Command="{Binding AddElseStepCommand}" CommandParameter="replace"/>
                                 <MenuItem Header="If (condition)" Command="{Binding AddElseStepCommand}" CommandParameter="if"/>
                                 <MenuItem Header="Retry loop" Command="{Binding AddElseStepCommand}" CommandParameter="retry"/>
                                 <MenuItem Header="For each file" Command="{Binding AddElseStepCommand}" CommandParameter="forEach"/>
@@ -269,6 +409,7 @@
                     <Button.ContextMenu>
                         <ContextMenu>
                             <MenuItem Header="Search" Command="{Binding AddBodyStepCommand}" CommandParameter="search"/>
+                            <MenuItem Header="Find and replace" Command="{Binding AddBodyStepCommand}" CommandParameter="replace"/>
                             <MenuItem Header="If (condition)" Command="{Binding AddBodyStepCommand}" CommandParameter="if"/>
                             <MenuItem Header="Retry loop" Command="{Binding AddBodyStepCommand}" CommandParameter="retry"/>
                             <MenuItem Header="For each file" Command="{Binding AddBodyStepCommand}" CommandParameter="forEach"/>
@@ -344,6 +485,7 @@
                     <Button.ContextMenu>
                         <ContextMenu>
                             <MenuItem Header="Search" Command="{Binding AddBodyStepCommand}" CommandParameter="search"/>
+                            <MenuItem Header="Find and replace" Command="{Binding AddBodyStepCommand}" CommandParameter="replace"/>
                             <MenuItem Header="If (condition)" Command="{Binding AddBodyStepCommand}" CommandParameter="if"/>
                             <MenuItem Header="Retry loop" Command="{Binding AddBodyStepCommand}" CommandParameter="retry"/>
                             <MenuItem Header="For each file" Command="{Binding AddBodyStepCommand}" CommandParameter="forEach"/>
@@ -665,6 +807,7 @@
                         <Button.ContextMenu>
                             <ContextMenu>
                                 <MenuItem Header="Search" Command="{Binding Workflows.AddStepCommand}" CommandParameter="search"/>
+                                <MenuItem Header="Find and replace" Command="{Binding Workflows.AddStepCommand}" CommandParameter="replace"/>
                                 <MenuItem Header="If (condition)" Command="{Binding Workflows.AddStepCommand}" CommandParameter="if"/>
                                 <MenuItem Header="Retry loop" Command="{Binding Workflows.AddStepCommand}" CommandParameter="retry"/>
                                 <MenuItem Header="For each file" Command="{Binding Workflows.AddStepCommand}" CommandParameter="forEach"/>
@@ -710,7 +853,7 @@
                     <Button Grid.Column="6"
                             Command="{Binding Workflows.DryRunWorkflowCommand}"
                             Style="{StaticResource ToolButtonStyle}"
-                            ToolTip="Searches and exports run; file operations and program launches are only logged.">
+                            ToolTip="Run searches and replacement previews; log exports, file operations, and program launches without applying them.">
                         <StackPanel Orientation="Horizontal">
                             <ui:FontIcon Glyph="&#xE890;" FontSize="12" Margin="0,0,7,0"/>
                             <TextBlock Text="Dry run"/>
@@ -889,6 +1032,12 @@
                             CornerRadius="8"
                             Padding="10">
                         <DockPanel>
+                            <StackPanel DockPanel.Dock="Bottom" Margin="0,8,0,0">
+                                <Button Content="Undo workflow replacements" Command="{Binding Workflows.UndoReplacementRunCommand}"
+                                        Style="{StaticResource SecondaryButtonStyle}" HorizontalAlignment="Left"
+                                        ToolTip="Restore replacement batches from the last workflow run in reverse order. Conflicts retain dependent batches."/>
+                                <TextBlock Text="{Binding Workflows.ReplacementRecoveryLabel}" Foreground="{DynamicResource Atlas.Ink2Brush}" FontSize="11" Margin="0,4,0,0"/>
+                            </StackPanel>
                             <Grid DockPanel.Dock="Top" Margin="0,0,0,6">
                                 <Grid.ColumnDefinitions>
                                     <ColumnDefinition Width="Auto"/>

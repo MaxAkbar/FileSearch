@@ -100,6 +100,7 @@ public partial class App : System.Windows.Application
                 services.AddSingleton<ApplicationSettingsViewModel>();
                 services.AddSingleton<HistoryViewModel>();
                 services.AddSingleton<SearchViewModel>();
+                services.AddSingleton<ReplacementViewModel>();
                 services.AddSingleton<IndexViewModel>();
                 services.AddSingleton<WorkflowsViewModel>();
                 services.AddSingleton<QuickSearchViewModel>();

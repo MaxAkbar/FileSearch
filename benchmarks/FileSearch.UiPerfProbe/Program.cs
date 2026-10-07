@@ -44,6 +44,16 @@ internal static class Program
         {
             try
             {
+                if (args.Contains("--replace-smoke"))
+                {
+                    await ReplacementSmoke.RunAsync(_output);
+                    return;
+                }
+                if (args.Contains("--workflow-replace-smoke"))
+                {
+                    await WorkflowReplacementSmoke.RunAsync(_output);
+                    return;
+                }
                 int[] sizes = args.Length > 1 ? args[1] == "quick" ? [] : args[1].Split(',').Select(int.Parse).ToArray() : [500, 2000];
                 foreach (int count in sizes)
                 {

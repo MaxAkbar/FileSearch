@@ -1,4 +1,5 @@
 using FileSearch.Core.Queries;
+using FileSearch.Core.Replacement;
 using FileSearch.Core.Workflows;
 using FileSearch.Gui.ViewModels;
 
@@ -166,6 +167,17 @@ public sealed class WorkflowEditorRoundTripTests
                 SourceStepId = "search-1",
                 DestinationDirectory = @"C:\archive",
                 Collision = FileCollisionPolicy.Skip,
+            },
+            new ReplacementStep
+            {
+                Id = "replace-1", Name = "Cleanup", Find = "(TODO)", ReplaceWith = "$1 done", UseRegex = true,
+                MatchCase = true, Target = ReplacementTarget.Names, NameTarget = ReplacementNameTarget.Files,
+                IncludeExtensions = true, IncludeFormulas = true, ScopeStepId = "search-1", Roots = [@"C:\src"],
+                AdditionalTextExtensions = [".custom", ".cfg"],
+                Filters = new SearchFilters { IncludeGlobs = ["*.txt"], ExcludeGlobs = ["skip*"], ExcludeDirectories = [], Recursive = false,
+                    IncludeHidden = true, MinFileSizeBytes = 7, MaxFileSizeBytes = 999,
+                    ModifiedAfterUtc = new DateTime(2026, 1, 2, 3, 4, 5, DateTimeKind.Utc),
+                    ModifiedBeforeUtc = new DateTime(2026, 2, 3, 4, 5, 6, DateTimeKind.Utc) },
             },
         },
     };

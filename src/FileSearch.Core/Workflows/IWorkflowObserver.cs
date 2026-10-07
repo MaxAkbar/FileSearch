@@ -2,6 +2,7 @@ using System.Collections.Generic;
 using System.Threading;
 using System.Threading.Tasks;
 using FileSearch.Core.Engine;
+using FileSearch.Core.Replacement;
 
 namespace FileSearch.Core.Workflows;
 
@@ -32,6 +33,12 @@ public interface IWorkflowObserver
 public interface IWorkflowInteraction
 {
     Task<bool> ConfirmAsync(WorkflowConfirmation confirmation, CancellationToken cancellationToken);
+}
+
+/// <summary>Interactive hosts review concrete proposed edits and choose the items to apply.</summary>
+public interface IWorkflowReplacementInteraction : IWorkflowInteraction
+{
+    Task<IReadOnlySet<string>?> ReviewReplacementAsync(ReplacementPlan plan, CancellationToken cancellationToken);
 }
 
 /// <summary>What a side-effecting step is about to do, for a confirmation prompt.</summary>

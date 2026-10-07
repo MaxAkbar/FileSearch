@@ -24,6 +24,7 @@ public sealed class BindingPathAuditTests
     private static readonly Type[] s_itemTypes =
     {
         typeof(FileResultViewModel),
+        typeof(ReplacementItemViewModel),
         typeof(Hit),
         typeof(IndexValidationDriftInfo),
         typeof(IndexRootHealthInfo),
@@ -39,6 +40,7 @@ public sealed class BindingPathAuditTests
         typeof(WorkflowLibraryItemViewModel),
         typeof(WorkflowStepViewModel),
         typeof(SearchStepViewModel),
+        typeof(ReplacementStepViewModel),
         typeof(IfStepViewModel),
         typeof(RetryStepViewModel),
         typeof(ForEachStepViewModel),
@@ -69,6 +71,8 @@ public sealed class BindingPathAuditTests
         ["SettingsWindow.xaml"] = typeof(ApplicationSettingsViewModel),
         ["QuickSearchWindow.xaml"] = typeof(QuickSearchViewModel),
         ["ImageOcrPreviewWindow.xaml"] = typeof(ImageOcrPreviewViewModel),
+        ["ReplacementResultsView.xaml"] = typeof(ReplacementViewModel),
+        ["WorkflowReplacementReviewWindow.xaml"] = typeof(WorkflowReplacementReviewViewModel),
     };
 
     // Matches a {Binding ...} expression with up to two nesting levels of
@@ -269,7 +273,8 @@ public sealed class BindingPathAuditTests
 
     private static ElementKind Classify(string localName) => localName switch
     {
-        "DataTemplate" or "HierarchicalDataTemplate" => ElementKind.DataTemplate,
+        // DataGrid column bindings resolve on row items, despite columns living outside the visual tree.
+        "DataTemplate" or "HierarchicalDataTemplate" or "DataGrid.Columns" => ElementKind.DataTemplate,
         "Style" or "ControlTemplate" or "ItemsPanelTemplate" or "ContextMenu" or "ToolTip" => ElementKind.Flexible,
         _ => ElementKind.Plain,
     };

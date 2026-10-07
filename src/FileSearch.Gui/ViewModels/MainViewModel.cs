@@ -1,6 +1,7 @@
 using System;
 using System.ComponentModel;
 using System.Threading.Tasks;
+using System.Windows.Input;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 using FileSearch.Gui.Services;
@@ -28,7 +29,8 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
         WorkflowsViewModel workflows,
         IThemeService themeService,
         IStyleService styleService,
-        IShellIntegrationService shellIntegrationService)
+        IShellIntegrationService shellIntegrationService,
+        ReplacementViewModel? replacement = null)
     {
         Search = search;
         Index = index;
@@ -36,10 +38,13 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
         Settings = settings;
         Status = status;
         Workflows = workflows;
+        Replacement = replacement;
         _themeService = themeService;
         _styleService = styleService;
         _shellIntegrationService = shellIntegrationService;
         Settings.PropertyChanged += OnSettingsPropertyChanged;
+        if (search is not null) search.PropertyChanged += OnActiveQueryChanged;
+        if (Replacement is not null) Replacement.PropertyChanged += OnActiveQueryChanged;
     }
 
     public SearchViewModel Search { get; }
@@ -53,6 +58,29 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
     public StatusBarViewModel Status { get; }
 
     public WorkflowsViewModel Workflows { get; }
+
+    public ReplacementViewModel? Replacement { get; }
+    public bool IsNormalSearch => Replacement?.IsOpen != true;
+    public bool CanEditQuery => Search?.IsReplacementBusy != true;
+    public string ActiveQueryText { get => IsNormalSearch ? Search.QueryText : Replacement!.FindText; set { if (IsNormalSearch) Search.QueryText = value; else Replacement!.FindText = value; } }
+    public bool ActiveMatchCase { get => IsNormalSearch ? Search.MatchCase : Replacement!.MatchCase; set { if (IsNormalSearch) Search.MatchCase = value; else Replacement!.MatchCase = value; } }
+    public bool ActiveRegex { get => IsNormalSearch ? Search.IsRegexMode : Replacement!.UseRegex; set { if (IsNormalSearch) Search.IsRegexMode = value; else Replacement!.UseRegex = value; } }
+    public string ActiveQueryPlaceholder => IsNormalSearch ? Search.QueryPlaceholderText : "Find literal text or a regular expression";
+    public string ActiveSearchLabel => IsNormalSearch ? "Search" : "Preview changes";
+    public ICommand ActiveStartCommand => IsNormalSearch ? Search.SearchCommand : Replacement!.PreviewCommand;
+    public ICommand ActiveClearCommand => IsNormalSearch ? Search.ClearQueryCommand : Replacement!.ClearFindCommand;
+    public ICommand ActiveCancelCommand => IsNormalSearch ? Search.CancelCommand : Replacement!.IsBusy ? Replacement.CancelCommand : Replacement.ToggleCommand;
+
+    private void OnActiveQueryChanged(object? sender, PropertyChangedEventArgs args)
+    {
+        if (args.PropertyName is nameof(ReplacementViewModel.IsOpen) or nameof(ReplacementViewModel.IsBusy) or nameof(ReplacementViewModel.FindText) or
+            nameof(ReplacementViewModel.MatchCase) or nameof(ReplacementViewModel.UseRegex) or nameof(SearchViewModel.QueryText) or nameof(SearchViewModel.IsRegexMode) or nameof(SearchViewModel.QueryPlaceholderText) or nameof(SearchViewModel.IsReplacementBusy))
+        {
+            OnPropertyChanged(nameof(IsNormalSearch)); OnPropertyChanged(nameof(CanEditQuery)); OnPropertyChanged(nameof(ActiveQueryText));
+            OnPropertyChanged(nameof(ActiveMatchCase)); OnPropertyChanged(nameof(ActiveRegex)); OnPropertyChanged(nameof(ActiveQueryPlaceholder));
+            OnPropertyChanged(nameof(ActiveSearchLabel)); OnPropertyChanged(nameof(ActiveStartCommand)); OnPropertyChanged(nameof(ActiveClearCommand)); OnPropertyChanged(nameof(ActiveCancelCommand));
+        }
+    }
 
     public bool IsLightThemeSelected => _themeService.CurrentTheme == AppTheme.Light;
 
@@ -173,7 +201,9 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
     public void Dispose()
     {
         Settings.PropertyChanged -= OnSettingsPropertyChanged;
-        Search.Dispose();
+        if (Search is not null) Search.PropertyChanged -= OnActiveQueryChanged;
+        if (Replacement is not null) { Replacement.PropertyChanged -= OnActiveQueryChanged; Replacement.Dispose(); }
+        Search?.Dispose();
         Index.Dispose();
         Workflows.Dispose();
     }

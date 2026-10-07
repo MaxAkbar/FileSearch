@@ -56,6 +56,10 @@
                             <td>Runs a query over root folders, or — with a <strong>scope step</strong> set — only over the files an earlier search matched (a sub-search). Filters include file-name globs (matched against the name only, never the path), size and date limits, and a list of directory names to skip (<code>.git</code>, <code>.vs</code> and <code>node_modules</code> by default). Results are recorded under the step's id for later steps.</td>
                         </tr>
                         <tr>
+                            <td><strong>Find and replace</strong></td>
+                            <td>Previews content or name changes in root folders and filters, or the exact items from an earlier Search step. Run pauses for before/after review and item checkboxes; Apply checked changes only approved items. Searches stopped by a result limit cannot supply a replacement scope.</td>
+                        </tr>
+                        <tr>
                             <td><strong>If</strong></td>
                             <td>Evaluates a condition over earlier search results and runs the <strong>then</strong> steps when it holds, otherwise the <strong>else</strong> steps.</td>
                         </tr>
@@ -139,7 +143,7 @@
             <h2>Running a Workflow</h2>
             <ul class="plain-list">
                 <li><strong>Run</strong> executes the workflow. The run log shows each step starting and completing (indented by nesting), and the hits list streams matching lines as they are found. The display is capped at the first 5,000 hits; counting continues past the cap.</li>
-                <li><strong>Dry run</strong> performs the searches but no exports, file operations, or program launches — those steps log what they would do instead. Searches still read your files, so you can check hit counts before a real run.</li>
+                <li><strong>Dry run</strong> performs searches and replacement previews but no exports, replacements, file operations, or program launches. Those actions log what they would do instead.</li>
                 <li><strong>Cancel</strong> stops the run; closing the window also cancels it.</li>
                 <li>Before any files are copied or moved, any program is launched, or an export overwrites an existing file, FileSearch shows a confirmation listing what is about to happen. Declining skips that step and the workflow continues. Exports to a new file path write without a prompt.</li>
             </ul>
@@ -148,6 +152,8 @@
                 The editor validates as you type — missing names, empty loops, duplicate ids, more parameter sets than iterations, and references to search steps that don't run earlier are listed under the step editor — and a workflow must be valid before it runs.
             </div>
 
+            <h2>Replacement Recovery</h2>
+            <p><strong>Undo workflow replacements</strong>, beneath the run log, restores replacement batches from the last workflow run in reverse order, including after restarting. Conflicts retain earlier dependent batches. The run log and recovery journals retain change counts, skipped items, and batch IDs. Copies, moves, exports, and program launches are outside replacement Undo.</p>
             <h2>Mail Search Workflows</h2>
             <p id="mail-files">Mail searches can return many messages from one PST/OST, but workflow file counts, for-each loops, sub-search scopes, copy/move steps, and per-file program arguments use the physical store path. Copying or moving a matched store acts on the whole PST/OST, not an individual message. Use result previews to read individual messages; see <a href="mail.html">Outlook Mail Search</a>.</p>
             <h2>Where Workflows Are Stored</h2>

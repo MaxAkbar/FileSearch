@@ -7,6 +7,7 @@ using System.Windows;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 using FileSearch.Core.Queries;
+using FileSearch.Core.Replacement;
 using FileSearch.Core.Walker;
 using FileSearch.Core.Workflows;
 
@@ -64,6 +65,8 @@ public static class WorkflowEnumValues
 {
     public static IReadOnlyList<QueryMode> QueryModes { get; } =
         new[] { QueryMode.Unified, QueryMode.PlainText, QueryMode.Regex, QueryMode.Boolean };
+    public static IReadOnlyList<ReplacementTarget> ReplacementTargets { get; } = Enum.GetValues<ReplacementTarget>();
+    public static IReadOnlyList<ReplacementNameTarget> ReplacementNameTargets { get; } = Enum.GetValues<ReplacementNameTarget>();
 
     public static IReadOnlyList<ExportFormat> ExportFormats { get; } =
         new[] { ExportFormat.Json, ExportFormat.Csv, ExportFormat.Markdown };
@@ -235,7 +238,7 @@ public abstract partial class WorkflowStepViewModel : ObservableObject
 }
 
 /// <summary>Editor for <see cref="SearchStep"/>.</summary>
-public sealed partial class SearchStepViewModel : WorkflowStepViewModel
+public partial class SearchStepViewModel : WorkflowStepViewModel
 {
     public SearchStepViewModel(IWorkflowStepHost host, string id)
         : base(host, id)

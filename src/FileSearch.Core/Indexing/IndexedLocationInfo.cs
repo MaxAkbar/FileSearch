@@ -18,4 +18,18 @@ public sealed record IndexedLocationInfo(
     long LastValidationMissingFromIndexCount = 0,
     long LastValidationChangedCount = 0,
     long LastValidationMissingFromDiskCount = 0,
-    long LastValidationFailedCount = 0);
+    long LastValidationFailedCount = 0)
+{
+    /// <summary>Reconstructs the saved index profile for a refresh without adopting current search filters.</summary>
+    public FileSearch.Core.Walker.WalkerOptions? GetWalkerOptions()
+    {
+        if (!IndexProfile.TryParse(Profile, out var profile)) return null;
+        return new()
+        {
+            Recursive = profile.Recursive, IncludeHidden = profile.IncludeHidden, EnableOcr = profile.EnableOcr,
+            IncludeExtensions = profile.IncludeExtensions, ExcludeExtensions = profile.ExcludeExtensions,
+            IncludeDirectories = profile.IncludeDirectories, ExcludeDirectories = profile.ExcludeDirectories,
+            MinFileSizeBytes = 0, MaxFileSizeBytes = 0,
+        };
+    }
+}

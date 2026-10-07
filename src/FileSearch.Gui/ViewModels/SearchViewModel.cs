@@ -22,6 +22,7 @@ using FileSearch.Core.Engine;
 using FileSearch.Core.Extractors;
 using FileSearch.Core.Indexing;
 using FileSearch.Core.Queries;
+using FileSearch.Core.Replacement;
 using FileSearch.Core.Walker;
 using FileSearch.Gui.Services;
 using FileSearch.Gui.Settings;
@@ -1257,7 +1258,7 @@ public sealed partial class SearchViewModel : ObservableObject, IDisposable
     }
 
     private bool CanRenameResult(FileResultViewModel? file) =>
-        _fileOperationService is not null && file is not null && !file.IsDirectory && !file.IsStoreMessage;
+        !IsReplacementBusy && _fileOperationService is not null && file is not null && !file.IsDirectory && !file.IsStoreMessage;
 
     [RelayCommand(CanExecute = nameof(CanDeleteResult))]
     private async Task DeleteResultAsync(FileResultViewModel? file)
@@ -1295,7 +1296,7 @@ public sealed partial class SearchViewModel : ObservableObject, IDisposable
     }
 
     private bool CanDeleteResult(FileResultViewModel? file) =>
-        _fileOperationService is not null && file is not null && !file.IsDirectory && !file.IsStoreMessage;
+        !IsReplacementBusy && _fileOperationService is not null && file is not null && !file.IsDirectory && !file.IsStoreMessage;
 
     [RelayCommand]
     private void Browse()
@@ -1479,7 +1480,42 @@ public sealed partial class SearchViewModel : ObservableObject, IDisposable
         }
     }
 
-    private bool CanSearch() => !IsSearching;
+    private bool CanSearch() => !IsSearching && !IsReplacementBusy;
+
+    [ObservableProperty]
+    private bool _isReplacementBusy;
+
+    partial void OnIsReplacementBusyChanged(bool value)
+    {
+        SearchCommand.NotifyCanExecuteChanged(); RenameResultCommand.NotifyCanExecuteChanged(); DeleteResultCommand.NotifyCanExecuteChanged();
+    }
+
+    internal WalkerOptions BuildReplacementWalkerOptions(ReplacementTarget target) => BuildWalkerOptions(target == ReplacementTarget.Contents ? SearchTarget.Content : SearchTarget.FileAndFolderNames);
+
+    internal void RemapReplacementPaths(string oldPath, string newPath, bool directory)
+    {
+        SearchPath = ReplacementViewModel.Remap(SearchPath, oldPath, newPath, directory);
+        foreach (var file in Files)
+        {
+            var path = ReplacementViewModel.Remap(file.FullPath, oldPath, newPath, directory);
+            if (!string.Equals(path, file.FullPath, StringComparison.Ordinal)) file.UpdatePath(path);
+        }
+    }
+
+    internal async Task RefreshAfterReplacementAsync()
+    {
+        // Semantic results need the refreshed vector index. Remove stale rows until it is ready.
+        if (IsSemanticMode || string.IsNullOrWhiteSpace(QueryText))
+        {
+            foreach (var file in Files) file.MetadataLoaded -= OnResultMetadataLoaded;
+            Files.Clear(); _filesByPath.Clear(); SelectedFile = null; PreviewContent = string.Empty;
+            TotalHits = 0; FilesMatched = 0;
+            return;
+        }
+        var indexed = UseIndex;
+        try { UseIndex = false; await SearchAsync(); }
+        finally { UseIndex = indexed; }
+    }
 
     /// <summary>
     /// Applies queued hits to the UI collections. Runs on the UI thread.

@@ -28,3 +28,16 @@ selection binding. Missing metadata deliberately uses nonexistent synthetic path
 all main-window hits include size and date. Filesystem metadata and stale-query
 cancellation are covered by the GUI tests. Raw timings are machine-specific and
 are not deterministic unit-test thresholds.
+
+## Find and replace smoke check
+
+```powershell
+dotnet run --project benchmarks/FileSearch.UiPerfProbe/UiPerfProbe.csproj --artifacts-path artifacts/replacement-smoke-build -- artifacts/replacement-smoke.json --replace-smoke
+```
+
+This mode renders the real MainWindow offscreen using temporary text files and the
+replacement service. It verifies panel opening, query bindings, Enter preview,
+realized preview rows, Apply and Undo buttons, and restoration of normal search.
+It writes a JSON result and a PNG beside it, then removes its temporary files.
+
+Use `artifacts/workflow-replacement-smoke.json --workflow-replace-smoke` with the same command to exercise the real Workflows editor and modal replacement review. This mode checks dry run, checkboxes, Enter handling, successive name/content replacement steps, and grouped Undo. It also saves editor and review screenshots.

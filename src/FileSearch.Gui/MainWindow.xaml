@@ -78,13 +78,14 @@
                         <MenuItem Header="E_xit" Click="OnExitClick"/>
                     </MenuItem>
                     <MenuItem Header="_Search">
-                        <MenuItem Header="_Start" Command="{Binding Search.SearchCommand}" InputGestureText="Enter"/>
-                        <MenuItem Header="_Cancel" Command="{Binding Search.CancelCommand}" InputGestureText="Esc"/>
+                        <MenuItem Header="_Start" Command="{Binding ActiveStartCommand}" InputGestureText="Enter"/>
+                        <MenuItem Header="_Cancel" Command="{Binding ActiveCancelCommand}" InputGestureText="Esc"/>
                         <Separator/>
                         <MenuItem Header="Save current s_earch" Command="{Binding Search.SaveCurrentSearchCommand}"/>
                         <MenuItem Header="Save current _workspace" Command="{Binding Search.SaveWorkspaceCommand}"/>
                         <MenuItem Header="_Pin folder to locations" Command="{Binding Search.PinSearchFolderCommand}"/>
                         <Separator/>
+                        <MenuItem Header="Find and _replace" Command="{Binding Replacement.ToggleCommand}" InputGestureText="Ctrl+H"/>
                         <MenuItem Header="_Regex tester..." Click="OnRegexTesterClick"/>
                         <MenuItem Header="_Workflows..." Click="OnWorkflowsClick"/>
                     </MenuItem>
@@ -1001,7 +1002,7 @@
                         </Grid.ColumnDefinitions>
 
                         <!-- Folder chip: glyph browses, path stays editable, chevron opens places. -->
-                        <Border Grid.Column="0" Style="{StaticResource SearchFieldShellStyle}"
+                        <Border Grid.Column="0" Style="{StaticResource SearchFieldShellStyle}" IsEnabled="{Binding CanEditQuery}"
                                 MaxWidth="340" Margin="0,0,8,0">
                             <Grid>
                                 <Grid.ColumnDefinitions>
@@ -1121,27 +1122,27 @@
                                       StrokeThickness="1.5" Margin="12,0,10,0"/>
                                 <TextBox x:Name="QueryBox"
                                          Grid.Column="1"
-                                         Text="{Binding Search.QueryText, UpdateSourceTrigger=PropertyChanged}"
+                                         Text="{Binding ActiveQueryText, UpdateSourceTrigger=PropertyChanged}" IsEnabled="{Binding CanEditQuery}"
                                          Style="{StaticResource OmniQueryBoxStyle}"
                                          AutomationProperties.Name="Search text"
-                                         ui:ControlHelper.PlaceholderText="{Binding Search.QueryPlaceholderText}"/>
+                                         ui:ControlHelper.PlaceholderText="{Binding ActiveQueryPlaceholder}"/>
                                 <Border Grid.Column="2" Style="{StaticResource KbdHintStyle}"
                                         Margin="8,0,4,0"
                                         ToolTip="Press / to focus the search box">
                                     <TextBlock Text="/" Style="{StaticResource KbdHintTextStyle}"/>
                                 </Border>
                                 <ToggleButton Grid.Column="3" Content="Aa"
-                                              IsChecked="{Binding Search.MatchCase}"
+                                              IsChecked="{Binding ActiveMatchCase}" IsEnabled="{Binding CanEditQuery}"
                                               Style="{StaticResource InlineToggleButtonStyle}"
                                               ToolTip="Match case"
                                               AutomationProperties.Name="Match case"/>
                                 <ToggleButton Grid.Column="4" Content=".*"
-                                              IsChecked="{Binding Search.IsRegexMode}"
+                                              IsChecked="{Binding ActiveRegex}" IsEnabled="{Binding CanEditQuery}"
                                               Style="{StaticResource InlineToggleButtonStyle}"
                                               FontFamily="{DynamicResource Atlas.MonoFont}" FontWeight="Bold"
                                               ToolTip="Use regular expression"
                                               AutomationProperties.Name="Use regular expression"/>
-                                <ToggleButton x:Name="SemanticModeButton" Grid.Column="5" Content="Semantic"
+                                <ToggleButton x:Name="SemanticModeButton" Grid.Column="5" Visibility="{Binding IsNormalSearch, Converter={StaticResource BoolToVisibility}}" Content="Semantic"
                                               IsChecked="{Binding Search.IsSemanticMode}"
                                               Style="{StaticResource InlineToggleButtonStyle}"
                                               Width="72"
@@ -1149,7 +1150,7 @@
                                               AutomationProperties.Name="Semantic search"/>
                                 <Border Grid.Column="6" Width="1" Height="20" Margin="6,0,2,0"
                                         Background="{DynamicResource Atlas.LineBrush}"/>
-                                <Button Grid.Column="7" Command="{Binding Search.ClearQueryCommand}"
+                                <Button Grid.Column="7" Command="{Binding ActiveClearCommand}"
                                         Style="{StaticResource IconButtonStyle}"
                                         Width="28" Height="28" Margin="0,0,6,0"
                                         ToolTip="Clear search" AutomationProperties.Name="Clear search">
@@ -1170,7 +1171,7 @@
                         </Border>
 
                         <!-- File types (scope presets + custom scopes). -->
-                        <Grid Grid.Column="2" Margin="8,0,0,0">
+                        <Grid Grid.Column="2" Margin="8,0,0,0" IsEnabled="{Binding CanEditQuery}">
                             <ToggleButton x:Name="FileTypesButton"
                                           Style="{StaticResource SearchFieldButtonStyle}"
                                           ToolTip="{Binding Search.FilePatternSummary}"
@@ -1249,7 +1250,7 @@
                         </Grid>
 
                         <!-- Search / Stop. -->
-                        <Button Grid.Column="3" Command="{Binding Search.SearchCommand}" IsDefault="True"
+                        <Button Grid.Column="3" Command="{Binding ActiveStartCommand}" IsDefault="True"
                                 Margin="8,0,0,0" ToolTip="Start search">
                             <Button.Style>
                                 <Style TargetType="Button" BasedOn="{StaticResource SearchCommandButtonStyle}">
@@ -1263,7 +1264,7 @@
                             <StackPanel Orientation="Horizontal">
                                 <Path Data="{StaticResource Icon.Search}" Style="{StaticResource LineIcon14Style}"
                                       StrokeThickness="1.9" Margin="0,0,8,0"/>
-                                <TextBlock Text="Search" VerticalAlignment="Center"/>
+                                <TextBlock Text="{Binding ActiveSearchLabel}" VerticalAlignment="Center"/>
                             </StackPanel>
                         </Button>
                         <Button Grid.Column="3" Command="{Binding Search.CancelCommand}" IsCancel="True"
@@ -1290,6 +1291,33 @@
                     </Grid>
 
                     <StackPanel Grid.Row="1">
+                        <DockPanel Margin="20,0,20,8">
+                            <Button DockPanel.Dock="Left" Content="Replace" Command="{Binding Replacement.ToggleCommand}"
+                                    Style="{StaticResource ToolbarButtonStyle}"
+                                    Padding="12,5" Margin="0,0,12,0" ToolTip="Find and replace (Ctrl+H)" AutomationProperties.Name="Toggle find and replace"/>
+                            <TextBlock Text="{Binding Replacement.ScopeText}" VerticalAlignment="Center" TextTrimming="CharacterEllipsis"
+                                       Foreground="{DynamicResource Atlas.Ink2Brush}" Visibility="{Binding Replacement.IsOpen, Converter={StaticResource BoolToVisibility}}"/>
+                        </DockPanel>
+                        <Border Margin="20,0,20,12" Padding="12" Style="{StaticResource SearchOptionsPanelStyle}"
+                                Visibility="{Binding Replacement.IsOpen, Converter={StaticResource BoolToVisibility}}">
+                            <StackPanel IsEnabled="{Binding Replacement.CanEdit}">
+                                <WrapPanel>
+                                    <TextBlock Text="Replace with" VerticalAlignment="Center" Margin="0,0,8,0"/>
+                                    <TextBox x:Name="ReplacementTextBox" Text="{Binding Replacement.ReplaceWith, UpdateSourceTrigger=PropertyChanged}" Foreground="{DynamicResource Atlas.InkBrush}" Background="{DynamicResource Atlas.SurfaceBrush}" BorderBrush="{DynamicResource Atlas.LineBrush}" BorderThickness="1" Padding="8,4" Width="260" MinHeight="30" Margin="0,0,12,6" AutomationProperties.Name="Replace with"/>
+                                    <ComboBox ItemsSource="{Binding Replacement.Targets}" SelectedItem="{Binding Replacement.Target}" Foreground="{DynamicResource Atlas.InkBrush}" Background="{DynamicResource Atlas.SurfaceBrush}" Width="110" Margin="0,0,12,6" AutomationProperties.Name="Replacement target"/>
+                                    <ComboBox ItemsSource="{Binding Replacement.NameTargets}" SelectedItem="{Binding Replacement.NameTarget}" Foreground="{DynamicResource Atlas.InkBrush}" Background="{DynamicResource Atlas.SurfaceBrush}" Width="100" Margin="0,0,12,6" AutomationProperties.Name="Rename files or folders"
+                                              Visibility="{Binding Replacement.IsNames, Converter={StaticResource BoolToVisibility}}"/>
+                                    <CheckBox Content="Include extensions" IsChecked="{Binding Replacement.IncludeExtensions}" Style="{StaticResource CheckChipStyle}" VerticalAlignment="Center" Margin="0,0,12,6"
+                                              Visibility="{Binding Replacement.IsNames, Converter={StaticResource BoolToVisibility}}"/>
+                                    <CheckBox Content="Also replace in formulas" IsChecked="{Binding Replacement.IncludeFormulas}" Style="{StaticResource CheckChipStyle}" VerticalAlignment="Center" Margin="0,0,12,6"
+                                              Visibility="{Binding Replacement.IsContents, Converter={StaticResource BoolToVisibility}}"/>
+                                </WrapPanel>
+                                <TextBlock Text="Review the proposed changes, check the items to include, then click Apply checked. Empty replacement text removes matches."
+                                           TextWrapping="Wrap" Foreground="{DynamicResource Atlas.Ink2Brush}" FontSize="12"/>
+                            </StackPanel>
+                        </Border>
+                        <StackPanel Visibility="{Binding IsNormalSearch, Converter={StaticResource BoolToVisibility}}">
+
                         <Border x:Name="SemanticResultControls" Margin="20,0,20,8"
                                 Visibility="{Binding Search.IsSemanticMode, Converter={StaticResource BoolToVisibility}}">
                             <Border.Style>
@@ -1373,8 +1401,10 @@
                     </ItemsControl>
                     </StackPanel>
 
+                    </StackPanel>
+
                     <!-- Search options (SEARCH IN / MATCH pills, REFINE / INCLUDE chips) -->
-                    <Border Grid.Row="2"
+                    <Border Grid.Row="2" IsEnabled="{Binding CanEditQuery}"
                         Margin="20,0,20,12"
                             Style="{StaticResource SearchOptionsPanelStyle}"
                             Visibility="{Binding Search.IsSearchOptionsVisible, Converter={StaticResource BoolToVisibility}}">
@@ -1402,7 +1432,7 @@
                                         Content="Done"/>
                             </Grid>
                             <StackPanel>
-                                <WrapPanel>
+                                <WrapPanel Visibility="{Binding IsNormalSearch, Converter={StaticResource BoolToVisibility}}">
                                     <StackPanel Margin="0,0,36,0">
                                         <TextBlock Text="SEARCH IN" Style="{StaticResource OptionGroupLabelStyle}"/>
                                         <ItemsControl ItemsSource="{Binding Search.SearchTargetOptions}"
@@ -1440,7 +1470,7 @@
                                 <TextBlock Text="REFINE" Style="{StaticResource OptionGroupLabelStyle}"/>
                                 <WrapPanel>
                                     <CheckBox Content="Match case"
-                                              IsChecked="{Binding Search.MatchCase}"
+                                              IsChecked="{Binding ActiveMatchCase}"
                                               Style="{StaticResource CheckChipStyle}"/>
                                 </WrapPanel>
 
@@ -1450,13 +1480,19 @@
                                               IsChecked="{Binding Search.IncludeSubfolders}"
                                               Style="{StaticResource CheckChipStyle}"/>
                                     <CheckBox Content="Office &amp; PDF text"
+                                              Visibility="{Binding IsNormalSearch, Converter={StaticResource BoolToVisibility}}"
                                               IsChecked="{Binding Search.EnableDocumentExtraction}"
                                               Style="{StaticResource CheckChipStyle}"/>
-                                    <CheckBox Content="Text in images (OCR)"
+                                    <StackPanel Visibility="{Binding Replacement.IsOpen, Converter={StaticResource BoolToVisibility}}">
+                                        <CheckBox Content="Office files" IsChecked="{Binding Search.EnableDocumentExtraction}"
+                                                  Style="{StaticResource CheckChipStyle}" Visibility="{Binding Replacement.IsContents, Converter={StaticResource BoolToVisibility}}"/>
+                                    </StackPanel>
+                                    <CheckBox Visibility="{Binding IsNormalSearch, Converter={StaticResource BoolToVisibility}}" Content="Text in images (OCR)"
                                               IsChecked="{Binding Search.EnableImageOcr}"
                                               ToolTip="Extract text from PNG, JPEG, BMP, and TIFF images."
                                               Style="{StaticResource CheckChipStyle}"/>
                                     <CheckBox Content="Use index"
+                                              Visibility="{Binding IsNormalSearch, Converter={StaticResource BoolToVisibility}}"
                                               IsChecked="{Binding Search.UseIndex}"
                                               Style="{StaticResource CheckChipStyle}"/>
                                 </WrapPanel>
@@ -1532,7 +1568,7 @@
                     </Border>
 
                     <!-- Results header: "1,057 matches in 199 files" + toolbar -->
-                    <Grid Grid.Row="3"
+                    <Grid Grid.Row="3" Visibility="{Binding IsNormalSearch, Converter={StaticResource BoolToVisibility}}"
                           Margin="{DynamicResource AppDensity.ResultsHeaderMargin}"
                           MinHeight="{DynamicResource AppDensity.ResultsHeaderMinHeight}">
                         <Grid.ColumnDefinitions>
@@ -1719,7 +1755,8 @@
                     </Grid>
 
                     <!-- Filters bar: compact dropdowns whose menus overlay the results. -->
-                    <Border Grid.Row="4" Margin="20,0,20,8" Style="{StaticResource ResultOptionsPanelStyle}"
+                    <Grid Grid.Row="4" Visibility="{Binding IsNormalSearch, Converter={StaticResource BoolToVisibility}}">
+                    <Border Margin="20,0,20,8" Style="{StaticResource ResultOptionsPanelStyle}"
                             Padding="10,9"
                             Visibility="{Binding Search.IsResultFiltersVisible, Converter={StaticResource BoolToVisibility}}">
                         <Grid>
@@ -1946,7 +1983,9 @@
                         </Grid>
                     </Border>
 
-                    <WrapPanel Grid.Row="5" Margin="20,0,20,8"
+                    </Grid>
+                    <Grid Grid.Row="5" Visibility="{Binding IsNormalSearch, Converter={StaticResource BoolToVisibility}}">
+                    <WrapPanel Margin="20,0,20,8"
                                Visibility="{Binding Search.HasActiveResultFacets, Converter={StaticResource BoolToVisibility}}">
                         <TextBlock Text="ACTIVE" Style="{StaticResource FilterStripLabelStyle}"/>
                         <ItemsControl ItemsSource="{Binding Search.ActiveResultFacetChips}">
@@ -1984,7 +2023,10 @@
                     </WrapPanel>
 
                     <!-- Results | splitter | preview -->
-                    <Grid x:Name="ResultsArea" Grid.Row="6">
+                    </Grid>
+                    <controls:ReplacementResultsView Grid.Row="3" Grid.RowSpan="4" DataContext="{Binding Replacement}"
+                        Visibility="{Binding DataContext.Replacement.IsOpen, RelativeSource={RelativeSource AncestorType=Window}, Converter={StaticResource BoolToVisibility}}"/>
+                    <Grid x:Name="ResultsArea" Grid.Row="6" Visibility="{Binding IsNormalSearch, Converter={StaticResource BoolToVisibility}}">
                         <Grid.ColumnDefinitions>
                             <ColumnDefinition x:Name="ContentColumn" Width="*" MinWidth="420"/>
                             <ColumnDefinition x:Name="PreviewSplitterColumn" Width="Auto"/>

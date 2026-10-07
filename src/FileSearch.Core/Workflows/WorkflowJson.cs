@@ -77,7 +77,7 @@ public static class WorkflowJson
             // System.Text.Json polymorphism throws this for a missing or
             // unknown "type" discriminator on a step.
             error = "A step is missing a valid \"type\" — every step needs one of: "
-                + "search, if, retry, forEach, export, fileOperation, runProgram, stop.";
+                + "search, replace, if, retry, forEach, export, fileOperation, runProgram, stop.";
             return null;
         }
     }

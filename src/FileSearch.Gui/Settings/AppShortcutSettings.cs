@@ -17,6 +17,7 @@ public enum AppShortcutAction
     DeleteSelectedResult,
     SaveWorkspace,
     ClearResultFacets,
+    FindAndReplace,
 }
 
 public enum QuickSearchShortcutAction
@@ -53,10 +54,12 @@ public enum AppShortcutGesture
     Delete,
     CtrlShiftW,
     CtrlShiftBackspace,
+    CtrlH,
 }
 
 public sealed class AppShortcutSettings
 {
+    public AppShortcutGesture FindAndReplace { get; set; } = AppShortcutGesture.CtrlH;
     public AppShortcutGesture FocusQuery { get; set; } = AppShortcutGesture.CtrlF;
 
     public AppShortcutGesture FocusFolder { get; set; } = AppShortcutGesture.CtrlL;

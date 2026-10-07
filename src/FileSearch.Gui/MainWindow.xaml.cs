@@ -300,6 +300,14 @@ public partial class MainWindow : Window
         if (DataContext is not MainViewModel viewModel)
             return;
 
+        if (viewModel.Replacement?.IsOpen == true && e.Key == Key.Return &&
+            Keyboard.Modifiers is ModifierKeys.None or ModifierKeys.Control)
+        {
+            ExecuteCommand(viewModel.Replacement.PreviewCommand);
+            e.Handled = true;
+            return;
+        }
+
         // "/" jumps to the search box (the hint shown in the Vela command bar),
         // unless the user is already typing in a text input.
         if (e.Key is Key.OemQuestion or Key.Divide &&
@@ -339,6 +347,10 @@ public partial class MainWindow : Window
 
         switch (action)
         {
+            case AppShortcutAction.FindAndReplace:
+                if (viewModel.Replacement is null || !ExecuteCommand(viewModel.Replacement.ToggleCommand)) return false;
+                QueryBox.Focus(); QueryBox.SelectAll();
+                return true;
             case AppShortcutAction.FocusQuery:
                 QueryBox.Focus();
                 QueryBox.SelectAll();
@@ -350,10 +362,10 @@ public partial class MainWindow : Window
                 return true;
 
             case AppShortcutAction.StartSearch:
-                return ExecuteCommand(search.SearchCommand);
+                return ExecuteCommand(viewModel.ActiveStartCommand);
 
             case AppShortcutAction.CancelSearch:
-                return ExecuteCommand(search.CancelCommand);
+                return ExecuteCommand(viewModel.ActiveCancelCommand);
 
             case AppShortcutAction.FocusResults:
                 search.SelectedFile ??= search.FilesView.Cast<FileResultViewModel>().FirstOrDefault();
@@ -414,6 +426,7 @@ public partial class MainWindow : Window
         return gesture switch
         {
             AppShortcutGesture.CtrlF => modifiers == ModifierKeys.Control && key == Key.F,
+            AppShortcutGesture.CtrlH => modifiers == ModifierKeys.Control && key == Key.H,
             AppShortcutGesture.CtrlL => modifiers == ModifierKeys.Control && key == Key.L,
             AppShortcutGesture.CtrlEnter => modifiers == ModifierKeys.Control && key == Key.Return,
             AppShortcutGesture.Escape => modifiers == ModifierKeys.None && key == Key.Escape,
@@ -462,6 +475,7 @@ public partial class MainWindow : Window
 
     private static bool GestureHasModifiers(AppShortcutGesture gesture) =>
         gesture is AppShortcutGesture.CtrlF
+            or AppShortcutGesture.CtrlH
             or AppShortcutGesture.CtrlL
             or AppShortcutGesture.CtrlEnter
             or AppShortcutGesture.CtrlR

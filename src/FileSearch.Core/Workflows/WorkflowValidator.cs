@@ -89,6 +89,21 @@ public static class WorkflowValidator
                         state.SeenSearchIds.Add(s.Id);
                     break;
 
+                case ReplacementStep replacement:
+                    if (string.IsNullOrEmpty(replacement.Find)) errors.Add($"Replacement step '{label}' has no find text.");
+                    if (replacement.ScopeStepId is null && replacement.Roots.Count == 0)
+                        errors.Add($"Replacement step '{label}' needs root folders or an earlier search scope.");
+                    if (replacement.ScopeStepId is not null) RequireEarlierSearch(errors, state, replacement.ScopeStepId, label, "scope");
+                    if (!Enum.IsDefined(replacement.Target) || !Enum.IsDefined(replacement.NameTarget)) errors.Add($"Replacement step '{label}' has an invalid target.");
+                    if (replacement.Filters.MinFileSizeBytes < 0 || replacement.Filters.MaxFileSizeBytes < 0)
+                        errors.Add($"Replacement step '{label}' has a negative file size limit.");
+                    if (replacement.UseRegex && !replacement.Find.Contains("${", StringComparison.Ordinal))
+                    {
+                        try { _ = new System.Text.RegularExpressions.Regex(replacement.Find, System.Text.RegularExpressions.RegexOptions.CultureInvariant, TimeSpan.FromSeconds(2)); }
+                        catch (ArgumentException exception) { errors.Add($"Replacement step '{label}' has an invalid regex: {exception.Message}"); }
+                    }
+                    break;
+
                 case IfStep i:
                     // The condition evaluates before either branch runs.
                     RequireConditionRef(errors, state, i.Condition, label);

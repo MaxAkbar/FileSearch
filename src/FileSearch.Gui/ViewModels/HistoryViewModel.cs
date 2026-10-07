@@ -651,6 +651,29 @@ public sealed partial class HistoryViewModel : ObservableObject
         });
     }
 
+    internal void RemapReplacementPaths(string oldPath, string newPath, bool directory)
+    {
+        string Map(string path) => ReplacementViewModel.Remap(path, oldPath, newPath, directory);
+        for (var i = 0; i < RecentPaths.Count; i++) RecentPaths[i] = Map(RecentPaths[i]);
+        for (var i = 0; i < Locations.Count; i++) Locations[i] = Map(Locations[i]);
+        for (var i = 0; i < SavedSearches.Count; i++)
+        {
+            var search = NormalizeSavedSearch(SavedSearches[i]); search.SearchPath = Map(search.SearchPath); SavedSearches[i] = search;
+        }
+        for (var i = 0; i < FavoriteResults.Count; i++)
+            FavoriteResults[i] = new FavoriteResultSettings { Path = Map(FavoriteResults[i].Path), AddedUtc = FavoriteResults[i].AddedUtc };
+        for (var i = 0; i < Workspaces.Count; i++)
+        {
+            var workspace = NormalizeWorkspace(Workspaces[i]);
+            workspace.Search.SearchPath = Map(workspace.Search.SearchPath);
+            workspace.PinnedPaths = workspace.PinnedPaths.Select(Map).ToList();
+            workspace.QuickSearchSelectedIndexedRoots = workspace.QuickSearchSelectedIndexedRoots.Select(Map).ToList();
+            foreach (var favorite in workspace.FavoriteResults) favorite.Path = Map(favorite.Path);
+            Workspaces[i] = workspace;
+        }
+        SaveHistory();
+    }
+
     private void PromoteSavedSearch(SavedSearchSettings search)
     {
         var matchIndex = -1;

@@ -152,6 +152,7 @@ public sealed partial class ApplicationSettingsViewModel : ObservableObject
     [
         new(AppShortcutGesture.Disabled, "Disabled"),
         new(AppShortcutGesture.CtrlF, "Ctrl+F"),
+        new(AppShortcutGesture.CtrlH, "Ctrl+H"),
         new(AppShortcutGesture.CtrlL, "Ctrl+L"),
         new(AppShortcutGesture.CtrlEnter, "Ctrl+Enter"),
         new(AppShortcutGesture.Escape, "Esc"),
@@ -906,6 +907,7 @@ public sealed partial class ApplicationSettingsViewModel : ObservableObject
             if (ShortcutBindings.Count == 0)
             {
                 AddShortcutBinding(AppShortcutAction.FocusQuery, "Focus search text", "Move focus to the main search text box.", settings.FocusQuery);
+                AddShortcutBinding(AppShortcutAction.FindAndReplace, "Find and replace", "Open or close the replacement panel.", settings.FindAndReplace);
                 AddShortcutBinding(AppShortcutAction.FocusFolder, "Focus folder", "Move focus to the folder field.", settings.FocusFolder);
                 AddShortcutBinding(AppShortcutAction.StartSearch, "Start search", "Run the current full-window search.", settings.StartSearch);
                 AddShortcutBinding(AppShortcutAction.CancelSearch, "Cancel search", "Stop the running search.", settings.CancelSearch);
@@ -924,6 +926,7 @@ public sealed partial class ApplicationSettingsViewModel : ObservableObject
             }
 
             SetShortcut(AppShortcutAction.FocusQuery, settings.FocusQuery);
+            SetShortcut(AppShortcutAction.FindAndReplace, settings.FindAndReplace);
             SetShortcut(AppShortcutAction.FocusFolder, settings.FocusFolder);
             SetShortcut(AppShortcutAction.StartSearch, settings.StartSearch);
             SetShortcut(AppShortcutAction.CancelSearch, settings.CancelSearch);
@@ -1039,6 +1042,7 @@ public sealed partial class ApplicationSettingsViewModel : ObservableObject
     private AppShortcutSettings BuildShortcutSettings() => new()
     {
         FocusQuery = GetShortcut(AppShortcutAction.FocusQuery),
+        FindAndReplace = GetShortcut(AppShortcutAction.FindAndReplace),
         FocusFolder = GetShortcut(AppShortcutAction.FocusFolder),
         StartSearch = GetShortcut(AppShortcutAction.StartSearch),
         CancelSearch = GetShortcut(AppShortcutAction.CancelSearch),
@@ -1073,6 +1077,7 @@ public sealed partial class ApplicationSettingsViewModel : ObservableObject
         return new AppShortcutSettings
         {
             FocusQuery = NormalizeShortcutGesture(settings.FocusQuery),
+            FindAndReplace = NormalizeShortcutGesture(settings.FindAndReplace),
             FocusFolder = NormalizeShortcutGesture(settings.FocusFolder),
             StartSearch = NormalizeShortcutGesture(settings.StartSearch),
             CancelSearch = NormalizeShortcutGesture(settings.CancelSearch),

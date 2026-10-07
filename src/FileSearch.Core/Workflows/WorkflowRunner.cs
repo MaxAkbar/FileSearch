@@ -13,6 +13,7 @@ using System.Threading.Tasks;
 using FileSearch.Core.Engine;
 using FileSearch.Core.Extractors;
 using FileSearch.Core.Queries;
+using FileSearch.Core.Replacement;
 using FileSearch.Core.Walker;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
@@ -35,6 +36,7 @@ public sealed partial class WorkflowRunner : IWorkflowRunner
     private readonly SearchOptions? _searchOptions;
     private readonly ILogger _logger;
     private readonly ILoggerFactory? _loggerFactory;
+    private readonly IReplacementService? _replacement;
 
     public WorkflowRunner(
         ISearcher searcher,
@@ -42,7 +44,8 @@ public sealed partial class WorkflowRunner : IWorkflowRunner
         IExtractorRegistry extractors,
         SearchOptions? searchOptions = null,
         ILogger<WorkflowRunner>? logger = null,
-        ILoggerFactory? loggerFactory = null)
+        ILoggerFactory? loggerFactory = null,
+        IReplacementService? replacement = null)
     {
         _searcher = searcher ?? throw new ArgumentNullException(nameof(searcher));
         _queryFactory = queryFactory ?? throw new ArgumentNullException(nameof(queryFactory));
@@ -50,6 +53,7 @@ public sealed partial class WorkflowRunner : IWorkflowRunner
         _searchOptions = searchOptions;
         _logger = logger ?? NullLogger<WorkflowRunner>.Instance;
         _loggerFactory = loggerFactory;
+        _replacement = replacement;
     }
 
     public async Task<WorkflowRunResult> RunAsync(
@@ -103,7 +107,7 @@ public sealed partial class WorkflowRunner : IWorkflowRunner
                 },
             };
             _logger.LogInformation("Workflow '{Name}' finished: {Status}.", workflow.Name, result.Status);
-            return result;
+            return result with { RecoveryGroupId = run.ReplacementBatches.Count > 0 ? run.RecoveryGroupId : null, ReplacementBatches = run.ReplacementBatches };
         }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
         {
@@ -114,6 +118,8 @@ public sealed partial class WorkflowRunner : IWorkflowRunner
                 Succeeded = false,
                 Message = "Cancelled.",
                 StepOutcomes = run.Outcomes,
+                RecoveryGroupId = run.ReplacementBatches.Count > 0 ? run.RecoveryGroupId : null,
+                ReplacementBatches = run.ReplacementBatches,
             };
         }
     }
@@ -136,6 +142,7 @@ public sealed partial class WorkflowRunner : IWorkflowRunner
                 flow = step switch
                 {
                     SearchStep s => await ExecuteSearchAsync(s, run, ct).ConfigureAwait(false),
+                    ReplacementStep s => await ExecuteReplacementAsync(s, run, ct).ConfigureAwait(false),
                     IfStep s => await ExecuteIfAsync(s, run, depth, ct).ConfigureAwait(false),
                     RetryStep s => await ExecuteRetryAsync(s, run, depth, ct).ConfigureAwait(false),
                     ForEachStep s => await ExecuteForEachAsync(s, run, depth, ct).ConfigureAwait(false),
@@ -180,6 +187,8 @@ public sealed partial class WorkflowRunner : IWorkflowRunner
         SearchRequest request;
         string scopeNote = "";
         SearchProgress? progress = null;
+        IReadOnlyList<string> scopeRoots;
+        var incompleteScope = false;
 
         if (step.ScopeStepId is not null)
         {
@@ -187,6 +196,8 @@ public sealed partial class WorkflowRunner : IWorkflowRunner
                 return Fail(run, step, error);
 
             scopeNote = $" (within {source.Files.Count} file(s) from '{step.ScopeStepId}')";
+            scopeRoots = source.Roots;
+            incompleteScope = source.IncompleteScope;
             if (source.Files.Count == 0)
             {
                 run.RecordSearchResults(step.Id, new StepResults());
@@ -202,6 +213,7 @@ public sealed partial class WorkflowRunner : IWorkflowRunner
         else
         {
             var roots = step.Roots.Select(run.Substitute).Where(r => !string.IsNullOrWhiteSpace(r)).ToArray();
+            scopeRoots = roots;
             if (roots.Length == 0)
                 return Fail(run, step, "No root folders to search after variable substitution.");
 
@@ -214,7 +226,7 @@ public sealed partial class WorkflowRunner : IWorkflowRunner
                 Progress: p => progress = p, UseIndex: step.UseIndex, Status: run.Observer.OnLog, RawQuery: queryText, Mode: step.Mode);
         }
 
-        var results = new StepResults();
+        var results = new StepResults { Roots = scopeRoots, IncompleteScope = incompleteScope };
         var bufferCap = run.Options.MaxBufferedHitsPerStep;
         var cappedByMaxHits = false;
 
@@ -246,6 +258,7 @@ public sealed partial class WorkflowRunner : IWorkflowRunner
         }
 
         run.RecordSearchResults(step.Id, results);
+        results.IncompleteScope |= cappedByMaxHits;
         var detail = $"{results.HitCount} hit(s) in {results.Files.Count} file(s){scopeNote}"
             + (cappedByMaxHits ? $", stopped at maxHits {step.MaxHits}" : "");
         // Unreadable files don't produce hits; surface them so conditions and
@@ -254,7 +267,10 @@ public sealed partial class WorkflowRunner : IWorkflowRunner
         if (progress is { } finalProgress)
         {
             if (finalProgress.FilesFailed > 0)
+            {
+                results.IncompleteScope = true;
                 detail += $", {finalProgress.FilesFailed} file(s) failed to read";
+            }
             if (finalProgress.FilesSkipped > 0)
                 detail += $", {finalProgress.FilesSkipped} file(s) skipped";
         }
@@ -262,6 +278,69 @@ public sealed partial class WorkflowRunner : IWorkflowRunner
         Record(run, step, succeeded: true, detail, results.HitCount, results.Files.Count);
         return Flow.Continue;
     }
+
+    private async Task<Flow> ExecuteReplacementAsync(ReplacementStep step, RunState run, CancellationToken ct)
+    {
+        if (_replacement is null) return Fail(run, step, "Replacement service is unavailable.");
+        IReadOnlyList<string> roots = step.Roots.Select(run.Substitute).ToArray();
+        IReadOnlyList<string>? sourcePaths = null;
+        if (step.ScopeStepId is not null)
+        {
+            if (!run.TryGetResults(step.ScopeStepId, out var source, out var error)) return Fail(run, step, error);
+            if (source.IncompleteScope) return Fail(run, step, "Source search was stopped by a limit or failed to read files. Use a fresh folder scope or a complete search.");
+            if (source.Files.Count == 0) { Record(run, step, true, "No source items to replace."); return Flow.Continue; }
+            roots = source.Roots; sourcePaths = source.Files.ToArray();
+        }
+        var walker = step.Filters.ToWalkerOptions(step.Filters.IncludeGlobs.Select(run.Substitute).ToArray(), step.Filters.ExcludeGlobs.Select(run.Substitute).ToArray());
+        var request = new ReplacementRequest(roots, walker, run.Substitute(step.Find), run.Substitute(step.ReplaceWith), step.Target,
+            step.UseRegex, step.MatchCase, step.NameTarget, step.IncludeExtensions, step.IncludeFormulas,
+            run.Options.ProtectedReplacementRoots, step.AdditionalTextExtensions.Select(extension => extension.StartsWith('.') ? extension : "." + extension).ToHashSet(StringComparer.OrdinalIgnoreCase),
+            sourcePaths, run.RecoveryGroupId, run.Workflow.Name);
+        var plan = await _replacement.PreviewAsync(request, ct).ConfigureAwait(false);
+        var ready = plan.Items.Where(item => item.CanApply).ToArray();
+        var changes = ready.Sum(item => (long)item.ChangeCount);
+        var skipped = plan.Items.Count - ready.Length;
+        run.Observer.OnLog($"Replacement preview: {ready.Length} items, {changes} changes, {skipped} skipped.");
+        foreach (var item in plan.Items.Take(20))
+        {
+            run.Observer.OnLog(item.Path + (item.SkipReason is { } reason ? ": skipped — " + reason : $": {item.ChangeCount} changes"));
+            foreach (var change in item.Changes.Take(3))
+                run.Observer.OnLog($"  {change.Location}: {PreviewText(change.Before)} → {PreviewText(change.After)}");
+        }
+        if (run.Options.DryRun || ready.Length == 0)
+        {
+            Record(run, step, true, $"{(run.Options.DryRun ? "[dry run] " : "")}{changes} changes in {ready.Length} items; {skipped} skipped", fileCount: ready.Length, changeCount: changes);
+            return Flow.Continue;
+        }
+        IReadOnlySet<string>? selected;
+        if (run.Interaction is IWorkflowReplacementInteraction review)
+            selected = await review.ReviewReplacementAsync(plan, ct).ConfigureAwait(false);
+        else
+        {
+            if (!run.Options.AllowReplacementApply) return Fail(run, step, "Replacement requires interactive item review or explicit authorization (--apply-replacements in the CLI).");
+            var confirmed = await ConfirmAsync(run, new WorkflowConfirmation($"Replace {changes} matches in {ready.Length} items", "Originals will be backed up. Review the preview before applying.",
+                ready.Take(20).Select(item => item.Path + (item.NewPath is null ? "" : " → " + item.NewPath)).ToArray()), ct).ConfigureAwait(false);
+            selected = confirmed ? ready.Select(item => item.Id).ToHashSet() : null;
+        }
+        ct.ThrowIfCancellationRequested();
+        if (selected is null || selected.Count == 0) { Record(run, step, true, "Replacement skipped — no items approved."); return Flow.Continue; }
+        var result = await _replacement.ApplyAsync(plan, selected, ct).ConfigureAwait(false);
+        if (result.BatchId is not null) run.ReplacementBatches.Add(result);
+        foreach (var outcome in result.Outcomes)
+        {
+            run.Observer.OnLog($"{outcome.Path}: {outcome.Message}");
+            if (outcome.Succeeded && outcome.NewPath is not null) run.RemapPaths(outcome.Path, outcome.NewPath, outcome.IsDirectory);
+        }
+        var appliedChanges = ready.Where(item => result.Outcomes.Any(outcome => outcome.Succeeded && outcome.Path == item.Path)).Sum(item => (long)item.ChangeCount);
+        var failures = result.Outcomes.Count(outcome => !outcome.Succeeded);
+        var detail = $"{appliedChanges} changes in {result.SucceededCount} items; {skipped} preview skips; {failures} apply failures; batch {result.BatchId ?? "none"}";
+        Record(run, step, failures == 0, detail, fileCount: result.SucceededCount, changeCount: appliedChanges, replacementBatch: result);
+        ct.ThrowIfCancellationRequested();
+        if (failures > 0) { run.FailMessage = $"Replacement step '{step.DisplayName}' partially failed; completed items remain undoable."; return Flow.Fail; }
+        return Flow.Continue;
+    }
+
+    private static string PreviewText(string text) => (text.Length > 200 ? text[..200] + "…" : text).Replace("\r", "\\r", StringComparison.Ordinal).Replace("\n", "\\n", StringComparison.Ordinal);
 
     private async Task<Flow> ExecuteIfAsync(IfStep step, RunState run, int depth, CancellationToken ct)
     {
@@ -714,9 +793,10 @@ public sealed partial class WorkflowRunner : IWorkflowRunner
     }
 
     private static void Record(
-        RunState run, WorkflowStep step, bool succeeded, string? detail, long hitCount = 0, int fileCount = 0)
+        RunState run, WorkflowStep step, bool succeeded, string? detail, long hitCount = 0, int fileCount = 0,
+        long changeCount = 0, ReplacementBatchResult? replacementBatch = null)
     {
-        var outcome = new WorkflowStepOutcome(step.Id, step.Kind, step.DisplayName, succeeded, detail, hitCount, fileCount);
+        var outcome = new WorkflowStepOutcome(step.Id, step.Kind, step.DisplayName, succeeded, detail, hitCount, fileCount, changeCount, replacementBatch);
         run.Outcomes.Add(outcome);
         run.Observer.OnStepCompleted(outcome);
     }
@@ -835,6 +915,32 @@ public sealed partial class WorkflowRunner : IWorkflowRunner
         public Dictionary<string, StepResults> Results { get; } = new(StringComparer.Ordinal);
         public List<string> ExecutedSearchIds { get; } = new();
         public List<WorkflowStepOutcome> Outcomes { get; } = new();
+        public string RecoveryGroupId { get; } = Guid.NewGuid().ToString("N");
+        public List<ReplacementBatchResult> ReplacementBatches { get; } = [];
+        public void RemapPaths(string oldPath, string newPath, bool directory)
+        {
+            string Map(string path) => path.Equals(oldPath, StringComparison.OrdinalIgnoreCase) ? newPath :
+                directory && path.StartsWith(oldPath.TrimEnd('\\', '/') + Path.DirectorySeparatorChar, StringComparison.OrdinalIgnoreCase)
+                    ? newPath.TrimEnd('\\', '/') + path[oldPath.TrimEnd('\\', '/').Length..] : path;
+            foreach (var result in Results.Values)
+            {
+                for (var i = 0; i < result.Files.Count; i++) result.Files[i] = Map(result.Files[i]);
+                for (var i = 0; i < result.Hits.Count; i++) result.Hits[i] = result.Hits[i] with { Path = Map(result.Hits[i].Path) };
+            }
+            // Update suspended scopes too: a rename inside a retry body must still
+            // be reflected when its enclosing for-each body resumes.
+            foreach (var variables in _savedVariableScopes.Append(_variables))
+            {
+                if (variables.TryGetValue("file", out var file))
+                {
+                    var mapped = Map(file);
+                    variables["file"] = mapped;
+                    if (variables.TryGetValue("fileName", out var name) && name == Path.GetFileName(file))
+                        variables["fileName"] = Path.GetFileName(mapped);
+                }
+                if (variables.TryGetValue("directory", out var folder)) variables["directory"] = Map(folder);
+            }
+        }
         public int StepExecutions;
         public string? LastSearchStepId;
         public bool StopSucceeded = true;
@@ -842,6 +948,7 @@ public sealed partial class WorkflowRunner : IWorkflowRunner
         public string? FailMessage;
 
         private Dictionary<string, string> _variables = new(StringComparer.OrdinalIgnoreCase);
+        private readonly List<Dictionary<string, string>> _savedVariableScopes = [];
 
         public void RecordSearchResults(string stepId, StepResults results)
         {
@@ -893,6 +1000,7 @@ public sealed partial class WorkflowRunner : IWorkflowRunner
             var layered = new Dictionary<string, string>(saved, StringComparer.OrdinalIgnoreCase);
             foreach (var (key, value) in scope)
                 layered[key] = value;
+            _savedVariableScopes.Add(saved);
             _variables = layered;
             try
             {
@@ -900,6 +1008,7 @@ public sealed partial class WorkflowRunner : IWorkflowRunner
             }
             finally
             {
+                _savedVariableScopes.RemoveAt(_savedVariableScopes.Count - 1);
                 _variables = saved;
             }
         }
@@ -932,6 +1041,8 @@ public sealed partial class WorkflowRunner : IWorkflowRunner
 
         /// <summary>True once hits stopped being buffered.</summary>
         public bool Truncated;
+        public bool IncompleteScope;
+        public IReadOnlyList<string> Roots { get; init; } = [];
 
         public List<Hit> Hits { get; } = new();
 

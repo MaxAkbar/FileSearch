@@ -17,6 +17,7 @@ FileSearch is a Windows desktop application for searching text across files and 
 - Optional case-sensitive matching.
 - Filter by file size and modified date range.
 - Preview matching lines and context for selected results.
+- Preview and apply find-and-replace batches across text files, Word/Excel/PowerPoint files, or file and folder names, with backups and Undo.
 - Refine, facet, sort, group, favorite, pin, drag, export, and save or share workspace bundles, with optional workspace run-on-load.
 - Optional CSharpDB-backed indexing for faster repeat searches across multiple locations, with GUI or tray-indexer background updates.
 - Optional local ONNX Smart Search over indexed vectors; see the [setup and search walkthrough](src/FileSearch.Gui/Help/smart-search.html) for model packs, the Semantic toggle, advanced `semantic:` queries, and current limitations.
@@ -186,6 +187,20 @@ dotnet test .\FileSearch.slnx
 7. Click **Start** or press Enter.
 8. Select a result to preview matching lines or stored name-match details.
 9. Use the **Filter** tab to narrow the result set without rescanning.
+
+## Find and replace
+
+In the desktop app, click **Replace** below the query row, select **Search → Find and replace**, or press **Ctrl+H** (configurable in Settings). The query box becomes **Find**; closing the panel restores your normal search query and mode.
+
+Choose **Contents** or **Names**, enter **Replace with**, then click **Preview changes** or press Enter. Preview scans the current folder and filters directly. Review the before/after details, uncheck unwanted items, and click **Apply checked**. Empty replacement text removes matches; regex mode supports capture substitutions such as `$1`.
+
+Content replacement supports UTF-8 and BOM-marked Unicode text, `.docx` body/table/header/footer paragraphs, `.pptx` slide/notes paragraphs, and `.xlsx` text cells. **Also replace in formulas** explicitly enables textual editing of ordinary Excel formula expressions; Excel recalculates them on opening. Shared, array, and spill formulas are skipped. PDF, OCR, archives, mail, legacy/macro-enabled Office formats, signed/protected documents, binary files, and unsupported text encodings are not content replacement targets.
+
+Name replacement supports files, folders, or both, and preserves file extensions unless **Include extensions** is selected. Collisions and invalid names are skipped. The scope root, indexed roots, their ancestors, and linked files/folders are protected.
+
+**Undo last batch** survives app restarts. Originals and recovery journals are retained under `%LOCALAPPDATA%\FileSearch\ReplacementBackups`; changed files or occupied original names are reported as recovery conflicts rather than overwritten. Cancelled batches retain completed items for Undo.
+
+Saved workflows also support **Add step → Find and replace**, with fresh previews, checked-item review, and grouped Undo after restart. CLI workflow runs require explicit `--apply-replacements` authorization. See [workflow instructions and JSON examples](README.Workflows.md).
 
 ## Using the CLI
 

@@ -3,6 +3,7 @@ using FileSearch.Core.Engine;
 using FileSearch.Core.Extractors;
 using FileSearch.Core.Indexing;
 using FileSearch.Core.Queries;
+using FileSearch.Core.Replacement;
 using FileSearch.Core.Volumes;
 using FileSearch.Core.Walker;
 using FileSearch.Core.Workflows;
@@ -24,6 +25,8 @@ public static class ServiceCollectionExtensions
     public static IServiceCollection AddFileSearchCore(this IServiceCollection services)
     {
         services.TryAddSingleton<IFileWalker, FileWalker>();
+        services.TryAddSingleton<ReplacementOptions>();
+        services.TryAddSingleton<IReplacementService, ReplacementService>();
         services.TryAddSingleton<IQueryParser>(_ => new QueryParser());
         services.TryAddSingleton<IQueryFactory, QueryFactory>();
         services.TryAddSingleton<IQueryPlanner, QueryPlanner>();
@@ -171,7 +174,8 @@ public static class ServiceCollectionExtensions
             sp.GetRequiredService<IExtractorRegistry>(),
             sp.GetService<SearchOptions>(),
             sp.GetService<ILogger<WorkflowRunner>>(),
-            sp.GetService<ILoggerFactory>()));
+            sp.GetService<ILoggerFactory>(),
+            sp.GetRequiredService<IReplacementService>()));
 
         return services;
     }

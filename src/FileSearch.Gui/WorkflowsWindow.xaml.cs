@@ -111,11 +111,25 @@ public partial class WorkflowsWindow : Window
     /// completes the returned task with the user's choice. Cancelling the run
     /// resolves the prompt as declined and closes the dialog if it is open.
     /// </summary>
-    private sealed class WindowWorkflowInteraction : IWorkflowInteraction
+    private sealed class WindowWorkflowInteraction : IWorkflowReplacementInteraction
     {
         private readonly WorkflowsWindow _owner;
 
         public WindowWorkflowInteraction(WorkflowsWindow owner) => _owner = owner;
+
+        public async Task<IReadOnlySet<string>?> ReviewReplacementAsync(FileSearch.Core.Replacement.ReplacementPlan plan, CancellationToken cancellationToken)
+        {
+            var completion = new TaskCompletionSource<IReadOnlySet<string>?>(TaskCreationOptions.RunContinuationsAsynchronously);
+            WorkflowReplacementReviewWindow? dialog = null;
+            _ = _owner.Dispatcher.BeginInvoke(() =>
+            {
+                if (cancellationToken.IsCancellationRequested || !_owner.IsVisible) { completion.TrySetResult(null); return; }
+                dialog = new WorkflowReplacementReviewWindow(plan) { Owner = _owner };
+                completion.TrySetResult(dialog.ShowDialog() == true ? dialog.CheckedIds : null);
+            });
+            using var registration = cancellationToken.Register(() => { completion.TrySetResult(null); _ = _owner.Dispatcher.BeginInvoke(() => dialog?.Close()); });
+            return await completion.Task.ConfigureAwait(false);
+        }
 
         public async Task<bool> ConfirmAsync(WorkflowConfirmation confirmation, CancellationToken cancellationToken)
         {

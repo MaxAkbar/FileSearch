@@ -11,6 +11,7 @@ namespace FileSearch.Core.Workflows;
 /// </summary>
 [JsonPolymorphic(TypeDiscriminatorPropertyName = "type")]
 [JsonDerivedType(typeof(SearchStep), "search")]
+[JsonDerivedType(typeof(ReplacementStep), "replace")]
 [JsonDerivedType(typeof(IfStep), "if")]
 [JsonDerivedType(typeof(RetryStep), "retry")]
 [JsonDerivedType(typeof(ForEachStep), "forEach")]
@@ -39,6 +40,7 @@ public abstract record WorkflowStep
     public string Kind => this switch
     {
         SearchStep => "search",
+        ReplacementStep => "replace",
         IfStep => "if",
         RetryStep => "retry",
         ForEachStep => "forEach",

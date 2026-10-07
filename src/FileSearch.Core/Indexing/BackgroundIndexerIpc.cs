@@ -38,7 +38,8 @@ public sealed record BackgroundIndexedLocation(
     string[] IncludeExtensions,
     string[] ExcludeExtensions,
     string[] IncludeDirectories,
-    string[] ExcludeDirectories)
+    string[] ExcludeDirectories,
+    bool EnableOcr = false)
 {
     public static BackgroundIndexedLocation FromIndexedLocation(IndexedLocation location) =>
         new(
@@ -49,7 +50,8 @@ public sealed record BackgroundIndexedLocation(
             location.WalkerOptions.IncludeExtensions.ToArray(),
             location.WalkerOptions.ExcludeExtensions.ToArray(),
             location.WalkerOptions.IncludeDirectories.ToArray(),
-            location.WalkerOptions.ExcludeDirectories.ToArray());
+            location.WalkerOptions.ExcludeDirectories.ToArray(),
+            location.WalkerOptions.EnableOcr);
 
     public IndexedLocation ToIndexedLocation() =>
         new(
@@ -64,6 +66,7 @@ public sealed record BackgroundIndexedLocation(
                 ExcludeDirectories = ExcludeDirectories.ToHashSet(StringComparer.OrdinalIgnoreCase),
                 Recursive = Recursive,
                 IncludeHidden = IncludeHidden,
+                EnableOcr = EnableOcr,
                 MinFileSizeBytes = 0,
                 MaxFileSizeBytes = 0,
                 ModifiedAfterUtc = null,

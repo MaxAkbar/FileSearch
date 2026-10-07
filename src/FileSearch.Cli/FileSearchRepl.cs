@@ -1624,6 +1624,7 @@ internal sealed class FileSearchRepl
         var selector = RequireArgument(args, 1, "workflow run needs a workflow name or file.");
         var dryRun = forceDryRun;
         var assumeYes = false;
+        var allowReplacementApply = false;
         var showHits = true;
 
         for (var i = 2; i < args.Length; i++)
@@ -1641,6 +1642,9 @@ internal sealed class FileSearchRepl
                 case "--no-hits":
                     showHits = false;
                     break;
+                case "--apply-replacements":
+                    allowReplacementApply = true;
+                    break;
                 default:
                     return RenderCommandError($"Unknown workflow run option: {args[i]}", oneShot);
             }
@@ -1656,15 +1660,33 @@ internal sealed class FileSearchRepl
 
         var observer = new CliWorkflowObserver(showHits);
         var interaction = new CliWorkflowInteraction(assumeYes);
+        var replacementLocations = WorkflowValidator.Flatten(workflow.Steps).Any(step => step is ReplacementStep)
+            ? await _index.GetLocationsAsync(cancellationToken).ConfigureAwait(false) : [];
+        var protectedRoots = replacementLocations.Select(location => location.Root).ToArray();
         var result = await _workflowRunner.RunAsync(
                 workflow,
-                new WorkflowRunOptions { DryRun = dryRun },
+                new WorkflowRunOptions { DryRun = dryRun, AllowReplacementApply = allowReplacementApply, ProtectedReplacementRoots = protectedRoots },
                 observer,
                 interaction,
                 cancellationToken)
             .ConfigureAwait(false);
 
         RenderWorkflowResult(result);
+        if (result.RecoveryGroupId is not null) AnsiConsole.MarkupLine($"[grey]Replacement recovery group:[/] {Markup.Escape(result.RecoveryGroupId)} (Undo workflow replacements in the desktop app)");
+        foreach (var location in replacementLocations)
+        {
+            bool Within(string path) => path.Equals(location.Root, StringComparison.OrdinalIgnoreCase) || path.StartsWith(location.Root.TrimEnd('\\', '/') + Path.DirectorySeparatorChar, StringComparison.OrdinalIgnoreCase);
+            if (!result.ReplacementBatches.SelectMany(batch => batch.Outcomes).Any(outcome => outcome.Succeeded && (Within(outcome.Path) || outcome.NewPath is not null && Within(outcome.NewPath)))) continue;
+            try
+            {
+                var options = location.GetWalkerOptions() ?? throw new InvalidOperationException("Saved index profile could not be read.");
+                var queued = await SendIndexerAsync(new BackgroundIndexerRequest(BackgroundIndexerCommand.QueueRootRefresh,
+                    Location: BackgroundIndexedLocation.FromIndexedLocation(new(location.Root, options, true)), Priority: IndexQueuePriority.High),
+                    TimeSpan.FromSeconds(2), CancellationToken.None).ConfigureAwait(false);
+                if (queued?.Success != true) await _index.RefreshRootAsync(new(location.Root, options), IndexRefreshMode.Incremental, CancellationToken.None).ConfigureAwait(false);
+            }
+            catch (Exception exception) { AnsiConsole.MarkupLine($"[yellow]Changes completed; index refresh failed:[/] {Markup.Escape(exception.Message)}"); }
+        }
         return result.Succeeded ? 0 : 2;
     }
 
@@ -1898,8 +1920,8 @@ internal sealed class FileSearchRepl
         table.AddRow("[cyan]workflow folder[/]", "Show the workflow library folder.");
         table.AddRow("[cyan]workflow show[/] NAME", "Print a workflow JSON file.");
         table.AddRow("[cyan]workflow validate[/] NAME", "Validate a workflow without running it.");
-        table.AddRow("[cyan]workflow run[/] NAME [[--dry-run]] [[--yes]] [[--no-hits]]", "Run a workflow.");
-        table.AddRow("[cyan]workflow dry-run[/] NAME", "Run searches and exports in dry-run mode for side-effecting steps.");
+        table.AddRow("[cyan]workflow run[/] NAME [[--dry-run]] [[--yes]] [[--no-hits]] [[--apply-replacements]]", "Run a workflow; replacement requires explicit opt-in.");
+        table.AddRow("[cyan]workflow dry-run[/] NAME", "Run searches and replacement previews; preview all file-changing actions.");
         AnsiConsole.Write(table);
     }
 
@@ -2924,7 +2946,7 @@ internal sealed class FileSearchRepl
         "[--ocr] [--no-docs] [--known-only] [--json|--jsonl|--csv|--markdown] [--output PATH]";
 
     private const string OneShotWorkflowUsage =
-        "Usage: filesearch workflow list|folder|show NAME|validate NAME|run NAME [--dry-run] [--yes] [--no-hits]";
+        "Usage: filesearch workflow list|folder|show NAME|validate NAME|run NAME [--dry-run] [--yes] [--no-hits] [--apply-replacements]";
 
     private const string OneShotIndexerUsage =
         "Usage: filesearch indexer status|start|pause|resume|shutdown|compact|refresh [FOLDER]|validate [FOLDER]|semantic [FOLDER]";
