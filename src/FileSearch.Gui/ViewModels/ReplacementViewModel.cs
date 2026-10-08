@@ -214,21 +214,21 @@ public sealed partial class ReplacementViewModel : ObservableObject, IDisposable
 
     private void UpdateSavedPaths(ReplacementBatchResult result)
     {
-            foreach (var outcome in result.Outcomes)
+        foreach (var outcome in result.Outcomes)
+        {
+            var row = Items.FirstOrDefault(item => string.Equals(item.Path, outcome.Path, StringComparison.OrdinalIgnoreCase));
+            if (row is not null) row.Status = outcome.Message;
+            if (outcome.Succeeded && outcome.NewPath is not null)
             {
-                var row = Items.FirstOrDefault(item => string.Equals(item.Path, outcome.Path, StringComparison.OrdinalIgnoreCase));
-                if (row is not null) row.Status = outcome.Message;
-                if (outcome.Succeeded && outcome.NewPath is not null)
+                _history.RemapReplacementPaths(outcome.Path, outcome.NewPath, outcome.IsDirectory);
+                _search.RemapReplacementPaths(outcome.Path, outcome.NewPath, outcome.IsDirectory);
+                _settings.Update(settings =>
                 {
-                    _history.RemapReplacementPaths(outcome.Path, outcome.NewPath, outcome.IsDirectory);
-                    _search.RemapReplacementPaths(outcome.Path, outcome.NewPath, outcome.IsDirectory);
-                    _settings.Update(settings =>
-                    {
-                        settings.QuickSearchPinnedPaths = settings.QuickSearchPinnedPaths.Select(path => Remap(path, outcome.Path, outcome.NewPath, outcome.IsDirectory)).ToList();
-                        settings.QuickSearchFolderPath = Remap(settings.QuickSearchFolderPath, outcome.Path, outcome.NewPath, outcome.IsDirectory);
-                    });
-                }
+                    settings.QuickSearchPinnedPaths = settings.QuickSearchPinnedPaths.Select(path => Remap(path, outcome.Path, outcome.NewPath, outcome.IsDirectory)).ToList();
+                    settings.QuickSearchFolderPath = Remap(settings.QuickSearchFolderPath, outcome.Path, outcome.NewPath, outcome.IsDirectory);
+                });
             }
+        }
     }
 
     private void InvalidateRowsAfterUndo(ReplacementBatchResult result)

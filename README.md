@@ -574,6 +574,12 @@ For sideload testing, pass `-CertificateThumbprint` with a certificate trusted o
 
 Work landed from `bbd4b73` (*Add background indexed search*, June 2026) to the current head, grouped by area.
 
+### FileSearch 1.9.0
+
+- **Find and replace**: preview and apply checked content or name changes from the main Search screen, with strict Unicode encoding preservation, native DOCX/XLSX/PPTX editing, collision checks, protected roots, durable backups, and Undo after restart.
+- **Workflow replacement**: add Find and replace steps with fresh folder scopes or exact earlier-search scopes, before/after review, dry-run previews, and grouped Undo. CLI application requires `--apply-replacements`.
+- **Semantic search**: desktop concept-search controls, relevance thresholds, result limits, and optional local EmbeddingGemma model support. See [Smart Search help](src/FileSearch.Gui/Help/smart-search.html).
+
 ### Search engine and indexing
 
 - **Background indexed search** (`bbd4b73`): CSharpDB-backed file index with background refresh, coverage checks, and live-scan fallback — the baseline for the changes below. Documented in [README.Indexing.md](README.Indexing.md).
@@ -581,7 +587,7 @@ Work landed from `bbd4b73` (*Add background indexed search*, June 2026) to the c
 - **Index storage layering** (`1b08535`): split the index implementation into `IndexDatabase` (schema, versioning, write exclusion) and `IndexTables` (DML), extracted a tested `SearchHistory` MRU helper, and moved folder picking and UI dispatch behind injectable services.
 - **Worker and queue fixes** (`2317524`): queue priority, worker edge cases, and small races found in review.
 - **Compiler-enforced SQL escaping** (`6778331`): index queries are built through an interpolated-string handler (`Sql.Format`), so a value that bypasses escaping no longer compiles.
-- **Workflow search** (unreleased): saved multi-step searches with if/else conditions on hit or file counts, retry and for-each loops, sub-searches over previous results, JSON/CSV/Markdown export, and confirmed copy/move/run-program actions — stored as hand-editable JSON files, one per workflow. The file format is documented in [README.Workflows.md](README.Workflows.md).
+- **Workflow search**: saved multi-step searches with if/else conditions on hit or file counts, retry and for-each loops, sub-searches over previous results, JSON/CSV/Markdown export, and confirmed replacement/copy/move/run-program actions — stored as hand-editable JSON files, one per workflow. The file format is documented in [README.Workflows.md](README.Workflows.md).
 
 ### Desktop app
 

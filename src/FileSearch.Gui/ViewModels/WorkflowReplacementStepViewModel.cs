@@ -21,10 +21,23 @@ public sealed partial class ReplacementStepViewModel : SearchStepViewModel
     public override WorkflowStep ToStep()
     {
         var scope = (SearchStep)base.ToStep();
-        return new ReplacementStep { Id = scope.Id, Name = scope.Name, Roots = scope.Roots, ScopeStepId = scope.ScopeStepId,
-            Filters = scope.Filters, Find = Find, ReplaceWith = ReplaceWith, Target = Target, UseRegex = UseRegex,
-            MatchCase = CaseSensitive, NameTarget = NameTarget, IncludeExtensions = IncludeExtensions, IncludeFormulas = IncludeFormulas,
-            AdditionalTextExtensions = SplitPatterns(AdditionalTextExtensions) };
+        return new ReplacementStep
+        {
+            Id = scope.Id,
+            Name = scope.Name,
+            Roots = scope.Roots,
+            ScopeStepId = scope.ScopeStepId,
+            Filters = scope.Filters,
+            Find = Find,
+            ReplaceWith = ReplaceWith,
+            Target = Target,
+            UseRegex = UseRegex,
+            MatchCase = CaseSensitive,
+            NameTarget = NameTarget,
+            IncludeExtensions = IncludeExtensions,
+            IncludeFormulas = IncludeFormulas,
+            AdditionalTextExtensions = SplitPatterns(AdditionalTextExtensions)
+        };
     }
     public void Load(ReplacementStep step)
     {

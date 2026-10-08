@@ -1,5 +1,5 @@
-using System.Windows.Controls;
 using System.ComponentModel;
+using System.Windows.Controls;
 using FileSearch.Gui.ViewModels;
 
 namespace FileSearch.Gui.Controls;

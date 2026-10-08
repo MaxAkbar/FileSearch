@@ -10,8 +10,8 @@ using System.Threading.Tasks;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 using FileSearch.Core.Engine;
-using FileSearch.Core.Workflows;
 using FileSearch.Core.Replacement;
+using FileSearch.Core.Workflows;
 using FileSearch.Gui.Services;
 using FileSearch.Gui.Settings;
 
@@ -941,8 +941,11 @@ public sealed partial class WorkflowsViewModel : ObservableObject, IWorkflowStep
             // events and this loop drains them on the UI thread in timed
             // batches so a heavy hit stream can't flood the dispatcher.
             var runTask = Task.Run(
-                () => _runner.RunAsync(workflow, new WorkflowRunOptions { DryRun = dryRun,
-                    ProtectedReplacementRoots = _settings?.Current.IndexedLocations.Select(location => location.Root).ToArray() ?? [] }, observer, interaction, token),
+                () => _runner.RunAsync(workflow, new WorkflowRunOptions
+                {
+                    DryRun = dryRun,
+                    ProtectedReplacementRoots = _settings?.Current.IndexedLocations.Select(location => location.Root).ToArray() ?? []
+                }, observer, interaction, token),
                 token);
 
             while (true)

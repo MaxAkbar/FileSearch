@@ -26,10 +26,15 @@ public sealed record IndexedLocationInfo(
         if (!IndexProfile.TryParse(Profile, out var profile)) return null;
         return new()
         {
-            Recursive = profile.Recursive, IncludeHidden = profile.IncludeHidden, EnableOcr = profile.EnableOcr,
-            IncludeExtensions = profile.IncludeExtensions, ExcludeExtensions = profile.ExcludeExtensions,
-            IncludeDirectories = profile.IncludeDirectories, ExcludeDirectories = profile.ExcludeDirectories,
-            MinFileSizeBytes = 0, MaxFileSizeBytes = 0,
+            Recursive = profile.Recursive,
+            IncludeHidden = profile.IncludeHidden,
+            EnableOcr = profile.EnableOcr,
+            IncludeExtensions = profile.IncludeExtensions,
+            ExcludeExtensions = profile.ExcludeExtensions,
+            IncludeDirectories = profile.IncludeDirectories,
+            ExcludeDirectories = profile.ExcludeDirectories,
+            MinFileSizeBytes = 0,
+            MaxFileSizeBytes = 0,
         };
     }
 }

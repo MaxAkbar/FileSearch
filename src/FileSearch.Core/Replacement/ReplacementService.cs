@@ -91,9 +91,14 @@ public sealed class ReplacementService : IReplacementService, IDisposable
         var previousLatest = File.Exists(LatestPath) ? File.ReadAllBytes(LatestPath) : null;
         var groupPointer = Path.Combine(_options.BackupDirectory, "last-group.json");
         var previousGroup = File.Exists(groupPointer) ? File.ReadAllBytes(groupPointer) : null;
-        var journal = new BatchJournal { Id = Guid.NewGuid().ToString("N"), Target = plan.Request.Target,
-            GroupId = plan.Request.RecoveryGroupId, GroupName = plan.Request.RecoveryGroupName,
-            PreviewSkips = plan.Items.Where(item => item.SkipReason is not null).Select(item => item.Path + ": " + item.SkipReason).ToList() };
+        var journal = new BatchJournal
+        {
+            Id = Guid.NewGuid().ToString("N"),
+            Target = plan.Request.Target,
+            GroupId = plan.Request.RecoveryGroupId,
+            GroupName = plan.Request.RecoveryGroupName,
+            PreviewSkips = plan.Items.Where(item => item.SkipReason is not null).Select(item => item.Path + ": " + item.SkipReason).ToList()
+        };
         var batchDirectory = Path.Combine(_options.BackupDirectory, journal.Id);
         Directory.CreateDirectory(batchDirectory);
         // Prepared entries are persisted before each mutation. A stale/empty batch must not replace the previous Undo target.
@@ -109,8 +114,11 @@ public sealed class ReplacementService : IReplacementService, IDisposable
                     throw new IOException("Changed since preview; preview again.");
                 entry = new JournalEntry
                 {
-                    OldPath = item.Path, NewPath = item.NewPath ?? item.Path, IsDirectory = item.IsDirectory,
-                    BeforeHash = item.Fingerprint, Identity = item.Identity,
+                    OldPath = item.Path,
+                    NewPath = item.NewPath ?? item.Path,
+                    IsDirectory = item.IsDirectory,
+                    BeforeHash = item.Fingerprint,
+                    Identity = item.Identity,
                     ChangeCount = item.ChangeCount,
                 };
                 if (plan.Request.Target == ReplacementTarget.Contents)
@@ -252,8 +260,10 @@ public sealed class ReplacementService : IReplacementService, IDisposable
                 {
                     if (entry.State == "Undoing" && Exists(entry.OldPath) && Identity(entry.OldPath) == entry.Identity &&
                         Directory.GetFileSystemEntries(Path.GetDirectoryName(entry.OldPath)!).Contains(entry.OldPath, StringComparer.Ordinal))
-                    { entry.State = "Undone"; Save(journal, publishLatest); TrackRestoredItem(journal.Target, entry, restoredFiles);
-                        outcomes.Add(new(entry.NewPath, true, "Recovered completed Undo", entry.OldPath, entry.IsDirectory)); continue; }
+                    {
+                        entry.State = "Undone"; Save(journal, publishLatest); TrackRestoredItem(journal.Target, entry, restoredFiles);
+                        outcomes.Add(new(entry.NewPath, true, "Recovered completed Undo", entry.OldPath, entry.IsDirectory)); continue;
+                    }
                     // A crash during a case-only rename can leave the item at its journaled temporary name.
                     var source = entry.TemporaryPath is not null && Exists(entry.TemporaryPath) ? entry.TemporaryPath : entry.NewPath;
                     if (entry.State == "Prepared" && !Exists(source) && Exists(entry.OldPath) && Identity(entry.OldPath) == entry.Identity)

@@ -1,8 +1,8 @@
 using System.Text.Json;
 using FileSearch.Core.Engine;
 using FileSearch.Core.Extractors;
-using FileSearch.Core.Queries;
 using FileSearch.Core.Indexing;
+using FileSearch.Core.Queries;
 using FileSearch.Core.Replacement;
 using FileSearch.Core.Walker;
 using FileSearch.Core.Workflows;
@@ -138,7 +138,9 @@ public sealed class WorkflowReplacementTests : IDisposable
         var result = await _runner.RunAsync(Workflow(new SearchStep { Id = "search", Query = "needle", Roots = [_root] },
             new ForEachStep
             {
-                Id = "each", SourceStepId = "search", Body =
+                Id = "each",
+                SourceStepId = "search",
+                Body =
                 [
                     new RetryStep { Id = "retry", MaxIterations = 1, Until = new() { Source = "search" },
                         Body = [Replace("names") with { Target = ReplacementTarget.Names }] },
@@ -231,8 +233,14 @@ public sealed class WorkflowReplacementTests : IDisposable
     [Fact]
     public void SavedIndexProfileAndQueuedRefreshPreserveOcrAndScope()
     {
-        var options = new WalkerOptions { EnableOcr = true, Recursive = false, IncludeHidden = true, IncludeExtensions = new HashSet<string>([".txt", ".png"], StringComparer.OrdinalIgnoreCase),
-            ExcludeDirectories = new HashSet<string>(["ignored"], StringComparer.OrdinalIgnoreCase) };
+        var options = new WalkerOptions
+        {
+            EnableOcr = true,
+            Recursive = false,
+            IncludeHidden = true,
+            IncludeExtensions = new HashSet<string>([".txt", ".png"], StringComparer.OrdinalIgnoreCase),
+            ExcludeDirectories = new HashSet<string>(["ignored"], StringComparer.OrdinalIgnoreCase)
+        };
         var profile = IndexProfile.FromWalkerOptions(options).ToStorageString();
         var restored = new IndexedLocationInfo(_root, 0, 0, null, profile, true).GetWalkerOptions();
         Assert.NotNull(restored); Assert.True(restored.EnableOcr); Assert.False(restored.Recursive); Assert.True(restored.IncludeHidden);
@@ -252,8 +260,17 @@ public sealed class WorkflowReplacementTests : IDisposable
     [Fact]
     public void ReplacementJsonAndValidationPreserveOptions()
     {
-        var original = Workflow(Replace() with { UseRegex = true, Find = "(needle)", ReplaceWith = "$1!", IncludeFormulas = true, IncludeExtensions = true,
-            NameTarget = ReplacementNameTarget.Files, AdditionalTextExtensions = [".custom"], Filters = new() { IncludeGlobs = ["*.txt"], IncludeHidden = true } });
+        var original = Workflow(Replace() with
+        {
+            UseRegex = true,
+            Find = "(needle)",
+            ReplaceWith = "$1!",
+            IncludeFormulas = true,
+            IncludeExtensions = true,
+            NameTarget = ReplacementNameTarget.Files,
+            AdditionalTextExtensions = [".custom"],
+            Filters = new() { IncludeGlobs = ["*.txt"], IncludeHidden = true }
+        });
         var restored = WorkflowJson.TryDeserialize(WorkflowJson.Serialize(original), out var error);
         Assert.Null(error); Assert.NotNull(restored); Assert.Equal(WorkflowJson.Serialize(original), WorkflowJson.Serialize(restored));
         Assert.Empty(WorkflowValidator.Validate(restored));

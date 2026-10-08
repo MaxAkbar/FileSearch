@@ -12,9 +12,9 @@ The index database is stored at:
 %LocalAppData%\FileSearch\Index\filesearch.db
 ```
 
-The Core project uses `CSharpDB.Engine` directly. The current indexed-search store references `CSharpDB.Engine` 4.0.2.
+The Core project uses `CSharpDB.Engine` directly. The current indexed-search store references `CSharpDB.Engine` 4.6.4.
 
-CSharpDB 4.0.2 supplies bounded, chunked full-text postings for hot terms and index-planned `DELETE`/`UPDATE` predicates. FileSearch keeps its app-level trigram index because it provides the required mid-token substring behavior, while changed-file updates now use the indexed mutation path to remove the superseded file version and all of its owned rows in one transaction. The new version is published first, so a cleanup failure cannot erase the last searchable copy. This integration does not change the FileSearch schema version and does not require an existing index to be rebuilt.
+The CSharpDB integration introduced in 4.0.2 supplies bounded, chunked full-text postings for hot terms and index-planned `DELETE`/`UPDATE` predicates. FileSearch keeps its app-level trigram index because it provides the required mid-token substring behavior, while changed-file updates now use the indexed mutation path to remove the superseded file version and all of its owned rows in one transaction. The new version is published first, so a cleanup failure cannot erase the last searchable copy. This integration does not change the FileSearch schema version and does not require an existing index to be rebuilt.
 
 Smart Search stores semantic vectors beside the lexical database:
 

@@ -7,9 +7,9 @@ using DocumentFormat.OpenXml.Packaging;
 using DocumentFormat.OpenXml.Wordprocessing;
 using FileSearch.Core.Replacement;
 using FileSearch.Core.Walker;
-using S = DocumentFormat.OpenXml.Spreadsheet;
-using P = DocumentFormat.OpenXml.Presentation;
 using A = DocumentFormat.OpenXml.Drawing;
+using P = DocumentFormat.OpenXml.Presentation;
+using S = DocumentFormat.OpenXml.Spreadsheet;
 
 namespace FileSearch.Core.Tests;
 
@@ -62,9 +62,12 @@ public sealed class ReplacementServiceTests : IDisposable
     {
         Encoding encoding = kind switch
         {
-            "utf8" => new UTF8Encoding(false), "utf8bom" => new UTF8Encoding(true),
-            "utf16le" => new UnicodeEncoding(false, true), "utf16be" => new UnicodeEncoding(true, true),
-            "utf32le" => new UTF32Encoding(false, true), _ => new UTF32Encoding(true, true),
+            "utf8" => new UTF8Encoding(false),
+            "utf8bom" => new UTF8Encoding(true),
+            "utf16le" => new UnicodeEncoding(false, true),
+            "utf16be" => new UnicodeEncoding(true, true),
+            "utf32le" => new UTF32Encoding(false, true),
+            _ => new UTF32Encoding(true, true),
         };
         var path = FilePath("a.txt");
         await File.WriteAllBytesAsync(path, encoding.GetPreamble().Concat(encoding.GetBytes("é needle\r\nneedle\nfin\r")).ToArray());

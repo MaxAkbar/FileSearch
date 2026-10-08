@@ -2,7 +2,7 @@
 
 ## Summary
 
-FileSearch has already closed two major gaps from the older competitive analysis: optional CSharpDB-backed indexing and a Spectre.Console REPL CLI now exist. The remaining work should focus on turning FileSearch from a capable desktop scanner into a polished, daily-driver local search platform with reliable releases, measurable performance, richer indexed-search UX, better automation output, saved workflows, and clear product maturity around accessibility, privacy, and security.
+FileSearch has already closed major gaps from the older competitive analysis: optional CSharpDB-backed indexing, a Spectre.Console REPL CLI, saved workflows, and Find and replace now exist. The remaining work should focus on turning FileSearch from a capable desktop scanner into a polished, daily-driver local search platform with reliable releases, measurable performance, richer indexed-search UX, better automation output, and clear product maturity around accessibility, privacy, and security.
 
 ## Current State
 
@@ -19,6 +19,8 @@ Completed since the older roadmap:
 - Out-of-process extractor host, reusable extractor host pool, extractor versioning, IFilter fallback, archive limits, and failed-file export.
 - Spectre.Console CLI REPL with live search, indexed search, index maintenance, filter commands, one-shot search export, one-shot index reporting, and one-shot index build/rebuild/clear actions to CSV/JSON/JSON Lines/Markdown.
 - Programmatic Core API examples and PowerShell CLI automation docs.
+- Saved workflows with conditional/retry/for-each steps, exports, confirmed file and program actions, and reviewed Find and replace steps.
+- Find and replace for Unicode text, DOCX/XLSX/PPTX contents, and file/folder names, with durable backups, stale-file checks, protected roots, and restart-safe Undo.
 - Whole-drive file-name index for local NTFS drives, built from the master file table (elevated helper) or an unprivileged file-ID folder scan, kept current from the USN change journal, and used by Quick Search, indexed name searches, and `filesearch volumes`.
 - GitHub Actions CI foundation for build, test, formatting, CLI smoke, published sidecar smoke, dependency review, and manual Store packaging.
 - Security, privacy, and release checklist documentation.
