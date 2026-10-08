@@ -3,6 +3,8 @@
 ###############################################################################
 * text=auto
 .githooks/* text eol=lf
+# This resource contains explicit carriage returns and hash-pinned license bytes.
+src/FileSearch.Core/Engine/EmbeddingLicenses.resx text eol=lf
 
 ###############################################################################
 # Set default behavior for command prompt diff.

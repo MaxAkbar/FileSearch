@@ -574,11 +574,12 @@ For sideload testing, pass `-CertificateThumbprint` with a certificate trusted o
 
 Work landed from `bbd4b73` (*Add background indexed search*, June 2026) to the current head, grouped by area.
 
-### FileSearch 1.9.0
+### FileSearch 1.9.1
 
 - **Find and replace**: preview and apply checked content or name changes from the main Search screen, with strict Unicode encoding preservation, native DOCX/XLSX/PPTX editing, collision checks, protected roots, durable backups, and Undo after restart.
 - **Workflow replacement**: add Find and replace steps with fresh folder scopes or exact earlier-search scopes, before/after review, dry-run previews, and grouped Undo. CLI application requires `--apply-replacements`.
 - **Semantic search**: desktop concept-search controls, relevance thresholds, result limits, and optional local EmbeddingGemma model support. See [Smart Search help](src/FileSearch.Gui/Help/smart-search.html).
+- **Model-license packaging**: keep bundled license bytes stable across Windows clean checkouts so pinned model-pack checksums remain valid.
 
 ### Search engine and indexing
 
