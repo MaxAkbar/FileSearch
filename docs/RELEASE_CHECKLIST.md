@@ -8,11 +8,12 @@ Use this checklist before creating a public FileSearch release or Microsoft Stor
 - Confirm the version uses four integer parts for packaging, for example `1.2.3.0`.
 - Run `dotnet restore .\FileSearch.slnx`.
 - Run `dotnet build .\FileSearch.slnx --configuration Release`.
-- Run `dotnet test .\FileSearch.slnx --configuration Release --no-build`.
+- Run `dotnet test --solution .\FileSearch.slnx --configuration Release --no-build`.
 - Smoke test the WPF app.
 - Smoke test the CLI with `help`, `options`, `search`, and `index locations`.
 - Review `README.md`, `README.Indexing.md`, and `README.Roadmap.md` for stale release notes.
 - Review `README.Mcp.md` and `README.McpIntegration.md` when the MCP server's tools, parameters, or response fields changed; the integration reference documents the wire contract integrators depend on.
+- Review `README.PowerToys.md` and the bundled `Help\powertoys.html` for companion installation, unsigned development setup, query handoff, and index limits.
 
 ## GitHub Actions
 
@@ -32,6 +33,7 @@ Use this checklist before creating a public FileSearch release or Microsoft Stor
 - The **Release** workflow runs Release build/test gates, creates a portable ZIP and MSI, verifies published executables and sidecars (including an MCP server initialize/tools-list handshake against the published `FileSearch.Mcp.exe`), writes `SHA256SUMS-<runtime>.txt`, uploads artifacts, and creates a draft GitHub Release for tag pushes.
 - When signing secrets are configured, the **Release** workflow signs and timestamps the MSI. When they are missing, it still creates an unsigned MSI for validation.
 - When all Store variables and signing secrets are configured, the **Release** workflow also creates and verifies a signed MSIX Store package. When they are missing, it logs a warning and skips only the MSIX artifacts.
+- For x64 or ARM64, the **Release** workflow creates the optional PowerToys companion as a separate download and verifies activation metadata, version, layout, and checksums. Signing credentials produce a signed, timestamped companion MSIX using the certificate's publisher. Without signing credentials, the assets are an unsigned MSIX and a development layout ZIP for computers with Developer Mode already enabled. The workflow does not enable Developer Mode or install the companion.
 - For Store packages, run the **Store package** workflow manually with the intended version, runtime, package identity, publisher, and publisher display name. The default publisher display name is `Max Akbar`, but confirm it against Partner Center before submitting.
 - Use one runtime per workflow run: `win-x64`, `win-x86`, or `win-arm64`.
 
@@ -60,6 +62,8 @@ The Release workflow creates portable ZIP and MSI artifacts without signing secr
 - MSIX Store artifacts are present only when signed Store configuration was available.
 - Confirm `SHA256SUMS*.txt` is present and matches the release assets.
 - Confirm the packaged app includes `Help\index.html`.
+- Confirm the packaged app includes `Help\powertoys.html`, while its dependency manifest and publish layout contain no PowerToys SDK or companion executable.
+- For x64 or ARM64, confirm the separate companion assets and `SHA256SUMS-PowerToys-<runtime>.txt` are attached. Run `scripts\Test-PowerToysPackageArtifact.ps1`; add `-RequireSigned` when signing was configured. Unsigned builds must include `README-DEVELOPMENT.txt` in the development layout ZIP and be clearly labeled in release notes.
 - Confirm the packaged app includes `FileSearch.Cli.exe`.
 - Confirm the packaged app includes `FileSearch.Indexer.exe`.
 - Confirm the packaged app includes `FileSearch.ExtractorHost.exe`.

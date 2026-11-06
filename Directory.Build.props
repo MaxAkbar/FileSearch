@@ -1,7 +1,7 @@
 <Project>
 
   <PropertyGroup>
-    <Version Condition="'$(Version)' == ''">1.9.1</Version>
+    <Version Condition="'$(Version)' == ''">1.10.0</Version>
     <LangVersion>latest</LangVersion>
     <Nullable>enable</Nullable>
     <ImplicitUsings>enable</ImplicitUsings>

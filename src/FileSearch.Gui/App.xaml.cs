@@ -151,7 +151,8 @@ public partial class App : System.Windows.Application
         _singleInstance.StartServer(options => Dispatcher.Invoke(() => ActivateFromOptions(window, viewModel, options)));
 
         var backgroundIndexer = _host.Services.GetRequiredService<IBackgroundIndexerProcessService>();
-        if (startupOptions.StartInBackground && viewModel.Settings.StartBackgroundIndexerAtSignIn)
+        if (startupOptions.StartInBackground && string.IsNullOrWhiteSpace(startupOptions.QueryText) &&
+            viewModel.Settings.StartBackgroundIndexerAtSignIn)
         {
             _ = StartBackgroundWorkerAndExitAsync(backgroundIndexer);
             return;
@@ -171,6 +172,7 @@ public partial class App : System.Windows.Application
         if (AppWindowLifetime.ShouldShowOnStartup(startupOptions))
             window.Show();
 
+        ApplySearchActivation(viewModel, startupOptions);
         _ = viewModel.StartBackgroundIndexingAsync();
         _ = _host.Services.GetRequiredService<DriveNameIndexViewModel>().InitializeAsync();
     }
@@ -231,11 +233,20 @@ public partial class App : System.Windows.Application
         MainViewModel viewModel,
         AppStartupOptions options)
     {
-        if (options.StartupFolder is not null)
+        if (options.StartupFolder is not null && string.IsNullOrWhiteSpace(options.QueryText))
             viewModel.Search.SearchPath = options.StartupFolder;
 
         if (AppWindowLifetime.ShouldShowOnActivation(options))
             ShowMainWindow(window);
+
+        ApplySearchActivation(viewModel, options);
+    }
+
+    private static void ApplySearchActivation(MainViewModel viewModel, AppStartupOptions options)
+    {
+        if (!string.IsNullOrWhiteSpace(options.QueryText))
+            _ = viewModel.Search.OpenExternalSearchAsync(
+                options.QueryText, options.SearchTarget, options.SelectedPath, options.StartupFolder);
     }
 
     private static void ShowMainWindow(Window window)

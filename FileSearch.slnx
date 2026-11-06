@@ -6,12 +6,14 @@
     <Project Path="src/FileSearch.Gui/FileSearch.Gui.csproj" />
     <Project Path="src/FileSearch.Indexer/FileSearch.Indexer.csproj" />
     <Project Path="src/FileSearch.Mcp/FileSearch.Mcp.csproj" />
+    <Project Path="src/FileSearch.PowerToys/FileSearch.PowerToys.csproj" />
     <Project Path="src/FileSearch.WindowsOcr/FileSearch.WindowsOcr.csproj" />
   </Folder>
   <Folder Name="/tests/">
     <Project Path="tests/FileSearch.Core.Tests/FileSearch.Core.Tests.csproj" />
     <Project Path="tests/FileSearch.Gui.Tests/FileSearch.Gui.Tests.csproj" />
     <Project Path="tests/FileSearch.Mcp.Tests/FileSearch.Mcp.Tests.csproj" />
+    <Project Path="tests/FileSearch.PowerToys.Tests/FileSearch.PowerToys.Tests.csproj" />
   </Folder>
   <Folder Name="/benchmarks/">
     <Project Path="benchmarks/FileSearch.Benchmarks/FileSearch.Benchmarks.csproj" />

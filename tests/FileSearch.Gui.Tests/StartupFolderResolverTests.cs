@@ -1,9 +1,57 @@
+using System.Text.Json;
+using FileSearch.Core.Engine;
 using FileSearch.Gui.Services;
 
 namespace FileSearch.Gui.Tests;
 
 public sealed class StartupFolderResolverTests
 {
+    [Fact]
+    public void AppStartupOptionsParse_MissingLauncherFolderDoesNotSearchAnotherFolder()
+    {
+        var options = AppStartupOptions.Parse(["--query", "invoice", "--path", @"C:\Gone"], _ => false);
+        Assert.Null(options.QueryText);
+        Assert.Null(options.StartupFolder);
+    }
+
+    [Fact]
+    public void AppStartupOptionsParse_PreservesLauncherQueryAndSelectionAcrossIpc()
+    {
+        const string root = @"C:\Work Files";
+        const string selected = @"C:\Work Files\report.txt";
+        const string query = "type:txt \"annual report\" & $(literal)";
+        var options = AppStartupOptions.Parse(
+            ["--query", query, "--path", root, "--target", "files", "--select", selected], path => path == root);
+
+        var forwarded = JsonSerializer.Deserialize<AppStartupOptions>(JsonSerializer.Serialize(options));
+        Assert.Equal(options, forwarded);
+        Assert.Equal(query, options.QueryText);
+        Assert.Equal(root, options.StartupFolder);
+        Assert.Equal(selected, options.SelectedPath);
+        Assert.Equal(SearchTarget.FileNames, options.SearchTarget);
+    }
+
+    [Fact]
+    public void AppStartupOptionsParse_OldActivationPayloadKeepsWorking()
+    {
+        var options = JsonSerializer.Deserialize<AppStartupOptions>("{\"StartInBackground\":false,\"StartupFolder\":null}");
+        Assert.NotNull(options);
+        Assert.Null(options.QueryText);
+        Assert.Equal(SearchTarget.Content, options.SearchTarget);
+    }
+
+    [Theory]
+    [InlineData("--query")]
+    [InlineData("--path")]
+    [InlineData("--target")]
+    [InlineData("--select")]
+    public void AppStartupOptionsParse_IncompleteLauncherArgumentDoesNotCrash(string argument)
+    {
+        var options = AppStartupOptions.Parse([argument], _ => false);
+        Assert.Null(options.QueryText);
+        Assert.Null(options.StartupFolder);
+    }
+
     [Fact]
     public void ResolveFolderPath_ReturnsFirstExistingFolder()
     {

@@ -1,0 +1,130 @@
+<!doctype html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>PowerToys Integration - FileSearch Help</title>
+    <link rel="stylesheet" href="css/help.css">
+</head>
+<body>
+    <div class="shell">
+        <aside class="sidebar">
+            <a class="brand" href="index.html" aria-label="FileSearch help home">
+                <img src="../Assets/FileSearch-256.png" alt="">
+                <span>
+                    <span class="brand-title">FileSearch</span>
+                    <span class="brand-subtitle">User help</span>
+                </span>
+            </a>
+
+            <div class="nav-heading">Using FileSearch</div>
+            <nav class="nav">
+                <a href="index.html">Overview</a>
+                <a href="search.html">Run a Search</a>
+                <a href="quick-search.html">Quick Search</a>
+                <a class="active" href="powertoys.html">PowerToys (optional)</a>
+                <a href="query-syntax.html">Query Syntax</a>
+                <a href="smart-search.html">Smart Search (ONNX)</a>
+                <a href="results.html">Results and Preview</a>
+                <a href="mail.html">Outlook Mail Search</a>
+                <a href="indexing.html">Indexed Search</a>
+                <a href="workflows.html">Workflows</a>
+                <a href="cli.html">Command Line</a>
+                <a href="executables.html">Release Executables</a>
+                <a href="options.html">Options</a>
+                <a href="troubleshooting.html">Troubleshooting</a>
+            </nav>
+        </aside>
+
+        <main class="content">
+            <section class="hero">
+                <div class="eyebrow">Optional PowerToys Integration</div>
+                <h1>Search from PowerToys Command Palette.</h1>
+                <p class="lead">FileSearch for PowerToys is a separately installed companion that brings indexed filename and document-text searches into Command Palette. Find a file, copy matching text, or continue the search in the full FileSearch window.</p>
+            </section>
+
+            <div class="callout">
+                <strong>PowerToys is optional.</strong> FileSearch works normally without it. The main app does not load the PowerToys SDK, check for PowerToys at startup, prompt you to install it, or change your shortcuts. The companion is separate from the normal FileSearch installers.
+            </div>
+
+            <h2 id="setup">Set Up the Companion</h2>
+            <ol class="plain-list">
+                <li>Install FileSearch 1.10.0 or later and add the folders you want to search under <strong>Index &gt; Manage indexed locations</strong>. Let their folder indexes finish building. See <a href="indexing.html">Indexed Search</a>.</li>
+                <li>On Windows 11, install PowerToys and enable <strong>Command Palette</strong> in its settings.</li>
+                <li>Install the separate, signed <code>FileSearch.PowerToys_*.msix</code> companion package for your release. A locally built unsigned package needs signing and a trusted certificate before normal installation.</li>
+                <li>Open Command Palette using its configured shortcut. Reload Command Palette extensions if the FileSearch commands do not appear.</li>
+            </ol>
+            <p>Installing the main FileSearch app alone does not install the companion. FileSearch's own <a href="quick-search.html">Quick Search</a> remains available independently.</p>
+            <p>Releases without signing credentials include an unsigned MSIX and a separate <code>FileSearch.PowerToys_*-development.zip</code>. For local testing on a computer with Developer Mode already enabled, extract that ZIP into a permanent folder and follow its <code>README-DEVELOPMENT.txt</code> to register <code>AppxManifest.xml</code>. Keep the folder in place until you uninstall the companion. This setup does not enable Developer Mode or change Windows security settings.</p>
+
+            <h2 id="commands">Choose a Search Command</h2>
+            <div class="table-wrap">
+                <table>
+                    <thead>
+                        <tr><th>Command</th><th>What to enter</th><th>Results</th></tr>
+                    </thead>
+                    <tbody>
+                        <tr>
+                            <td><strong>FileSearch: file names</strong></td>
+                            <td>Literal filename text, such as <code>invoice</code>.</td>
+                            <td>Matching files from existing folder indexes, with their full paths.</td>
+                        </tr>
+                        <tr>
+                            <td><strong>FileSearch: file contents</strong></td>
+                            <td>Text or a Unified query, such as <code>type:pdf invoice</code>.</td>
+                            <td>Matching indexed files, with paths and short text snippets.</td>
+                        </tr>
+                    </tbody>
+                </table>
+            </div>
+            <p>Results update as you type. Each new query cancels the previous search so older results do not replace newer ones. For content-query examples, see <a href="query-syntax.html">Query Syntax</a>.</p>
+
+            <h2 id="actions">Use a Result</h2>
+            <p>Press <kbd>Enter</kbd> to open the selected file in its default application. Open the result's action menu for these commands:</p>
+            <ul class="plain-list">
+                <li><strong>Open in FileSearch</strong> brings the desktop app forward with the query, indexed folder, search target, and selected file. It also works when FileSearch is already running.</li>
+                <li><strong>Show in File Explorer</strong> reveals the file in Explorer.</li>
+                <li><strong>Copy path</strong> copies the full file path.</li>
+                <li><strong>Copy matching text</strong> copies the matching text for a content result.</li>
+            </ul>
+            <p>A query handoff does not interrupt a search or replacement already in progress in the desktop app. Finish or cancel that operation, then choose <strong>Open in FileSearch</strong> again. If the indexed folder has been removed, the handoff does not run the query against another folder.</p>
+
+            <h2 id="settings">Configure a Portable or Custom Installation</h2>
+            <p>Open the FileSearch extension's settings inside Command Palette:</p>
+            <ul class="plain-list">
+                <li><strong>FileSearch application</strong>: leave blank for a standard MSI installation under <code>Program Files\FileSearch</code>. For portable, custom, or main MSIX installations, enter the full path to <code>FileSearch.Gui.exe</code>.</li>
+                <li><strong>Custom FileSearch index (optional)</strong>: leave blank to use the standard index. Enter a full database-file path if your FileSearch installation uses a different index, then reload the extension.</li>
+            </ul>
+            <p>The standard index is <code>%LOCALAPPDATA%\FileSearch\Index\filesearch.db</code>. The existing <code>FILESEARCH_INDEX_DATABASE_PATH</code> environment override is also supported. Companion settings are separate from the desktop app's settings and are stored in <code>%LOCALAPPDATA%\FileSearch\PowerToys\settings.json</code>.</p>
+
+            <h2 id="scope">Search Scope and Limits</h2>
+            <ul class="plain-list">
+                <li>The companion searches existing, compatible <strong>folder indexes</strong> and preserves their extension, directory, recursion, hidden-file, and OCR filters.</li>
+                <li>Existing indexed OCR text can appear in content results. The companion does not enable OCR, download models, scan the disk, start another indexer, or build or refresh indexes.</li>
+                <li>Whole-drive MFT filename snapshots and semantic search are not used by this version of the companion.</li>
+                <li>Queries return up to <strong>50 distinct files</strong> and have a <strong>three-second search deadline</strong>. A status row indicates limited or partial results; enter a more specific query to narrow the matches.</li>
+                <li>Incomplete, incompatible, or unavailable indexes are skipped. Add or refresh their folders in FileSearch before trying again.</li>
+            </ul>
+
+            <h2 id="troubleshooting">If Something Is Missing</h2>
+            <ul class="plain-list">
+                <li><strong>No FileSearch commands:</strong> check that Command Palette is enabled, the separate companion is installed, and its extensions have been reloaded. A PowerToys Run plugin is not included with this companion.</li>
+                <li><strong>No matching indexed files:</strong> check that the folder has a completed content index in FileSearch. A drive-name index alone is not enough. Check the companion's custom index setting if you use another database file.</li>
+                <li><strong>Some folders need an index refresh:</strong> refresh those locations in FileSearch. The companion does not fall back to a live scan.</li>
+                <li><strong>Search time limit reached:</strong> refine the query to make it more specific.</li>
+                <li><strong>Open in FileSearch fails:</strong> check the <strong>FileSearch application</strong> setting, especially if you moved a portable installation.</li>
+            </ul>
+
+            <h2 id="remove">Remove the Companion</h2>
+            <p>Uninstall <strong>FileSearch for PowerToys</strong> from Windows Installed apps. FileSearch, its settings, and its indexes remain available. Removing PowerToys also leaves the normal FileSearch app usable.</p>
+
+            <div class="next-links">
+                <a href="indexing.html">Indexed Search</a>
+                <a href="quick-search.html">Quick Search</a>
+                <a href="executables.html">Release Executables</a>
+                <a href="troubleshooting.html">Troubleshooting</a>
+            </div>
+        </main>
+    </div>
+</body>
+</html>

@@ -325,6 +325,17 @@ Assert-FileExists $indexerExe "Published background indexer executable"
 Assert-FileExists $extractorHostExe "Published extractor host executable"
 Assert-FileExists $cliExe "Published CLI executable"
 Assert-FileExists $helpIndex "Published help bundle"
+Assert-FileExists (Join-Path $publishPath "Help\powertoys.html") "Bundled PowerToys help"
+$guiDependencies = Get-Content -LiteralPath (Join-Path $publishPath "FileSearch.Gui.deps.json") -Raw | ConvertFrom-Json
+if ($guiDependencies.libraries.PSObject.Properties.Name | Where-Object { $_ -match 'CommandPalette|WinRTServer|FileSearch\.PowerToys' }) {
+    throw "The main application must not depend on the optional PowerToys companion."
+}
+foreach ($optionalFile in @("FileSearch.PowerToys.exe", "Microsoft.CommandPalette.Extensions.dll", "Microsoft.CommandPalette.Extensions.Toolkit.dll")) {
+    if (Test-Path -LiteralPath (Join-Path $publishPath $optionalFile)) {
+        throw "The main application publish set must not bundle $optionalFile."
+    }
+}
+Write-SmokeLog "Bundled help and PowerToys dependency isolation verified."
 Invoke-CliSmoke $cliExe $publishPath
 
 # The MCP server ships in the portable ZIP and MSI but not the Store MSIX

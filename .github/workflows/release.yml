@@ -316,6 +316,32 @@ jobs:
         run: |
           .\scripts\Test-PublishedSidecars.ps1 -PublishDirectory ".\artifacts\msi\publish\${{ needs.prepare.outputs.runtime }}"
 
+      - name: Create optional PowerToys companion
+        if: needs.prepare.outputs.runtime != 'win-x86'
+        shell: pwsh
+        run: |
+          $companionArgs = @{
+            RuntimeIdentifier = "${{ needs.prepare.outputs.runtime }}"
+            Version = "${{ needs.prepare.outputs.version }}"
+          }
+          $thumbprint = "${{ steps.signing.outputs.thumbprint }}"
+          if (-not [string]::IsNullOrWhiteSpace($thumbprint)) {
+            $certificate = Get-Item -LiteralPath "Cert:\CurrentUser\My\$thumbprint"
+            $companionArgs.Publisher = $certificate.Subject
+            $companionArgs.CertificateThumbprint = $thumbprint
+            $companionArgs.TimestampUrl = "${{ steps.release_config.outputs.timestamp_url }}"
+          }
+          .\scripts\New-PowerToysPackage.ps1 @companionArgs
+          $verificationArgs = @{
+            ArtifactDirectory = ".\artifacts\powertoys"
+            Version = "${{ needs.prepare.outputs.version }}"
+            RuntimeIdentifier = "${{ needs.prepare.outputs.runtime }}"
+          }
+          if (-not [string]::IsNullOrWhiteSpace($thumbprint)) {
+            $verificationArgs.RequireSigned = $true
+          }
+          .\scripts\Test-PowerToysPackageArtifact.ps1 @verificationArgs
+
       - name: Upload release artifacts
         uses: actions/upload-artifact@v7
         with:
@@ -329,6 +355,9 @@ jobs:
             artifacts/store/*.appxsym
             artifacts/store/*.msixupload
             artifacts/store/SHA256SUMS*.txt
+            artifacts/powertoys/*.msix
+            artifacts/powertoys/*-development.zip
+            artifacts/powertoys/SHA256SUMS-PowerToys-*.txt
           if-no-files-found: error
           retention-days: 90
 

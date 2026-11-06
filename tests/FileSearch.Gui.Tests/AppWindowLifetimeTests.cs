@@ -5,6 +5,14 @@ namespace FileSearch.Gui.Tests;
 public sealed class AppWindowLifetimeTests
 {
     [Fact]
+    public void ExplicitLauncherQueryShowsTheWindowEvenWithBackgroundFlag()
+    {
+        var options = new AppStartupOptions(true, null, QueryText: "invoice");
+        Assert.True(AppWindowLifetime.ShouldShowOnStartup(options));
+        Assert.True(AppWindowLifetime.ShouldShowOnActivation(options));
+    }
+
+    [Fact]
     public void StartupShowsWindowUnlessBackgroundFlagIsSet()
     {
         Assert.True(AppWindowLifetime.ShouldShowOnStartup(new AppStartupOptions(false, null)));

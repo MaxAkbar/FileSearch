@@ -21,6 +21,7 @@
                 <a href="index.html">Overview</a>
                 <a href="search.html">Run a Search</a>
                 <a href="quick-search.html">Quick Search</a>
+                <a href="powertoys.html">PowerToys (optional)</a>
                 <a href="query-syntax.html">Query Syntax</a>
                 <a href="smart-search.html">Smart Search (ONNX)</a>
                 <a href="results.html">Results and Preview</a>
@@ -125,6 +126,14 @@
                 <li>Use <strong>File &gt; Install Windows integration</strong> again and watch the status bar for errors.</li>
                 <li>Restart File Explorer if the context menu does not refresh immediately.</li>
                 <li>Use <strong>File &gt; Remove Windows integration</strong> before reinstalling if the executable moved.</li>
+            </ul>
+
+            <h2 id="powertoys">PowerToys Commands or Results Are Missing</h2>
+            <ul class="plain-list">
+                <li>Enable Command Palette in PowerToys, install the separate FileSearch companion, and reload Command Palette extensions. The main FileSearch installer does not install this optional companion.</li>
+                <li>Build or refresh the folder's content index in FileSearch. The companion searches compatible folder indexes only; a drive-name index alone is not enough.</li>
+                <li>For a portable, custom, or main MSIX installation, check <strong>FileSearch application</strong> in the extension's settings. If you use another database, check <strong>Custom FileSearch index (optional)</strong> and reload the extension after changing it.</li>
+                <li>Refine the query if results reach the file-count or time limit. See <a href="powertoys.html#troubleshooting">PowerToys troubleshooting</a> for details.</li>
             </ul>
 
             <h2>Store or MSIX Install Notes</h2>
