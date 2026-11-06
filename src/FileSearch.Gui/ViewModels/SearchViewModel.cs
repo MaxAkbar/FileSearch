@@ -1306,6 +1306,37 @@ public sealed partial class SearchViewModel : ObservableObject, IDisposable
             SearchPath = folder;
     }
 
+    /// <summary>Opens an explicit query handed off by an external launcher.</summary>
+    public async Task OpenExternalSearchAsync(string query, SearchTarget target, string? selectedPath = null, string? root = null)
+    {
+        if (!CanSearch())
+        {
+            _status.Text = "Finish or cancel the current search before opening another search.";
+            return;
+        }
+
+        if (root is not null)
+            SearchPath = root;
+        QueryText = query;
+        SearchMode = target == SearchTarget.FileNames ? QueryMode.PlainText : QueryMode.Unified;
+        SetSearchTargets([target]);
+        UseIndex = true;
+        IncludeSubfolders = true;
+        EnableDocumentExtraction = true;
+        MatchCase = false;
+        FileNamePattern = string.Empty;
+        ExcludeFileNamePattern = string.Empty;
+        MinSizeKB = 0;
+        MaxSizeKB = 0;
+        ModifiedAfterEnabled = false;
+        ModifiedBeforeEnabled = false;
+        await SearchCommand.ExecuteAsync(null).ConfigureAwait(true);
+
+        if (!string.IsNullOrWhiteSpace(selectedPath))
+            SelectedFile = Files.FirstOrDefault(file =>
+                string.Equals(file.FullPath, selectedPath, StringComparison.OrdinalIgnoreCase)) ?? SelectedFile;
+    }
+
     [RelayCommand(CanExecute = nameof(CanSearch))]
     private async Task SearchAsync()
     {

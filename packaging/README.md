@@ -1,5 +1,13 @@
 # Microsoft Store packaging
 
+The optional [PowerToys Command Palette companion](../README.PowerToys.md) uses
+`scripts\New-PowerToysPackage.ps1` and its own MSIX identity. It is not included in
+the normal installers or required to build or run the desktop application.
+Tag releases build and verify this companion separately for x64 or ARM64. Signing
+credentials produce a timestamped MSIX; otherwise the release contains an unsigned
+MSIX and a development layout ZIP with registration instructions. Companion
+checksums use `SHA256SUMS-PowerToys-<runtime>.txt`.
+
 FileSearch is a WPF desktop app, so the repository supports both Store-friendly
 MSI output and MSIX packaging. The MSI artifact is intended for the Microsoft
 Store MSI/EXE submission path. The MSIX artifact remains available when a

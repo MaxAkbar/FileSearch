@@ -16,6 +16,49 @@ namespace FileSearch.Gui.Tests;
 public sealed class SearchViewModelTests
 {
     [Fact]
+    public void ExternalLauncherQuerySetsTheScopeAndSelectsTheRequestedFile()
+    {
+        RunWithPump((pump, vm, history, status, settings) =>
+        {
+            vm.FileNamePattern = "*.pdf";
+            vm.MinSizeKB = 100;
+            vm.IncludeSubfolders = false;
+            var search = vm.OpenExternalSearchAsync("needle", SearchTarget.FileNames,
+                @"C:\results\b.txt", Path.GetTempPath());
+            pump.PumpUntil(() => search.IsCompleted, TimeSpan.FromSeconds(10));
+            search.GetAwaiter().GetResult();
+
+            Assert.Equal("needle", vm.QueryText);
+            Assert.Equal(Path.GetTempPath(), vm.SearchPath);
+            Assert.Equal(SearchTarget.FileNames, vm.CurrentSearchTarget);
+            Assert.Equal(QueryMode.PlainText, vm.SearchMode);
+            Assert.Equal(@"C:\results\b.txt", vm.SelectedFile!.FullPath);
+            Assert.Empty(vm.FileNamePattern);
+            Assert.Equal(0, vm.MinSizeKB);
+            Assert.True(vm.IncludeSubfolders);
+        });
+    }
+
+    [Fact]
+    public void ExternalLauncherDoesNotChangeAnActiveSearch()
+    {
+        var searcher = new GatedSearcher();
+        RunWithPump((pump, vm, history, status, settings) =>
+        {
+            vm.QueryText = "original";
+            vm.SearchPath = Path.GetTempPath();
+            var search = vm.SearchCommand.ExecuteAsync(null);
+            pump.PumpUntil(() => vm.IsSearching, TimeSpan.FromSeconds(10));
+            var handoff = vm.OpenExternalSearchAsync("incoming", SearchTarget.FileNames, root: @"C:\another");
+            Assert.True(handoff.IsCompleted);
+            Assert.Equal("original", vm.QueryText);
+            Assert.Equal(Path.GetTempPath(), vm.SearchPath);
+            searcher.Release();
+            pump.PumpUntil(() => search.IsCompleted, TimeSpan.FromSeconds(10));
+        }, searcher);
+    }
+
+    [Fact]
     public void MessagesWithTheSameStoreAndSubjectRemainSeparateAndCannotMutateTheStore()
     {
         var operations = new FakeFileOperationService();

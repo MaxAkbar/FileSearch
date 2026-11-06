@@ -27,6 +27,7 @@ FileSearch is a Windows desktop application for searching text across files and 
 - Configure the Quick Search global hotkey, Quick Search action shortcuts, and main-window keyboard shortcuts.
 - Light, dark, system, and Visual Studio-inspired themes.
 - Optional Windows shell integration from the app menu.
+- Optional, separately installed [PowerToys Command Palette companion](README.PowerToys.md) for indexed filename and document search.
 - MSI and MSIX packaging scripts for Microsoft Store submission.
 
 ## Supported file types
@@ -573,6 +574,14 @@ For sideload testing, pass `-CertificateThumbprint` with a certificate trusted o
 ## Recent changes
 
 Work landed from `bbd4b73` (*Add background indexed search*, June 2026) to the current head, grouped by area.
+
+### FileSearch 1.10.0
+
+- **Optional PowerToys companion**: search indexed file names or document text from Command Palette, view snippets, open files, reveal them in Explorer, copy paths or matching text, and continue a query in FileSearch. The companion is installed separately; normal FileSearch startup, shortcuts, and dependencies do not require PowerToys. See the [PowerToys setup guide](README.PowerToys.md).
+- **Desktop query handoff**: launch or activate the desktop app with a query, folder, target, and selected file. Active searches and replacements are preserved, and a missing folder never redirects the query to another location.
+- **Bundled Help**: added the PowerToys guide, troubleshooting, and executable argument reference throughout the app's Help pages.
+- **Release packaging**: separate companion MSIX, unsigned development ZIP when needed, and checksums, with automatic package verification and main-app dependency isolation checks.
+- **Dependency maintenance**: updated the existing PKCS dependency to 10.0.13 to address its reported vulnerabilities.
 
 ### FileSearch 1.9.1
 
