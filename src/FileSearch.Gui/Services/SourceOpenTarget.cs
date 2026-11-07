@@ -21,6 +21,8 @@ internal static class SourceOpenTargetBuilder
     {
         if (string.IsNullOrWhiteSpace(path))
             return null;
+        // Database hit line numbers enumerate extracted cells, not physical editor lines.
+        if (hit.Database is not null || FileSearch.Core.Databases.DatabaseFiles.IsDatabase(path)) return null;
 
         var locator = GetLocator(hit);
         if (IsPdf(path) && locator?.Page is > 0)

@@ -44,19 +44,20 @@ internal static class MsgFileReader
             cc.Count > 0 ? Clean(string.Join("; ", cc)) : Clean(GetString(root, 0x0E03, encoding)),
             GetDate(root, 0x0039) ?? GetDate(root, 0x0E06), string.Empty);
         var body = GetString(root, 0x1000, encoding);
-        if (string.IsNullOrWhiteSpace(body))
+        string? htmlBody = null;
+        var html = GetBytes(root, 0x1013, 0x0102);
+        if (html is not null)
         {
-            var html = GetBytes(root, 0x1013, 0x0102);
-            if (html is not null)
-            {
-                // BOM detection takes precedence over the message's Internet code page.
-                using var reader = new StreamReader(new MemoryStream(html), encoding, detectEncodingFromByteOrderMarks: true);
-                body = OutlookMailText.FromHtml(reader.ReadToEnd());
-            }
-            else if (GetBytes(root, 0x1009, 0x0102) is { } compressed)
-                body = OutlookMailText.FromHtml(RtfPipe.Rtf.ToHtml(encoding.GetString(OutlookRtfCompression.Decompress(compressed))));
+            using var reader = new StreamReader(new MemoryStream(html), encoding, detectEncodingFromByteOrderMarks: true);
+            htmlBody = reader.ReadToEnd();
+            if (string.IsNullOrWhiteSpace(body)) body = OutlookMailText.FromHtml(htmlBody);
         }
-        return new OutlookMailMessage(metadata, body ?? string.Empty, attachmentNames);
+        else if (string.IsNullOrWhiteSpace(body) && GetBytes(root, 0x1009, 0x0102) is { } compressed)
+        {
+            htmlBody = RtfPipe.Rtf.ToHtml(encoding.GetString(OutlookRtfCompression.Decompress(compressed)));
+            body = OutlookMailText.FromHtml(htmlBody);
+        }
+        return new OutlookMailMessage(metadata, body ?? string.Empty, attachmentNames) { HtmlBody = htmlBody };
     }
 
     private static string? GetString(Storage storage, ushort id, Encoding encoding)

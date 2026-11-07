@@ -6,6 +6,7 @@
         xmlns:ui="http://schemas.modernwpf.com/2019"
         xmlns:vm="clr-namespace:FileSearch.Gui.ViewModels"
         xmlns:conv="clr-namespace:FileSearch.Gui.Converters"
+        xmlns:controls="clr-namespace:FileSearch.Gui.Controls"
         xmlns:hl="clr-namespace:FileSearch.Gui.Highlighting"
         mc:Ignorable="d"
         d:DataContext="{d:DesignInstance Type=vm:QuickSearchViewModel}"
@@ -255,7 +256,7 @@
                 </StackPanel>
             </Grid>
 
-            <Border Grid.Row="3"
+            <Border x:Name="InlinePreviewBorder" Grid.Row="3"
                     Visibility="{Binding IsPreviewVisible, Converter={StaticResource BoolToVisibility}}"
                     Background="{DynamicResource Atlas.Surface2Brush}"
                     BorderBrush="{DynamicResource Atlas.LineBrush}"
@@ -263,40 +264,47 @@
                     CornerRadius="8"
                     Padding="10"
                     Margin="0,10,0,0"
-                    MaxHeight="155">
-                <DockPanel LastChildFill="True">
-                    <Border DockPanel.Dock="Left"
-                            Visibility="{Binding HasImageOcrPreview, Converter={StaticResource BoolToVisibility}}"
-                            Width="150"
-                            Margin="0,0,10,0"
-                            BorderBrush="{DynamicResource Atlas.LineBrush}"
-                            BorderThickness="1"
-                            Background="{DynamicResource Atlas.PaperBrush}"
-                            ToolTip="{Binding ImageOcrPreview.Label}"
-                            ClipToBounds="True">
-                        <Viewbox Stretch="Uniform">
-                            <Canvas Width="{Binding ImageOcrPreview.SourceWidth}"
-                                    Height="{Binding ImageOcrPreview.SourceHeight}">
-                                <Image Source="{Binding ImageOcrPreview.ImagePath}"
-                                       Width="{Binding ImageOcrPreview.SourceWidth}"
-                                       Height="{Binding ImageOcrPreview.SourceHeight}"
-                                       Stretch="Fill"/>
-                                <Rectangle Canvas.Left="{Binding ImageOcrPreview.X}"
-                                           Canvas.Top="{Binding ImageOcrPreview.Y}"
-                                           Width="{Binding ImageOcrPreview.Width}"
-                                           Height="{Binding ImageOcrPreview.Height}"
-                                           Stroke="#FFFFCE54"
-                                           StrokeThickness="6"
-                                           Fill="#33FFCE54"/>
-                            </Canvas>
-                        </Viewbox>
-                    </Border>
-                    <TextBox Text="{Binding PreviewContent, Mode=OneWay}"
-                             Style="{StaticResource PreviewCodeBoxStyle}"
-                             BorderThickness="0"
-                             Background="Transparent"
-                             Padding="0"/>
-                </DockPanel>
+                    Height="324" MaxHeight="420">
+                <TabControl SelectedIndex="1" Style="{StaticResource FilePreviewTabsStyle}" AutomationProperties.Name="Quick Search preview views">
+                    <TabItem Header="Matches">
+                        <DockPanel LastChildFill="True">
+                            <Border DockPanel.Dock="Left"
+                                    Visibility="{Binding HasImageOcrPreview, Converter={StaticResource BoolToVisibility}}"
+                                    Width="150"
+                                    Margin="0,0,10,0"
+                                    BorderBrush="{DynamicResource Atlas.LineBrush}"
+                                    BorderThickness="1"
+                                    Background="{DynamicResource Atlas.PaperBrush}"
+                                    ToolTip="{Binding ImageOcrPreview.Label}"
+                                    ClipToBounds="True">
+                                <Viewbox Stretch="Uniform">
+                                    <Canvas Width="{Binding ImageOcrPreview.SourceWidth}"
+                                            Height="{Binding ImageOcrPreview.SourceHeight}">
+                                        <Image Source="{Binding ImageOcrPreview.ImagePath}"
+                                               Width="{Binding ImageOcrPreview.SourceWidth}"
+                                               Height="{Binding ImageOcrPreview.SourceHeight}"
+                                               Stretch="Fill"/>
+                                        <Rectangle Canvas.Left="{Binding ImageOcrPreview.X}"
+                                                   Canvas.Top="{Binding ImageOcrPreview.Y}"
+                                                   Width="{Binding ImageOcrPreview.Width}"
+                                                   Height="{Binding ImageOcrPreview.Height}"
+                                                   Stroke="#FFFFCE54"
+                                                   StrokeThickness="6"
+                                                   Fill="#33FFCE54"/>
+                                    </Canvas>
+                                </Viewbox>
+                            </Border>
+                            <TextBox Text="{Binding PreviewContent, Mode=OneWay}"
+                                     Style="{StaticResource PreviewCodeBoxStyle}"
+                                     BorderThickness="0"
+                                     Background="Transparent"
+                                     Padding="0"/>
+                        </DockPanel>
+                    </TabItem>
+                    <TabItem Header="File preview">
+                        <controls:FileDocumentPreview Result="{Binding SelectedResult}" FallbackText="{Binding PreviewContent}"/>
+                    </TabItem>
+                </TabControl>
             </Border>
         </Grid>
     </Border>

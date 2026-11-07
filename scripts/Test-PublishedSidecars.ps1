@@ -326,6 +326,27 @@ Assert-FileExists $extractorHostExe "Published extractor host executable"
 Assert-FileExists $cliExe "Published CLI executable"
 Assert-FileExists $helpIndex "Published help bundle"
 Assert-FileExists (Join-Path $publishPath "Help\powertoys.html") "Bundled PowerToys help"
+Assert-FileExists (Join-Path $publishPath "Help\help-search.html") "Bundled Help search page"
+Assert-FileExists (Join-Path $publishPath "Help\js\help-search.js") "Bundled Help search script"
+Assert-FileExists (Join-Path $publishPath "Help\js\help-search-index.js") "Generated Help search index"
+Assert-FileExists (Join-Path $publishPath "ICSharpCode.AvalonEdit.dll") "Built-in source preview renderer"
+Assert-FileExists (Join-Path $publishPath "Markdig.dll") "Built-in Markdown preview renderer"
+foreach ($databaseDependency in @("Microsoft.Data.Sqlite.dll", "SQLitePCLRaw.core.dll", "SQLitePCLRaw.batteries_v2.dll", "SQLitePCLRaw.provider.e_sqlite3.dll")) {
+    Assert-FileExists (Join-Path $publishPath $databaseDependency) "Database search dependency"
+}
+Assert-FileExists (Join-Path $publishPath "docs\licenses\SQLitePCLRaw-Apache-2.0.txt") "SQLite provider license"
+Assert-FileExists (Join-Path $publishPath "docs\licenses\CSharpDB-MIT.txt") "CSharpDB license"
+if (-not (Get-ChildItem -LiteralPath $publishPath -Filter "e_sqlite3.dll" -File -Recurse | Select-Object -First 1)) {
+    throw "SQLite native runtime was not found in the publish output."
+}
+foreach ($previewDependency in @("MimeKit.dll", "HtmlSanitizer.dll", "AngleSharp.dll", "AngleSharp.Css.dll", "BouncyCastle.Cryptography.dll")) {
+    Assert-FileExists (Join-Path $publishPath $previewDependency) "Built-in structured preview dependency"
+}
+foreach ($previewLicense in @("MimeKit-MIT.txt", "HtmlSanitizer-MIT.txt", "AngleSharp-MIT.txt", "AngleSharp.Css-MIT.txt", "BouncyCastle-License.txt")) {
+    Assert-FileExists (Join-Path $publishPath "docs\licenses\$previewLicense") "Structured preview dependency license"
+}
+Assert-FileExists (Join-Path $publishPath "docs\licenses\AvalonEdit-MIT.txt") "Source preview renderer license"
+Assert-FileExists (Join-Path $publishPath "docs\licenses\Markdig-BSD-2-Clause.txt") "Markdown preview renderer license"
 $guiDependencies = Get-Content -LiteralPath (Join-Path $publishPath "FileSearch.Gui.deps.json") -Raw | ConvertFrom-Json
 if ($guiDependencies.libraries.PSObject.Properties.Name | Where-Object { $_ -match 'CommandPalette|WinRTServer|FileSearch\.PowerToys' }) {
     throw "The main application must not depend on the optional PowerToys companion."

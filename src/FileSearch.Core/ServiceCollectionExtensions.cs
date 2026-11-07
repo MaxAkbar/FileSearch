@@ -66,6 +66,7 @@ public static class ServiceCollectionExtensions
         services.AddSingleton<ITextExtractor, XmlTextExtractor>();
         services.AddSingleton<ITextExtractor, CalendarContactExtractor>();
         services.AddSingleton<ITextExtractor, ZipExtractor>();
+        services.AddSingleton<ITextExtractor, DatabaseExtractor>();
 
         services.TryAddSingleton<IExtractorRegistry>(sp =>
         {

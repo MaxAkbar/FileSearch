@@ -25,6 +25,7 @@
   <ItemGroup>
     <None Include="..\FileSearch.Core.Tests\Fixtures\Outlook\mail-samples.zip" Link="Fixtures\Outlook\mail-samples.zip" CopyToOutputDirectory="PreserveNewest" />
     <Compile Include="..\FileSearch.Core.Tests\OutlookTestFiles.cs" Link="OutlookTestFiles.cs" />
+    <Compile Include="..\FileSearch.Core.Tests\DatabaseTestFiles.cs" Link="DatabaseTestFiles.cs" />
   </ItemGroup>
 
   <ItemGroup>

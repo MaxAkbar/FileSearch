@@ -53,6 +53,8 @@ public sealed class ExcelExtractorTests : IDisposable
         Assert.All(lines, l => Assert.StartsWith("[Data]", l.Content));
         Assert.Contains("Alice", lines[1].Content);
         Assert.Contains("Bob", lines[2].Content);
+        Assert.Equal("Data", lines[1].Anchor!.Sheet);
+        Assert.Equal("A2:B2", lines[1].Anchor!.Cell);
     }
 
     [Fact]

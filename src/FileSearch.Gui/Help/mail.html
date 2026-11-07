@@ -5,6 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <title>Outlook Mail Search - FileSearch Help</title>
     <link rel="stylesheet" href="css/help.css">
+    <script src="js/help-search.js" defer></script>
 </head>
 <body>
     <div class="shell">
@@ -45,7 +46,7 @@
             <h2 id="search">Search a Mail Folder</h2>
             <ol class="plain-list">
                 <li>Close Outlook and choose the folder containing your mail files. A stable copy of a store also works.</li>
-                <li>Open the search options button, select <strong>Contents</strong>, and enable <strong>Office &amp; PDF text</strong>. This option also enables mail extraction.</li>
+                <li>Open the search options button, select <strong>Contents</strong>, and enable <strong>Document &amp; database text</strong>. This option also enables mail extraction.</li>
                 <li>Search for words in a subject, sender, recipient, body, attachment name, or mail folder. In <strong>Unified</strong> mode, use <code>type:email invoice</code> to restrict the search to EML, MSG, PST, and OST files.</li>
                 <li>For repeat searches, add the containing folder with <strong>Index &gt; Manage indexed locations</strong>, enable document extraction for that location, build its content index, and turn on <strong>Use index</strong>.</li>
                 <li>In Quick Search, choose an indexed scope and turn on <strong>Content</strong>. Enter ordinary search words such as <code>invoice</code>; Quick Search uses plain text rather than Unified field syntax.</li>
@@ -71,6 +72,7 @@
 
             <h2 id="results">Results and Preview</h2>
             <p>Each matching PST/OST message has its own card, including messages with identical subjects. Cards show the subject, sender, date, and mail folder. The preview and <strong>Copy file content</strong> read only the selected message.</p>
+            <p>The <strong>File preview</strong> tab loads the complete selected message, including headers, a formatted HTML or plain-text body, and attachment names. EML messages can display embedded inline images. Scripts, external links, and remote images are blocked; attachments are not opened. The <strong>Matches</strong> tab remains the excerpt and search-context view. Expand opens the same complete-message view in a larger window. Oversized or unreadable messages fall back to text or details; a changed PST/OST must be refreshed before its old message identity can be used.</p>
             <ul class="plain-list">
                 <li><strong>Open</strong> on a MSG launches its registered application.</li>
                 <li><strong>Open</strong> on a PST/OST message creates a text-only EML copy and opens it in the registered mail application. The copy contains readable headers, body text, and attachment names; attachments and original formatting are omitted.</li>

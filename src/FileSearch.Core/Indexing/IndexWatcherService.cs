@@ -20,11 +20,13 @@ public sealed class IndexWatcherService : IIndexWatcherService
     private readonly Dictionary<string, FileSystemWatcher> _watchers = new(StringComparer.OrdinalIgnoreCase);
     private readonly Dictionary<string, IndexWatcherDiagnosticInfo> _diagnostics = new(StringComparer.OrdinalIgnoreCase);
     private readonly ILogger _logger;
+    private readonly string _databasePath;
 
-    public IndexWatcherService(IIndexQueue queue, ILogger<IndexWatcherService>? logger = null)
+    public IndexWatcherService(IIndexQueue queue, ILogger<IndexWatcherService>? logger = null, FileIndexOptions? indexOptions = null)
     {
         _queue = queue;
         _logger = logger ?? NullLogger<IndexWatcherService>.Instance;
+        _databasePath = Path.GetFullPath((indexOptions ?? new FileIndexOptions()).DatabasePath);
     }
 
     public void StartWatching(IndexedLocation location)
@@ -165,6 +167,8 @@ public sealed class IndexWatcherService : IIndexWatcherService
 
     private void QueueUpsert(IndexedLocation location, string path, TimeSpan debounce)
     {
+        path = FileSearch.Core.Databases.DatabaseFiles.GetJournalDatabase(path) ?? path;
+        if (IsOwnStorage(path)) return;
         Enqueue(new IndexQueueItem(
             location.Root,
             path,
@@ -177,6 +181,12 @@ public sealed class IndexWatcherService : IIndexWatcherService
 
     private void QueueDelete(IndexedLocation location, string path)
     {
+        if (IsOwnStorage(path)) return;
+        if (FileSearch.Core.Databases.DatabaseFiles.GetJournalDatabase(path) is { } database)
+        {
+            QueueUpsert(location, database, ChangedFileDebounce);
+            return;
+        }
         Enqueue(new IndexQueueItem(
             location.Root,
             path,
@@ -197,6 +207,14 @@ public sealed class IndexWatcherService : IIndexWatcherService
             IndexQueuePriority.Low,
             DateTime.UtcNow.Add(RootRefreshDebounce),
             Persisted: true));
+    }
+
+    private bool IsOwnStorage(string path)
+    {
+        string full = Path.GetFullPath(path);
+        if (IndexPath.EqualsPath(full, _databasePath)) return true;
+        return full.StartsWith(_databasePath, StringComparison.OrdinalIgnoreCase) &&
+            full[_databasePath.Length..] is ".wal" or ".shm" or ".lock" or "-wal" or "-shm" or "-journal";
     }
 
     /// <summary>

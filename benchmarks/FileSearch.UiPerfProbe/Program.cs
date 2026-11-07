@@ -44,6 +44,11 @@ internal static class Program
         {
             try
             {
+                if (args.Contains("--preview-smoke"))
+                {
+                    await FilePreviewSmoke.RunAsync(_output, args.Contains("--preview-inspect"));
+                    return;
+                }
                 if (args.Contains("--replace-smoke"))
                 {
                     await ReplacementSmoke.RunAsync(_output);

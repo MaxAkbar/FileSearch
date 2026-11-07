@@ -5,6 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <title>Troubleshooting - FileSearch Help</title>
     <link rel="stylesheet" href="css/help.css">
+    <script src="js/help-search.js" defer></script>
 </head>
 <body>
     <div class="shell">
@@ -47,8 +48,8 @@
                 <li>Confirm the folder in the search bar exists and contains the files you expect.</li>
                 <li>Turn on <strong>Subfolders</strong> in search options if the files are below the selected folder.</li>
                 <li>Clear <strong>File name pattern</strong> or broaden it to include the target file types.</li>
-                <li>Check whether unknown-file-type filtering, <strong>Office &amp; PDF text</strong>, or <strong>Text in images (OCR)</strong> is excluding files.</li>
-                <li>For scanned or image-only PDFs, <code>*.pdf</code> only selects PDF files. Keep <strong>Office &amp; PDF text</strong> enabled and turn on <strong>Text in images (OCR)</strong> to search recognized text inside those pages.</li>
+                <li>Check whether unknown-file-type filtering, <strong>Document &amp; database text</strong>, or <strong>Text in images (OCR)</strong> is excluding files.</li>
+                <li>For scanned or image-only PDFs, <code>*.pdf</code> only selects PDF files. Keep <strong>Document &amp; database text</strong> enabled and turn on <strong>Text in images (OCR)</strong> to search recognized text inside those pages.</li>
                 <li>For indexed image, scanned-PDF-page, or embedded document image text, enable <strong>Image OCR</strong> before indexing the location, then use <strong>Rebuild selected</strong> after changing that option.</li>
                 <li>Switch to Plain text mode if Boolean operators or regex syntax are not intended.</li>
             </ul>
@@ -103,7 +104,7 @@
 
             <h2 id="mail-search">Mail Search Is Missing Messages</h2>
             <ul class="plain-list">
-                <li>Select <strong>Contents</strong> and enable document extraction (<strong>Office &amp; PDF text</strong>). Include <code>*.eml;*.msg;*.pst;*.ost</code> in the file pattern, or use <code>type:email</code> in Unified mode.</li>
+                <li>Select <strong>Contents</strong> and enable document extraction (<strong>Document &amp; database text</strong>). Include <code>*.eml;*.msg;*.pst;*.ost</code> in the file pattern, or use <code>type:email</code> in Unified mode.</li>
                 <li>Quick Search needs an indexed content scope with <strong>Content</strong> enabled. The Entire machine metadata scope and drive name index only find store filenames.</li>
                 <li>Close Outlook or search a stable copy. Locked, changing, corrupt, or unsupported stores can fail; inspect index failures and extraction warnings.</li>
                 <li>OST search sees the local cache only. Unsynchronized and online-only items are unavailable. MSG/PST/OST attachment contents, embedded messages, and mail attachment OCR are not searched.</li>

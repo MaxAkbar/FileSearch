@@ -6,6 +6,14 @@ namespace FileSearch.Gui.Tests;
 
 public sealed class SourceOpenTargetBuilderTests
 {
+    [Theory]
+    [InlineData("source.sqlite")]
+    [InlineData("source.csdb")]
+    public void TryCreate_DoesNotSendDatabaseCellPositionsToTextEditor(string path)
+    {
+        var hit = new Hit(path, 825, "needle", [], Locator: new SourceLocator(StartLine: 825, Column: 3));
+        Assert.Null(SourceOpenTargetBuilder.TryCreate(path, hit, @"C:\Tools\Code.exe"));
+    }
     [Fact]
     public void TryCreate_BuildsVisualStudioCodeLineTarget()
     {

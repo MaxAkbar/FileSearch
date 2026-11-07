@@ -5,6 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <title>Indexed Search - FileSearch Help</title>
     <link rel="stylesheet" href="css/help.css">
+    <script src="js/help-search.js" defer></script>
 </head>
 <body>
     <div class="shell">
@@ -58,6 +59,7 @@
             <p>If a location was indexed before <strong>Image OCR</strong> was enabled, scanned PDF text will not appear in indexed results until you use <strong>Rebuild selected</strong> for that location.</p>
 
             <h2>Managing Indexed Locations</h2>
+            <p>With document extraction enabled, content indexes can also search ordinary SQLite and CSharpDB SQL-table values. Refresh an existing location to add database content; WAL changes trigger a parent-database update. Locked or changing databases may require a closed application or stable backup. See <a href="results.html#databases">Database Search and Preview</a>.</p>
             <p>For meaning-based text search, install a Smart Search model and use the selected location's <strong>Smart Search &gt; Rebuild Smart Search</strong> action to build vectors from its indexed content. <strong>Refresh status</strong> reports coverage. See <a href="smart-search.html">Smart Search with ONNX</a> for the full walkthrough.</p>
             <p>Open <strong>Index &gt; Manage indexed locations...</strong>, or choose <strong>Manage locations</strong> in the sidebar's Indexed locations section.</p>
             <div class="table-wrap">

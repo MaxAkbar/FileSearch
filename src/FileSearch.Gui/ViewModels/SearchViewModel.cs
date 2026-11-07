@@ -584,6 +584,10 @@ public sealed partial class SearchViewModel : ObservableObject, IDisposable
     public string OpenPreviewTargetText =>
         CurrentPreviewLine?.LineNumber is { } line ? $"Open at line {line:n0}" : "Open";
 
+    public Hit? CurrentPreviewHit => CurrentPreviewLine?.SourceHit is { } hit &&
+        SelectedFile?.Hits.Contains(hit) == true
+            ? hit : SelectedFile?.Hits.FirstOrDefault(hit => hit.Kind == HitKind.Content);
+
     public IReadOnlyList<ResultFacetChip> ActiveResultFacetChips => BuildActiveResultFacetChips();
 
     public bool HasActiveResultFacets => ActiveResultFacetChips.Count > 0;
@@ -731,6 +735,7 @@ public sealed partial class SearchViewModel : ObservableObject, IDisposable
     partial void OnSelectedFileChanged(FileResultViewModel? value)
     {
         OnPropertyChanged(nameof(HasSelectedFile));
+        OnPropertyChanged(nameof(CurrentPreviewHit));
         CopyFileContentCommand.NotifyCanExecuteChanged();
         RenameResultCommand.NotifyCanExecuteChanged();
         DeleteResultCommand.NotifyCanExecuteChanged();
@@ -765,6 +770,7 @@ public sealed partial class SearchViewModel : ObservableObject, IDisposable
         OnPropertyChanged(nameof(PreviewMatchPositionText));
         OnPropertyChanged(nameof(PreviewCurrentLineText));
         OnPropertyChanged(nameof(OpenPreviewTargetText));
+        OnPropertyChanged(nameof(CurrentPreviewHit));
     }
 
     partial void OnIsWholeFilePreviewChanged(bool value) =>
@@ -2520,6 +2526,7 @@ public sealed partial class SearchViewModel : ObservableObject, IDisposable
 
         if (!settings.EnableDocumentExtraction)
         {
+            extensions.UnionWith(FileSearch.Core.Databases.DatabaseFiles.Extensions);
             foreach (var extension in _fileTypeOptions.DocumentExtensions)
                 extensions.Add(extension);
             // Also respect the toggle with file-type settings saved before mail support.
@@ -2575,6 +2582,7 @@ public sealed partial class SearchViewModel : ObservableObject, IDisposable
         var extensions = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         if (!enableDocumentExtraction)
         {
+            extensions.UnionWith(FileSearch.Core.Databases.DatabaseFiles.Extensions);
             foreach (var extension in _fileTypeOptions.DocumentExtensions)
                 extensions.Add(extension);
             extensions.UnionWith([".msg", ".pst", ".ost"]);
@@ -2618,9 +2626,11 @@ public sealed partial class SearchViewModel : ObservableObject, IDisposable
         var token = _previewCts.Token;
         try
         {
-            ImageOcrPreview = await ImageOcrPreviewViewModel
+            var imagePreview = await ImageOcrPreviewViewModel
                 .TryCreateAsync(file.FullPath, file.Hits, token)
                 .ConfigureAwait(true);
+            token.ThrowIfCancellationRequested();
+            ImageOcrPreview = imagePreview;
             if (file.MailMessage is { } mail)
             {
                 var mailPreview = await _previewService.LoadMailMessagePreviewAsync(file.FullPath, mail,
@@ -2664,7 +2674,8 @@ public sealed partial class SearchViewModel : ObservableObject, IDisposable
         catch (OperationCanceledException) { }
         catch (Exception ex)
         {
-            PreviewContent = $"(failed to load preview: {ex.Message})";
+            if (!token.IsCancellationRequested)
+                PreviewContent = $"(failed to load preview: {ex.Message})";
         }
     }
 

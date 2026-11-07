@@ -1,0 +1,50 @@
+<UserControl x:Class="FileSearch.Gui.Controls.FileDocumentPreview"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             MinWidth="180" Focusable="False">
+    <UserControl.Resources>
+        <Style x:Key="FilePreviewButtonStyle" TargetType="Button" BasedOn="{StaticResource SecondaryButtonStyle}">
+            <Setter Property="MinWidth" Value="0"/>
+            <Setter Property="Height" Value="28"/>
+            <Setter Property="FontSize" Value="12"/>
+            <Setter Property="Margin" Value="1"/>
+            <Setter Property="FocusVisualStyle" Value="{DynamicResource {x:Static SystemParameters.FocusVisualStyleKey}}"/>
+        </Style>
+    </UserControl.Resources>
+    <DockPanel Background="{DynamicResource Atlas.PaperBrush}">
+        <TextBlock x:Name="FileNameLabel" DockPanel.Dock="Top" Margin="10,6,10,0" FontWeight="SemiBold"
+                   Foreground="{DynamicResource Atlas.InkBrush}" TextTrimming="CharacterEllipsis"/>
+        <DockPanel DockPanel.Dock="Top" Margin="8,6">
+            <Button x:Name="ExpandButton" DockPanel.Dock="Right" Content="Expand" Click="OnExpand"
+                    Style="{StaticResource FilePreviewButtonStyle}"
+                    ToolTip="Open a larger file preview" AutomationProperties.Name="Expand file preview" Padding="9,3"/>
+            <WrapPanel>
+                <ComboBox x:Name="PartSelector" MinWidth="110" MaxWidth="300" Visibility="Collapsed"
+                          Foreground="{DynamicResource Atlas.InkBrush}" Background="{DynamicResource Atlas.SurfaceBrush}"
+                          DisplayMemberPath="Title" SelectedValuePath="Id" SelectionChanged="OnPartChanged"
+                          AutomationProperties.Name="Document chapter, slide, or archive member"/>
+                <Button x:Name="AnimationButton" Content="Pause animation" Visibility="Collapsed" Click="OnToggleAnimation"
+                        Style="{StaticResource FilePreviewButtonStyle}"/>
+                <StackPanel x:Name="PageControls" Orientation="Horizontal" Visibility="Collapsed">
+                    <Button x:Name="PreviousPage" Content="‹" Click="OnPreviousPage" ToolTip="Previous page or frame"
+                            Style="{StaticResource FilePreviewButtonStyle}"
+                            AutomationProperties.Name="Previous page or frame" Padding="9,3"/>
+                    <TextBlock x:Name="PageLabel" VerticalAlignment="Center" Margin="8,0"/>
+                    <Button x:Name="NextPage" Content="›" Click="OnNextPage" ToolTip="Next page or frame"
+                            Style="{StaticResource FilePreviewButtonStyle}"
+                            AutomationProperties.Name="Next page or frame" Padding="9,3"/>
+                </StackPanel>
+                <StackPanel x:Name="ZoomControls" Orientation="Horizontal" Visibility="Collapsed" Margin="8,0">
+                    <Button Content="−" Click="OnZoomOut" ToolTip="Zoom out" AutomationProperties.Name="Zoom out" Padding="7,3" Style="{StaticResource FilePreviewButtonStyle}"/>
+                    <Button Content="Fit" Click="OnFit" ToolTip="Fit image to preview" AutomationProperties.Name="Fit image" Padding="7,3" Style="{StaticResource FilePreviewButtonStyle}"/>
+                    <Button Content="+" Click="OnZoomIn" ToolTip="Zoom in" AutomationProperties.Name="Zoom in" Padding="7,3" Style="{StaticResource FilePreviewButtonStyle}"/>
+                </StackPanel>
+            </WrapPanel>
+        </DockPanel>
+        <TextBlock x:Name="Summary" DockPanel.Dock="Top" Margin="10,0,10,6" TextTrimming="CharacterEllipsis"
+                   Foreground="{DynamicResource Atlas.Ink2Brush}" FontSize="12"/>
+        <TextBlock x:Name="Status" DockPanel.Dock="Bottom" Margin="10,5" TextWrapping="Wrap" FontSize="12"
+                   Foreground="{DynamicResource Atlas.Ink2Brush}" AutomationProperties.LiveSetting="Polite"/>
+        <ContentControl x:Name="Body" HorizontalContentAlignment="Stretch" VerticalContentAlignment="Stretch"/>
+    </DockPanel>
+</UserControl>

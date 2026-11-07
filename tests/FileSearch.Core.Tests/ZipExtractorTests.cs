@@ -47,6 +47,9 @@ public sealed class ZipExtractorTests : IDisposable
         Assert.Contains(lines, l => l.Content.Contains("=== code.cs ==="));
         Assert.Contains(lines, l => l.Content.Contains("public class Foo"));
         Assert.DoesNotContain(lines, l => l.Content.Contains("=== data.bin"));
+        Assert.Equal("readme.txt", lines.Single(line => line.Content == "hello world").Anchor!.MemberPath);
+        Assert.Equal(2, lines.Single(line => line.Content == "second line").Anchor!.Line);
+        Assert.Equal("code.cs", lines.Single(line => line.Content.Contains("public class Foo")).Anchor!.MemberPath);
     }
 
     [Fact]

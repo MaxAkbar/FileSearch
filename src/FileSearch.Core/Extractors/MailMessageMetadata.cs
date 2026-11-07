@@ -15,7 +15,10 @@ public sealed record MailMessageMetadata(
 public sealed record OutlookMailMessage(
     MailMessageMetadata Metadata,
     string Body,
-    IReadOnlyList<string> AttachmentNames);
+    IReadOnlyList<string> AttachmentNames)
+{
+    public string? HtmlBody { get; init; }
+}
 
 public sealed class OutlookMailOptions
 {

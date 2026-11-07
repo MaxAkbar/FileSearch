@@ -17,12 +17,13 @@ public sealed partial class PreviewLineViewModel : ObservableObject
 {
     private const char HitMarker = '►';
 
-    private PreviewLineViewModel(int? lineNumber, string text, bool isHit, bool isGap, IReadOnlyList<MatchSpan> highlights)
+    private PreviewLineViewModel(int? lineNumber, string text, bool isHit, bool isGap, IReadOnlyList<MatchSpan> highlights, Hit? sourceHit = null)
     {
         LineNumber = lineNumber;
         Text = text;
         IsHit = isHit;
         IsGap = isGap;
+        SourceHit = sourceHit;
         DisplayHit = new Hit(string.Empty, lineNumber ?? 0, text, highlights);
     }
 
@@ -39,6 +40,7 @@ public sealed partial class PreviewLineViewModel : ObservableObject
 
     /// <summary>The row as a <see cref="Hit"/> so the shared hit highlighter can mark the matched spans.</summary>
     public Hit DisplayHit { get; }
+    public Hit? SourceHit { get; }
 
     /// <summary>True for the match the preview navigator currently points at.</summary>
     [ObservableProperty] private bool _isCurrent;
@@ -62,6 +64,12 @@ public sealed partial class PreviewLineViewModel : ObservableObject
             .Where(hit => hit.LineNumber > 0)
             .GroupBy(hit => hit.LineNumber)
             .ToDictionary(group => group.Key, group => group.First());
+        var seenUnits = new HashSet<long>();
+        var snippetHits = new Queue<Hit>((hits ?? Array.Empty<Hit>())
+            .Where(hit => hit.Snippet is not null)
+            .OrderBy(hit => hit.Snippet?.Locator?.StartLine ?? hit.LineNumber)
+            .ThenBy(hit => hit.Snippet?.ContentUnitId ?? long.MaxValue)
+            .Where(hit => hit.Snippet?.ContentUnitId is not { } unit || seenUnits.Add(unit)));
 
         var rows = new List<PreviewLineViewModel>();
         int? lastNumber = null;
@@ -91,10 +99,13 @@ public sealed partial class PreviewLineViewModel : ObservableObject
                 pendingGap = false;
             }
 
-            var highlights = isHit && number is { } n && hitsByLine.TryGetValue(n, out var hit)
-                ? AlignHighlights(hit, text)
+            Hit? sourceHit = null;
+            if (isHit && number is { } n) hitsByLine.TryGetValue(n, out sourceHit);
+            else if (isHit && snippetHits.Count > 0) sourceHit = snippetHits.Dequeue();
+            var highlights = sourceHit is not null && number is not null
+                ? AlignHighlights(sourceHit, text)
                 : Array.Empty<MatchSpan>();
-            rows.Add(new PreviewLineViewModel(number, text, isHit, isGap: false, highlights));
+            rows.Add(new PreviewLineViewModel(number, text, isHit, isGap: false, highlights, sourceHit));
             if (number is not null)
                 lastNumber = number;
         }

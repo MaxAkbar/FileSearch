@@ -1,3 +1,5 @@
+using FileSearch.Core.Databases;
+
 namespace FileSearch.Core.Extractors;
 
 public enum SourceAnchorKind
@@ -12,6 +14,7 @@ public enum SourceAnchorKind
     Epub,
     OpenDocument,
     ImageOcr,
+    Database,
 }
 
 public sealed record SourceAnchor(
@@ -30,7 +33,8 @@ public sealed record SourceAnchor(
     int? Height = null,
     int? SourceWidth = null,
     int? SourceHeight = null,
-    MailMessageMetadata? MailMessage = null)
+    MailMessageMetadata? MailMessage = null,
+    DatabaseLocation? Database = null)
 {
     public static SourceAnchor ImageOcrRegion(
         int x,

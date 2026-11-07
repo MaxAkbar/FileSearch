@@ -1,0 +1,53 @@
+<!doctype html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Search Help - FileSearch Help</title>
+    <link rel="stylesheet" href="css/help.css">
+    <script src="js/help-search-index.js" defer></script>
+    <script src="js/help-search.js" defer></script>
+</head>
+<body>
+    <div class="shell">
+        <aside class="sidebar">
+            <a class="brand" href="index.html" aria-label="FileSearch help home">
+                <img src="../Assets/FileSearch-256.png" alt="">
+                <span>
+                    <span class="brand-title">FileSearch</span>
+                    <span class="brand-subtitle">User help</span>
+                </span>
+            </a>
+            <div class="nav-heading">Using FileSearch</div>
+            <nav class="nav">
+                <a class="active" href="help-search.html">Search Help</a>
+                <a href="index.html">Overview</a>
+                <a href="search.html">Run a Search</a>
+                <a href="quick-search.html">Quick Search</a>
+                <a href="powertoys.html">PowerToys (optional)</a>
+                <a href="query-syntax.html">Query Syntax</a>
+                <a href="smart-search.html">Smart Search (ONNX)</a>
+                <a href="results.html">Results and Preview</a>
+                <a href="mail.html">Outlook Mail Search</a>
+                <a href="indexing.html">Indexed Search</a>
+                <a href="workflows.html">Workflows</a>
+                <a href="cli.html">Command Line</a>
+                <a href="executables.html">Release Executables</a>
+                <a href="options.html">Options</a>
+                <a href="troubleshooting.html">Troubleshooting</a>
+            </nav>
+        </aside>
+        <main class="content" data-help-search-page>
+            <section class="hero">
+                <div class="eyebrow">FileSearch Help</div>
+                <h1>Search Help</h1>
+                <p class="lead">Find topics, instructions, and command examples across the user guide. Search works offline.</p>
+                <p>Use a few keywords, such as <code>scanned PDF</code>, or put an exact phrase in quotes, such as <code>"copy path"</code>.</p>
+            </section>
+            <p id="help-search-status" role="status" aria-live="polite">Enter a word or phrase to search all Help topics.</p>
+            <ol id="help-search-results" class="help-search-results" aria-label="Help search results"></ol>
+            <noscript><p>Enable JavaScript to search Help, or browse the topics in the sidebar.</p></noscript>
+        </main>
+    </div>
+</body>
+</html>

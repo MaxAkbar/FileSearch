@@ -5,6 +5,17 @@ namespace FileSearch.Core.Tests;
 
 public sealed class OutOfProcessExtractionServiceTests : IDisposable
 {
+    [Fact]
+    public async Task ConfiguredIndexIsExcludedBeforeNativeHostDispatch()
+    {
+        File.WriteAllText(_hostPath, string.Empty);
+        var runner = new FakeHostRunner();
+        using var service = new OutOfProcessExtractionService(new OutOfProcessExtractionOptions { HostPath = _hostPath }, runner);
+        string path = Path.ChangeExtension(_hostPath, ".db");
+        var result = await service.ExtractAsync(path, new DatabaseExtractor(new FileSearch.Core.Indexing.FileIndexOptions { DatabasePath = path }), TestContext.Current.CancellationToken);
+        Assert.Empty(result.Lines);
+        Assert.Null(runner.RequestJson);
+    }
     [Theory]
     [InlineData("Release", "Debug")]
     [InlineData("Debug", "Release")]

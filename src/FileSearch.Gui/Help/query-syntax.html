@@ -5,6 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <title>Query Syntax - FileSearch Help</title>
     <link rel="stylesheet" href="css/help.css">
+    <script src="js/help-search.js" defer></script>
 </head>
 <body>
     <div class="shell">
@@ -57,7 +58,7 @@
                         <tr>
                             <td><strong>Unified</strong></td>
                             <td>Parses ordinary content terms plus structured fields. Content terms support <code>AND</code>, <code>OR</code>, <code>NOT</code>, parentheses, quoted phrases, wildcard terms, fuzzy terms, regex terms, and <code>NEAR/n</code> proximity.</td>
-                            <td>You want one query like <code>invoice acme modified:last-year type:pdf</code>.</td>
+                            <td>You want one query like <code>invoice acme modified:last-year type:pdf</code>. Use <code>type:database invoice</code> for supported SQLite and CSharpDB files.</td>
                         </tr>
                         <tr>
                             <td><strong>Boolean</strong></td>

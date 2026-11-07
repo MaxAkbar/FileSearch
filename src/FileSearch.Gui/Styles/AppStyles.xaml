@@ -2886,4 +2886,43 @@
     </Style>
 
 
+    <Style x:Key="FilePreviewTabItemStyle" TargetType="TabItem">
+        <Setter Property="Foreground" Value="{DynamicResource Atlas.InkBrush}"/>
+        <Setter Property="Padding" Value="14,8"/>
+        <Setter Property="Template">
+            <Setter.Value>
+                <ControlTemplate TargetType="TabItem">
+                    <Border x:Name="tab" BorderThickness="0,0,0,2" BorderBrush="Transparent" Padding="{TemplateBinding Padding}">
+                        <ContentPresenter ContentSource="Header" RecognizesAccessKey="True"/>
+                    </Border>
+                    <ControlTemplate.Triggers>
+                        <Trigger Property="IsSelected" Value="True">
+                            <Setter TargetName="tab" Property="BorderBrush" Value="{DynamicResource Atlas.AccentBrush}"/>
+                            <Setter TargetName="tab" Property="Background" Value="{DynamicResource Atlas.Surface2Brush}"/>
+                            <Setter Property="FontWeight" Value="SemiBold"/>
+                        </Trigger>
+                        <Trigger Property="IsKeyboardFocused" Value="True">
+                            <Setter TargetName="tab" Property="BorderBrush" Value="{DynamicResource Atlas.AccentBrush}"/>
+                        </Trigger>
+                    </ControlTemplate.Triggers>
+                </ControlTemplate>
+            </Setter.Value>
+        </Setter>
+    </Style>
+    <Style x:Key="FilePreviewTabsStyle" TargetType="TabControl">
+        <Setter Property="Background" Value="{DynamicResource Atlas.PaperBrush}"/>
+        <Setter Property="Foreground" Value="{DynamicResource Atlas.InkBrush}"/>
+        <Setter Property="ItemContainerStyle" Value="{StaticResource FilePreviewTabItemStyle}"/>
+        <Setter Property="Template">
+            <Setter.Value>
+                <ControlTemplate TargetType="TabControl">
+                    <Grid>
+                        <Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="*"/></Grid.RowDefinitions>
+                        <TabPanel IsItemsHost="True" Background="{TemplateBinding Background}"/>
+                        <ContentPresenter Grid.Row="1" ContentSource="SelectedContent"/>
+                    </Grid>
+                </ControlTemplate>
+            </Setter.Value>
+        </Setter>
+    </Style>
 </ResourceDictionary>

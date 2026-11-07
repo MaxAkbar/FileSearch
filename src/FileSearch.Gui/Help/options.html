@@ -5,6 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <title>Options - FileSearch Help</title>
     <link rel="stylesheet" href="css/help.css">
+    <script src="js/help-search.js" defer></script>
 </head>
 <body>
     <div class="shell">
@@ -80,8 +81,8 @@
                     </thead>
                     <tbody>
                         <tr>
-                            <td><strong>Office &amp; PDF text</strong> (document extraction)</td>
-                            <td>When enabled, FileSearch extracts supported document formats, including Office, PDF, EML, MSG, PST, and OST. When disabled, those formats are skipped.</td>
+                            <td><strong>Document &amp; database text</strong> (document extraction)</td>
+                            <td>When enabled, FileSearch extracts supported documents, mail, and local SQLite/CSharpDB SQL-table values. When disabled, these formats are skipped. See <a href="results.html#databases">Database Search and Preview</a> for database coverage and limits.</td>
                             <td>Disable it for faster source-code-only searches.</td>
                         </tr>
                         <tr>
@@ -103,7 +104,7 @@
                 </table>
             </div>
             <div class="callout">
-                For scanned or image-only PDFs, <strong>Office &amp; PDF text</strong> and <strong>Text in images (OCR)</strong> both need to be enabled. A file name pattern such as <code>*.pdf</code> only limits the files being searched; it does not enable OCR.
+                For scanned or image-only PDFs, <strong>Document &amp; database text</strong> and <strong>Text in images (OCR)</strong> both need to be enabled. A file name pattern such as <code>*.pdf</code> only limits the files being searched; it does not enable OCR.
             </div>
 
             <h2>File Size Filters</h2>

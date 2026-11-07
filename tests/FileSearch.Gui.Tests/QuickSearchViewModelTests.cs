@@ -4,6 +4,7 @@ using FileSearch.Core.Extractors;
 using FileSearch.Core.Indexing;
 using FileSearch.Core.Queries;
 using FileSearch.Core.Volumes;
+using FileSearch.Gui.Services;
 using FileSearch.Gui.Settings;
 using FileSearch.Gui.ViewModels;
 
@@ -11,6 +12,81 @@ namespace FileSearch.Gui.Tests;
 
 public sealed class QuickSearchViewModelTests
 {
+    [Fact]
+    public void AnObsoletePreviewFailureCannotReplaceTheCurrentSelection()
+    {
+        var root = CreateTempDirectory();
+        var oldPath = Path.Combine(root, "old.txt");
+        var newPath = Path.Combine(root, "new.txt");
+        File.WriteAllText(oldPath, "old");
+        File.WriteAllText(newPath, "new");
+        var service = new DeferredPreviewService(oldPath);
+        try
+        {
+            RunWithPump((pump, vm, settings) =>
+            {
+                var oldFile = new FileResultViewModel(oldPath, new FakeFileLauncher());
+                var newFile = new FileResultViewModel(newPath, new FakeFileLauncher());
+                oldFile.AddHit(new Hit(oldPath, 1, "old", []));
+                newFile.AddHit(new Hit(newPath, 1, "new", []));
+                vm.SelectedResult = oldFile;
+                var pending = vm.PreviewResultCommand.ExecuteAsync(null);
+                pump.PumpUntil(() => service.WasRequested, TimeSpan.FromSeconds(5));
+                vm.SelectedResult = newFile;
+                pump.PumpUntil(() => vm.PreviewContent == "new preview", TimeSpan.FromSeconds(5));
+                service.OldPreview.SetException(new IOException("obsolete failure"));
+                pump.PumpUntil(() => pending.IsCompleted, TimeSpan.FromSeconds(5));
+                Assert.Equal("new preview", vm.PreviewContent);
+                vm.SelectedResult = null;
+                Assert.Empty(vm.PreviewContent);
+            }, previewService: service);
+        }
+        finally { Directory.Delete(root, recursive: true); }
+    }
+
+    private sealed class DeferredPreviewService(string oldPath) : IFilePreviewService
+    {
+        public TaskCompletionSource<string> OldPreview { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
+        public bool WasRequested { get; private set; }
+        public Task<string> LoadHitsPreviewAsync(string path, IReadOnlyList<int> hits, int contextLines, CancellationToken token)
+        {
+            if (path != oldPath) return Task.FromResult("new preview");
+            WasRequested = true;
+            return OldPreview.Task;
+        }
+        public Task<string> LoadFullTextAsync(string path, CancellationToken token) => Task.FromResult("");
+    }
+
+    [Fact]
+    public void AnOpenPreviewFollowsTheSelectedFilenameResult()
+    {
+        var root = CreateTempDirectory();
+        try
+        {
+            var firstPath = Path.Combine(root, "first.txt");
+            var secondPath = Path.Combine(root, "second.txt");
+            File.WriteAllText(firstPath, "first source");
+            File.WriteAllText(secondPath, "second source");
+            RunWithPump((pump, vm, settings) =>
+            {
+                var first = new FileResultViewModel(firstPath, new FakeFileLauncher());
+                var second = new FileResultViewModel(secondPath, new FakeFileLauncher());
+                first.AddHit(new Hit(firstPath, 0, "first.txt", [], Kind: HitKind.Metadata));
+                second.AddHit(new Hit(secondPath, 0, "second.txt", [], Kind: HitKind.Metadata));
+                vm.Results.Add(first);
+                vm.Results.Add(second);
+                vm.SelectedResult = first;
+                vm.PreviewResultCommand.Execute(null);
+                pump.PumpUntil(() => vm.PreviewContent.Contains("first.txt", StringComparison.Ordinal), TimeSpan.FromSeconds(5));
+                vm.SelectedResult = second;
+                pump.PumpUntil(() => vm.PreviewContent.Contains("second.txt", StringComparison.Ordinal), TimeSpan.FromSeconds(5));
+                Assert.True(vm.IsPreviewVisible);
+                Assert.DoesNotContain("first.txt", vm.PreviewContent);
+            });
+        }
+        finally { Directory.Delete(root, recursive: true); }
+    }
+
     [Fact]
     public void StoreMessagesRemainDistinctInQuickSearchAndCannotPinTheStore()
     {
@@ -380,7 +456,8 @@ public sealed class QuickSearchViewModelTests
         Action<PumpingSynchronizationContext, QuickSearchViewModel, FakeSettingsService> body,
         ISearcher? quickSearcher = null,
         FakeFolderPicker? folderPicker = null,
-        IVolumeNameIndex? volumeIndex = null)
+        IVolumeNameIndex? volumeIndex = null,
+        IFilePreviewService? previewService = null)
     {
         var previous = SynchronizationContext.Current;
         var pump = new PumpingSynchronizationContext();
@@ -406,7 +483,7 @@ public sealed class QuickSearchViewModelTests
             using var vm = new QuickSearchViewModel(
                 quickSearcher ?? new EmptySearcher(),
                 new QueryFactory(),
-                new FakePreviewService(),
+                previewService ?? new FakePreviewService(),
                 new FakeFileLauncher(),
                 settings,
                 mainSearch,

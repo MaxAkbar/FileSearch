@@ -1,3 +1,4 @@
+using FileSearch.Core.Databases;
 using FileSearch.Core.Extractors;
 
 namespace FileSearch.Core.Engine;
@@ -19,7 +20,8 @@ public sealed record SourceLocator(
     int? Height = null,
     int? SourceWidth = null,
     int? SourceHeight = null,
-    MailMessageMetadata? MailMessage = null)
+    MailMessageMetadata? MailMessage = null,
+    DatabaseLocation? Database = null)
 {
     public static SourceLocator FromAnchor(SourceAnchor? anchor, int? lineNumber = null)
     {
@@ -43,7 +45,8 @@ public sealed record SourceLocator(
             Height: anchor.Height,
             SourceWidth: anchor.SourceWidth,
             SourceHeight: anchor.SourceHeight,
-            MailMessage: anchor.MailMessage);
+            MailMessage: anchor.MailMessage,
+            Database: anchor.Database);
     }
 
     private static SourceLocator FromLine(int? lineNumber) =>

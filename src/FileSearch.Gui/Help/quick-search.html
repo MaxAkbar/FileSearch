@@ -5,6 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <title>Quick Search - FileSearch Help</title>
     <link rel="stylesheet" href="css/help.css">
+    <script src="js/help-search.js" defer></script>
 </head>
 <body>
     <div class="shell">
@@ -139,8 +140,10 @@
             <p>For individual PST/OST messages, <strong>Open</strong> creates a text-only EML copy in the registered mail application. Inline preview shows the selected message; Copy path and Reveal refer to its store. Store messages cannot be pinned or dragged as physical files. See <a href="mail.html#results">Mail Results and Preview</a>.</p>
 
             <h2>Pinned Results and Preview</h2>
+            <p>Indexed SQLite and CSharpDB content hits retain table, row, and column locations. File preview uses the same read-only table grid as the main window, including table selection, row paging, Go to row, and Expand. Refresh existing content indexes to add database contents. See <a href="results.html#databases">Database Search and Preview</a>.</p>
             <p>When the search box is empty, Quick Search shows pinned results. Pin frequently used files if you want them available before typing a query.</p>
-            <p>Preview is loaded on demand so opening the quick window stays fast. For content hits, preview shows matching lines with nearby context. For standalone OCR image hits, preview can show a compact image highlight; for OCR PDF hits, it can render the page with the region highlighted. For embedded OCR hits, preview includes the stored member path and OCR-region label, and can extract the embedded image from the parent document, EML, EPUB, or archive so the region can be highlighted. Use the OCR preview action when you want the larger dedicated preview window without opening the result. For filename-only matches, preview may be empty if no content hit lines are available.</p>
+            <p>Press <kbd>F4</kbd> or <kbd>Ctrl</kbd>+<kbd>I</kbd> to load the selected result's preview. <strong>File preview</strong> shows images (including WebP, animated GIF, and multipage TIFF), whole PDF pages, spreadsheet grids, ZIP members, complete selected messages, EPUB chapters, OpenDocument and RTF content, formatted Markdown, highlighted source code, or an available installed Windows preview handler. It works for filename-only results and follows your selection while the preview is open. Choose <strong>Expand</strong> for a larger FileSearch preview window that retains the selected location. PowerToys is not required.</p>
+            <p>The <strong>Matches</strong> tab preserves matching lines and nearby context, selected-message previews, and OCR-region highlights. Use the OCR preview action to open the dedicated highlighted region view. See <a href="results.html">Results and Preview</a> for supported formats, limits, and fallback behavior.</p>
 
             <div class="callout">
                 Use the full FileSearch window for deep search setup, index management, detailed previews, workflows, and reports. Quick Search is optimized for fast lookup and action.

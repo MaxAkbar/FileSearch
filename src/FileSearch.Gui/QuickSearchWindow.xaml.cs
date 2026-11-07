@@ -1,4 +1,5 @@
 using System;
+using System.Linq;
 using System.Runtime.InteropServices;
 using System.Windows;
 using System.Windows.Controls;
@@ -29,6 +30,7 @@ public partial class QuickSearchWindow : Window
     {
         InitializeComponent();
         DataContextChanged += OnDataContextChanged;
+        SizeChanged += (_, _) => InlinePreviewBorder.Height = Math.Clamp(ActualHeight * 0.6, 220, 420);
     }
 
     public void ShowFromHotkey()
@@ -148,7 +150,7 @@ public partial class QuickSearchWindow : Window
 
     private void OnDeactivated(object sender, EventArgs e)
     {
-        if (!_isShowingFromHotkey && _externalDialogDepth == 0)
+        if (!_isShowingFromHotkey && _externalDialogDepth == 0 && !OwnedWindows.Cast<Window>().Any(window => window.IsVisible))
             DismissAndHide();
     }
 

@@ -183,13 +183,12 @@ public static class OutlookMailReader
             Clean(string.Join("; ", message.Recipients.Cc.Take(1000).Select(recipient => Address(recipient.DisplayName, recipient.Address)))),
             message.Date is { } date ? DateTime.SpecifyKind(date, DateTimeKind.Utc) : null, folder, fingerprint);
         var body = message.Properties[PropertyCanonicalName.PidTagBody]?.Value as string;
+        var rawHtml = message.Properties[PropertyCanonicalName.PidTagHtml]?.Value;
+        string? htmlBody = rawHtml is byte[] htmlBytes ? (message.Encoding ?? Encoding.UTF8).GetString(htmlBytes) : rawHtml as string;
         if (string.IsNullOrWhiteSpace(body))
         {
-            var html = message.Properties[PropertyCanonicalName.PidTagHtml]?.Value;
-            if (html is byte[] bytes)
-                body = OutlookMailText.FromHtml((message.Encoding ?? Encoding.UTF8).GetString(bytes));
-            else if (html is string text)
-                body = OutlookMailText.FromHtml(text);
+            if (htmlBody is not null)
+                body = OutlookMailText.FromHtml(htmlBody);
             else if (message.Body is { } fallback)
                 body = fallback.Format == XstMessageBodyFormat.Rtf
                     ? OutlookMailText.FromHtml(RtfPipe.Rtf.ToHtml(fallback.Text ?? string.Empty))
@@ -198,7 +197,7 @@ public static class OutlookMailReader
         // Read attachment metadata only; the potentially large payloads stay in the store.
         var names = message.Attachments.Where(attachment => attachment.IsFile)
             .Select(attachment => Clean(attachment.DisplayName)).Take(1000).ToArray();
-        return new OutlookMailMessage(metadata, body ?? string.Empty, names);
+        return new OutlookMailMessage(metadata, body ?? string.Empty, names) { HtmlBody = htmlBody };
     }
 
     private static string Address(string? name, string? address) =>

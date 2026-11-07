@@ -1479,7 +1479,7 @@
                                     <CheckBox Content="Subfolders"
                                               IsChecked="{Binding Search.IncludeSubfolders}"
                                               Style="{StaticResource CheckChipStyle}"/>
-                                    <CheckBox Content="Office &amp; PDF text"
+                                    <CheckBox Content="Document &amp; database text"
                                               Visibility="{Binding IsNormalSearch, Converter={StaticResource BoolToVisibility}}"
                                               IsChecked="{Binding Search.EnableDocumentExtraction}"
                                               Style="{StaticResource CheckChipStyle}"/>
@@ -2334,270 +2334,281 @@
                             <Border Style="{StaticResource PreviewCardStyle}" ClipToBounds="True">
                                 <Grid>
                                     <!-- selected file -->
-                                    <DockPanel Visibility="{Binding Search.HasSelectedFile, Converter={StaticResource BoolToVisibility}}">
-                                        <!-- identity -->
-                                        <Grid DockPanel.Dock="Top" Margin="16,14,12,12">
-                                            <Grid.ColumnDefinitions>
-                                                <ColumnDefinition Width="Auto"/>
-                                                <ColumnDefinition Width="*"/>
-                                                <ColumnDefinition Width="Auto"/>
-                                            </Grid.ColumnDefinitions>
-                                            <Grid VerticalAlignment="Center">
-                                                <Border Style="{StaticResource SoftTypeBadgeStyle}" Width="38" Height="28" CornerRadius="5"
-                                                        Background="{Binding Search.SelectedFile.FileName, Converter={StaticResource TypeTint}}">
-                                                    <TextBlock Text="{Binding Search.SelectedFile.FileName, Converter={StaticResource TypeLabel}}"
-                                                               Style="{StaticResource SoftTypeBadgeTextStyle}" FontSize="12"
-                                                               Foreground="{Binding Search.SelectedFile.FileName, Converter={StaticResource TypeInk}}"/>
-                                                </Border>
-                                                <Border Style="{StaticResource NeutralTypeBadgeStyle}" Width="38" Height="28" CornerRadius="5">
-                                                    <TextBlock Text="{Binding Search.SelectedFile.FileName, Converter={StaticResource TypeLabel}}"
-                                                               Style="{StaticResource TypeBadgeNeutralTextStyle}" FontSize="11"/>
-                                                </Border>
-                                            </Grid>
-                                            <StackPanel Grid.Column="1" Margin="12,0,8,0" VerticalAlignment="Center">
-                                                <TextBlock Text="{Binding Search.SelectedFile.FileName}" Style="{StaticResource PreviewTitleStyle}"
-                                                           ToolTip="{Binding Search.SelectedFile.FullPath}"/>
-                                                <TextBlock FontSize="12" Foreground="{DynamicResource Atlas.Ink2Brush}"
-                                                           TextTrimming="CharacterEllipsis" Margin="0,2,0,0"
-                                                           ToolTip="{Binding Search.SelectedFile.FullPath}">
-                                                    <Run Text="{Binding Search.SelectedFile.Directory, Mode=OneWay}"/><Run Text=" · "/><Run Text="{Binding Search.SelectedFile.SizeText, Mode=OneWay}"/><Run Text=" · "/><Run Text="{Binding Search.SelectedFile.ModifiedText, Mode=OneWay}"/><Run Text=" · "/><Run Text="{Binding Search.SelectedFile.SourceGroup, Mode=OneWay}"/>
-                                                </TextBlock>
-                                            </StackPanel>
-                                            <StackPanel Grid.Column="2" Orientation="Horizontal" VerticalAlignment="Top">
-                                                <Button Command="{Binding Search.SelectedFile.OpenImageOcrPreviewCommand}"
-                                                        Visibility="{Binding Search.SelectedFile.HasImageOcrPreview, Converter={StaticResource BoolToVisibility}}"
-                                                        Style="{StaticResource PreviewNavButtonStyle}" Width="28" Height="28"
-                                                        ToolTip="Open OCR preview" AutomationProperties.Name="Open OCR preview">
-                                                    <Path Data="{StaticResource Icon.Image}" Style="{StaticResource LineIconStyle}"/>
-                                                </Button>
-                                                <Button Command="{Binding Search.ToggleFavoriteResultCommand}"
-                                                        CommandParameter="{Binding Search.SelectedFile}"
-                                                        Style="{StaticResource PreviewNavButtonStyle}" Width="28" Height="28"
-                                                        ToolTip="{Binding Search.SelectedFile.FavoriteActionText}">
-                                                    <ui:FontIcon Glyph="{Binding Search.SelectedFile.FavoriteGlyph}" FontSize="14">
-                                                        <ui:FontIcon.Style>
-                                                            <Style TargetType="ui:FontIcon">
-                                                                <Setter Property="Foreground" Value="{DynamicResource Atlas.Ink2Brush}"/>
-                                                                <Style.Triggers>
-                                                                    <DataTrigger Binding="{Binding Search.SelectedFile.IsFavorite}" Value="True">
-                                                                        <Setter Property="Foreground" Value="{DynamicResource Atlas.WarmBrush}"/>
-                                                                    </DataTrigger>
-                                                                </Style.Triggers>
-                                                            </Style>
-                                                        </ui:FontIcon.Style>
-                                                    </ui:FontIcon>
-                                                </Button>
-                                                <Button Command="{Binding Search.TogglePreviewPaneCommand}"
-                                                        Style="{StaticResource PreviewNavButtonStyle}" Width="28" Height="28"
-                                                        Foreground="{DynamicResource Atlas.Ink2Brush}"
-                                                        ToolTip="Hide preview" AutomationProperties.Name="Hide preview">
-                                                    <Path Data="{StaticResource Icon.PreviewToggle}" Style="{StaticResource LineIconStyle}"/>
-                                                </Button>
-                                            </StackPanel>
-                                        </Grid>
-
-                                        <!-- match navigator -->
-                                        <Border DockPanel.Dock="Top" Style="{StaticResource PreviewBandStyle}"
-                                                BorderThickness="0,1,0,1" MinHeight="36" Padding="16,0,10,0"
-                                                Visibility="{Binding Search.HasPreviewLines, Converter={StaticResource BoolToVisibility}}">
-                                            <Grid>
-                                                <Grid.ColumnDefinitions>
-                                                    <ColumnDefinition Width="Auto"/>
-                                                    <ColumnDefinition Width="Auto"/>
-                                                    <ColumnDefinition Width="*"/>
-                                                    <ColumnDefinition Width="Auto"/>
-                                                    <ColumnDefinition Width="Auto"/>
-                                                    <ColumnDefinition Width="Auto"/>
-                                                    <ColumnDefinition Width="Auto"/>
-                                                </Grid.ColumnDefinitions>
-                                                <TextBlock Text="{Binding Search.PreviewMatchPositionText}" FontSize="12" FontWeight="SemiBold"
-                                                           VerticalAlignment="Center"/>
-                                                <TextBlock Grid.Column="1" Text="{Binding Search.PreviewCurrentLineText}" FontSize="12"
-                                                           Foreground="{DynamicResource Atlas.Ink2Brush}" Margin="8,0,0,0"
-                                                           VerticalAlignment="Center"/>
-                                                <Button Grid.Column="3" Command="{Binding Search.PreviousPreviewMatchCommand}"
-                                                        Style="{StaticResource PreviewNavButtonStyle}"
-                                                        ToolTip="Previous match" AutomationProperties.Name="Previous match">
-                                                    <Path Data="{StaticResource Icon.ArrowUp}" Style="{StaticResource LineIconStyle}" StrokeThickness="1.4"/>
-                                                </Button>
-                                                <Button Grid.Column="4" Command="{Binding Search.NextPreviewMatchCommand}"
-                                                        Style="{StaticResource PreviewNavButtonStyle}"
-                                                        ToolTip="Next match" AutomationProperties.Name="Next match">
-                                                    <Path Data="{StaticResource Icon.ArrowDown}" Style="{StaticResource LineIconStyle}" StrokeThickness="1.4"/>
-                                                </Button>
-                                                <Border Grid.Column="5" Width="1" Height="18" Margin="8,0,6,0"
-                                                        Background="{DynamicResource Atlas.LineBrush}"/>
-                                                <ToggleButton Grid.Column="6" IsChecked="{Binding Search.IsPreviewWrapEnabled}"
-                                                              Style="{StaticResource InlineToggleButtonStyle}"
-                                                              Width="26" Height="26"
-                                                              ToolTip="Wrap long lines" AutomationProperties.Name="Wrap long lines">
-                                                    <Path Data="{StaticResource Icon.Wrap}" Style="{StaticResource LineIconStyle}"/>
-                                                </ToggleButton>
-                                            </Grid>
-                                        </Border>
-
-                                        <!-- actions -->
-                                        <Border DockPanel.Dock="Bottom" Style="{StaticResource PreviewBandStyle}"
-                                                BorderThickness="0,1,0,0" Padding="14,12">
-                                            <Grid>
-                                                <Grid.ColumnDefinitions>
-                                                    <ColumnDefinition Width="*"/>
-                                                    <ColumnDefinition Width="Auto"/>
-                                                    <ColumnDefinition Width="Auto"/>
-                                                </Grid.ColumnDefinitions>
-                                                <Button Command="{Binding Search.OpenPreviewTargetCommand}"
-                                                        Style="{StaticResource PreviewPrimaryButtonStyle}"
-                                                        ToolTip="Open the file at the current match">
-                                                    <StackPanel Orientation="Horizontal">
-                                                        <Path Data="{StaticResource Icon.OpenExternal}" Style="{StaticResource LineIconStyle}"
-                                                              StrokeThickness="1.4" Margin="0,0,8,0"/>
-                                                        <TextBlock Text="{Binding Search.OpenPreviewTargetText}" VerticalAlignment="Center"/>
+                                    <TabControl Visibility="{Binding Search.HasSelectedFile, Converter={StaticResource BoolToVisibility}}"
+                                                Style="{StaticResource FilePreviewTabsStyle}"
+                                                AutomationProperties.Name="Result preview views">
+                                        <TabItem Header="Matches">
+                                            <DockPanel>
+                                                <!-- identity -->
+                                                <Grid DockPanel.Dock="Top" Margin="16,14,12,12">
+                                                    <Grid.ColumnDefinitions>
+                                                        <ColumnDefinition Width="Auto"/>
+                                                        <ColumnDefinition Width="*"/>
+                                                        <ColumnDefinition Width="Auto"/>
+                                                    </Grid.ColumnDefinitions>
+                                                    <Grid VerticalAlignment="Center">
+                                                        <Border Style="{StaticResource SoftTypeBadgeStyle}" Width="38" Height="28" CornerRadius="5"
+                                                                Background="{Binding Search.SelectedFile.FileName, Converter={StaticResource TypeTint}}">
+                                                            <TextBlock Text="{Binding Search.SelectedFile.FileName, Converter={StaticResource TypeLabel}}"
+                                                                       Style="{StaticResource SoftTypeBadgeTextStyle}" FontSize="12"
+                                                                       Foreground="{Binding Search.SelectedFile.FileName, Converter={StaticResource TypeInk}}"/>
+                                                        </Border>
+                                                        <Border Style="{StaticResource NeutralTypeBadgeStyle}" Width="38" Height="28" CornerRadius="5">
+                                                            <TextBlock Text="{Binding Search.SelectedFile.FileName, Converter={StaticResource TypeLabel}}"
+                                                                       Style="{StaticResource TypeBadgeNeutralTextStyle}" FontSize="11"/>
+                                                        </Border>
+                                                    </Grid>
+                                                    <StackPanel Grid.Column="1" Margin="12,0,8,0" VerticalAlignment="Center">
+                                                        <TextBlock Text="{Binding Search.SelectedFile.FileName}" Style="{StaticResource PreviewTitleStyle}"
+                                                                   ToolTip="{Binding Search.SelectedFile.FullPath}"/>
+                                                        <TextBlock FontSize="12" Foreground="{DynamicResource Atlas.Ink2Brush}"
+                                                                   TextTrimming="CharacterEllipsis" Margin="0,2,0,0"
+                                                                   ToolTip="{Binding Search.SelectedFile.FullPath}">
+                                                            <Run Text="{Binding Search.SelectedFile.Directory, Mode=OneWay}"/><Run Text=" · "/><Run Text="{Binding Search.SelectedFile.SizeText, Mode=OneWay}"/><Run Text=" · "/><Run Text="{Binding Search.SelectedFile.ModifiedText, Mode=OneWay}"/><Run Text=" · "/><Run Text="{Binding Search.SelectedFile.SourceGroup, Mode=OneWay}"/>
+                                                        </TextBlock>
                                                     </StackPanel>
-                                                </Button>
-                                                <Button Grid.Column="1" Command="{Binding Search.SelectedFile.RevealInExplorerCommand}"
-                                                        IsEnabled="{Binding Search.HasSelectedFile}"
-                                                        Style="{StaticResource PreviewFooterButtonStyle}"
-                                                        ToolTip="Reveal in Explorer">
-                                                    <StackPanel Orientation="Horizontal">
-                                                        <Path Data="{StaticResource Icon.Folder}" Style="{StaticResource LineIconStyle}"
-                                                              Margin="0,0,6,0" TextElement.Foreground="{DynamicResource Atlas.Ink2Brush}"/>
-                                                        <TextBlock Text="Show in folder" VerticalAlignment="Center"/>
-                                                    </StackPanel>
-                                                </Button>
-                                                <Button Grid.Column="2"
-                                                        IsEnabled="{Binding Search.HasSelectedFile}"
-                                                        Style="{StaticResource PreviewFooterButtonStyle}"
-                                                        Click="OnCopyMenuButtonClick"
-                                                        ToolTip="Copy the path, the preview, or the full file content">
-                                                    <Button.ContextMenu>
-                                                        <ContextMenu Placement="Top"
-                                                                     DataContext="{Binding Path=PlacementTarget.DataContext, RelativeSource={RelativeSource Self}}">
-                                                            <MenuItem Header="Copy file _path" Command="{Binding Search.SelectedFile.CopyPathCommand}">
-                                                                <MenuItem.Icon><ui:FontIcon Glyph="&#xE8C8;" FontSize="14"/></MenuItem.Icon>
-                                                            </MenuItem>
-                                                            <MenuItem Header="Copy _folder path" Command="{Binding Search.SelectedFile.CopyFolderPathCommand}">
-                                                                <MenuItem.Icon><ui:FontIcon Glyph="&#xE8C8;" FontSize="14"/></MenuItem.Icon>
-                                                            </MenuItem>
-                                                            <MenuItem Header="Copy _preview" Command="{Binding Search.CopyPreviewCommand}">
-                                                                <MenuItem.Icon><ui:FontIcon Glyph="&#xE7C3;" FontSize="14"/></MenuItem.Icon>
-                                                            </MenuItem>
-                                                            <MenuItem Header="Copy file _content" Command="{Binding Search.CopyFileContentCommand}">
-                                                                <MenuItem.Icon><ui:FontIcon Glyph="&#xE8E5;" FontSize="14"/></MenuItem.Icon>
-                                                            </MenuItem>
-                                                        </ContextMenu>
-                                                    </Button.ContextMenu>
-                                                    <StackPanel Orientation="Horizontal">
-                                                        <Path Data="{StaticResource Icon.Copy}" Style="{StaticResource LineIconStyle}"
-                                                              Margin="0,0,6,0" TextElement.Foreground="{DynamicResource Atlas.Ink2Brush}"/>
-                                                        <TextBlock Text="Copy" VerticalAlignment="Center"/>
-                                                        <Path Data="{StaticResource Icon.ChevronDown}" Style="{StaticResource LineIcon14Style}"
-                                                              StrokeThickness="1.4" Margin="6,0,0,0"
-                                                              TextElement.Foreground="{DynamicResource Atlas.Ink2Brush}"/>
-                                                    </StackPanel>
-                                                </Button>
-                                            </Grid>
-                                        </Border>
-
-                                        <!-- body: OCR image, numbered code view, range footer -->
-                                        <Grid>
-                                            <Grid.RowDefinitions>
-                                                <RowDefinition Height="Auto"/>
-                                                <RowDefinition Height="*"/>
-                                                <RowDefinition Height="Auto"/>
-                                            </Grid.RowDefinitions>
-
-                                            <Border Grid.Row="0" Margin="16,10,16,0"
-                                                    Visibility="{Binding Search.HasImageOcrPreview, Converter={StaticResource BoolToVisibility}}"
-                                                    Style="{DynamicResource PreviewImageCardStyle}">
-                                                <DockPanel LastChildFill="True">
-                                                    <TextBlock DockPanel.Dock="Bottom"
-                                                               Text="{Binding Search.ImageOcrPreview.Label}"
-                                                               Style="{StaticResource HintLabelStyle}"
-                                                               TextTrimming="CharacterEllipsis"
-                                                               Margin="0,8,0,0"/>
-                                                    <Viewbox Stretch="Uniform">
-                                                        <Canvas Width="{Binding Search.ImageOcrPreview.SourceWidth}"
-                                                                Height="{Binding Search.ImageOcrPreview.SourceHeight}">
-                                                            <Image Source="{Binding Search.ImageOcrPreview.ImagePath}"
-                                                                   Width="{Binding Search.ImageOcrPreview.SourceWidth}"
-                                                                   Height="{Binding Search.ImageOcrPreview.SourceHeight}"
-                                                                   Stretch="Fill"/>
-                                                            <Rectangle Canvas.Left="{Binding Search.ImageOcrPreview.X}"
-                                                                       Canvas.Top="{Binding Search.ImageOcrPreview.Y}"
-                                                                       Width="{Binding Search.ImageOcrPreview.Width}"
-                                                                       Height="{Binding Search.ImageOcrPreview.Height}"
-                                                                       Stroke="#FFFFCE54"
-                                                                       StrokeThickness="6"
-                                                                       Fill="#33FFCE54"/>
-                                                        </Canvas>
-                                                    </Viewbox>
-                                                </DockPanel>
-                                            </Border>
-
-                                            <ListBox x:Name="PreviewLinesList" Grid.Row="1"
-                                                     ItemsSource="{Binding Search.PreviewLines}"
-                                                     ItemContainerStyle="{StaticResource PreviewLineItemStyle}"
-                                                     AutomationProperties.Name="File preview"
-                                                     MouseDoubleClick="OnPreviewLineDoubleClick">
-                                                <ListBox.Style>
-                                                    <Style TargetType="ListBox" BasedOn="{StaticResource PreviewLinesListStyle}">
-                                                        <Setter Property="ScrollViewer.HorizontalScrollBarVisibility" Value="Auto"/>
-                                                        <Style.Triggers>
-                                                            <DataTrigger Binding="{Binding Search.IsPreviewWrapEnabled}" Value="True">
-                                                                <Setter Property="ScrollViewer.HorizontalScrollBarVisibility" Value="Disabled"/>
-                                                            </DataTrigger>
-                                                        </Style.Triggers>
-                                                    </Style>
-                                                </ListBox.Style>
-                                                <ListBox.CommandBindings>
-                                                    <CommandBinding Command="ApplicationCommands.Copy" Executed="OnPreviewLinesCopy"/>
-                                                </ListBox.CommandBindings>
-                                                <ListBox.ItemTemplate>
-                                                    <DataTemplate DataType="{x:Type vm:PreviewLineViewModel}">
-                                                        <Grid Margin="0,1,14,1">
-                                                            <Grid.ColumnDefinitions>
-                                                                <ColumnDefinition Width="Auto"/>
-                                                                <ColumnDefinition Width="*"/>
-                                                            </Grid.ColumnDefinitions>
-                                                            <TextBlock Text="{Binding LineNumberText}" Style="{StaticResource PreviewLineNumberStyle}"/>
-                                                            <TextBlock Grid.Column="1" hl:HitHighlight.Hit="{Binding DisplayHit}">
-                                                                <TextBlock.Style>
-                                                                    <Style TargetType="TextBlock">
-                                                                        <Setter Property="TextWrapping" Value="NoWrap"/>
+                                                    <StackPanel Grid.Column="2" Orientation="Horizontal" VerticalAlignment="Top">
+                                                        <Button Command="{Binding Search.SelectedFile.OpenImageOcrPreviewCommand}"
+                                                                Visibility="{Binding Search.SelectedFile.HasImageOcrPreview, Converter={StaticResource BoolToVisibility}}"
+                                                                Style="{StaticResource PreviewNavButtonStyle}" Width="28" Height="28"
+                                                                ToolTip="Open OCR preview" AutomationProperties.Name="Open OCR preview">
+                                                            <Path Data="{StaticResource Icon.Image}" Style="{StaticResource LineIconStyle}"/>
+                                                        </Button>
+                                                        <Button Command="{Binding Search.ToggleFavoriteResultCommand}"
+                                                                CommandParameter="{Binding Search.SelectedFile}"
+                                                                Style="{StaticResource PreviewNavButtonStyle}" Width="28" Height="28"
+                                                                ToolTip="{Binding Search.SelectedFile.FavoriteActionText}">
+                                                            <ui:FontIcon Glyph="{Binding Search.SelectedFile.FavoriteGlyph}" FontSize="14">
+                                                                <ui:FontIcon.Style>
+                                                                    <Style TargetType="ui:FontIcon">
+                                                                        <Setter Property="Foreground" Value="{DynamicResource Atlas.Ink2Brush}"/>
                                                                         <Style.Triggers>
-                                                                            <DataTrigger Binding="{Binding DataContext.Search.IsPreviewWrapEnabled, RelativeSource={RelativeSource AncestorType=ListBox}}" Value="True">
-                                                                                <Setter Property="TextWrapping" Value="Wrap"/>
-                                                                            </DataTrigger>
-                                                                            <DataTrigger Binding="{Binding IsGap}" Value="True">
-                                                                                <Setter Property="FontFamily" Value="{DynamicResource Atlas.SansFont}"/>
-                                                                                <Setter Property="FontSize" Value="11.5"/>
-                                                                                <Setter Property="Foreground" Value="{DynamicResource Atlas.Ink2Brush}"/>
-                                                                                <Setter Property="FontStyle" Value="Italic"/>
+                                                                            <DataTrigger Binding="{Binding Search.SelectedFile.IsFavorite}" Value="True">
+                                                                                <Setter Property="Foreground" Value="{DynamicResource Atlas.WarmBrush}"/>
                                                                             </DataTrigger>
                                                                         </Style.Triggers>
                                                                     </Style>
-                                                                </TextBlock.Style>
-                                                            </TextBlock>
-                                                        </Grid>
-                                                    </DataTemplate>
-                                                </ListBox.ItemTemplate>
-                                            </ListBox>
+                                                                </ui:FontIcon.Style>
+                                                            </ui:FontIcon>
+                                                        </Button>
+                                                        <Button Command="{Binding Search.TogglePreviewPaneCommand}"
+                                                                Style="{StaticResource PreviewNavButtonStyle}" Width="28" Height="28"
+                                                                Foreground="{DynamicResource Atlas.Ink2Brush}"
+                                                                ToolTip="Hide preview" AutomationProperties.Name="Hide preview">
+                                                            <Path Data="{StaticResource Icon.PreviewToggle}" Style="{StaticResource LineIconStyle}"/>
+                                                        </Button>
+                                                    </StackPanel>
+                                                </Grid>
 
-                                            <Grid Grid.Row="2" Margin="66,6,14,8"
-                                                  Visibility="{Binding Search.HasPreviewLines, Converter={StaticResource BoolToVisibility}}">
-                                                <Grid.ColumnDefinitions>
-                                                    <ColumnDefinition Width="Auto"/>
-                                                    <ColumnDefinition Width="Auto"/>
-                                                </Grid.ColumnDefinitions>
-                                                <TextBlock Text="{Binding Search.PreviewRangeText}" FontSize="12"
-                                                           Foreground="{DynamicResource Atlas.Ink2Brush}" VerticalAlignment="Center"/>
-                                                <Button Grid.Column="1" Content="{Binding Search.WholeFileToggleText}"
-                                                        Command="{Binding Search.ToggleWholeFilePreviewCommand}"
-                                                        Style="{StaticResource AccentUnderlineLinkButtonStyle}"
-                                                        Margin="6,0,0,0"/>
-                                            </Grid>
-                                        </Grid>
-                                    </DockPanel>
+                                                <!-- match navigator -->
+                                                <Border DockPanel.Dock="Top" Style="{StaticResource PreviewBandStyle}"
+                                                        BorderThickness="0,1,0,1" MinHeight="36" Padding="16,0,10,0"
+                                                        Visibility="{Binding Search.HasPreviewLines, Converter={StaticResource BoolToVisibility}}">
+                                                    <Grid>
+                                                        <Grid.ColumnDefinitions>
+                                                            <ColumnDefinition Width="Auto"/>
+                                                            <ColumnDefinition Width="Auto"/>
+                                                            <ColumnDefinition Width="*"/>
+                                                            <ColumnDefinition Width="Auto"/>
+                                                            <ColumnDefinition Width="Auto"/>
+                                                            <ColumnDefinition Width="Auto"/>
+                                                            <ColumnDefinition Width="Auto"/>
+                                                        </Grid.ColumnDefinitions>
+                                                        <TextBlock Text="{Binding Search.PreviewMatchPositionText}" FontSize="12" FontWeight="SemiBold"
+                                                                   VerticalAlignment="Center"/>
+                                                        <TextBlock Grid.Column="1" Text="{Binding Search.PreviewCurrentLineText}" FontSize="12"
+                                                                   Foreground="{DynamicResource Atlas.Ink2Brush}" Margin="8,0,0,0"
+                                                                   VerticalAlignment="Center"/>
+                                                        <Button Grid.Column="3" Command="{Binding Search.PreviousPreviewMatchCommand}"
+                                                                Style="{StaticResource PreviewNavButtonStyle}"
+                                                                ToolTip="Previous match" AutomationProperties.Name="Previous match">
+                                                            <Path Data="{StaticResource Icon.ArrowUp}" Style="{StaticResource LineIconStyle}" StrokeThickness="1.4"/>
+                                                        </Button>
+                                                        <Button Grid.Column="4" Command="{Binding Search.NextPreviewMatchCommand}"
+                                                                Style="{StaticResource PreviewNavButtonStyle}"
+                                                                ToolTip="Next match" AutomationProperties.Name="Next match">
+                                                            <Path Data="{StaticResource Icon.ArrowDown}" Style="{StaticResource LineIconStyle}" StrokeThickness="1.4"/>
+                                                        </Button>
+                                                        <Border Grid.Column="5" Width="1" Height="18" Margin="8,0,6,0"
+                                                                Background="{DynamicResource Atlas.LineBrush}"/>
+                                                        <ToggleButton Grid.Column="6" IsChecked="{Binding Search.IsPreviewWrapEnabled}"
+                                                                      Style="{StaticResource InlineToggleButtonStyle}"
+                                                                      Width="26" Height="26"
+                                                                      ToolTip="Wrap long lines" AutomationProperties.Name="Wrap long lines">
+                                                            <Path Data="{StaticResource Icon.Wrap}" Style="{StaticResource LineIconStyle}"/>
+                                                        </ToggleButton>
+                                                    </Grid>
+                                                </Border>
+
+                                                <!-- actions -->
+                                                <Border DockPanel.Dock="Bottom" Style="{StaticResource PreviewBandStyle}"
+                                                        BorderThickness="0,1,0,0" Padding="14,12">
+                                                    <Grid>
+                                                        <Grid.ColumnDefinitions>
+                                                            <ColumnDefinition Width="*"/>
+                                                            <ColumnDefinition Width="Auto"/>
+                                                            <ColumnDefinition Width="Auto"/>
+                                                        </Grid.ColumnDefinitions>
+                                                        <Button Command="{Binding Search.OpenPreviewTargetCommand}"
+                                                                Style="{StaticResource PreviewPrimaryButtonStyle}"
+                                                                ToolTip="Open the file at the current match">
+                                                            <StackPanel Orientation="Horizontal">
+                                                                <Path Data="{StaticResource Icon.OpenExternal}" Style="{StaticResource LineIconStyle}"
+                                                                      StrokeThickness="1.4" Margin="0,0,8,0"/>
+                                                                <TextBlock Text="{Binding Search.OpenPreviewTargetText}" VerticalAlignment="Center"/>
+                                                            </StackPanel>
+                                                        </Button>
+                                                        <Button Grid.Column="1" Command="{Binding Search.SelectedFile.RevealInExplorerCommand}"
+                                                                IsEnabled="{Binding Search.HasSelectedFile}"
+                                                                Style="{StaticResource PreviewFooterButtonStyle}"
+                                                                ToolTip="Reveal in Explorer">
+                                                            <StackPanel Orientation="Horizontal">
+                                                                <Path Data="{StaticResource Icon.Folder}" Style="{StaticResource LineIconStyle}"
+                                                                      Margin="0,0,6,0" TextElement.Foreground="{DynamicResource Atlas.Ink2Brush}"/>
+                                                                <TextBlock Text="Show in folder" VerticalAlignment="Center"/>
+                                                            </StackPanel>
+                                                        </Button>
+                                                        <Button Grid.Column="2"
+                                                                IsEnabled="{Binding Search.HasSelectedFile}"
+                                                                Style="{StaticResource PreviewFooterButtonStyle}"
+                                                                Click="OnCopyMenuButtonClick"
+                                                                ToolTip="Copy the path, the preview, or the full file content">
+                                                            <Button.ContextMenu>
+                                                                <ContextMenu Placement="Top"
+                                                                             DataContext="{Binding Path=PlacementTarget.DataContext, RelativeSource={RelativeSource Self}}">
+                                                                    <MenuItem Header="Copy file _path" Command="{Binding Search.SelectedFile.CopyPathCommand}">
+                                                                        <MenuItem.Icon><ui:FontIcon Glyph="&#xE8C8;" FontSize="14"/></MenuItem.Icon>
+                                                                    </MenuItem>
+                                                                    <MenuItem Header="Copy _folder path" Command="{Binding Search.SelectedFile.CopyFolderPathCommand}">
+                                                                        <MenuItem.Icon><ui:FontIcon Glyph="&#xE8C8;" FontSize="14"/></MenuItem.Icon>
+                                                                    </MenuItem>
+                                                                    <MenuItem Header="Copy _preview" Command="{Binding Search.CopyPreviewCommand}">
+                                                                        <MenuItem.Icon><ui:FontIcon Glyph="&#xE7C3;" FontSize="14"/></MenuItem.Icon>
+                                                                    </MenuItem>
+                                                                    <MenuItem Header="Copy file _content" Command="{Binding Search.CopyFileContentCommand}">
+                                                                        <MenuItem.Icon><ui:FontIcon Glyph="&#xE8E5;" FontSize="14"/></MenuItem.Icon>
+                                                                    </MenuItem>
+                                                                </ContextMenu>
+                                                            </Button.ContextMenu>
+                                                            <StackPanel Orientation="Horizontal">
+                                                                <Path Data="{StaticResource Icon.Copy}" Style="{StaticResource LineIconStyle}"
+                                                                      Margin="0,0,6,0" TextElement.Foreground="{DynamicResource Atlas.Ink2Brush}"/>
+                                                                <TextBlock Text="Copy" VerticalAlignment="Center"/>
+                                                                <Path Data="{StaticResource Icon.ChevronDown}" Style="{StaticResource LineIcon14Style}"
+                                                                      StrokeThickness="1.4" Margin="6,0,0,0"
+                                                                      TextElement.Foreground="{DynamicResource Atlas.Ink2Brush}"/>
+                                                            </StackPanel>
+                                                        </Button>
+                                                    </Grid>
+                                                </Border>
+
+                                                <!-- body: OCR image, numbered code view, range footer -->
+                                                <Grid>
+                                                    <Grid.RowDefinitions>
+                                                        <RowDefinition Height="Auto"/>
+                                                        <RowDefinition Height="*"/>
+                                                        <RowDefinition Height="Auto"/>
+                                                    </Grid.RowDefinitions>
+
+                                                    <Border Grid.Row="0" Margin="16,10,16,0"
+                                                            Visibility="{Binding Search.HasImageOcrPreview, Converter={StaticResource BoolToVisibility}}"
+                                                            Style="{DynamicResource PreviewImageCardStyle}">
+                                                        <DockPanel LastChildFill="True">
+                                                            <TextBlock DockPanel.Dock="Bottom"
+                                                                       Text="{Binding Search.ImageOcrPreview.Label}"
+                                                                       Style="{StaticResource HintLabelStyle}"
+                                                                       TextTrimming="CharacterEllipsis"
+                                                                       Margin="0,8,0,0"/>
+                                                            <Viewbox Stretch="Uniform">
+                                                                <Canvas Width="{Binding Search.ImageOcrPreview.SourceWidth}"
+                                                                        Height="{Binding Search.ImageOcrPreview.SourceHeight}">
+                                                                    <Image Source="{Binding Search.ImageOcrPreview.ImagePath}"
+                                                                           Width="{Binding Search.ImageOcrPreview.SourceWidth}"
+                                                                           Height="{Binding Search.ImageOcrPreview.SourceHeight}"
+                                                                           Stretch="Fill"/>
+                                                                    <Rectangle Canvas.Left="{Binding Search.ImageOcrPreview.X}"
+                                                                               Canvas.Top="{Binding Search.ImageOcrPreview.Y}"
+                                                                               Width="{Binding Search.ImageOcrPreview.Width}"
+                                                                               Height="{Binding Search.ImageOcrPreview.Height}"
+                                                                               Stroke="#FFFFCE54"
+                                                                               StrokeThickness="6"
+                                                                               Fill="#33FFCE54"/>
+                                                                </Canvas>
+                                                            </Viewbox>
+                                                        </DockPanel>
+                                                    </Border>
+
+                                                    <ListBox x:Name="PreviewLinesList" Grid.Row="1"
+                                                             ItemsSource="{Binding Search.PreviewLines}"
+                                                             ItemContainerStyle="{StaticResource PreviewLineItemStyle}"
+                                                             AutomationProperties.Name="File preview"
+                                                             MouseDoubleClick="OnPreviewLineDoubleClick">
+                                                        <ListBox.Style>
+                                                            <Style TargetType="ListBox" BasedOn="{StaticResource PreviewLinesListStyle}">
+                                                                <Setter Property="ScrollViewer.HorizontalScrollBarVisibility" Value="Auto"/>
+                                                                <Style.Triggers>
+                                                                    <DataTrigger Binding="{Binding Search.IsPreviewWrapEnabled}" Value="True">
+                                                                        <Setter Property="ScrollViewer.HorizontalScrollBarVisibility" Value="Disabled"/>
+                                                                    </DataTrigger>
+                                                                </Style.Triggers>
+                                                            </Style>
+                                                        </ListBox.Style>
+                                                        <ListBox.CommandBindings>
+                                                            <CommandBinding Command="ApplicationCommands.Copy" Executed="OnPreviewLinesCopy"/>
+                                                        </ListBox.CommandBindings>
+                                                        <ListBox.ItemTemplate>
+                                                            <DataTemplate DataType="{x:Type vm:PreviewLineViewModel}">
+                                                                <Grid Margin="0,1,14,1">
+                                                                    <Grid.ColumnDefinitions>
+                                                                        <ColumnDefinition Width="Auto"/>
+                                                                        <ColumnDefinition Width="*"/>
+                                                                    </Grid.ColumnDefinitions>
+                                                                    <TextBlock Text="{Binding LineNumberText}" Style="{StaticResource PreviewLineNumberStyle}"/>
+                                                                    <TextBlock Grid.Column="1" hl:HitHighlight.Hit="{Binding DisplayHit}">
+                                                                        <TextBlock.Style>
+                                                                            <Style TargetType="TextBlock">
+                                                                                <Setter Property="TextWrapping" Value="NoWrap"/>
+                                                                                <Style.Triggers>
+                                                                                    <DataTrigger Binding="{Binding DataContext.Search.IsPreviewWrapEnabled, RelativeSource={RelativeSource AncestorType=ListBox}}" Value="True">
+                                                                                        <Setter Property="TextWrapping" Value="Wrap"/>
+                                                                                    </DataTrigger>
+                                                                                    <DataTrigger Binding="{Binding IsGap}" Value="True">
+                                                                                        <Setter Property="FontFamily" Value="{DynamicResource Atlas.SansFont}"/>
+                                                                                        <Setter Property="FontSize" Value="11.5"/>
+                                                                                        <Setter Property="Foreground" Value="{DynamicResource Atlas.Ink2Brush}"/>
+                                                                                        <Setter Property="FontStyle" Value="Italic"/>
+                                                                                    </DataTrigger>
+                                                                                </Style.Triggers>
+                                                                            </Style>
+                                                                        </TextBlock.Style>
+                                                                    </TextBlock>
+                                                                </Grid>
+                                                            </DataTemplate>
+                                                        </ListBox.ItemTemplate>
+                                                    </ListBox>
+
+                                                    <Grid Grid.Row="2" Margin="66,6,14,8"
+                                                          Visibility="{Binding Search.HasPreviewLines, Converter={StaticResource BoolToVisibility}}">
+                                                        <Grid.ColumnDefinitions>
+                                                            <ColumnDefinition Width="Auto"/>
+                                                            <ColumnDefinition Width="Auto"/>
+                                                        </Grid.ColumnDefinitions>
+                                                        <TextBlock Text="{Binding Search.PreviewRangeText}" FontSize="12"
+                                                                   Foreground="{DynamicResource Atlas.Ink2Brush}" VerticalAlignment="Center"/>
+                                                        <Button Grid.Column="1" Content="{Binding Search.WholeFileToggleText}"
+                                                                Command="{Binding Search.ToggleWholeFilePreviewCommand}"
+                                                                Style="{StaticResource AccentUnderlineLinkButtonStyle}"
+                                                                Margin="6,0,0,0"/>
+                                                    </Grid>
+                                                </Grid>
+                                            </DockPanel>
+                                        </TabItem>
+                                        <TabItem Header="File preview">
+                                            <controls:FileDocumentPreview Result="{Binding Search.SelectedFile}"
+                                                                          PreferredHit="{Binding Search.CurrentPreviewHit}"
+                                                                          FallbackText="{Binding Search.PreviewContent}"/>
+                                        </TabItem>
+                                    </TabControl>
 
                                     <!-- empty -->
                                     <DockPanel>

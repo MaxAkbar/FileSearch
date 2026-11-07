@@ -102,6 +102,9 @@ jobs:
       - name: Build Release
         run: dotnet build .\${{ env.SOLUTION }} --configuration Release --no-restore
 
+      - name: Help search tests
+        run: node --test .\tests\HelpSearch\help-search.test.cjs
+
       - name: Test Release
         run: dotnet test --solution .\${{ env.SOLUTION }} --configuration Release --no-build --results-directory TestResults --report-trx
 

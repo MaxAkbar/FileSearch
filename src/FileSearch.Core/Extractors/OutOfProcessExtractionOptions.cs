@@ -30,6 +30,7 @@ public sealed class OutOfProcessExtractionOptions
         "filesearch.ifilter",
         "filesearch.outlook-msg",
         "filesearch.outlook-store",
+        "filesearch.database",
     };
 
     public TimeSpan GetTimeoutForExtractor(string extractorId)

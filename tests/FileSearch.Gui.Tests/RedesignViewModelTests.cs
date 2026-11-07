@@ -11,6 +11,24 @@ namespace FileSearch.Gui.Tests;
 public sealed class RedesignViewModelTests
 {
     [Fact]
+    public void StructuredPreviewRowsRetainTheMatchingPageAfterSnippetDeduplication()
+    {
+        var first = new Hit("document.pdf", 0, "partial first", [],
+            Snippet: new SearchSnippet("partial first", locator: new SourceLocator(Page: 2), contentUnitId: 10));
+        var last = new Hit("document.pdf", 0, "partial last", [],
+            Snippet: new SearchSnippet("partial last", locator: new SourceLocator(Page: 7), contentUnitId: 20));
+        var file = new FileResultViewModel("document.pdf", new FakeFileLauncher());
+        file.AddHit(first);
+        file.AddHit(first with { LineContent = "duplicate unit" });
+        file.AddHit(last);
+        var rows = PreviewLineViewModel.Parse(file.BuildStoredHitPreview(), file.Hits).Where(row => row.IsHit).ToArray();
+        Assert.Equal(2, rows.Length);
+        Assert.Same(first, rows[0].SourceHit);
+        Assert.Same(last, rows[1].SourceHit);
+        Assert.Equal(7, FileSearch.Gui.Services.DocumentPreviewService.FindInitialPdfPage(file.Hits, rows[1].SourceHit));
+    }
+
+    [Fact]
     public void PreviewParserReadsNumberedListingWithGapsAndHighlights()
     {
         var content = string.Join('\n',
@@ -33,6 +51,7 @@ public sealed class RedesignViewModelTests
         Assert.Equal("addition='header'", lines[0].Text);
 
         Assert.True(lines[1].IsHit);
+        Assert.Same(hits[0], lines[1].SourceHit);
         Assert.Equal(46, lines[1].LineNumber);
         Assert.Equal(new MatchSpan(4, 6), Assert.Single(lines[1].DisplayHit.Highlights));
 

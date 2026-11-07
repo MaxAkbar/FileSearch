@@ -67,6 +67,7 @@ public sealed class ContentUnitChunker : IContentChunker
 
             while (end < sourceUnits.Length)
             {
+                if (end > start && sourceUnits[start].Kind == ContentUnitKind.DatabaseCell) break;
                 if (end > start && sourceUnits[start].Kind == ContentUnitKind.EmailPart &&
                     sourceUnits[start].Locator.MailMessage?.Id != sourceUnits[end].Locator.MailMessage?.Id)
                     break;
@@ -166,7 +167,8 @@ public sealed class ContentUnitChunker : IContentChunker
             Height: region?.Height,
             SourceWidth: sourceWidth,
             SourceHeight: sourceHeight,
-            MailMessage: locators[0].MailMessage);
+            MailMessage: locators[0].MailMessage,
+            Database: locators[0].Database);
     }
 
     private static string? CreateDisplayText(

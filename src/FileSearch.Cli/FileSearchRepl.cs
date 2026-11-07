@@ -1086,7 +1086,7 @@ internal sealed class FileSearchRepl
     private static string RenderOneShotCsv(IReadOnlyList<Hit> hits)
     {
         var sb = new StringBuilder();
-        sb.AppendLine("path,lineNumber,kind,score,sizeBytes,modifiedUtc,line,mailMessageId,mailSubject,mailFrom,mailFolder,mailDateUtc");
+        sb.AppendLine("path,lineNumber,kind,score,sizeBytes,modifiedUtc,line,mailMessageId,mailSubject,mailFrom,mailFolder,mailDateUtc,databaseEngine,databaseTable,databaseRow,databaseColumn,databaseKey,databaseFingerprint");
         foreach (var hit in hits)
         {
             sb.Append(CsvField(hit.Path)).Append(',');
@@ -1100,7 +1100,13 @@ internal sealed class FileSearchRepl
             sb.Append(CsvField(hit.MailMessage?.Subject ?? string.Empty)).Append(',');
             sb.Append(CsvField(hit.MailMessage?.From ?? string.Empty)).Append(',');
             sb.Append(CsvField(hit.MailMessage?.Folder ?? string.Empty)).Append(',');
-            sb.AppendLine(CsvField(hit.MailMessage?.DateUtc?.ToString("O", CultureInfo.InvariantCulture) ?? string.Empty));
+            sb.Append(CsvField(hit.MailMessage?.DateUtc?.ToString("O", CultureInfo.InvariantCulture) ?? string.Empty)).Append(',');
+            sb.Append(CsvField(hit.Database?.Engine.ToString() ?? string.Empty)).Append(',');
+            sb.Append(CsvField(hit.Database?.Table ?? string.Empty)).Append(',');
+            sb.Append(hit.Database?.RowNumber.ToString(CultureInfo.InvariantCulture) ?? string.Empty).Append(',');
+            sb.Append(CsvField(hit.Database?.Column ?? string.Empty)).Append(',');
+            sb.Append(CsvField(hit.Database?.RowKey ?? string.Empty)).Append(',');
+            sb.AppendLine(CsvField(hit.Database?.Fingerprint ?? string.Empty));
         }
 
         return sb.ToString();
@@ -1136,7 +1142,10 @@ internal sealed class FileSearchRepl
                 sb.AppendLine(CultureInfo.InvariantCulture, $"{mail.Subject} · {mail.From} · {mail.Folder} · {mail.Id}");
             sb.AppendLine();
             foreach (var hit in group)
-                sb.AppendLine(CultureInfo.InvariantCulture, $"- L{hit.LineNumber}: {hit.LineContent.Trim()}");
+            {
+                string database = hit.Database is { } location ? $" [{location.Table} · row {location.RowNumber} · {location.Column}]" : string.Empty;
+                sb.AppendLine(CultureInfo.InvariantCulture, $"- L{hit.LineNumber}{database}: {hit.LineContent.Trim()}");
+            }
         }
 
         return sb.ToString();
@@ -1438,7 +1447,8 @@ internal sealed class FileSearchRepl
             hit.SizeBytes,
             hit.ModifiedUtc,
             hit.LineContent,
-            hit.MailMessage);
+            hit.MailMessage,
+            hit.Database);
 
     private static OneShotIndexLocation ToOneShotIndexLocation(IndexedLocationInfo location) =>
         new(
@@ -2449,11 +2459,12 @@ internal sealed class FileSearchRepl
         for (var i = 0; i < hits.Count; i++)
         {
             var hit = hits[i];
+            string database = hit.Database is { } location ? "[grey]" + Markup.Escape($"{location.Table} · row {location.RowNumber} · {location.Column}") + "[/] " : string.Empty;
             table.AddRow(
                 (i + 1).ToString(CultureInfo.CurrentCulture),
                 Markup.Escape(RelativePath(hit.Path)),
                 hit.LineNumber.ToString("n0", CultureInfo.CurrentCulture),
-                BuildHighlightedMarkup(hit));
+                database + BuildHighlightedMarkup(hit));
         }
 
         AnsiConsole.Write(table);
@@ -2992,7 +3003,9 @@ internal sealed class FileSearchRepl
         DateTime? ModifiedUtc,
         string Line,
         [property: System.Text.Json.Serialization.JsonIgnore(Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull)]
-        MailMessageMetadata? MailMessage);
+        MailMessageMetadata? MailMessage,
+        [property: System.Text.Json.Serialization.JsonIgnore(Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull)]
+        FileSearch.Core.Databases.DatabaseLocation? Database);
 
     private sealed record OneShotIndexLocationsDocument(
         int Count,

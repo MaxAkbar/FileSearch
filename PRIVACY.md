@@ -26,11 +26,15 @@ The index can include file paths, file metadata, extracted line text, indexing s
 
 For MSG/PST/OST searches, this includes mail subjects, sender and recipient addresses, dates, folders, attachment names, and message body text. FileSearch reads these locally and does not sign into a mailbox service. Opening a message from a store creates a text-only EML copy in `%TEMP%\FileSearch\MailPreview`. Copies older than one day are removed on a later message-open attempt when possible; clear that directory manually to remove them immediately. See [Mail search](README.Mail.md) for coverage and limitations.
 
+Built-in formatted previews block document scripts and remote resources. Generated HTML and approved embedded images are served from memory; WebView2's runtime profile is stored under `%LocalAppData%\FileSearch\PreviewWebView2`. ZIP-member previews create a generated file under `%TEMP%\FileSearchPreview` and attempt to remove it when the preview closes. A crash or another process holding a file open can leave a copy behind; close FileSearch and clear that directory to remove remaining preview copies. Original archives are not modified.
+
 When a drive file-name index is enabled, FileSearch also stores a list of the file and folder names on that drive:
 
 - `%LocalAppData%\FileSearch\Index\Volumes\*.fsvol`
 
 A drive index built with the administrator (master file table) scan contains the names of **every** file and folder on the drive. That includes folders the current user cannot open, such as other users' profiles, the same as Everything's database. The folder scan only records folders the user can read. Remove a drive's index from **Settings > Drive file-name index** or with `filesearch volumes remove C:`.
+
+Database search reads SQLite/CSharpDB scalar values and table/record locations locally. These values and source fingerprints can be stored in the content index. Readers operate on private database/WAL copies under `%TEMP%\FileSearchDatabasePreview`; source files are opened only for reading. Copies are removed when their session closes, although a crash or locked file can leave a copy behind. Close FileSearch and clear that directory to remove remaining database snapshots. No network database connection or database password is used. See [Database search](README.Databases.md).
 
 ## Telemetry
 

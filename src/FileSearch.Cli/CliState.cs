@@ -78,7 +78,10 @@ internal sealed class CliState
             }
 
             if (!EnableDocumentExtraction)
+            {
                 excludeExtensions.UnionWith(s_documentExtensions);
+                excludeExtensions.UnionWith(FileSearch.Core.Databases.DatabaseFiles.Extensions);
+            }
 
             if (!EnableImageOcr)
                 excludeExtensions.UnionWith(ImageOcrFileTypes.SupportedExtensions);

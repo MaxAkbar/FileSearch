@@ -206,6 +206,30 @@ public sealed class IndexConcurrencyTests : IDisposable
     }
 
     [Fact]
+    public async Task WatcherMapsDatabaseWalChangesAndIgnoresItsOwnIndexStorage()
+    {
+        var queue = new RecordingQueue();
+        string own = Path.Combine(_root, "internal.db");
+        var watchers = new IndexWatcherService(queue, indexOptions: new FileIndexOptions { DatabasePath = own });
+        watchers.StartWatching(new IndexedLocation(_root, new WalkerOptions(), WatchEnabled: true));
+        try
+        {
+            await File.WriteAllTextAsync(own, "own index", TestContext.Current.CancellationToken);
+            await File.WriteAllTextAsync(own + ".wal", "own index WAL", TestContext.Current.CancellationToken);
+            string source = Path.Combine(_root, "customer.sqlite");
+            await File.WriteAllTextAsync(source + "-wal", "changed source WAL", TestContext.Current.CancellationToken);
+            var upsert = await queue.WaitForAsync(item => item.Path == source && item.Kind == IndexChangeKind.UpsertFile, TimeSpan.FromSeconds(10));
+            Assert.NotNull(upsert);
+            await Task.Delay(500, TestContext.Current.CancellationToken);
+            Assert.DoesNotContain(queue.Items, item => item.Path == own || item.Path == own + ".wal");
+            File.Delete(source + "-wal");
+            await Task.Delay(500, TestContext.Current.CancellationToken);
+            Assert.DoesNotContain(queue.Items, item => item.Path == source && item.Kind == IndexChangeKind.DeleteFile);
+        }
+        finally { watchers.StopAll(); }
+    }
+
+    [Fact]
     public async Task CoalesceKeepsEarliestDueForQueuedRefresh()
     {
         var queue = new IndexQueue(_index);

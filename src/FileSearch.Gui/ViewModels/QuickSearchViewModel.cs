@@ -212,6 +212,14 @@ public sealed partial class QuickSearchViewModel : ObservableObject, IDisposable
         PinResultCommand.NotifyCanExecuteChanged();
         PreviewResultCommand.NotifyCanExecuteChanged();
         OpenOcrPreviewCommand.NotifyCanExecuteChanged();
+        if (IsPreviewVisible && value is not null)
+            _ = PreviewResultAsync(value);
+        else if (value is null)
+        {
+            _previewCts?.Cancel();
+            PreviewContent = string.Empty;
+            ImageOcrPreview = null;
+        }
     }
 
     [RelayCommand(CanExecute = nameof(CanUseResult))]
@@ -295,12 +303,15 @@ public sealed partial class QuickSearchViewModel : ObservableObject, IDisposable
         var token = _previewCts.Token;
 
         IsPreviewVisible = true;
+        ImageOcrPreview = null;
         PreviewContent = "Loading preview...";
         try
         {
-            ImageOcrPreview = await ImageOcrPreviewViewModel
+            var imagePreview = await ImageOcrPreviewViewModel
                 .TryCreateAsync(result.FullPath, result.Hits, token)
                 .ConfigureAwait(true);
+            token.ThrowIfCancellationRequested();
+            ImageOcrPreview = imagePreview;
             var storedPreview = result.HasStructuredSnippets
                 ? result.BuildStoredHitPreview()
                 : string.Empty;
@@ -332,7 +343,8 @@ public sealed partial class QuickSearchViewModel : ObservableObject, IDisposable
         }
         catch (Exception ex)
         {
-            PreviewContent = $"(failed to load preview: {ex.Message})";
+            if (!token.IsCancellationRequested)
+                PreviewContent = $"(failed to load preview: {ex.Message})";
         }
     }
 

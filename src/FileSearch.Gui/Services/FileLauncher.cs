@@ -3,18 +3,51 @@ using System.Diagnostics;
 using System.IO;
 using System.Linq;
 using System.Windows;
+using FileSearch.Core.Databases;
 using FileSearch.Core.Engine;
 using FileSearch.Core.Extractors;
+using FileSearch.Gui.Controls;
 using FileSearch.Gui.ViewModels;
 
 namespace FileSearch.Gui.Services;
 
 public sealed class FileLauncher : IFileLauncher
 {
+    private readonly Action<ProcessStartInfo> _startFile;
+    private readonly Action<string, Hit?> _showDatabasePreview;
+    private readonly Action<string> _showOpenError;
+
+    public FileLauncher()
+    {
+        _startFile = info => Process.Start(info);
+        _showDatabasePreview = ShowDatabasePreview;
+        _showOpenError = message => System.Windows.MessageBox.Show(message, "Could not open file", MessageBoxButton.OK, MessageBoxImage.Information);
+    }
+
+    internal FileLauncher(Action<ProcessStartInfo> startFile, Action<string, Hit?> showDatabasePreview, Action<string> showOpenError)
+    {
+        _startFile = startFile;
+        _showDatabasePreview = showDatabasePreview;
+        _showOpenError = showOpenError;
+    }
+
     public void Open(string path)
     {
         if (string.IsNullOrEmpty(path) || (!File.Exists(path) && !Directory.Exists(path))) return;
-        Process.Start(new ProcessStartInfo(path) { UseShellExecute = true });
+        if (File.Exists(path) && DatabaseFiles.IsDatabase(path))
+        {
+            _showDatabasePreview(path, null);
+            return;
+        }
+        try { _startFile(new ProcessStartInfo(path) { UseShellExecute = true }); }
+        catch (System.ComponentModel.Win32Exception error) when (error.NativeErrorCode == 1155)
+        {
+            _showOpenError("Windows has no default app for this file type. Use File preview or choose an app in Windows.");
+        }
+        catch (Exception error) when (error is System.ComponentModel.Win32Exception or InvalidOperationException or IOException or UnauthorizedAccessException)
+        {
+            _showOpenError("Windows could not open this file.\n\n" + error.Message);
+        }
     }
 
     public async Task<bool> OpenAtLocationAsync(
@@ -24,6 +57,13 @@ public sealed class FileLauncher : IFileLauncher
     {
         if (string.IsNullOrWhiteSpace(path) || !File.Exists(path))
             return false;
+
+        if (DatabaseFiles.IsDatabase(path))
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            _showDatabasePreview(path, hit);
+            return true;
+        }
 
         if (hit.MailMessage is { StoreFingerprint: not null } mail)
         {
@@ -75,6 +115,28 @@ public sealed class FileLauncher : IFileLauncher
             window.WindowStartupLocation = WindowStartupLocation.CenterOwner;
         }
 
+        window.Show();
+        window.Activate();
+    }
+
+    private void ShowDatabasePreview(string path, Hit? hit)
+    {
+        var result = new FileResultViewModel(path, this);
+        if (hit is not null) result.AddHit(hit);
+        var preview = new FileDocumentPreview { Result = result, PreferredHit = hit };
+        preview.ExpandButton.Visibility = Visibility.Collapsed;
+        var window = new Window
+        {
+            Title = result.DisplayName + " — FileSearch preview",
+            Width = 1000,
+            Height = 720,
+            MinWidth = 600,
+            MinHeight = 400,
+            Content = preview,
+        };
+        var owner = System.Windows.Application.Current?.Windows.OfType<Window>()
+            .FirstOrDefault(candidate => candidate.IsActive && candidate is not QuickSearchWindow);
+        if (owner is not null) { window.Owner = owner; window.WindowStartupLocation = WindowStartupLocation.CenterOwner; }
         window.Show();
         window.Activate();
     }

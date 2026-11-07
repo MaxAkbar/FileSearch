@@ -39,6 +39,7 @@ internal static class FileTypeCategory
 
     public static string ForExtension(string extension)
     {
+        if (FileSearch.Core.Databases.DatabaseFiles.Extensions.Contains(extension, StringComparer.OrdinalIgnoreCase)) return "database";
         if (string.IsNullOrWhiteSpace(extension))
             return "other";
 

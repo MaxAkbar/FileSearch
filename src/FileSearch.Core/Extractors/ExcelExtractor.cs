@@ -24,7 +24,7 @@ public sealed class ExcelExtractor : IContextualTextExtractor
 
     public string ExtractorId => "filesearch.excel-closedxml";
 
-    public string ExtractorVersion => "1";
+    public string ExtractorVersion => "2";
 
     public IReadOnlyCollection<string> SupportedExtensions { get; } = new[] { ".xlsx" };
 
@@ -56,12 +56,14 @@ public sealed class ExcelExtractor : IContextualTextExtractor
                 foreach (var row in sheet.RowsUsed())
                 {
                     cancellationToken.ThrowIfCancellationRequested();
-                    var cells = row.CellsUsed().Select(c => c.GetString());
-                    var joined = string.Join('\t', cells);
+                    var cells = row.CellsUsed().ToArray();
+                    var joined = string.Join('\t', cells.Select(c => c.GetString()));
                     if (string.IsNullOrEmpty(joined)) continue;
 
                     lineNumber++;
-                    yield return new TextLine(lineNumber, $"[{sheetName}] {joined}");
+                    var range = $"{cells[0].Address.ColumnLetter}{row.RowNumber()}:{cells[^1].Address.ColumnLetter}{row.RowNumber()}";
+                    yield return new TextLine(lineNumber, $"[{sheetName}] {joined}", new SourceAnchor(
+                        SourceAnchorKind.Excel, $"{sheetName}!{range}", Sheet: sheetName, Cell: range));
                 }
             }
         }

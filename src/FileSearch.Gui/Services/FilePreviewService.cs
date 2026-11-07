@@ -183,7 +183,8 @@ public sealed class FilePreviewService : IFilePreviewService
                 info.Length,
                 info.LastWriteTimeUtc.Ticks,
                 linesKey,
-                contextLines);
+                contextLines,
+                FileSearch.Core.Databases.DatabaseFiles.IsDatabase(path) ? FileSearch.Core.Databases.DatabaseFiles.Fingerprint(path) : "");
         }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or ArgumentException or PathTooLongException or NotSupportedException)
         {
@@ -237,7 +238,8 @@ public sealed class FilePreviewService : IFilePreviewService
         long SizeBytes,
         long ModifiedUtcTicks,
         string LinesKey,
-        int ContextLines);
+        int ContextLines,
+        string DatabaseFingerprint);
 
     private sealed record PreviewCacheEntry(PreviewCacheKey Key, string Preview);
 }

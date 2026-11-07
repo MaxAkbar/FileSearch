@@ -48,6 +48,7 @@ public sealed class OutOfProcessExtractionService : IOutOfProcessExtractionServi
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(path);
         ArgumentNullException.ThrowIfNull(extractor);
+        if (extractor is DatabaseExtractor database && database.IsExcludedSource(path)) return new OutOfProcessExtractionResult([], []);
 
         var command = ResolveCommand();
         if (command is null)

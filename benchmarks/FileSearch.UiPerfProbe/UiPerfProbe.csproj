@@ -11,5 +11,7 @@
   <ItemGroup>
     <ProjectReference Include="../../src/FileSearch.Gui/FileSearch.Gui.csproj" />
     <Compile Include="../../tests/FileSearch.Gui.Tests/TestFakes.cs" Link="TestFakes.cs" />
+    <Compile Include="../../tests/FileSearch.Gui.Tests/PreviewFixtures.cs" Link="PreviewFixtures.cs" />
+    <Compile Include="../../tests/FileSearch.Core.Tests/DatabaseTestFiles.cs" Link="DatabaseTestFiles.cs" />
   </ItemGroup>
 </Project>

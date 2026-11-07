@@ -6,6 +6,10 @@
   </ItemGroup>
 
   <ItemGroup>
+    <PackageReference Include="AvalonEdit" Version="6.3.1.120" />
+    <PackageReference Include="Markdig" Version="1.6.0" />
+    <PackageReference Include="MimeKit" Version="4.18.2" />
+    <PackageReference Include="HtmlSanitizer" Version="11.0.16" />
     <PackageReference Include="CommunityToolkit.Mvvm" Version="8.4.2" />
     <PackageReference Include="Microsoft.Extensions.DependencyInjection" Version="10.0.12" />
     <PackageReference Include="Microsoft.Extensions.Hosting" Version="10.0.12" />
@@ -24,11 +28,33 @@
   </PropertyGroup>
 
   <ItemGroup>
+    <Compile Remove="Build\GenerateHelpSearchIndex.cs" />
     <Resource Include="Assets\FileSearch.ico" />
     <Content Include="Assets\FileSearch-256.png">
       <CopyToOutputDirectory>Always</CopyToOutputDirectory>
     </Content>
     <Content Include="Help\**\*.*" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
   </ItemGroup>
+
+  <UsingTask TaskName="FileSearch.Build.GenerateHelpSearchIndex" TaskFactory="RoslynCodeTaskFactory"
+             AssemblyFile="$(MSBuildToolsPath)/Microsoft.Build.Tasks.Core.dll">
+    <Task>
+      <Code Type="Class" Language="cs" Source="$(MSBuildProjectDirectory)/Build/GenerateHelpSearchIndex.cs" />
+    </Task>
+  </UsingTask>
+
+  <Target Name="GenerateBundledHelpSearchIndex" BeforeTargets="AssignTargetPaths">
+    <PropertyGroup>
+      <_HelpSearchIndexPath>$([System.IO.Path]::Combine('$(MSBuildProjectDirectory)', '$(IntermediateOutputPath)', 'HelpSearch', 'help-search-index.js'))</_HelpSearchIndexPath>
+    </PropertyGroup>
+    <ItemGroup>
+      <_HelpSearchPages Include="$(MSBuildProjectDirectory)/Help/*.html" Exclude="$(MSBuildProjectDirectory)/Help/help-search.html" />
+    </ItemGroup>
+    <FileSearch.Build.GenerateHelpSearchIndex HelpFiles="@(_HelpSearchPages)" OutputFile="$(_HelpSearchIndexPath)" />
+    <ItemGroup>
+      <Content Include="$(_HelpSearchIndexPath)" Link="Help/js/help-search-index.js"
+               CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
+    </ItemGroup>
+  </Target>
 
 </Project>

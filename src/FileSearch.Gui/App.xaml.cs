@@ -34,6 +34,11 @@ public partial class App : System.Windows.Application
     protected override void OnStartup(StartupEventArgs e)
     {
         base.OnStartup(e);
+        if (NativePreviewHandler.TryRun(e.Args))
+        {
+            Shutdown();
+            return;
+        }
         ShutdownMode = ShutdownMode.OnExplicitShutdown;
 
         var startupOptions = AppStartupOptions.Parse(e.Args, Directory.Exists);

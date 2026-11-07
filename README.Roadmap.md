@@ -1,114 +1,231 @@
-# FileSearch Competitive Roadmap Refresh
+# FileSearch product roadmap
 
-## Summary
+Updated November 6, 2026. Audience: Windows power users and document-heavy professionals.
 
-FileSearch has already closed major gaps from the older competitive analysis: optional CSharpDB-backed indexing, a Spectre.Console REPL CLI, saved workflows, and Find and replace now exist. The remaining work should focus on turning FileSearch from a capable desktop scanner into a polished, daily-driver local search platform with reliable releases, measurable performance, richer indexed-search UX, better automation output, and clear product maturity around accessibility, privacy, and security.
+## Direction
 
-## Current State
+Make FileSearch the tool people use daily to open a file, find a passage, understand a result and complete a reviewed action. Win this audience through reliable scope, fast interaction, useful previews and easy setup.
 
-Completed since the older roadmap:
+The [competitive analysis and growth strategy](docs/COMPETITIVE_ANALYSIS_2026-11.md) contains the comparison, source evidence, feature bets and adoption definitions. Repository baseline: `024ac2d7e71104e3358ade0e0b7e3cd585d44c03`, configured version 1.10.0. This is proposed work, not a delivery commitment or a claim of market leadership.
 
-- Local MSG/PST/OST search with individual message cards, sender/date/folder metadata, selected-message previews, and text-only EML opening without Outlook or an IFilter. Attachment contents, mail field operators, profile discovery, and per-message incremental indexing remain future work; see [Mail search](README.Mail.md).
-- Hybrid live/indexed search with CSharpDB-backed extracted line storage.
-- Multi-location indexed folders with GUI and tray-indexer background updates.
-- Per-user tray indexer with optional Windows sign-in startup.
-- NTFS startup catch-up through USN journal checkpoints, with snapshot fallback for unsupported or unsafe roots.
-- Local filesystem strategy classification for NTFS, ReFS, FAT/exFAT, network, cloud-backed, and removable roots.
-- Index management UI with status badges, health diagnostics, validation, compaction, and pause/resume controls.
-- Resource controls for battery, CPU profile, and disk pauses.
-- Out-of-process extractor host, reusable extractor host pool, extractor versioning, IFilter fallback, archive limits, and failed-file export.
-- Spectre.Console CLI REPL with live search, indexed search, index maintenance, filter commands, one-shot search export, one-shot index reporting, and one-shot index build/rebuild/clear actions to CSV/JSON/JSON Lines/Markdown.
-- Programmatic Core API examples and PowerShell CLI automation docs.
-- Saved workflows with conditional/retry/for-each steps, exports, confirmed file and program actions, and reviewed Find and replace steps.
-- Find and replace for Unicode text, DOCX/XLSX/PPTX contents, and file/folder names, with durable backups, stale-file checks, protected roots, and restart-safe Undo.
-- Whole-drive file-name index for local NTFS drives, built from the master file table (elevated helper) or an unprivileged file-ID folder scan, kept current from the USN change journal, and used by Quick Search, indexed name searches, and `filesearch volumes`.
-- GitHub Actions CI foundation for build, test, formatting, CLI smoke, published sidecar smoke, dependency review, and manual Store packaging.
-- Security, privacy, and release checklist documentation.
+## Already available in source
 
-Still missing or partial:
+- Live/indexed content search, Unified/regex/Boolean queries, explicit fuzzy/proximity support, local ranking and optional OCR.
+- NTFS whole-drive filename indexing, Quick Search, configurable shortcuts and a separate optional PowerToys companion.
+- CSharpDB folder indexing, tray indexing, watching, NTFS USN catch-up, snapshot fallbacks, health diagnostics, resource controls and out-of-process extraction.
+- Local ONNX semantic retrieval, desktop model choices, indexed MCP semantic requests and CLI model list/status/install.
+- Local MSG/PST/OST search with individual-message results/previews; see [mail coverage](README.Mail.md).
+- Facets, sorting/grouping, pins/favorites, saved searches, shared workspace bundles, exports, drag-and-drop and result actions.
+- Workflows and reviewed find/replace across supported text/Office content and names, with backups and restart-safe Undo.
+- [Benchmark tooling](docs/BENCHMARKS.md), [GUI performance probe](benchmarks/FileSearch.UiPerfProbe/README.md), CI, release packaging and optional signing.
+- Default traversal exclusions for `.git`, `.vs`, `node_modules`, `bin` and `obj`.
 
-- No benchmark/performance harness for live scan, index build, or indexed query latency.
-- Retrying failed index files from the CLI remains future work.
-- Saved searches, custom scopes, and shareable workspace import/export exist; workspaces can optionally run their saved search when loaded.
-- Results now have GUI facets, indexed/live source route filtering, grouping, sort presets, direct CSV/JSON/JSON Lines/Markdown export, drag-and-drop, persistent favorites, shared pinned paths, safe result rename/delete, and configurable main-window and Quick Search action shortcuts; richer reporting remains missing.
-- Local ONNX semantic indexing and ranking are implemented for desktop `semantic:` queries. Remaining gaps include runtime-aware chip availability, consistent semantic file filters, per-message hybrid fusion, arbitrary-model import, and CLI model configuration. See [Smart Search usage](src/FileSearch.Gui/Help/smart-search.html).
-- Durable USN replay is NTFS-only. ReFS remains on snapshot validation until 128-bit file identifiers are supported and tested.
-- Hard-link-aware path identity is not fully implemented; ambiguous USN deletes fall back to root validation.
-- There is no true Windows Service yet. Background indexing is a per-user tray process that starts after user sign-in.
-- Accessibility, localization, release signing, and benchmark maturity are still partial.
+Improve these foundations instead of duplicating them. Source support is not fresh release verification; packaging configuration is not proof of signed public distribution.
 
-## Roadmap
+## Milestones and dependencies
 
-### 1. Engineering and Release Maturity
+P0 denotes a foundation/trust requirement; P1 a near-term audience improvement; P2 an expansion requiring demand or feasibility evidence. Priorities express dependencies and product judgment, not an invented impact score.
 
-- Extend GitHub Actions from the current CI/package foundation into a full signed-release pipeline.
-- Add performance benchmarks for cold live scan, warm live scan, index build, incremental index refresh, indexed query, and CLI startup/query time.
-- Add deterministic benchmark corpora under test assets, including plain text, Office/PDF samples, many tiny files, and a few large files.
-- Add signed release validation around the existing MSIX packaging script.
-- Keep the current live scan path as the correctness baseline for indexed search.
+Windows below are planning horizons, not capacity estimates. Scope and re-estimate after reproducing correctness risks and collecting the first baseline. Exit gates control dependent work.
 
-### 2. Indexing Platform V2
+| Milestone | Suggested horizon | Outcome | Backlog |
+| --- | --- | --- | --- |
+| Establish trust and first-use success | First 30 days | Accurate scope, measured performance, understandable setup and verified releases | FS-01–FS-05 |
+| Earn daily use | Days 31–90 | Quick Search and project/content search work predictably together | FS-06–FS-09 |
+| Complete professional workflows | Months 4–6 | Mail, archives, evidence exports and assistant setup solve real work | FS-10–FS-13 |
+| Expand from a proven core | Months 7–12 | Validated visual search and selected source/integration/language extensions | FS-14–FS-17 |
 
-- Keep CSharpDB as the embedded index store for the next phase.
-- Expand **Index Health** with richer trend/history data, machine-specific journal diagnostics, and clearer remediation actions.
-- Add remaining maintenance commands for rebuild all indexes, clear all indexes, and retry failed files.
-- Improve stale-index handling with clearer status messages and per-location warnings.
-- Add default excluded folders for large noisy trees: `.git`, `.vs`, `bin`, `obj`, `node_modules`, package caches, and build outputs.
-- Add optional **Search all indexed locations** mode separate from folder-specific search.
-- Add ranking and snippets for indexed results while still rechecking every hit with the existing query engine.
-- Extend the existing local-only ONNX Smart Search: complete semantic filtering and CLI model selection, reflect actual runtime availability in query chips, preserve individual mail-message identities through hybrid fusion, and add a supported custom-pack import flow. The desktop catalog already offers BGE small English v1.5 and all-MiniLM-L6-v2. Additional models to evaluate:
-  - `intfloat/e5-small-v2` as an alternate retrieval candidate: MIT, ONNX, 384-dimensional vectors, but requires query/passage prefixes for best behavior.
-  - `sentence-transformers/all-mpnet-base-v2` as a quality candidate: Apache-2.0, ONNX, 768-dimensional vectors, heavier index and runtime cost.
-  - `sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2` or `intfloat/multilingual-e5-small` if multilingual semantic search becomes a product requirement.
-- Add ReFS-safe durable replay with 128-bit file identifiers, `ExtendedFileIdType`, and native integration tests.
-- Add explicit hard-link policy or path-level identity storage for USN delete/rename replay.
-- Consider a true non-UI Windows Service only as a later, separate component for startup-before-login and deeper enterprise scenarios.
+```mermaid
+flowchart LR
+    A[Scope correctness and measured performance] --> B[First-use success and daily Quick Search]
+    B --> C[Professional document and mail workflows]
+    C --> D[Validated visual and source expansion]
+    E[Trusted installation and accurate guidance] --> B
+    F[User studies and voluntary aggregate measures] --> B
+    F --> C
+    F --> D
+```
 
-### 3. Search Workflow and Result UX
+## Milestone 1: establish trust and first-use success
 
-- Workspace bundles now store name, search settings, custom scopes, result view state, selected Quick Search indexed roots, pinned/favorite result sets, and optional run-on-load behavior, and can be imported/exported as shareable JSON files.
-- Extend result facets beyond the current extension, folder, modified date, indexed/live source route, and file size facets when users need additional indexed metadata.
-- Extend sort/group presets beyond the current relevance, recency, filename, hit count, folder, file type, and modified date controls when users need more advanced path and size views.
-- Add richer GUI reports and report-oriented rollups beyond the current GUI and CLI CSV, JSON, JSON Lines, and Markdown export paths.
-- Add richer preview controls for context size and copy/export of selected result snippets.
+### FS-01 — P0: shared search eligibility and result identity
 
-### 4. CLI, PowerShell, and API Surface
+Apply roots/folders, type, date, size, hidden/excluded-file and visibility restrictions consistently across retrieval providers. Resolve eligibility before semantic file/chunk top-k selection and fallback paths. Reproduce and address any mail identity loss through hybrid fusion/projection while preserving working per-message routes. Keep explicit literal/regex and indexed/live semantics.
 
-- One-shot CLI output now covers search results, `filesearch index build [FOLDER]`, `filesearch index rebuild [FOLDER]`, `filesearch index clear [FOLDER]`, `filesearch index locations`, `filesearch index stats [FOLDER]`, and `filesearch index failures`.
-- Add remaining failed-file retry command once the core index exposes a targeted retry API:
-  - `filesearch index retry-failures`
-- Document and test stable DTO contracts for automation output: search hit, search summary, index location, index stats, and index error.
-- Keep PowerShell usage CLI-driven for now.
-- Defer a dedicated PowerShell module until failed-file retry and DTO contracts are finalized.
-- If a PowerShell module is added later, it should wrap the CLI/API with cmdlets such as `Search-FileContent`, `Update-FileSearchIndex`, `Get-FileSearchIndexLocation`, and `Clear-FileSearchIndex`.
+**Acceptance:** find qualifying results beyond the initial unrestricted cap; empty eligibility remains empty; nested/removed roots and mail identities behave correctly. Checks exercise observable behavior. Source risks are described in the [analysis](docs/COMPETITIVE_ANALYSIS_2026-11.md#search-restrictions-and-identity-need-consistent-enforcement).
 
-### 5. Product Maturity
+**Dependencies:** none; reuse the shared eligibility design in the [photo plan](docs/PHOTO_CONTENT_SEARCH_PLAN.md).
 
-- Add an accessibility pass for keyboard navigation, focus order, labels, contrast, screen reader names, and high-contrast behavior.
-- Move user-facing strings toward resource files so localization is possible later.
-- Add local-only privacy documentation that explains where settings live, where indexes live, what content is stored, and that no telemetry is collected unless explicitly added later.
-- Add extractor safety guidance and temp-file cleanup rules.
-- Add dependency review/SBOM generation in the release workflow.
-- Keep implementation MIT-compatible and avoid borrowing code from GPL/EPL competitors.
+### FS-02 — P0: performance and relevance qualification
 
-## Test Plan
+Extend existing standard/full profiles with representative professional documents, scans, archives, Unicode paths and permitted mail fixtures. Record complete-query and first-useful-result latency, cold/warm startup, indexing/catch-up/freshness, memory and disk. Measure metadata-only and model-enabled configurations separately.
 
-- CI verifies `dotnet build .\FileSearch.slnx` and `dotnet test .\FileSearch.slnx`.
-- CI publishes the GUI, tray indexer, and extractor host together, then runs a sidecar smoke test that launches the indexer, pings IPC, reads status, pauses, resumes, requests shutdown, and verifies exit.
-- Windows-only native smoke tests cover NTFS USN startup replay and safe fallback behavior.
-- Add benchmark tests with tracked baselines for live and indexed paths.
-- Add Core tests for search-all-indexed-locations, default excluded folders, rebuild-all/clear/retry maintenance commands, ReFS replay support when implemented, hard-link policy, and ranked/snippet results matching live-search correctness.
-- Add GUI tests for saved search persistence, richer index health remediation, facet selection, and export command availability.
-- Add CLI tests for one-shot search, one-shot index build/rebuild/clear/locations/stats/failures, JSON output shape, CSV escaping, exit codes, and index stats/build/clear commands.
-- Add accessibility smoke checks for key windows and dialogs.
+Evaluate the hybrid pipeline's collect-before-fusion behavior with slow producers; introduce progressive results only if justified, preserving bounded memory, cancellation and selection. Add held-out human-labeled relevance tasks.
 
-## Assumptions
+**Acceptance:** reproducible current baseline on named hardware/commit; use [existing internal targets](docs/BENCHMARKS.md); measure quality with timing. Competitor claims require matched corpus, scope, versions and settings. The old smoke result is not release/competitive evidence.
 
-- FileSearch remains Windows-first for the GUI.
-- `FileSearch.Core` and `FileSearch.Cli` should stay cross-platform where practical.
-- CSharpDB remains the embedded database for the next roadmap phase.
-- Live scan remains the correctness fallback.
-- Indexing remains opt-in by location.
-- Semantic indexing remains optional, local-only, and model-backed by freely usable ONNX assets unless the user explicitly chooses another provider later.
-- Watchers run while an indexing owner is running: either the GUI process or the per-user tray indexer.
-- PowerShell support should initially use CLI automation, not a separate module.
+**Dependencies:** baseline work can start immediately; final recall qualification depends on FS-01.
+
+### FS-03 — P0: first-run success and understandable coverage
+
+Observe fresh-profile setup before designing onboarding. Allow useful search during optional indexing, explicit folder choice and optional OCR/model setup. Explain filename versus extracted-content coverage in user terms and give actionable readiness/failure status. Keep normal search useful without an account.
+
+**Acceptance:** a small pilot completes first known-file and document tasks without help; partial/unindexed data is not presented as a definitive no-match. Record completion/time baselines before setting adoption targets.
+
+**Dependencies:** existing health/model services; FS-01/FS-02 for final qualification.
+
+### FS-04 — P0: verified installation and update path
+
+Inspect actual public artifacts/channels. Validate signatures/timestamps/checksums, clean-machine install/upgrade/uninstall and supported-architecture execution. Verify installed executables/sidecars as well as installers. Preserve the separate optional companion.
+
+Choose a user-controlled, recoverable update path for installed and portable distributions. Prepare Store/WinGet channels after identity/signing/update qualification; confirm listings before advertising them.
+
+**Acceptance:** documented clean-machine installation/upgrade and recovery; accurate hardware/channel/signature statements. A workflow condition does not establish public readiness.
+
+**Dependencies:** existing release infrastructure. Public submissions are separate execution actions.
+
+### FS-05 — P0: accurate guidance and an observable pilot
+
+Correct stale Help/docs, including the MCP guide's claim that semantic indexed search is unavailable. Explain current CLI model operations and remaining headless gaps. Keep README, bundled Help, CLI/MCP guides and roadmap aligned.
+
+Recruit a consented pilot. Define productive activity and mature retention cohorts; start with observed tasks or voluntary local aggregate exports.
+
+**Acceptance:** current instructions lead to successful searches; model/index/search readiness is distinguishable; pilot baselines avoid paths, contents and raw queries.
+
+**Dependencies:** FS-03. Telemetry is not authorized; preserve the [privacy policy](PRIVACY.md).
+
+## Milestone 2: earn daily use
+
+### FS-06 — P1: Quick Search ranking and interaction
+
+Evaluate automatic filename abbreviation/typo handling, exact-match protection and optional resettable local usage learning. Reuse scored name/path and recency signals. Keep selection stable during arrivals and make preview, reveal, copy, pin and deep-search handoff fast. Make richer query interpretation intentional; preserve literal/regex behavior.
+
+**Acceptance:** known-file task success/time improves over the current baseline without hurting exact matches, responsiveness, keyboard operation or cancellation.
+
+**Dependencies:** FS-01, FS-02 and FS-03 findings.
+
+### FS-07 — P1: consistent project and all-indexed scope
+
+Extend Quick Search's existing all-indexed capability into the main experience. Reuse scopes, workspaces, saved searches, pins and workflows for project presets. Align restrictions and availability across supported surfaces.
+
+Complete CLI model selection/disable and explicit rebuild control through shared settings. List/status/install already exist. Account for an already-running tray process.
+
+**Acceptance:** the same declared search has consistent eligible results; workspace import/export and restore remain predictable; existing automation/client contracts remain compatible.
+
+**Dependencies:** FS-01 and shared host configuration.
+
+### FS-08 — P1: search diagnosis and precise context
+
+Build “Why wasn't this file found?” from existing coverage, failure, exclusion and provider/model data. Distinguish unavailable, unsupported, stale, partial and no-match states.
+
+Improve context and match navigation, preserving existing PDF page/VS Code line targeting and OCR previews. Extend useful sheet/slide/message/member references where supported. Qualify native-format previews separately.
+
+**Acceptance:** users can resolve representative misses; opening evidence reaches a supported location or explains its fallback; previews remain responsive.
+
+**Dependencies:** FS-01, FS-03 and locator contracts.
+
+### FS-09 — P1: accessibility for core tasks
+
+Verify keyboard focus/order, screen-reader names, high contrast, large text, scaling and relevant input methods in first use, Quick Search, results and previews. Fix blockers while changing those flows. Establish resource-backed strings for changed surfaces.
+
+**Acceptance:** core tasks work with keyboard-only and screen-reader workflows on supported Windows; streaming results/dialogs preserve focus.
+
+**Dependencies:** FS-03, FS-06, FS-08. Known blockers should not wait for a later polish pass.
+
+## Milestone 3: complete professional workflows
+
+### FS-10 — P1: mail fields and attachment content
+
+Add sender/recipient/subject and message-date restrictions. Index supported attachment text with stable identity/locators and bounded extraction. Evaluate incremental updates for changing stores; retain an honest stable-copy path where needed.
+
+**Acceptance:** individual-message identity and restrictions hold; supported attachment content is findable; locked/truncated/unsupported stores have useful status. Store modified dates remain distinct from message dates.
+
+**Dependencies:** FS-01, FS-08 and missing-task evidence. Split fields, attachment support and incremental refresh into separate implementation increments. Remote mailbox sync is a separate connector.
+
+### FS-11 — P1: prioritized archive coverage
+
+Prioritize supported Office/PDF members before broad compression coverage when task evidence supports that order. Evaluate 7z/RAR/TAR and bounded nesting independently. Preserve member/aggregate/depth/execution budgets, locators and partial-coverage warnings.
+
+**Acceptance:** advertised members are retrievable and traceable; encrypted/unsupported/malformed/budget-exceeded entries are explained; extraction and cancellation remain bounded.
+
+**Dependencies:** FS-02, FS-08 and actual missing-source examples.
+
+### FS-12 — P1: evidence exports and workflow templates
+
+Extend existing exports with selected passages, source identity/location and extraction timestamp. Identify changed/missing sources on reopening. Supply a small set of validated professional workspace/workflow examples using existing reviewed actions and Undo.
+
+**Acceptance:** recipients can locate evidence and identify changed sources; exports remain useful offline and disclose partial results. Generated prose is never presented as source text.
+
+**Dependencies:** FS-08; FS-10/FS-11 for richer mail/archive locators.
+
+### FS-13 — P1: guided MCP setup and diagnostics
+
+Improve discovery/setup of the existing read-only server, indexed semantic retrieval and model readiness. Support a small verified client set, preserve settings and provide connection tests. Explain root access and when a chosen AI client may send retrieved text to its provider.
+
+**Acceptance:** supported setup avoids manual JSON editing where clients permit it; upgrades preserve configuration; availability/coverage are accurate; denied roots are not read.
+
+**Dependencies:** FS-01, FS-04, FS-05 and FS-07. Do not rebuild existing semantic MCP routes.
+
+## Milestone 4: expand from a proven core
+
+### FS-14 — P2: qualified photo recognition and similarity
+
+Follow the existing [photo content search plan](docs/PHOTO_CONTENT_SEARCH_PLAN.md): model qualification, durable incremental indexing, filtered retrieval, GUI/Quick Search, CLI/MCP and release gates.
+
+**Acceptance:** real-model held-out relevance/cost qualification, correct scope, cleanup/recovery, thumbnails and host parity. An installed pack or skipped integration test is not qualification.
+
+**Dependencies:** FS-01, FS-02, shared settings and audience value. Phase-0 investigation may happen earlier without committing the whole feature.
+
+### FS-15 — P2: one additional workflow integration
+
+Prototype Open/Save folder navigation or a Flow Launcher provider, selecting from pilot demand. Improve the existing PowerToys companion as needed.
+
+**Acceptance:** repeated tasks improve in target applications; focus, activation, cancellation and optional installation are reliable.
+
+**Dependencies:** FS-06, FS-08 and a scoped compatibility study. Avoid rebuilding a general launcher.
+
+### FS-16 — P2: evidence-led source expansion
+
+Improve synced-folder/network/offline behavior first. If important content is unavailable locally, select at most one initial remote connector. Design credentials, permission changes, deletion, sync and offline semantics before advertising coverage.
+
+**Acceptance:** verified source access/freshness/deletion contract; unavailable sources never appear complete.
+
+**Dependencies:** FS-08, demonstrated source demand and separate integration design.
+
+### FS-17 — P2: language reach and distribution scale
+
+Localize validated core flows and evaluate extraction/OCR/semantic quality by supported language. Expand trusted distribution, examples and community support alongside retained-use evidence. Keep UI language and semantic-model coverage distinct.
+
+**Acceptance:** representative language tasks pass; Help/install/update guidance remains accurate; growth preserves quality and resource behavior.
+
+**Dependencies:** FS-04, FS-05, FS-09 and a stable core.
+
+## Engineering backlog to promote with evidence
+
+- Targeted failed-file retry and remaining CLI maintenance operations; inspect existing per-root commands before adding all-root variants.
+- ReFS durable replay using tested 128-bit file identifiers; retain snapshot fallback until qualified.
+- Explicit hard-link/path identity policy for delete/rename replay and validation.
+- Stable versioned automation DTOs, extractor compatibility, dependency/SBOM reporting and release recovery.
+- Index-health history and remediation driven by diagnosis studies.
+- Permission-aware filename presentation: the [privacy policy](PRIVACY.md) documents that elevated MFT indexes can contain otherwise unreadable names. Evaluate visibility controls before shared-device/enterprise claims.
+- Pre-login Windows Service, team/shared indexes, centralized administration and encryption controls only with proven team requirements.
+- More models, GPU/NPU and ANN only when measured retrieval or resource constraints justify them.
+
+Retain CSharpDB and the live correctness fallback for the next phase. This review provides no basis for a store rewrite, cross-platform GUI, general file manager or unrestricted autonomous file actions.
+
+## Measuring progress
+
+Track weekly productive installations, mature week-four retention and observed task success/time. The [analysis defines populations and limitations](docs/COMPETITIVE_ANALYSIS_2026-11.md#define-and-measure-number-one). Establish adoption baselines before numerical targets. Result actions proxy usefulness; downloads/stars indicate reach.
+
+Use [existing performance targets](docs/BENCHMARKS.md), recovery, bounded resources and accessibility as release guardrails. Compare stable and beta products separately. Publish leadership/speed claims only with matching reproducible evidence.
+
+Revise priorities after observing the selected audience's real searches, missing sources and repeat use. Promote features that improve important tasks or remove adoption barriers.
+
+## Working assumptions
+
+- Windows-first GUI; keep Core/CLI cross-platform where practical.
+- Local search remains useful without an account; content indexing and model activation remain explicit.
+- Remote connectors and telemetry require separate explicit product decisions.
+- Per-user tray indexing remains the background baseline.
+- Reuse workspaces, scopes, exports, workflows, reviewed replacement and Undo.
+- This roadmap does not implement features, install software, publish or submit packages, enable telemetry or create external issues.

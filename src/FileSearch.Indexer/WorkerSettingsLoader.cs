@@ -135,8 +135,11 @@ internal sealed class WorkerSettingsLoader
     {
         var extensions = ExtensionList.Parse(location.ExcludedExtensions).ToHashSet(StringComparer.OrdinalIgnoreCase);
         if (!location.EnableDocumentExtraction)
+        {
             foreach (var extension in s_documentExtensions)
                 extensions.Add(extension);
+            extensions.UnionWith(FileSearch.Core.Databases.DatabaseFiles.Extensions);
+        }
 
         if (!location.EnableImageOcr)
             foreach (var extension in ImageOcrFileTypes.SupportedExtensions)

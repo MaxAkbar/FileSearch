@@ -17,12 +17,14 @@ FileSearch is a Windows desktop application for searching text across files and 
 - Optional case-sensitive matching.
 - Filter by file size and modified date range.
 - Preview matching lines and context for selected results.
+- Use File preview for whole PDF pages, spreadsheet grids, ZIP members, complete selected messages, EPUB chapters, OpenDocument/RTF content, Markdown, source code, and images including WebP, animated GIF, and multipage TIFF. These viewers are shared with Quick Search and require no PowerToys installation.
 - Preview and apply find-and-replace batches across text files, Word/Excel/PowerPoint files, or file and folder names, with backups and Undo.
 - Refine, facet, sort, group, favorite, pin, drag, export, and save or share workspace bundles, with optional workspace run-on-load.
 - Optional CSharpDB-backed indexing for faster repeat searches across multiple locations, with GUI or tray-indexer background updates.
 - Optional local ONNX Smart Search over indexed vectors; see the [setup and search walkthrough](src/FileSearch.Gui/Help/smart-search.html) for model packs, the Semantic toggle, advanced `semantic:` queries, and current limitations.
 - Optional whole-drive file-name index for NTFS drives, built from the master file table and kept live by the change journal, for instant name search across millions of files in Quick Search, indexed name searches, and the CLI.
 - Local Outlook MSG/PST/OST content search with individual message results, previews, and folder indexing; see [Mail search](README.Mail.md).
+- Read-only SQLite and CSharpDB content search with table/row/column locations and a paged matching-record preview in both windows; see [Database search](README.Databases.md).
 - Open matched files, reveal them in Explorer, copy file or folder paths, rename files, or move files to the Recycle Bin.
 - Configure the Quick Search global hotkey, Quick Search action shortcuts, and main-window keyboard shortcuts.
 - Light, dark, system, and Visual Studio-inspired themes.
@@ -46,6 +48,7 @@ The core project includes extractors for many common text and document formats, 
 - Email/calendar/contact-style files.
 - Outlook MSG messages and local PST/OST stores, including headers, body text, and attachment names, without requiring Outlook or an Outlook IFilter.
 - ZIP-based formats.
+- Local SQLite and CSharpDB table contents (`.db`, `.sqlite`, `.sqlite3`, `.db3`, `.csharpdb`, `.csdb`, `.cdb`), detected by file header.
 - Optional Windows OCR for PNG, JPEG, BMP, TIFF, scanned/image-only PDF files, and embedded images in Office, OpenDocument, EPUB, email, and ZIP/archive files.
 
 Document extraction can be disabled in the UI for Office and PDF documents when you only want to scan simpler text files. Image OCR is a separate opt-in because OCR can be slower on large image folders, scanned PDFs, and image-heavy documents; OCR hits include image, PDF page, or embedded-member region labels. Previews can highlight the recognized region for standalone image files and rendered PDF pages.
@@ -563,6 +566,7 @@ For sideload testing, pass `-CertificateThumbprint` with a certificate trusted o
 - The repository uses nullable reference types and implicit usings.
 - The solution file is `FileSearch.slnx`.
 - The GUI project references the core project directly.
+- Bundled Help search is indexed automatically from `Help/*.html` when building or publishing the GUI. Add content to those pages without maintaining a separate index. Run `node --test tests/HelpSearch/help-search.test.cjs` to check the search logic (Node.js 18 or later is needed only for these development tests).
 - Tests use xUnit and `Microsoft.NET.Test.Sdk`.
 - The core search pipeline is designed around dependency injection so extractors and options can be swapped or extended.
 - Indexed search, tray-indexer lifecycle, USN catch-up, snapshot fallback, and index health behavior are documented in [README.Indexing.md](README.Indexing.md).
@@ -574,6 +578,14 @@ For sideload testing, pass `-CertificateThumbprint` with a certificate trusted o
 ## Recent changes
 
 Work landed from `bbd4b73` (*Add background indexed search*, June 2026) to the current head, grouped by area.
+
+### Unreleased
+
+- **Built-in file previews**: switch between Matches and File preview in the main window or Quick Search. Preview images and SVG, navigate PDF pages, read formatted Markdown, and view syntax-highlighted source code, including filename-only results. Expand the same preview into a larger window. Installed Windows preview handlers extend format coverage in an isolated helper process, with file details or text as the fallback. PowerToys is not required.
+- **Whole-page PDF context**: PDF file previews show the complete original page and start at the current match's page when available, including partial snippets and OCR-region hits. Expanded previews retain the current page; Matches remains an excerpt view, and text fallbacks are labeled separately.
+- **Database search and preview**: search SQLite and CSharpDB scalar values with `type:database`, retain table/row/column/key locations in live and indexed results, and browse complete supported records in a read-only grid. Private database/WAL snapshots leave source files unchanged and reject stale hit locations. Refresh existing indexes to add database contents. See [coverage and limits](README.Databases.md).
+- **More built-in viewers**: read CSV/TSV, XLSX, and ODS in a paged grid with sheet selection and matching-cell navigation; browse actual ZIP members; read complete EML/MSG and selected PST/OST messages with attachment names; preview WebP, animated GIF, and multipage TIFF; and read whole EPUB chapters plus reflowed ODT/ODP/RTF content without Office. Expand preserves the selected part or cell. Formulas and active/remote document content are disabled. Refresh old indexes for precise XLSX and ZIP locations. See [File preview Help](src/FileSearch.Gui/Help/results.html) for format limits and fallback behavior. PowerToys remains optional.
+- **Offline Help search**: search the bundled guide by keyword or quoted phrase, view matching passages, and open the relevant section with highlighted matches. Press Ctrl+K from any Help page. The search index is generated automatically when building or publishing the GUI; no web service or additional application runtime is required.
 
 ### FileSearch 1.10.0
 

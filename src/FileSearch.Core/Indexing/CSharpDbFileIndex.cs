@@ -3119,6 +3119,7 @@ public sealed class CSharpDbFileIndex : IFileIndex, IIndexReplayWriter, IIndexUs
     }
 
     private bool IsUnchanged(ExistingFileRow row, FileInfo info, ITextExtractor? extractor) =>
+        !(extractor is DatabaseExtractor && FileSearch.Core.Databases.DatabaseFiles.HasJournal(info.FullName)) &&
         row.SizeBytes == info.Length &&
         row.CreatedUtcTicks == info.CreationTimeUtc.Ticks &&
         row.ModifiedUtcTicks == info.LastWriteTimeUtc.Ticks &&
@@ -3128,6 +3129,7 @@ public sealed class CSharpDbFileIndex : IFileIndex, IIndexReplayWriter, IIndexUs
         IsExtractorMetadataCurrent(row, extractor);
 
     private bool IsValidationCurrent(ExistingFileRow row, FileInfo info, ITextExtractor? extractor) =>
+        !(extractor is DatabaseExtractor && FileSearch.Core.Databases.DatabaseFiles.HasJournal(info.FullName)) &&
         row.SizeBytes == info.Length &&
         row.CreatedUtcTicks == info.CreationTimeUtc.Ticks &&
         row.ModifiedUtcTicks == info.LastWriteTimeUtc.Ticks &&

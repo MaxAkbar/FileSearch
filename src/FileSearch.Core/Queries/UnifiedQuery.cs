@@ -291,6 +291,7 @@ public sealed class UnifiedQuery : Query
 
     private static string InferFileTypeCategory(string extension)
     {
+        if (FileSearch.Core.Databases.DatabaseFiles.Extensions.Contains(extension, StringComparer.OrdinalIgnoreCase)) return "database";
         if (s_codeExtensions.Contains(extension))
             return "code";
         if (s_documentExtensions.Contains(extension))
@@ -383,6 +384,7 @@ public sealed partial class UnifiedQueryParser
 
     private static readonly HashSet<string> s_typeCategories = new(StringComparer.OrdinalIgnoreCase)
     {
+        "database",
         "code",
         "document",
         "image",

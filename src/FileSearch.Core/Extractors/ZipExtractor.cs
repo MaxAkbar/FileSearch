@@ -24,7 +24,7 @@ public sealed class ZipExtractor : IContextualDiagnosticTextExtractor
 {
     public string ExtractorId => "filesearch.zip";
 
-    public string ExtractorVersion => "3";
+    public string ExtractorVersion => "4";
 
     private readonly ZipArchivePolicy _policy;
     private readonly IEmbeddedImageOcrService _embeddedImageOcr;
@@ -189,11 +189,13 @@ public sealed class ZipExtractor : IContextualDiagnosticTextExtractor
                 lineNumber++;
                 yield return new TextLine(lineNumber, $"=== {entry.FullName} ===");
 
+                int memberLine = 0;
                 foreach (var line in entryResult.Lines)
                 {
                     cancellationToken.ThrowIfCancellationRequested();
                     lineNumber++;
-                    yield return new TextLine(lineNumber, line);
+                    yield return new TextLine(lineNumber, line, new SourceAnchor(SourceAnchorKind.Archive,
+                        $"archive member {entry.FullName}", Line: ++memberLine, MemberPath: entry.FullName));
                 }
             }
         }

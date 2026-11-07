@@ -153,6 +153,13 @@ public sealed class OutlookMailTests
         Assert.Contains(lines, line => line.Content == "Invoice 東京");
         Assert.Contains(lines, line => line.Content == "Attachment: contract.pdf");
         Assert.DoesNotContain(lines, line => line.Content.Contains("unwanted", StringComparison.Ordinal));
+        var message = OutlookMailReader.ReadMsg(path);
+        Assert.Contains("<p>Invoice 東京</p>", message.HtmlBody);
+        using (var root = RootStorage.Open(path, FileMode.Open, FileAccess.ReadWrite))
+            WriteStream(root, "__substg1.0_1000001F", Encoding.Unicode.GetBytes("Plain body stays searchable\0"));
+        var withPlainBody = OutlookMailReader.ReadMsg(path);
+        Assert.Equal("Plain body stays searchable", withPlainBody.Body);
+        Assert.Contains("<p>Invoice 東京</p>", withPlainBody.HtmlBody);
     }
 
     [Fact]

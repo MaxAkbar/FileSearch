@@ -17,6 +17,7 @@ public enum ContentUnitKind
     EpubChapter,
     OpenDocumentPart,
     ImageOcrRegion,
+    DatabaseCell,
 }
 
 public sealed record ContentUnit(
@@ -63,6 +64,7 @@ public sealed record ContentUnit(
             SourceAnchorKind.Epub => ContentUnitKind.EpubChapter,
             SourceAnchorKind.OpenDocument => ContentUnitKind.OpenDocumentPart,
             SourceAnchorKind.ImageOcr => ContentUnitKind.ImageOcrRegion,
+            SourceAnchorKind.Database => ContentUnitKind.DatabaseCell,
             _ => ContentUnitKind.Text,
         };
 

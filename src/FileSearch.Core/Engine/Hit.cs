@@ -1,4 +1,5 @@
 using System.Collections.Generic;
+using FileSearch.Core.Databases;
 using FileSearch.Core.Extractors;
 using FileSearch.Core.Queries;
 
@@ -36,6 +37,8 @@ public sealed record Hit(
 {
     [System.Text.Json.Serialization.JsonIgnore]
     public MailMessageMetadata? MailMessage => Anchor?.MailMessage ?? Locator?.MailMessage ?? Snippet?.Locator?.MailMessage;
+    [System.Text.Json.Serialization.JsonIgnore]
+    public DatabaseLocation? Database => Anchor?.Database ?? Locator?.Database ?? Snippet?.Locator?.Database;
 
     [System.Text.Json.Serialization.JsonIgnore]
     public string ResultKey => MailMessage is { StoreFingerprint: not null } message ? Path + "\0" + message.Id : Path;
