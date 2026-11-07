@@ -5,11 +5,27 @@ FileSearch searches scalar values in ordinary SQL tables inside local SQLite and
 ## Searching
 
 1. Close the database's application cleanly or choose a stable backup, including its WAL file when present.
-2. Choose the containing folder, **Contents**, and **Document & database text**.
-3. Search normally or use Unified mode with `type:database needle`. Filename patterns such as `*.sqlite;*.db;*.csdb` also narrow the scope.
+2. Choose the containing folder and the **Database values** starting setup, or select **Contents** and **Document & database text** yourself.
+3. Enter a value to find. For a Unified query, use `type:database needle`. **File pattern**, such as `*.sqlite;*.db;*.csdb`, is a separate filter that limits which files are searched; a bare `*.db` term in a Unified content query is a content pattern, not a database-file filter.
 4. Refresh the folder's content index to add database contents to existing indexes and Quick Search.
 
 Results preserve the database path, table, row number, column, available record key, and a source fingerprint. Text and numeric values are searched; NULL and binary values are skipped. No user-entered SQL is executed.
+
+The main window explains the active matching mode and scope below the query. Its search route details report whether the request used the index or a live scan, including fallback reasons. An indexed location alone does not guarantee coverage for the current extraction options; refresh incomplete or outdated content indexes as needed. Ordinary database text search works without a Smart Search model or PowerToys.
+
+### How words are combined
+
+Each populated scalar cell is searched separately. Main-window Unified and Boolean modes use implicit **AND** between adjacent terms, support explicit **OR**, and treat a quoted phrase as one term:
+
+| Query | Unified or Boolean | Plain text / Quick Search content |
+| --- | --- | --- |
+| `john smith` | Both terms must occur in the same cell, in either order. | The literal phrase `john smith`. |
+| `john OR smith` | Either term can occur in a cell. | The literal text `john OR smith`, including `OR`. |
+| `"john smith"` | The phrase `john smith` in that order. | The quote characters are part of the literal text. |
+
+A record with `john` in FirstName and `smith` in LastName does not satisfy a two-term AND query unless one cell contains both. These searches do not combine values across columns or rows. **Match case** controls case sensitivity in the main window; Quick Search content matching is case-insensitive.
+
+**Filter current results** searches only returned names, paths, and matching text. Use **Find in table** in a database's File preview to search other values in the selected table, including rows beyond the loaded page. Change the main query and run it again when you want to search across files or databases.
 
 ```powershell
 .\FileSearch.Cli.exe search "type:database invoice" --path "C:\Data" --mode unified --json
@@ -25,7 +41,32 @@ The CLI and desktop share the extractor and limits. CLI JSON and JSON Lines incl
 
 **Open** and **Open at line** also use the built-in database viewer in a separate window, preserving a matching record when available. This works for filename searches such as `*.db` and does not require a default Windows database application. Unsupported or unreadable databases show a preview error.
 
-Use the table selector, **Go to row**, and page buttons to navigate 250-row pages. Columns scroll horizontally. **Expand** retains the table, row, and column. Empty tables have an empty state; NULL and binary values appear blank. Limited cell text has an ellipsis and an explicit notice.
+Use the table selector, **Go to row**, and page buttons to navigate 250-row pages. Columns scroll horizontally. **Expand** retains the table, row, column, available record key, and source fingerprint. Empty tables have an empty state; NULL and binary values appear blank. Limited cell text has an ellipsis and an explicit notice.
+
+### Find in a table
+
+1. Open the database's **File preview** in the main window or Quick Search, or open its built-in database viewer.
+2. Select the table and click the **Find in table** toolbar button to reveal the Find controls, or press **Ctrl+F** while the database preview is focused. Enter the text to find.
+3. Click the options summary button, initially **All terms · All columns ▾**, to show matching and column choices. Choose **All terms**, **Either term**, or **Phrase**, and **All columns** or a specific column. Matching is case-insensitive unless **Match case** is selected.
+4. Click **Find**. The detailed options collapse to leave room for records; the summary still shows the selected mode and column scope. Use **‹ Match** and **Match ›** to move between the matching cells. Navigation loads the appropriate 250-row page and selects the matching column; it is not restricted to cells already on screen.
+
+| Find mode with `john smith` | A cell matches when |
+| --- | --- |
+| All terms | It contains both `john` and `smith`, in either order. |
+| Either term | It contains `john`, `smith`, or both. |
+| Phrase | It contains the literal text `john smith`, in that order. |
+
+Every mode matches within one cell. Choosing All columns searches cells in each supported column; it does not combine separate column values into a record-wide match. All terms and Either term split the input into whitespace-separated literal terms. Enter a Phrase without surrounding quotes: quote characters and words such as `AND` or `OR` are text, not query operators in this Find control.
+
+With the database preview focused, **Ctrl+F** focuses Find, **F3** moves to the next match, and **Shift+F3** moves to the previous match. **Stop** cancels a running scan. Changing the table or Find settings starts a new search scope; run Find again to populate its matches.
+
+In Quick Search, opening Find gives the database preview more room. Hide Find to restore the compact results-list layout.
+
+Long matching cells show an excerpt beginning at the first match so the highlighted text is visible. Hover over the cell to read its full bounded value; copying the cell copies that value rather than the Find excerpt. Click **Find in table** again to hide the controls. After a Find scan finishes, **Expand** retains its query, options, matching cells, and the open or hidden state of the Find controls and detailed options, along with the current database location while the source remains unchanged.
+
+Find scans the selected table in the existing private snapshot. Its limits are the first **100,000 rows**, **250,000 non-NULL scalar cells** (empty strings count), **16 Mi characters**, **16,384 characters per cell**, **1,000 matching cells**, and **15 seconds** per scan. NULL and binary values are skipped. Find input is limited to **2,048 characters**; All terms and Either term accept up to **64 literal terms**. The result status identifies incomplete coverage, including scan limits, truncated cell text, cancellation, or a changed source. A limited or cancelled scan does not establish that the rest of the table contains no matches. These limits are separate from the 250-row display pages and the global file-search extraction limits below.
+
+Find uses the same read-only snapshot protections and requires no SQL, Smart Search model, OCR, or PowerToys setup. If the database or WAL changes, reopen the preview from a fresh search; refresh the index first when it supplied the hit. The old snapshot's row positions and matches must not be treated as current.
 
 Snapshot preparation and page reads run in the background. Before showing the first table, FileSearch copies the database and its WAL into a private snapshot and reads the table schemas. Larger files can therefore take longer to open even though records are paginated. Page queries use `LIMIT`/`OFFSET`, so jumping far into a table can also take longer while the engine skips earlier rows. Pagination limits the displayed records; it does not guarantee a constant loading time.
 

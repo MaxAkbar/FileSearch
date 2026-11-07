@@ -47,6 +47,7 @@ public partial class FileDocumentPreview : System.Windows.Controls.UserControl
     private SpreadsheetPreview? _expandedWorkbook;
     private DatabasePreviewControl? _databaseView;
     private DatabaseLocation? _expandedDatabaseLocation;
+    private DatabasePreviewFindState? _expandedDatabaseFindState;
 
     public FileDocumentPreview()
     {
@@ -69,6 +70,7 @@ public partial class FileDocumentPreview : System.Windows.Controls.UserControl
         preview._animate = true;
         preview._expandedWorkbook = null;
         preview._expandedDatabaseLocation = null;
+        preview._expandedDatabaseFindState = null;
         _ = preview.ReloadAsync();
     }
 
@@ -137,6 +139,8 @@ public partial class FileDocumentPreview : System.Windows.Controls.UserControl
                     Body.Content = _databaseView;
                     await _databaseView.InitializeAsync(result.FullPath, _expandedDatabaseLocation ?? hit?.Snippet?.Locator?.Database ?? hit?.Locator?.Database ?? hit?.Anchor?.Database, token);
                     _expandedDatabaseLocation = null;
+                    if (_expandedDatabaseFindState is { } findState) await _databaseView.RestoreFindStateAsync(findState);
+                    _expandedDatabaseFindState = null;
                     break;
                 case DocumentPreviewKind.Image:
                 case DocumentPreviewKind.Pdf:
@@ -400,6 +404,7 @@ public partial class FileDocumentPreview : System.Windows.Controls.UserControl
                 _animate = _animate,
                 _expandedWorkbook = (Body.Content as SpreadsheetPreviewControl)?.CurrentPosition,
                 _expandedDatabaseLocation = _databaseView?.CurrentLocation,
+                _expandedDatabaseFindState = _databaseView?.CaptureFindState(),
                 ArchiveDepth = ArchiveDepth,
                 DisplayNameOverride = DisplayNameOverride
             },

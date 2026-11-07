@@ -6,7 +6,7 @@ using DbType = CSharpDB.Primitives.DbType;
 namespace FileSearch.Core.Databases;
 
 /// <summary>A bounded, forward-reading view of ordinary SQL tables in a private snapshot.</summary>
-public sealed class DatabaseReadSession : IAsyncDisposable
+public sealed partial class DatabaseReadSession : IAsyncDisposable
 {
     private static readonly string[] RowIdAliases = ["_rowid_", "rowid", "oid"];
     private readonly DatabaseSnapshot _snapshot;

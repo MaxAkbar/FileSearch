@@ -330,7 +330,7 @@ public sealed partial class SearchViewModel : ObservableObject, IDisposable
 
         if (string.IsNullOrWhiteSpace(value))
         {
-            RefreshFilesView();
+            RefreshRefinedResults();
             return;
         }
 
@@ -350,7 +350,14 @@ public sealed partial class SearchViewModel : ObservableObject, IDisposable
             return;
         }
 
+        RefreshRefinedResults();
+    }
+
+    private void RefreshRefinedResults()
+    {
         RefreshFilesView();
+        if (SelectedFile is not null && !FilesView.Contains(SelectedFile)) SelectedFile = null;
+        else RebuildPreviewLines();
     }
 
     private void RefreshFilesView()
@@ -428,16 +435,7 @@ public sealed partial class SearchViewModel : ObservableObject, IDisposable
         if (!FacetAllows(SelectedSourceFacet, file.SourceGroup)) return false;
         if (!FacetAllows(SelectedSizeFacet, file.SizeFacet)) return false;
 
-        if (string.IsNullOrWhiteSpace(RefinementQuery)) return true;
-
-        var needle = RefinementQuery;
-        const StringComparison ci = StringComparison.OrdinalIgnoreCase;
-
-        if (file.FileName.Contains(needle, ci)) return true;
-        foreach (var hit in file.Hits)
-            if (hit.LineContent.Contains(needle, ci))
-                return true;
-        return false;
+        return file.ApplyRefinement(RefinementQuery);
     }
 
     private static bool FacetAllows(ResultFacetOption? facet, string value) =>
@@ -779,7 +777,10 @@ public sealed partial class SearchViewModel : ObservableObject, IDisposable
     private void RebuildPreviewLines()
     {
         var lines = PreviewLineViewModel.Parse(PreviewContent, SelectedFile?.Hits);
-        _previewMatchLines = lines.Where(line => line.IsHit).ToArray();
+        var refined = RefinementQuery?.Trim() ?? string.Empty;
+        var filteredMatches = refined.Length == 0 ? Array.Empty<PreviewLineViewModel>() :
+            lines.Where(line => line.IsHit && line.Text.Contains(refined, StringComparison.OrdinalIgnoreCase)).ToArray();
+        _previewMatchLines = filteredMatches.Length > 0 ? filteredMatches : lines.Where(line => line.IsHit).ToArray();
         _markedPreviewLine = null;
         PreviewLines = lines;
         CurrentPreviewLine = _previewMatchLines.Length > 0 ? _previewMatchLines[0] : null;
@@ -927,6 +928,7 @@ public sealed partial class SearchViewModel : ObservableObject, IDisposable
         OnPropertyChanged(nameof(ResultsContextText));
         OnPropertyChanged(nameof(ResultsHeadlineText));
         OnPropertyChanged(nameof(ResultsSublineText));
+        NotifySearchGuidanceChanged();
     }
 
     // ----- commands -----
@@ -1398,18 +1400,25 @@ public sealed partial class SearchViewModel : ObservableObject, IDisposable
 
         var stopwatch = Stopwatch.StartNew();
         var routeStatus = string.Empty;
+        var searchTargets = CurrentSearchTargets;
+        var routing = new SearchRouteSummary(SearchPath, searchTargets);
+        _searchRouting = routing;
+        NotifySearchCoverageChanged();
         try
         {
             IProgress<SearchProgress> progress = new Progress<SearchProgress>(UpdateProgressStatus);
-            IProgress<string> routeProgress = new Progress<string>(message =>
+            IProgress<string?> routeProgress = new Progress<string?>(message =>
             {
-                if (!IsSearching)
+                if (!IsSearching || !ReferenceEquals(_searchRouting, routing))
                     return;
 
-                routeStatus = message;
-                _status.Text = message;
+                if (message is not null)
+                {
+                    routeStatus = message;
+                    _status.Text = message;
+                }
+                NotifySearchCoverageChanged();
             });
-            var searchTargets = CurrentSearchTargets;
             var semanticOptions = IsSemanticMode
                 ? new SemanticSearchOptions(SemanticMinimumScore, SemanticMaximumResults)
                 : null;
@@ -1438,14 +1447,27 @@ public sealed partial class SearchViewModel : ObservableObject, IDisposable
                             BuildWalkerOptions(searchTarget),
                             progress.Report,
                             UseIndex,
-                            routeProgress.Report,
+                            message =>
+                            {
+                                routing.ReportStatus(searchTarget, message);
+                                routeProgress.Report(message);
+                            },
                             QueryText,
                             SearchMode,
                             searchTarget,
                             semanticOptions);
 
+                        var reportedLive = false;
+                        var reportedIndexed = false;
                         await foreach (var hit in _searcher.SearchAsync(request, token).ConfigureAwait(false))
                         {
+                            if (hit.Route == HitRoute.Indexed ? !reportedIndexed : !reportedLive)
+                            {
+                                routing.ReportHit(searchTarget, hit.Route);
+                                reportedIndexed |= hit.Route == HitRoute.Indexed;
+                                reportedLive |= hit.Route == HitRoute.Live;
+                                routeProgress.Report(null);
+                            }
                             // Past the cap the stream is only counted, so memory
                             // and UI work stay bounded however broad the query.
                             if (Interlocked.Increment(ref hitsFound) > MaxRetainedHits)
@@ -1492,12 +1514,14 @@ public sealed partial class SearchViewModel : ObservableObject, IDisposable
         }
         catch (OperationCanceledException)
         {
+            routing.ReportOutcome("Canceled; results may be incomplete");
             stopwatch.Stop();
             ElapsedText = $"{stopwatch.Elapsed.TotalSeconds:0.00}s";
             _status.Text = $"Canceled — {DescribeHitTotals()}";
         }
         catch (Exception ex)
         {
+            routing.ReportOutcome($"Search failed: {ex.Message}");
             stopwatch.Stop();
             _status.Text = $"Error: {ex.Message}";
         }
@@ -1511,6 +1535,7 @@ public sealed partial class SearchViewModel : ObservableObject, IDisposable
                 RefreshFilesView();
 
             IsSearching = false;
+            NotifySearchCoverageChanged();
             SearchCommand.NotifyCanExecuteChanged();
             CancelCommand.NotifyCanExecuteChanged();
             ExcludeFileExtensionPatternCommand.NotifyCanExecuteChanged();
@@ -1525,6 +1550,7 @@ public sealed partial class SearchViewModel : ObservableObject, IDisposable
     partial void OnIsReplacementBusyChanged(bool value)
     {
         SearchCommand.NotifyCanExecuteChanged(); RenameResultCommand.NotifyCanExecuteChanged(); DeleteResultCommand.NotifyCanExecuteChanged();
+        NotifySearchSetupCommandsChanged();
     }
 
     internal WalkerOptions BuildReplacementWalkerOptions(ReplacementTarget target) => BuildWalkerOptions(target == ReplacementTarget.Contents ? SearchTarget.Content : SearchTarget.FileAndFolderNames);
@@ -2903,6 +2929,7 @@ public sealed partial class SearchViewModel : ObservableObject, IDisposable
 
     partial void OnFileNamePatternChanged(string value)
     {
+        OnPropertyChanged(nameof(SearchScopeText));
         OnPropertyChanged(nameof(FilePatternSummary));
         OnPropertyChanged(nameof(NameFilterButtonText));
         OnPropertyChanged(nameof(HasNameFilterSelection));
@@ -2916,12 +2943,16 @@ public sealed partial class SearchViewModel : ObservableObject, IDisposable
         OnPropertyChanged(nameof(HasNameFilterSelection));
     }
 
-    partial void OnIncludeSubfoldersChanged(bool value) =>
+    partial void OnIncludeSubfoldersChanged(bool value)
+    {
         OnPropertyChanged(nameof(SubfoldersSummary));
+        OnPropertyChanged(nameof(SearchScopeText));
+    }
 
     partial void OnMatchCaseChanged(bool value)
     {
         OnPropertyChanged(nameof(MatchCaseSummary));
+        OnPropertyChanged(nameof(QueryMeaningText));
         RefreshQueryChips();
     }
 
@@ -2931,6 +2962,7 @@ public sealed partial class SearchViewModel : ObservableObject, IDisposable
         OnPropertyChanged(nameof(IsRegexMode));
         OnPropertyChanged(nameof(IsSemanticMode));
         OnPropertyChanged(nameof(QueryPlaceholderText));
+        NotifySearchGuidanceChanged();
         RefreshQueryChips();
     }
 
@@ -2943,8 +2975,11 @@ public sealed partial class SearchViewModel : ObservableObject, IDisposable
         UseIndex = true;
     }
 
-    partial void OnEnableDocumentExtractionChanged(bool value) =>
+    partial void OnEnableDocumentExtractionChanged(bool value)
+    {
         OnPropertyChanged(nameof(DocumentExtractionSummary));
+        OnPropertyChanged(nameof(SearchScopeText));
+    }
 
     partial void OnEnableImageOcrChanged(bool value)
     {
@@ -2969,6 +3004,7 @@ public sealed partial class SearchViewModel : ObservableObject, IDisposable
             SearchMode = QueryMode.Unified;
 
         OnPropertyChanged(nameof(IndexSummaryText));
+        NotifySearchCoverageChanged();
         if (_isInitialized)
             SaveOptions();
     }
@@ -2989,6 +3025,7 @@ public sealed partial class SearchViewModel : ObservableObject, IDisposable
     {
         OnPropertyChanged(nameof(ResultsContextText));
         OnPropertyChanged(nameof(ResultsHeadlineText));
+        OnPropertyChanged(nameof(QueryMeaningText));
         RefreshQueryChips();
     }
 

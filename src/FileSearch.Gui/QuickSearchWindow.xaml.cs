@@ -1,4 +1,5 @@
 using System;
+using System.ComponentModel;
 using System.Linq;
 using System.Runtime.InteropServices;
 using System.Windows;
@@ -8,6 +9,7 @@ using System.Windows.Input;
 using System.Windows.Interop;
 using System.Windows.Threading;
 using FileSearch.Gui.Settings;
+using FileSearch.Gui.Controls;
 using FileSearch.Gui.ViewModels;
 using DataObject = System.Windows.DataObject;
 using DragDropEffects = System.Windows.DragDropEffects;
@@ -25,12 +27,49 @@ public partial class QuickSearchWindow : Window
     private Point _dragStartPoint;
     private bool _isShowingFromHotkey;
     private int _externalDialogDepth;
+    private bool _databaseFindVisible;
+    private readonly double _normalMinimumHeight;
+    private double? _heightBeforeFind;
 
     public QuickSearchWindow()
     {
         InitializeComponent();
+        _normalMinimumHeight = MinHeight;
         DataContextChanged += OnDataContextChanged;
-        SizeChanged += (_, _) => InlinePreviewBorder.Height = Math.Clamp(ActualHeight * 0.6, 220, 420);
+        SizeChanged += (_, _) => UpdatePreviewHeight();
+        AddHandler(DatabasePreviewControl.FindVisibilityChangedEvent, new RoutedEventHandler((_, args) =>
+        {
+            if (args.OriginalSource is DatabasePreviewControl preview) SetDatabaseFindLayout(preview.IsFindVisible);
+        }));
+        Closed += (_, _) => { if (DataContext is QuickSearchViewModel model) model.PropertyChanged -= OnPreviewContextChanged; };
+    }
+
+    private void SetDatabaseFindLayout(bool visible)
+    {
+        if (_databaseFindVisible == visible) return;
+        _databaseFindVisible = visible;
+        if (visible)
+        {
+            _heightBeforeFind = ActualHeight < 540 ? Height : null;
+            MinHeight = Math.Max(_normalMinimumHeight, 540);
+            if (Height < MinHeight) Height = MinHeight;
+        }
+        else
+        {
+            MinHeight = _normalMinimumHeight;
+            if (_heightBeforeFind is { } height && Height <= 540) Height = height;
+            _heightBeforeFind = null;
+        }
+        UpdatePreviewHeight();
+    }
+
+    private void UpdatePreviewHeight() => InlinePreviewBorder.Height = _databaseFindVisible
+        ? 420 : Math.Clamp(ActualHeight * 0.6, 220, 420);
+
+    private void OnPreviewContextChanged(object? sender, PropertyChangedEventArgs args)
+    {
+        if (args.PropertyName is nameof(QuickSearchViewModel.SelectedResult) or nameof(QuickSearchViewModel.IsPreviewVisible))
+            SetDatabaseFindLayout(false);
     }
 
     public void ShowFromHotkey()
@@ -60,6 +99,7 @@ public partial class QuickSearchWindow : Window
             oldViewModel.RequestHide -= OnRequestHide;
             oldViewModel.ExternalDialogOpened -= OnExternalDialogOpened;
             oldViewModel.ExternalDialogClosed -= OnExternalDialogClosed;
+            oldViewModel.PropertyChanged -= OnPreviewContextChanged;
         }
 
         if (e.NewValue is QuickSearchViewModel newViewModel)
@@ -67,6 +107,7 @@ public partial class QuickSearchWindow : Window
             newViewModel.RequestHide += OnRequestHide;
             newViewModel.ExternalDialogOpened += OnExternalDialogOpened;
             newViewModel.ExternalDialogClosed += OnExternalDialogClosed;
+            newViewModel.PropertyChanged += OnPreviewContextChanged;
         }
     }
 
@@ -74,6 +115,8 @@ public partial class QuickSearchWindow : Window
 
     private void OnWindowPreviewKeyDown(object sender, System.Windows.Input.KeyEventArgs e)
     {
+        if (DatabasePreviewControl.TryRouteFindKey(e.OriginalSource, e.Key, Keyboard.Modifiers, out bool localHandled))
+        { e.Handled = localHandled; return; }
         if (DataContext is not QuickSearchViewModel viewModel)
             return;
 
@@ -176,6 +219,7 @@ public partial class QuickSearchWindow : Window
 
     private void DismissAndHide()
     {
+        SetDatabaseFindLayout(false);
         if (DataContext is QuickSearchViewModel viewModel)
             viewModel.Dismiss();
 

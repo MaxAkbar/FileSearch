@@ -95,6 +95,62 @@ public sealed class CSharpDbFileIndex : IFileIndex, IIndexReplayWriter, IIndexUs
 
     public string DatabasePath => _database.DatabasePath;
 
+    public async Task<IReadOnlyList<EligibleIndexedFile>> GetEligibleFilesAsync(SearchRequest request, CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(request);
+        var requestedRoots = request.Roots.Where(root => !string.IsNullOrWhiteSpace(root))
+            .Select(IndexPath.NormalizeRoot).Distinct(StringComparer.OrdinalIgnoreCase).OrderByDescending(root => root.Length).ToArray();
+        if (requestedRoots.Length == 0) return Array.Empty<EligibleIndexedFile>();
+        using var lease = await _database.OpenReadLeaseAsync(cancellationToken).ConfigureAwait(false);
+        var db = lease?.Session;
+        if (db is null) return Array.Empty<EligibleIndexedFile>();
+        var files = new List<EligibleIndexedFile>();
+        var hiddenDirectories = new Dictionary<string, bool>(StringComparer.OrdinalIgnoreCase);
+        foreach (var indexedRoot in await IndexTables.ListRootPathsAsync(db, cancellationToken).ConfigureAwait(false))
+        {
+            if (!requestedRoots.Any(root => IsWithinRoot(root, indexedRoot) || IsWithinRoot(indexedRoot, root))) continue;
+            var rootId = await IndexTables.GetRootIdAsync(db, indexedRoot, cancellationToken).ConfigureAwait(false);
+            if (rootId is null) continue;
+            var metadata = await _metadataNameCache.GetOrLoadAsync(db, rootId.Value, lease!.Generation, cancellationToken).ConfigureAwait(false);
+            foreach (var file in metadata.FindCandidates(Array.Empty<string>(), requireAllTokens: true))
+            {
+                cancellationToken.ThrowIfCancellationRequested();
+                if (file.Status != FileStatus.Ok) continue;
+                string? scope = requestedRoots.FirstOrDefault(root => IsWithinRoot(root, file.Path));
+                if (scope is null || (!request.WalkerOptions.Recursive && !IndexPath.EqualsPath(Path.GetDirectoryName(file.Path) ?? "", scope))) continue;
+                if (!request.WalkerOptions.IncludeHidden &&
+                    ((((FileAttributes)file.Attributes) & (FileAttributes.Hidden | FileAttributes.System)) != 0 || HasHiddenParent(file.Path, scope, hiddenDirectories))) continue;
+                if (!IndexedFileFilter.Matches(scope, file.Path, file.FileName, file.Extension, file.SizeBytes, file.ModifiedUtcTicks, request.WalkerOptions)) continue;
+                if (request.Expression is UnifiedQuery unified && !unified.MatchesFile(scope, file.Path, file.FileName, file.Extension,
+                        file.SizeBytes, file.CreatedUtcTicks, file.ModifiedUtcTicks, file.Status, file.ExtractorId, file.FileTypeCategory)) continue;
+                files.Add(new EligibleIndexedFile(file.Id, file.Path, file.SizeBytes, file.ModifiedUtcTicks));
+            }
+        }
+        return files;
+    }
+
+    private static bool IsWithinRoot(string root, string path)
+    {
+        var relative = Path.GetRelativePath(root, path);
+        return !Path.IsPathRooted(relative) && relative != ".." && !relative.StartsWith(".." + Path.DirectorySeparatorChar, StringComparison.Ordinal);
+    }
+
+    private static bool HasHiddenParent(string path, string root, Dictionary<string, bool> cache)
+    {
+        for (var parent = Path.GetDirectoryName(path); parent is not null && !IndexPath.EqualsPath(parent, root) && IsWithinRoot(root, parent); parent = Path.GetDirectoryName(parent))
+        {
+            if (!cache.TryGetValue(parent, out bool hidden))
+            {
+                try { hidden = (File.GetAttributes(parent) & (FileAttributes.Hidden | FileAttributes.System)) != 0; }
+                catch (IOException) { hidden = true; }
+                catch (UnauthorizedAccessException) { hidden = true; }
+                cache[parent] = hidden;
+            }
+            if (hidden) return true;
+        }
+        return false;
+    }
+
     /// <summary>
     /// Diagnostic hook invoked once per <see cref="SearchAsync"/> call with the
     /// phase timing breakdown. Benchmarks attach this to attribute fixed query

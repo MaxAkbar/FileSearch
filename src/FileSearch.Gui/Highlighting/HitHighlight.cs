@@ -35,19 +35,40 @@ public static class HitHighlight
     public static Hit? GetHit(DependencyObject element) =>
         (Hit?)element.GetValue(HitProperty);
 
+    public static readonly DependencyProperty TextProperty = DependencyProperty.RegisterAttached(
+        "Text", typeof(string), typeof(HitHighlight), new PropertyMetadata(null, OnHitChanged));
+    public static void SetText(DependencyObject element, string? value) => element.SetValue(TextProperty, value);
+    public static string? GetText(DependencyObject element) => (string?)element.GetValue(TextProperty);
+
+    public static readonly DependencyProperty FilterTextProperty = DependencyProperty.RegisterAttached(
+        "FilterText", typeof(string), typeof(HitHighlight), new FrameworkPropertyMetadata(string.Empty,
+            FrameworkPropertyMetadataOptions.Inherits, OnFilterTextChanged));
+    public static void SetFilterText(DependencyObject element, string? value) => element.SetValue(FilterTextProperty, value ?? string.Empty);
+    public static string GetFilterText(DependencyObject element) => (string?)element.GetValue(FilterTextProperty) ?? string.Empty;
+
+    private static void OnFilterTextChanged(DependencyObject element, DependencyPropertyChangedEventArgs args)
+    {
+        // Inheritance updates only realized visuals; do not create per-result highlight state.
+        if (element is TextBlock && (GetHit(element) is not null || GetText(element) is not null)) OnHitChanged(element, args);
+    }
+
     private static void OnHitChanged(DependencyObject d, DependencyPropertyChangedEventArgs e)
     {
         if (d is not TextBlock textBlock)
             return;
 
         textBlock.Inlines.Clear();
-        if (e.NewValue is not Hit hit)
-            return;
+        var hit = GetHit(textBlock);
+        string text = hit?.LineContent ?? GetText(textBlock) ?? string.Empty;
+        var spans = new List<MatchSpan>(hit?.Highlights ?? Array.Empty<MatchSpan>());
+        string filter = GetFilterText(textBlock).Trim();
+        if (filter.Length > 0) new TermQuery(filter).CollectHighlights(text, spans);
 
-        foreach (var run in BuildRuns(hit.LineContent, hit.Highlights))
+        foreach (var run in BuildRuns(text, spans))
             textBlock.Inlines.Add(run);
 
-        var location = SourceLocationFormatter.Format(hit.Anchor, hit.Locator);
+        var location = hit is null ? string.Empty : SourceLocationFormatter.Format(hit.Anchor, hit.Locator);
+        System.Windows.Automation.AutomationProperties.SetName(textBlock, text + (string.IsNullOrWhiteSpace(location) ? "" : "  " + location));
         if (!string.IsNullOrWhiteSpace(location))
             AddLocationRun(textBlock, location);
     }

@@ -996,7 +996,7 @@
                         <Grid.ColumnDefinitions>
                             <ColumnDefinition Width="0.6*" MinWidth="140" MaxWidth="340"/>
                             <ColumnDefinition Width="*" MinWidth="370"/>
-                            <ColumnDefinition Width="Auto"/>
+                            <ColumnDefinition Width="0.35*" MinWidth="100" MaxWidth="220"/>
                             <ColumnDefinition Width="Auto"/>
                             <ColumnDefinition Width="Auto"/>
                         </Grid.ColumnDefinitions>
@@ -1176,13 +1176,17 @@
                                           Style="{StaticResource SearchFieldButtonStyle}"
                                           ToolTip="{Binding Search.FilePatternSummary}"
                                           AutomationProperties.Name="File types">
-                                <StackPanel Orientation="Horizontal">
+                                <Grid>
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="*"/>
+                                        <ColumnDefinition Width="Auto"/>
+                                    </Grid.ColumnDefinitions>
                                     <TextBlock Text="{Binding History.ActiveScopeText}" MaxWidth="170"
                                                TextTrimming="CharacterEllipsis" VerticalAlignment="Center"/>
-                                    <Path Data="{StaticResource Icon.ChevronDown}" Style="{StaticResource LineIcon14Style}"
+                                    <Path Grid.Column="1" Data="{StaticResource Icon.ChevronDown}" Style="{StaticResource LineIcon14Style}"
                                           StrokeThickness="1.4" Margin="8,0,0,0"
                                           TextElement.Foreground="{DynamicResource Atlas.Ink2Brush}"/>
-                                </StackPanel>
+                                </Grid>
                             </ToggleButton>
                             <Popup PlacementTarget="{Binding ElementName=FileTypesButton}"
                                    IsOpen="{Binding IsChecked, ElementName=FileTypesButton, Mode=TwoWay}"
@@ -1250,7 +1254,7 @@
                         </Grid>
 
                         <!-- Search / Stop. -->
-                        <Button Grid.Column="3" Command="{Binding ActiveStartCommand}" IsDefault="True"
+                        <Button x:Name="SearchStartButton" Grid.Column="3" Command="{Binding ActiveStartCommand}" IsDefault="True"
                                 Margin="8,0,0,0" ToolTip="Start search">
                             <Button.Style>
                                 <Style TargetType="Button" BasedOn="{StaticResource SearchCommandButtonStyle}">
@@ -1279,7 +1283,7 @@
                         </Button>
 
                         <!-- More search options (what to search, mode, includes, limits). -->
-                        <ToggleButton Grid.Column="4"
+                        <ToggleButton x:Name="SearchOptionsButton" Grid.Column="4"
                                       IsChecked="{Binding Search.IsSearchOptionsVisible, Mode=TwoWay}"
                                       Style="{StaticResource SearchFieldButtonStyle}"
                                       Width="{DynamicResource AppDensity.SearchFieldHeight}"
@@ -1317,6 +1321,26 @@
                             </StackPanel>
                         </Border>
                         <StackPanel Visibility="{Binding IsNormalSearch, Converter={StaticResource BoolToVisibility}}">
+
+                        <Border x:Name="SearchGuidancePanel" Margin="20,0,20,8" Padding="12,8"
+                                Style="{StaticResource SearchOptionsPanelStyle}">
+                            <StackPanel>
+                                <TextBlock x:Name="SearchMeaningText" Text="{Binding Search.QueryMeaningText}"
+                                           FontSize="12.5" TextWrapping="Wrap"
+                                           Foreground="{DynamicResource Atlas.InkBrush}"
+                                           AutomationProperties.Name="Search interpretation"/>
+                                <TextBlock x:Name="SearchScopeText" Text="{Binding Search.SearchScopeText}"
+                                           FontSize="11.5" TextWrapping="Wrap" Margin="0,3,0,0"
+                                           Foreground="{DynamicResource Atlas.Ink2Brush}"
+                                           ToolTip="File pattern limits which files are searched. Database text matches within one cell, not across columns."
+                                           AutomationProperties.Name="Search scope"/>
+                                <TextBlock x:Name="SearchCoverageText" Text="{Binding Search.SearchCoverageText}"
+                                           FontSize="11.5" TextTrimming="CharacterEllipsis" Margin="0,3,0,0"
+                                           Foreground="{DynamicResource Atlas.Ink2Brush}"
+                                           ToolTip="{Binding Search.SearchCoverageDetails}"
+                                           AutomationProperties.Name="Search route and coverage"/>
+                            </StackPanel>
+                        </Border>
 
                         <Border x:Name="SemanticResultControls" Margin="20,0,20,8"
                                 Visibility="{Binding Search.IsSemanticMode, Converter={StaticResource BoolToVisibility}}">
@@ -1432,6 +1456,21 @@
                                         Content="Done"/>
                             </Grid>
                             <StackPanel>
+                                <WrapPanel Margin="0,0,0,10" Visibility="{Binding IsNormalSearch, Converter={StaticResource BoolToVisibility}}">
+                                    <TextBlock Text="Start with" Style="{StaticResource MutedValueStyle}" VerticalAlignment="Center" Margin="0,0,10,0"/>
+                                    <Button Content="Find a file" Command="{Binding Search.FindFileCommand}"
+                                            Style="{StaticResource ToolbarButtonStyle}" Margin="0,0,8,0"
+                                            ToolTip="Search file names in Plain text mode. Keeps your query and clears the File pattern."
+                                            AutomationProperties.Name="Set up finding a file"/>
+                                    <Button Content="Find content" Command="{Binding Search.FindContentCommand}"
+                                            Style="{StaticResource ToolbarButtonStyle}" Margin="0,0,8,0"
+                                            ToolTip="Search contents in Plain text mode. Keeps your query and clears the File pattern."
+                                            AutomationProperties.Name="Set up finding content"/>
+                                    <Button Content="Database values" Command="{Binding Search.FindDatabaseValuesCommand}"
+                                            Style="{StaticResource ToolbarButtonStyle}"
+                                            ToolTip="Search contents in Plain text mode, enable document and database text, and filter supported database file names. Keeps your query."
+                                            AutomationProperties.Name="Set up searching database values"/>
+                                </WrapPanel>
                                 <WrapPanel Visibility="{Binding IsNormalSearch, Converter={StaticResource BoolToVisibility}}">
                                     <StackPanel Margin="0,0,36,0">
                                         <TextBlock Text="SEARCH IN" Style="{StaticResource OptionGroupLabelStyle}"/>
@@ -1604,22 +1643,30 @@
 
                         <StackPanel Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Center">
                             <!-- In-memory filter over the results ("search the search"). -->
-                            <Grid Width="230" Margin="12,0,0,0">
-                                <TextBox Text="{Binding Search.RefinementQuery, UpdateSourceTrigger=PropertyChanged, Delay=120}"
-                                         Style="{StaticResource SidebarFilterBoxStyle}"
-                                         MinHeight="{DynamicResource AppDensity.ToolbarButtonHeight}"
-                                         ui:ControlHelper.PlaceholderText="Filter results by name or path"
-                                         AutomationProperties.Name="Filter results"/>
-                                <Path Data="{StaticResource Icon.Search}" Style="{StaticResource LineIcon14Style}"
-                                      HorizontalAlignment="Left" Margin="8,0,0,0"
-                                      TextElement.Foreground="{DynamicResource Atlas.Ink3Brush}"/>
-                                <Button Command="{Binding Search.ClearRefinementCommand}"
-                                        Style="{StaticResource SidebarMiniButtonStyle}"
-                                        HorizontalAlignment="Right" Margin="0,0,4,0"
-                                        ToolTip="Clear filter" AutomationProperties.Name="Clear filter">
-                                    <Path Data="{StaticResource Icon.Close}" Style="{StaticResource LineIcon12Style}"/>
-                                </Button>
-                            </Grid>
+                            <StackPanel Width="250" Margin="12,0,0,0">
+                                <TextBlock Text="Filter current results" FontSize="11" FontWeight="SemiBold"
+                                           Foreground="{DynamicResource Atlas.Ink2Brush}" Margin="0,0,0,3"/>
+                                <Grid>
+                                    <TextBox x:Name="ResultRefinementBox" Text="{Binding Search.RefinementQuery, UpdateSourceTrigger=PropertyChanged, Delay=120}"
+                                             Style="{StaticResource SidebarFilterBoxStyle}"
+                                             MinHeight="{DynamicResource AppDensity.ToolbarButtonHeight}"
+                                             ui:ControlHelper.PlaceholderText="Name, path, or matched text"
+                                             ToolTip="Filters the current results as you type using exact text, ignoring case. Matches names, paths, and returned match excerpts. Use the main search to search complete file contents."
+                                             AutomationProperties.Name="Filter current results"
+                                             AutomationProperties.HelpText="Exact text filter for returned names, paths, and match excerpts. Use the main search to search complete file contents."/>
+                                    <Path Data="{StaticResource Icon.Search}" Style="{StaticResource LineIcon14Style}"
+                                          HorizontalAlignment="Left" Margin="8,0,0,0"
+                                          TextElement.Foreground="{DynamicResource Atlas.Ink3Brush}"/>
+                                    <Button Command="{Binding Search.ClearRefinementCommand}"
+                                            Style="{StaticResource SidebarMiniButtonStyle}"
+                                            HorizontalAlignment="Right" Margin="0,0,4,0"
+                                            ToolTip="Clear result filter" AutomationProperties.Name="Clear result filter">
+                                        <Path Data="{StaticResource Icon.Close}" Style="{StaticResource LineIcon12Style}"/>
+                                    </Button>
+                                </Grid>
+                                <TextBlock Text="Exact text · current results only" FontSize="10" Margin="0,3,0,0"
+                                           Foreground="{DynamicResource Atlas.Ink3Brush}"/>
+                            </StackPanel>
 
                             <ToggleButton IsChecked="{Binding Search.IsResultFiltersVisible, Mode=TwoWay}"
                                           Style="{StaticResource ToolbarToggleButtonStyle}"
@@ -2026,7 +2073,8 @@
                     </Grid>
                     <controls:ReplacementResultsView Grid.Row="3" Grid.RowSpan="4" DataContext="{Binding Replacement}"
                         Visibility="{Binding DataContext.Replacement.IsOpen, RelativeSource={RelativeSource AncestorType=Window}, Converter={StaticResource BoolToVisibility}}"/>
-                    <Grid x:Name="ResultsArea" Grid.Row="6" Visibility="{Binding IsNormalSearch, Converter={StaticResource BoolToVisibility}}">
+                    <Grid x:Name="ResultsArea" Grid.Row="6" Visibility="{Binding IsNormalSearch, Converter={StaticResource BoolToVisibility}}"
+                          hl:HitHighlight.FilterText="{Binding Search.RefinementQuery}">
                         <Grid.ColumnDefinitions>
                             <ColumnDefinition x:Name="ContentColumn" Width="*" MinWidth="420"/>
                             <ColumnDefinition x:Name="PreviewSplitterColumn" Width="Auto"/>
@@ -2085,7 +2133,7 @@
                                                                         <Path Data="{StaticResource Icon.Folder}" Style="{StaticResource LineIconStyle}"
                                                                               Margin="0,0,8,0"
                                                                               Visibility="{Binding DataContext.Search.IsGroupedByFolder, RelativeSource={RelativeSource AncestorType=ListBox}, Converter={StaticResource BoolToVisibility}}"/>
-                                                                        <TextBlock Grid.Column="1" Text="{Binding Name}"
+                                                                        <TextBlock Grid.Column="1" hl:HitHighlight.Text="{Binding Name}"
                                                                                    FontFamily="{DynamicResource Atlas.MonoFont}"
                                                                                    FontSize="12.5" FontWeight="SemiBold"
                                                                                    Foreground="{DynamicResource Atlas.InkBrush}"
@@ -2197,16 +2245,16 @@
                                                 </Grid>
                                                 <StackPanel Grid.Column="1" Margin="10,0,10,0" VerticalAlignment="Center">
                                                     <DockPanel>
-                                                        <TextBlock Text="{Binding DisplayName}" Style="{StaticResource ResultCardNameStyle}"
+                                                        <TextBlock hl:HitHighlight.Text="{Binding DisplayName}" Style="{StaticResource ResultCardNameStyle}"
                                                                    DockPanel.Dock="Left" ToolTip="{Binding FullPath}"/>
-                                                        <TextBlock Text="{Binding DisplayDirectory}"
+                                                        <TextBlock hl:HitHighlight.Text="{Binding DisplayDirectory}"
                                                                    FontFamily="{DynamicResource Atlas.MonoFont}" FontSize="11"
                                                                    Foreground="{DynamicResource Atlas.Ink3Brush}"
                                                                    TextTrimming="CharacterEllipsis"
                                                                    VerticalAlignment="Center" Margin="10,2,0,0"
                                                                    Visibility="{Binding DataContext.Search.IsGroupedByFolder, RelativeSource={RelativeSource AncestorType=ListBox}, Converter={StaticResource InverseBoolToVisibility}}"/>
                                                     </DockPanel>
-                                                    <TextBlock Text="{Binding MailSummaryText}" FontSize="11"
+                                                    <TextBlock hl:HitHighlight.Text="{Binding MailSummaryText}" FontSize="11"
                                                                Foreground="{DynamicResource Atlas.Ink3Brush}" TextTrimming="CharacterEllipsis"
                                                                Visibility="{Binding HasMailMessage, Converter={StaticResource BoolToVisibility}}"/>
                                                     <WrapPanel Visibility="{DynamicResource AppStyle.ResultMetadataVisibility}">

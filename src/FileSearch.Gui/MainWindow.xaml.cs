@@ -8,6 +8,7 @@ using System.Windows.Controls.Primitives;
 using System.Windows.Input;
 using System.Windows.Media;
 using FileSearch.Gui.Settings;
+using FileSearch.Gui.Controls;
 using FileSearch.Gui.ViewModels;
 
 namespace FileSearch.Gui;
@@ -297,6 +298,8 @@ public partial class MainWindow : Window
 
     private void OnMainWindowPreviewKeyDown(object sender, System.Windows.Input.KeyEventArgs e)
     {
+        if (DatabasePreviewControl.TryRouteFindKey(e.OriginalSource, e.Key, Keyboard.Modifiers, out bool localHandled))
+        { e.Handled = localHandled; return; }
         if (DataContext is not MainViewModel viewModel)
             return;
 

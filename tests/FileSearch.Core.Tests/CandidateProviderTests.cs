@@ -201,7 +201,7 @@ public sealed class CandidateProviderTests : IDisposable
         var provider = new SemanticCandidateProvider(
             new StubTextEmbedder(new EmbeddingModelInfo("test-embedding", "1", 2), new float[] { 1, 0 }),
             new InMemoryVectorIndex(),
-            new StubContentUnitReader(),
+            new StubContentUnitReader(new Dictionary<long, string> { [1] = Path.Combine(_root, "unembedded.txt") }),
             brokenContentIndex ? new BrokenSemanticIndexStatusService() : null);
 
         var results = await CollectAsync(provider, plan, TestContext.Current.CancellationToken);
@@ -239,7 +239,7 @@ public sealed class CandidateProviderTests : IDisposable
             new StubTextEmbedder(model, new float[] { 1, 0 }),
             vectorIndex,
             new StubContentUnitReader(
-                new Dictionary<long, string> { [42] = @"C:\docs\auth.md" },
+                new Dictionary<long, string> { [42] = Path.Combine(_root, "auth.md") },
                 new ContentUnit(
                     7,
                     42,
@@ -258,7 +258,7 @@ public sealed class CandidateProviderTests : IDisposable
 
         Assert.Equal(CandidateProviderKind.Semantic, candidate.Provider);
         Assert.Equal("semantic-vector", candidate.ProviderId);
-        Assert.Equal(@"C:\docs\auth.md", candidate.Path);
+        Assert.Equal(Path.Combine(_root, "auth.md"), candidate.Path);
         Assert.Equal("authentication migration plan", candidate.DisplayText);
         Assert.Equal(8, candidate.LineNumber);
         Assert.Equal(7, candidate.ContentUnitId);
@@ -292,7 +292,8 @@ public sealed class CandidateProviderTests : IDisposable
                 [1] = Path.Combine(_root, "best.md"),
                 [2] = Path.Combine(_root, "related.md"),
                 [3] = Path.Combine(_root, "weak.md"),
-            }));
+            }, passages.Select((passage, i) => new ContentUnit(i + 1, passage.Item1, ContentUnitKind.Text,
+                new SourceLocator(StartLine: i + 1), "current indexed passage", "hash", "en", "plain", "1")).ToArray()));
         var messages = new List<string>();
         var plan = CreateSemanticPlan();
         plan = plan with
@@ -386,8 +387,8 @@ public sealed class CandidateProviderTests : IDisposable
             new StubContentUnitReader(
                 new Dictionary<long, string>
                 {
-                    [1] = @"C:\docs\auth.md",
-                    [2] = @"C:\docs\billing.md",
+                    [1] = Path.Combine(_root, "auth.md"),
+                    [2] = Path.Combine(_root, "billing.md"),
                 },
                 new ContentUnit(
                     11,
@@ -415,7 +416,7 @@ public sealed class CandidateProviderTests : IDisposable
             CreateSemanticPlan(),
             cancellationToken));
 
-        Assert.Equal(@"C:\docs\auth.md", candidate.Path);
+        Assert.Equal(Path.Combine(_root, "auth.md"), candidate.Path);
         Assert.Equal(11, candidate.ContentUnitId);
         Assert.Equal("authentication migration plan", candidate.DisplayText);
     }
@@ -776,7 +777,7 @@ public sealed class CandidateProviderTests : IDisposable
             Task.FromException<SemanticIndexRootStatus>(new InvalidDataException("Indexed content cannot be decoded."));
     }
 
-    private sealed class StubContentUnitReader : IContentUnitReader
+    private sealed class StubContentUnitReader : IContentUnitReader, IIndexedFileEligibility
     {
         private readonly IReadOnlyDictionary<long, string> _paths;
         private readonly IReadOnlyDictionary<long, ContentUnit> _units;
@@ -799,5 +800,10 @@ public sealed class CandidateProviderTests : IDisposable
 
         public Task<string?> GetFilePathAsync(long fileId, CancellationToken cancellationToken) =>
             Task.FromResult(_paths.TryGetValue(fileId, out var path) ? path : null);
+
+        public Task<IReadOnlyList<EligibleIndexedFile>> GetEligibleFilesAsync(SearchRequest request, CancellationToken cancellationToken) =>
+            Task.FromResult<IReadOnlyList<EligibleIndexedFile>>(_paths.Where(pair => request.Roots.Any(root =>
+                Path.GetRelativePath(root, pair.Value) is var relative && !Path.IsPathRooted(relative) && relative != ".." && !relative.StartsWith(".." + Path.DirectorySeparatorChar, StringComparison.Ordinal)))
+                .Select(pair => new EligibleIndexedFile(pair.Key, pair.Value, 0, 0)).ToArray());
     }
 }

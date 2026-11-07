@@ -305,11 +305,11 @@ internal sealed class VectorSearchIndex
 
     private static HashSet<long>? NormalizeFileIds(IReadOnlyCollection<long>? fileIds)
     {
-        if (fileIds is null || fileIds.Count == 0)
+        if (fileIds is null)
             return null;
 
         var normalized = fileIds.Where(id => id > 0).ToHashSet();
-        return normalized.Count == 0 ? null : normalized;
+        return normalized;
     }
 
     private static HashSet<string>? NormalizeRoots(IReadOnlyCollection<string>? roots)

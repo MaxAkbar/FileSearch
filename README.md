@@ -19,9 +19,10 @@ FileSearch is a Windows desktop application for searching text across files and 
 - Preview matching lines and context for selected results.
 - Use File preview for whole PDF pages, spreadsheet grids, ZIP members, complete selected messages, EPUB chapters, OpenDocument/RTF content, Markdown, source code, and images including WebP, animated GIF, and multipage TIFF. These viewers are shared with Quick Search and require no PowerToys installation.
 - Preview and apply find-and-replace batches across text files, Word/Excel/PowerPoint files, or file and folder names, with backups and Undo.
-- Refine, facet, sort, group, favorite, pin, drag, export, and save or share workspace bundles, with optional workspace run-on-load.
+- Filter current results by exact text in names, paths, or returned match excerpts, with highlights that preserve the original search matches. Facet, sort, group, favorite, pin, drag, export, and save or share workspace bundles, with optional workspace run-on-load.
 - Optional CSharpDB-backed indexing for faster repeat searches across multiple locations, with GUI or tray-indexer background updates.
 - Optional local ONNX Smart Search over indexed vectors; see the [setup and search walkthrough](src/FileSearch.Gui/Help/smart-search.html) for model packs, the Semantic toggle, advanced `semantic:` queries, and current limitations.
+- Smart Search applies indexed file eligibility before capped retrieval, including folder, type/date/size, visibility, and filename filters. Individual PST/OST messages retain separate result identities, and database/archive source locations survive result fusion.
 - Optional whole-drive file-name index for NTFS drives, built from the master file table and kept live by the change journal, for instant name search across millions of files in Quick Search, indexed name searches, and the CLI.
 - Local Outlook MSG/PST/OST content search with individual message results, previews, and folder indexing; see [Mail search](README.Mail.md).
 - Read-only SQLite and CSharpDB content search with table/row/column locations and a paged matching-record preview in both windows; see [Database search](README.Databases.md).
@@ -171,26 +172,14 @@ dotnet test .\FileSearch.slnx
 
 ## Using the app
 
-1. Choose what to search in the **Search** selector: contents, file names, folder names, or file and folder names.
-2. Enter the text, name fragment, regex, or Boolean expression to find in the main search box.
-3. Optionally enter one or more file name patterns in **File name pattern**. Separate multiple globs with semicolons, for example:
-
-   ```text
-   *.cs;*.xaml;*.md
-   ```
-
-4. Choose a folder in **Look in**.
-5. Decide whether to include subfolders.
-6. Adjust options:
-   - Search mode: plain text, regex, or Boolean.
-   - Match case.
-   - Enable or disable Office/PDF document extraction.
-   - Enable Image OCR when PNG, JPEG, BMP, TIFF, scanned PDF pages, or embedded document/archive images should be searched for recognized text.
-   - Minimum and maximum file size.
-   - Modified date filters.
-7. Click **Start** or press Enter.
-8. Select a result to preview matching lines or stored name-match details.
-9. Use the **Filter** tab to narrow the result set without rescanning.
+1. Choose a folder in the search bar.
+2. Open **Search options** (the sliders button). **Find a file**, **Find content**, and **Database values** choose a Plain text starting setup while keeping your query. You can also select targets and a matching mode directly.
+3. Enter your query and check the explanation below it. In Unified/Boolean, `john smith` requires both terms, `john OR smith` accepts either, and `"john smith"` keeps the phrase together. Plain text treats the complete input literally, including operators and quotes.
+4. Optionally restrict file names with a separate **File pattern**, such as `*.cs;*.xaml;*.md`. A file pattern controls which files are searched; it is separate from the text you want to find.
+5. Adjust subfolders, case, document/database extraction, optional OCR, size and date limits. **Use index** checks coverage for the folder and options when searching. The route details retain live/indexed results and any fallback or pending-update reason; registered folders can still have incomplete coverage.
+6. Click **Search** or press Enter.
+7. Select a result to view its matches or full-file preview. Database content matches within one cell, and hits identify the matching table, row and column. See the [database guide](README.Databases.md).
+8. Use **Filter current results** to narrow names, paths and returned hit text without rescanning. It does not search the rest of a file or database.
 
 ## Find and replace
 
@@ -572,7 +561,6 @@ For sideload testing, pass `-CertificateThumbprint` with a certificate trusted o
 - Indexed search, tray-indexer lifecycle, USN catch-up, snapshot fallback, and index health behavior are documented in [README.Indexing.md](README.Indexing.md).
 - Workflow search and the workflow JSON file format are documented in [README.Workflows.md](README.Workflows.md).
 - The read-only MCP server for AI assistants (Claude Code, Claude Desktop, LM Studio), its tool surface, and client configuration are documented in [README.Mcp.md](README.Mcp.md). The wire-level reference for integrating it into AI apps and tools — tool schemas, error catalog, OpenAI Codex/VS Code/Cursor setup, and C#/Python client code including the OpenAI Agents SDK — is [README.McpIntegration.md](README.McpIntegration.md).
-- The competitive roadmap refresh is documented in [README.Roadmap.md](README.Roadmap.md).
 - Security and privacy posture are documented in [SECURITY.md](SECURITY.md) and [PRIVACY.md](PRIVACY.md).
 
 ## Recent changes
@@ -581,6 +569,8 @@ Work landed from `bbd4b73` (*Add background indexed search*, June 2026) to the c
 
 ### Unreleased
 
+- **Find in database previews**: search the selected SQLite or CSharpDB table beyond the loaded page, choose all/either literal terms or a phrase and a column scope, then navigate matching cells. Scans are cancellable and bounded, with explicit partial coverage; the database stays read-only. See [database Find and limits](README.Databases.md#find-in-a-table).
+- **Search guidance**: live mode/target explanations, starting setups for files/content/database values, and persistent per-target routing details, including zero-hit fallback reasons. Plain text, AND/OR/phrases, filename filters and database cell scope are explained in bundled Help.
 - **Built-in file previews**: switch between Matches and File preview in the main window or Quick Search. Preview images and SVG, navigate PDF pages, read formatted Markdown, and view syntax-highlighted source code, including filename-only results. Expand the same preview into a larger window. Installed Windows preview handlers extend format coverage in an isolated helper process, with file details or text as the fallback. PowerToys is not required.
 - **Whole-page PDF context**: PDF file previews show the complete original page and start at the current match's page when available, including partial snippets and OCR-region hits. Expanded previews retain the current page; Matches remains an excerpt view, and text fallbacks are labeled separately.
 - **Database search and preview**: search SQLite and CSharpDB scalar values with `type:database`, retain table/row/column/key locations in live and indexed results, and browse complete supported records in a read-only grid. Private database/WAL snapshots leave source files unchanged and reject stale hit locations. Refresh existing indexes to add database contents. See [coverage and limits](README.Databases.md).

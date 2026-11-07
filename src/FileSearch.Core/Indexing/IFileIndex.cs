@@ -124,6 +124,6 @@ public interface IPendingChangeStore
 /// Composite of all index roles. Implementations provide everything; most
 /// consumers should depend on the narrowest role interface they need.
 /// </summary>
-public interface IFileIndex : IIndexSearch, IContentUnitReader, IIndexWriter, IIndexMaintenance, IPendingChangeStore
+public interface IFileIndex : IIndexSearch, IContentUnitReader, IIndexedFileEligibility, IIndexWriter, IIndexMaintenance, IPendingChangeStore
 {
 }

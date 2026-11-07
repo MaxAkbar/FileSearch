@@ -28,6 +28,8 @@ public sealed partial class FileResultViewModel : ObservableObject
     public const int PreviewHitLimit = 5;
 
     private readonly List<Hit> _hits = new();
+    private string _refinementText = string.Empty;
+    private Hit[]? _refinedHits;
     private readonly IFileLauncher _launcher;
     private readonly Func<string, CancellationToken, Task>? _recordOpenedAsync;
 
@@ -122,13 +124,13 @@ public sealed partial class FileResultViewModel : ObservableObject
 
     /// <summary>The hit lines the card should currently render.</summary>
     public IEnumerable<Hit> VisibleHits =>
-        IsExpanded ? _hits : _hits.Take(CollapsedHitLimit);
+        IsExpanded ? DisplayHits : DisplayHits.Take(CollapsedHitLimit);
 
-    public IEnumerable<Hit> PreviewHits => _hits.Take(PreviewHitLimit);
+    public IEnumerable<Hit> PreviewHits => DisplayHits.Take(PreviewHitLimit);
 
     public bool HasPreviewHits => _hits.Count > 0;
 
-    public int ExtraPreviewHitCount => Math.Max(0, _hits.Count - PreviewHitLimit);
+    public int ExtraPreviewHitCount => Math.Max(0, DisplayHits.Count - PreviewHitLimit);
 
     public bool HasMorePreviewHits => ExtraPreviewHitCount > 0;
 
@@ -137,9 +139,41 @@ public sealed partial class FileResultViewModel : ObservableObject
             ? string.Empty
             : $"+ {ExtraPreviewHitCount} more match{(ExtraPreviewHitCount == 1 ? string.Empty : "es")} in loaded preview";
 
-    public bool HasMoreHits => _hits.Count > CollapsedHitLimit;
+    public bool HasMoreHits => DisplayHits.Count > CollapsedHitLimit;
 
-    public int ExtraHitCount => Math.Max(0, _hits.Count - CollapsedHitLimit);
+    public int ExtraHitCount => Math.Max(0, DisplayHits.Count - CollapsedHitLimit);
+
+    private IReadOnlyList<Hit> DisplayHits
+    {
+        get
+        {
+            if (_refinementText.Length == 0) return _hits;
+            // Cards are virtualized: inspect all hit lines only when a visible card needs them.
+            _refinedHits ??= _hits.Where(hit => hit.LineContent.Contains(_refinementText, StringComparison.OrdinalIgnoreCase)).ToArray();
+            return _refinedHits.Length > 0 ? _refinedHits : _hits;
+        }
+    }
+
+    internal bool ApplyRefinement(string? text)
+    {
+        string normalized = text?.Trim() ?? string.Empty;
+        if (_refinementText != normalized)
+        {
+            _refinementText = normalized;
+            _refinedHits = null;
+            NotifyRefinedDisplayChanged();
+        }
+        return normalized.Length == 0 || FullPath.Contains(normalized, StringComparison.OrdinalIgnoreCase) ||
+            DisplayName.Contains(normalized, StringComparison.OrdinalIgnoreCase) || DisplayDirectory.Contains(normalized, StringComparison.OrdinalIgnoreCase) ||
+            _hits.Any(hit => hit.LineContent.Contains(normalized, StringComparison.OrdinalIgnoreCase));
+    }
+
+    private void NotifyRefinedDisplayChanged()
+    {
+        OnPropertyChanged(nameof(VisibleHits)); OnPropertyChanged(nameof(PreviewHits));
+        OnPropertyChanged(nameof(HasMoreHits)); OnPropertyChanged(nameof(ExtraHitCount)); OnPropertyChanged(nameof(MoreText));
+        OnPropertyChanged(nameof(ExtraPreviewHitCount)); OnPropertyChanged(nameof(HasMorePreviewHits)); OnPropertyChanged(nameof(PreviewMoreText));
+    }
 
     public string MoreText =>
         IsExpanded
@@ -300,6 +334,7 @@ public sealed partial class FileResultViewModel : ObservableObject
             return;
 
         var previousCount = _hits.Count;
+        _refinedHits = null;
         if (previousCount == 0 && hits[0].MailMessage is { } message)
         {
             MailMessage = message;
@@ -367,7 +402,8 @@ public sealed partial class FileResultViewModel : ObservableObject
 
         // Refresh the rendered lines only while they can still change:
         // collapsed cards freeze at the first few, expanded cards keep growing.
-        if (IsExpanded || previousCount < CollapsedHitLimit)
+        if (_refinementText.Length > 0) NotifyRefinedDisplayChanged();
+        else if (IsExpanded || previousCount < CollapsedHitLimit)
             OnPropertyChanged(nameof(VisibleHits));
         if (previousCount <= PreviewHitLimit)
             OnPropertyChanged(nameof(PreviewHits));
@@ -408,6 +444,7 @@ public sealed partial class FileResultViewModel : ObservableObject
 
         for (var i = 0; i < _hits.Count; i++)
             _hits[i] = _hits[i] with { Path = fullPath };
+        _refinedHits = null;
 
         _metadataLoaded = false;
         _metadataVersion++;
@@ -510,7 +547,7 @@ public sealed partial class FileResultViewModel : ObservableObject
     }
 
     private Hit? GetBestSourceHit() =>
-        _hits
+        DisplayHits
             .Where(HasSourceLocation)
             .OrderByDescending(hit => hit.Score)
             .ThenBy(hit => hit.LineNumber <= 0 ? int.MaxValue : hit.LineNumber)

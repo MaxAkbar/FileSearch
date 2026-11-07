@@ -100,7 +100,8 @@ internal sealed record IndexedFileMetadata(
     long OpenCount,
     long LastOpenedUtcTicks,
     string Status,
-    string ExtractorId);
+    string ExtractorId,
+    long Id = 0);
 
 internal sealed record CachedIndexedLine(long Id, long FileId, IndexedLine Line);
 
@@ -820,7 +821,8 @@ internal static partial class IndexTables
                 row[10].IsNull ? 0 : row[10].AsInteger,
                 row[11].IsNull ? 0 : row[11].AsInteger,
                 row[12].AsText,
-                row[13].IsNull ? string.Empty : row[13].AsText);
+                row[13].IsNull ? string.Empty : row[13].AsText,
+                id);
             if (!latest.TryGetValue(file.Path, out var existing) || id > existing.Id)
                 latest[file.Path] = (id, file);
         }
@@ -869,7 +871,8 @@ internal static partial class IndexTables
                         row[10].IsNull ? 0 : row[10].AsInteger,
                         row[11].IsNull ? 0 : row[11].AsInteger,
                         row[12].AsText,
-                        row[13].IsNull ? string.Empty : row[13].AsText)));
+                        row[13].IsNull ? string.Empty : row[13].AsText,
+                        row[0].AsInteger)));
             }
         }
 
@@ -1530,24 +1533,55 @@ internal static partial class IndexTables
         long rootId,
         [EnumeratorCancellation] CancellationToken cancellationToken)
     {
-        var fileIds = await ReadCurrentFileIdsForRootAsync(db, rootId, IsOkStatus, cancellationToken).ConfigureAwait(false);
-        foreach (var batch in fileIds.Chunk(DeleteIdBatchSize))
+        // Resolve versions before selecting Ok rows: a newer error or tombstone
+        // must suppress old content. Both passes use the caller's read snapshot.
+        var files = new Dictionary<long, IndexedFileMetadata>();
+        await foreach (var file in ReadFileMetadataAsync(db, rootId, cancellationToken).ConfigureAwait(false))
         {
-            await using var result = await db.ExecuteAsync(
-                "SELECT l.id, f.id, f.path, f.file_name, f.extension, f.size_bytes, f.created_utc_ticks, f.modified_utc_ticks, " +
-                "f.status, f.extractor_id, f.file_type_category, l.line_number, l.content, l.anchor_json, l.content_unit_id " +
-                "FROM lines l INNER JOIN files f ON f.id = l.file_id " +
-                Sql.Format($"WHERE f.id IN ({new Sql.IdList(batch)}) AND f.status = {FileStatus.Ok}") +
-                SelectLinesOrder,
-                cancellationToken).ConfigureAwait(false);
+            if (IsOkStatus(file.Status))
+                files.Add(file.Id, file);
+        }
 
-            while (await result.MoveNextAsync(cancellationToken).ConfigureAwait(false))
-            {
-                yield return new CachedIndexedLine(
-                    result.Current[0].AsInteger,
-                    result.Current[1].AsInteger,
-                    ReadIndexedLine(result.Current, offset: 2));
-            }
+        if (files.Count == 0)
+            yield break;
+
+        // Full scans used to repeat a wide joined query for every 500 files.
+        // Scan the narrow line table once and resolve metadata in O(1) instead.
+        // Filter before sorting: a SQL ORDER BY would buffer other roots too.
+        var lines = new List<CachedIndexedLine>();
+        await using var result = await db.ExecuteAsync(
+            "SELECT id, file_id, line_number, content, anchor_json, content_unit_id FROM lines",
+            cancellationToken).ConfigureAwait(false);
+        while (await result.MoveNextAsync(cancellationToken).ConfigureAwait(false))
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            var row = result.Current;
+            if (row[1].IsNull)
+                continue;
+            var fileId = row[1].AsInteger;
+            if (!files.TryGetValue(fileId, out var file))
+                continue;
+
+            var lineNumber = checked((int)row[2].AsInteger);
+            var anchor = row[4].IsNull ? null : DeserializeAnchor(row[4].AsText);
+            lines.Add(new CachedIndexedLine(row[0].AsInteger, fileId, new IndexedLine(
+                file.Path, file.FileName, file.Extension, file.SizeBytes, file.CreatedUtcTicks,
+                file.ModifiedUtcTicks, file.Status, file.ExtractorId, file.FileTypeCategory,
+                lineNumber, row[3].AsText, anchor, row[5].IsNull ? null : row[5].AsInteger,
+                ContentUnitKind.Text, SourceLocator.FromAnchor(anchor, lineNumber),
+                string.Empty, string.Empty, string.Empty, string.Empty)));
+        }
+
+        // Ordering within each file preserves which hits survive MaxHitsPerFile.
+        lines.Sort(static (left, right) =>
+        {
+            var pathOrder = StringComparer.OrdinalIgnoreCase.Compare(left.Line.Path, right.Line.Path);
+            return pathOrder != 0 ? pathOrder : left.Line.LineNumber.CompareTo(right.Line.LineNumber);
+        });
+        foreach (var line in lines)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            yield return line;
         }
     }
 
@@ -1667,18 +1701,8 @@ internal static partial class IndexTables
         long rootId,
         [EnumeratorCancellation] CancellationToken cancellationToken)
     {
-        var fileIds = await ReadCurrentFileIdsForRootAsync(db, rootId, IsOkStatus, cancellationToken).ConfigureAwait(false);
-        foreach (var batch in fileIds.Chunk(DeleteIdBatchSize))
-        {
-            await using var result = await db.ExecuteAsync(
-                SelectLinesColumns +
-                Sql.Format($"f.id IN ({new Sql.IdList(batch)}) AND f.status = {FileStatus.Ok}") +
-                SelectLinesOrder,
-                cancellationToken).ConfigureAwait(false);
-
-            while (await result.MoveNextAsync(cancellationToken).ConfigureAwait(false))
-                yield return ReadIndexedLine(result.Current, offset: 0);
-        }
+        await foreach (var line in ReadCachedLinesAsync(db, rootId, cancellationToken).ConfigureAwait(false))
+            yield return line.Line;
     }
 
     public static async IAsyncEnumerable<IndexedLine> ReadLinesAsync(

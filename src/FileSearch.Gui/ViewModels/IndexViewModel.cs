@@ -181,8 +181,8 @@ public sealed partial class IndexViewModel : ObservableObject, IDisposable
         string.IsNullOrWhiteSpace(_search.SearchPath)
             ? "No folder selected"
             : IsCurrentFolderIndexed
-                ? $"{_search.SearchPath.Trim()} is indexed"
-                : $"{_search.SearchPath.Trim()} is not indexed";
+                ? $"Registered for indexing: {_search.SearchPath.Trim()}"
+                : $"No indexed location for {_search.SearchPath.Trim()}";
 
     public string IndexedLocationCountText =>
         IndexedLocations.Count == 1

@@ -7,6 +7,31 @@ namespace FileSearch.Core.Tests;
 
 public sealed class WeightedResultFusionTests
 {
+    [Fact]
+    public async Task Fuse_PreservesSeparateMessagesAndTheirExactLocationsInOneStore()
+    {
+        var request = new SearchRequest(new QueryFactory().Build("query", QueryMode.Semantic, false), [@"C:\docs"], new WalkerOptions(), UseIndex: true, Mode: QueryMode.Semantic);
+        var plan = new QueryPlanner().CreatePlan(request);
+        var candidates = new[] { "first", "second" }.Select((id, i) =>
+        {
+            var mail = new FileSearch.Core.Extractors.MailMessageMetadata(id, "Same subject", "sender", "to", "", null, "Inbox", "unchanged-store");
+            return new SearchCandidate(CandidateProviderKind.Semantic, "semantic-vector", @"C:\docs\mail.pst", id, 0.9 - i * 0.1,
+                locator: new SourceLocator(StartLine: i + 1, MailMessage: mail));
+        }).ToArray();
+        var fused = new WeightedResultFusion().Fuse(plan, candidates);
+        Assert.Equal(2, fused.Count);
+        var hits = new List<Hit>();
+        await foreach (var hit in new HybridSearcher(new Pipeline(fused)).SearchAsync(request, TestContext.Current.CancellationToken)) hits.Add(hit);
+        Assert.Equal(new[] { "first", "second" }, hits.Select(hit => hit.MailMessage!.Id));
+        Assert.Equal(2, hits.Select(hit => hit.ResultKey).Distinct().Count());
+        Assert.All(hits, hit => Assert.Equal(@"C:\docs\mail.pst", hit.Path));
+    }
+
+    private sealed class Pipeline(IReadOnlyList<RankedSearchResult> results) : IHybridRetrievalPipeline
+    {
+        public Task<IReadOnlyList<RankedSearchResult>> SearchAsync(SearchRequest request, CancellationToken cancellationToken) => Task.FromResult(results);
+    }
+
     [Theory]
     [InlineData(1)]
     [InlineData(11)]

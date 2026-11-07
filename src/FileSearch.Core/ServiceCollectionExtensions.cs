@@ -98,6 +98,7 @@ public static class ServiceCollectionExtensions
         // narrowest contract they need (ISP).
         services.TryAddSingleton<IIndexSearch>(sp => sp.GetRequiredService<IFileIndex>());
         services.TryAddSingleton<IContentUnitReader>(sp => sp.GetRequiredService<IFileIndex>());
+        services.TryAddSingleton<IIndexedFileEligibility>(sp => sp.GetRequiredService<IFileIndex>());
         services.TryAddSingleton<IIndexWriter>(sp => sp.GetRequiredService<IFileIndex>());
         services.TryAddSingleton<IIndexMaintenance>(sp => sp.GetRequiredService<IFileIndex>());
         services.TryAddSingleton<IPendingChangeStore>(sp => sp.GetRequiredService<IFileIndex>());

@@ -77,6 +77,9 @@ public sealed record SearchCandidate
 
     public SearchSnippet? Snippet { get; init; }
 
+    internal string ResultKey => (Anchor?.MailMessage ?? Locator?.MailMessage ?? Snippet?.Locator?.MailMessage) is { StoreFingerprint: not null } mail
+        ? Path + "\0" + mail.Id : Path;
+
     public IReadOnlyList<SearchResultExplanation> Explanations { get; init; }
 
     public static SearchCandidate FromHit(

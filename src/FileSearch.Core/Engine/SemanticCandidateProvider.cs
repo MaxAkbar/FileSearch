@@ -13,17 +13,20 @@ public sealed class SemanticCandidateProvider : IRoutedCandidateProvider
     private readonly IVectorIndex _vectorIndex;
     private readonly IContentUnitReader _contentUnits;
     private readonly ISemanticIndexStatusService? _indexStatus;
+    private readonly IIndexedFileEligibility? _eligibility;
 
     public SemanticCandidateProvider(
         ITextEmbedder embedder,
         IVectorIndex vectorIndex,
         IContentUnitReader contentUnits,
-        ISemanticIndexStatusService? indexStatus = null)
+        ISemanticIndexStatusService? indexStatus = null,
+        IIndexedFileEligibility? eligibility = null)
     {
         _embedder = embedder ?? throw new ArgumentNullException(nameof(embedder));
         _vectorIndex = vectorIndex ?? throw new ArgumentNullException(nameof(vectorIndex));
         _contentUnits = contentUnits ?? throw new ArgumentNullException(nameof(contentUnits));
         _indexStatus = indexStatus;
+        _eligibility = eligibility ?? contentUnits as IIndexedFileEligibility;
     }
 
     public CandidateProviderKind Provider => CandidateProviderKind.Semantic;
@@ -45,11 +48,13 @@ public sealed class SemanticCandidateProvider : IRoutedCandidateProvider
 
         if (!plan.Request.UseIndex)
             return CandidateProviderAvailability.Unavailable("Semantic search requires the index.");
+        if (plan.Request.SearchTarget != SearchTarget.Content)
+            return CandidateProviderAvailability.Unavailable("Semantic search matches indexed contents. Choose Contents to search by meaning.");
 
         var availability = await _embedder.GetAvailabilityAsync(cancellationToken).ConfigureAwait(false);
-        return availability.IsAvailable
-            ? CandidateProviderAvailability.Available
-            : CandidateProviderAvailability.Unavailable(availability.Message);
+        if (!availability.IsAvailable) return CandidateProviderAvailability.Unavailable(availability.Message);
+        return _eligibility is not null ? CandidateProviderAvailability.Available :
+            CandidateProviderAvailability.Unavailable("The configured index cannot resolve Smart Search file restrictions.");
     }
 
     public async IAsyncEnumerable<SearchCandidate> FindAsync(
@@ -66,9 +71,18 @@ public sealed class SemanticCandidateProvider : IRoutedCandidateProvider
         if (semanticText is null)
             yield break;
 
+        IReadOnlyList<EligibleIndexedFile> eligibleFiles;
+        try { eligibleFiles = await _eligibility!.GetEligibleFilesAsync(plan.Request, cancellationToken).ConfigureAwait(false); }
+        catch (NotSupportedException error) { plan.Request.Status?.Invoke(error.Message); yield break; }
+        if (eligibleFiles.Count == 0)
+        {
+            plan.Request.Status?.Invoke("No current indexed files match the Smart Search scope and file filters. Check the filters and content index.");
+            yield break;
+        }
+        var filesById = eligibleFiles.ToDictionary(file => file.Id);
         var embedding = await _embedder.EmbedAsync(semanticText, TextEmbeddingInputKind.Query, cancellationToken)
             .ConfigureAwait(false);
-        var matches = await SearchTwoLevelAsync(embedding, plan.Request.Roots, cancellationToken).ConfigureAwait(false);
+        var matches = await SearchTwoLevelAsync(embedding, filesById.Keys.ToArray(), cancellationToken).ConfigureAwait(false);
         if (matches.Count == 0)
         {
             if (plan.Request.Status is not null)
@@ -87,18 +101,24 @@ public sealed class SemanticCandidateProvider : IRoutedCandidateProvider
 
         var maximumResults = options is null ? MaxSemanticFiles : SemanticSearchOptions.NormalizeMaximumResults(options.MaximumResults);
         var returnedPaths = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        var returnedResults = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         foreach (var match in matches.OrderByDescending(match => match.Score).ThenBy(match => match.Id, StringComparer.Ordinal))
         {
             cancellationToken.ThrowIfCancellationRequested();
             if (match.Score < minimumScore)
                 continue;
-            var candidate = await CreateCandidateAsync(match, cancellationToken).ConfigureAwait(false);
-            if (candidate is null || (options is not null && !returnedPaths.Add(candidate.Path)))
+            if (!filesById.TryGetValue(match.FileId, out var file)) continue;
+            var candidate = await CreateCandidateAsync(match, file, cancellationToken).ConfigureAwait(false);
+            if (candidate is null)
                 continue;
+            if (options is not null)
+            {
+                if (!returnedResults.Add(candidate.ResultKey)) continue;
+                if (!returnedPaths.Contains(candidate.Path) && returnedPaths.Count >= maximumResults) continue;
+                returnedPaths.Add(candidate.Path);
+            }
 
             yield return candidate;
-            if (options is not null && returnedPaths.Count >= maximumResults)
-                yield break;
         }
     }
 
@@ -132,18 +152,20 @@ public sealed class SemanticCandidateProvider : IRoutedCandidateProvider
 
     private async Task<SearchCandidate?> CreateCandidateAsync(
         VectorMatch match,
+        EligibleIndexedFile file,
         CancellationToken cancellationToken)
     {
         var path = await _contentUnits.GetFilePathAsync(match.FileId, cancellationToken).ConfigureAwait(false);
-        if (string.IsNullOrWhiteSpace(path))
+        if (string.IsNullOrWhiteSpace(path) || !IndexPath.EqualsPath(path, file.Path))
             return null;
 
         ContentUnit? unit = null;
         var contentUnitId = match.ContentUnitIds.Count > 0 ? match.ContentUnitIds[0] : 0;
         if (contentUnitId > 0)
             unit = await _contentUnits.GetContentUnitAsync(contentUnitId, cancellationToken).ConfigureAwait(false);
+        if (match.Kind == VectorDocumentKind.ContentChunk && (unit is null || unit.FileId != match.FileId)) return null;
 
-        var locator = match.Locator ?? unit?.Locator;
+        var locator = unit?.Locator ?? match.Locator;
         var lineNumber = locator?.StartLine ?? unit?.Locator.StartLine;
         var displayText = string.IsNullOrWhiteSpace(unit?.Text)
             ? "Semantic match"
@@ -159,6 +181,8 @@ public sealed class SemanticCandidateProvider : IRoutedCandidateProvider
             lineNumber,
             fileId: match.FileId,
             contentUnitId: contentUnitId > 0 ? contentUnitId : null,
+            sizeBytes: file.SizeBytes,
+            modifiedUtc: file.ModifiedUtcTicks > 0 ? new DateTime(file.ModifiedUtcTicks, DateTimeKind.Utc) : null,
             route: HitRoute.Indexed,
             locator: locator,
             explanations: new[]
@@ -175,7 +199,7 @@ public sealed class SemanticCandidateProvider : IRoutedCandidateProvider
 
     private async Task<IReadOnlyList<VectorMatch>> SearchTwoLevelAsync(
         TextEmbedding embedding,
-        IReadOnlyCollection<string> roots,
+        IReadOnlyCollection<long> eligibleFileIds,
         CancellationToken cancellationToken)
     {
         var fileMatches = await _vectorIndex
@@ -185,8 +209,7 @@ public sealed class SemanticCandidateProvider : IRoutedCandidateProvider
                 cancellationToken,
                 embedding.Model,
                 VectorDocumentKind.File,
-                fileIds: null,
-                roots)
+                fileIds: eligibleFileIds)
             .ConfigureAwait(false);
         if (fileMatches.Count > 0)
         {
@@ -201,8 +224,7 @@ public sealed class SemanticCandidateProvider : IRoutedCandidateProvider
                     cancellationToken,
                     embedding.Model,
                     VectorDocumentKind.ContentChunk,
-                    fileIds,
-                    roots)
+                    fileIds)
                 .ConfigureAwait(false);
             if (chunkMatches.Count > 0)
                 return BlendFileAndChunkScores(fileMatches, chunkMatches);
@@ -215,8 +237,7 @@ public sealed class SemanticCandidateProvider : IRoutedCandidateProvider
                 cancellationToken,
                 embedding.Model,
                 VectorDocumentKind.ContentChunk,
-                fileIds: null,
-                roots)
+                fileIds: eligibleFileIds)
             .ConfigureAwait(false);
     }
 

@@ -11,7 +11,7 @@ Use this checklist before creating a public FileSearch release or Microsoft Stor
 - Run `dotnet test --solution .\FileSearch.slnx --configuration Release --no-build`.
 - Smoke test the WPF app.
 - Smoke test the CLI with `help`, `options`, `search`, and `index locations`.
-- Review `README.md`, `README.Indexing.md`, and `README.Roadmap.md` for stale release notes.
+- Review `README.md` and `README.Indexing.md` for stale release notes.
 - Review `README.Mcp.md` and `README.McpIntegration.md` when the MCP server's tools, parameters, or response fields changed; the integration reference documents the wire contract integrators depend on.
 - Review `README.PowerToys.md` and the bundled `Help\powertoys.html` for companion installation, unsigned development setup, query handoff, and index limits.
 

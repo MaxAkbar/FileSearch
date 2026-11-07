@@ -44,6 +44,11 @@
                 <p>FileSearch interprets simple natural-language queries with built-in rules. Real semantic matching requires a usable local Smart Search model pack, vectors built for the folder, and <strong>Use index</strong>. FileSearch does not call paid embedding services. See <a href="smart-search.html">Smart Search with ONNX</a> for setup and examples.</p>
             </section>
 
+            <h2>Start with a Search Task</h2>
+            <p>Use <strong>Find a file</strong>, <strong>Find content</strong>, or <strong>Database values</strong> in the main window to choose a starting setup. Check the explanation below the query for the active matching mode and search scope. Changing the mode changes how the same query text is interpreted.</p>
+            <p><strong>File pattern</strong> limits which files are searched, for example <code>*.pdf</code> or <code>*.sqlite;*.db;*.csdb</code>. It is separate from the query text. With Contents selected, a bare wildcard term such as <code>*.db</code> in a Unified query searches content with that pattern; use File pattern or <code>type:database</code> to restrict the files.</p>
+            <p>For ordinary text searches, <strong>Use index</strong> requests an indexed route when the folder and options are covered. A configured indexed location can still be incomplete, unavailable, or incompatible with the current options. Check the search's route details for the actual index or live-scan result and any fallback reason. Semantic search requires ready local model and vector coverage.</p>
+
             <h2>Modes</h2>
             <div class="table-wrap">
                 <table>
@@ -57,17 +62,17 @@
                     <tbody>
                         <tr>
                             <td><strong>Unified</strong></td>
-                            <td>Parses ordinary content terms plus structured fields. Content terms support <code>AND</code>, <code>OR</code>, <code>NOT</code>, parentheses, quoted phrases, wildcard terms, fuzzy terms, regex terms, and <code>NEAR/n</code> proximity.</td>
+                            <td>Parses ordinary content terms plus structured fields. Adjacent terms mean <code>AND</code>. Content terms also support <code>OR</code>, <code>NOT</code>, parentheses, quoted phrases, wildcard terms, fuzzy terms, regex terms, and <code>NEAR/n</code> proximity.</td>
                             <td>You want one query like <code>invoice acme modified:last-year type:pdf</code>. Use <code>type:database invoice</code> for supported SQLite and CSharpDB files.</td>
                         </tr>
                         <tr>
                             <td><strong>Boolean</strong></td>
-                            <td>Parses terms, quoted phrases, slash-delimited regex terms, <code>AND</code>, <code>OR</code>, <code>NOT</code>, and parentheses.</td>
+                            <td>Parses terms, quoted phrases, slash-delimited regex terms, <code>AND</code>, <code>OR</code>, <code>NOT</code>, and parentheses. Adjacent terms mean <code>AND</code>.</td>
                             <td>You want combinations like <code>(invoice OR receipt) AND NOT draft</code>.</td>
                         </tr>
                         <tr>
                             <td><strong>Plain text</strong></td>
-                            <td>Treats the whole input as one literal substring.</td>
+                            <td>Treats the whole input as one literal substring, including spaces, quotes, and words such as <code>OR</code>.</td>
                             <td>You want an exact phrase with no operators.</td>
                         </tr>
                         <tr>
@@ -83,6 +88,37 @@
                     </tbody>
                 </table>
             </div>
+
+            <h2>All Terms, Either Term, or a Phrase?</h2>
+            <div class="table-wrap">
+                <table>
+                    <thead>
+                        <tr>
+                            <th>Query</th>
+                            <th>Unified or Boolean</th>
+                            <th>Plain text</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <tr>
+                            <td><code>john smith</code></td>
+                            <td>Both terms must match; their order does not matter.</td>
+                            <td>Matches the literal phrase <code>john smith</code>.</td>
+                        </tr>
+                        <tr>
+                            <td><code>john OR smith</code></td>
+                            <td>Either term can match.</td>
+                            <td>Matches the literal text <code>john OR smith</code>, including <code>OR</code>.</td>
+                        </tr>
+                        <tr>
+                            <td><code>"john smith"</code></td>
+                            <td>Matches the phrase <code>john smith</code> in that order.</td>
+                            <td>The quote characters are part of the literal text to match.</td>
+                        </tr>
+                    </tbody>
+                </table>
+            </div>
+            <p>Content expressions match within one extracted text line. For a database, each populated scalar cell is searched separately: <code>john smith</code> in Unified or Boolean mode requires both terms in the same cell. It does not join a FirstName column containing <code>john</code> with a LastName column containing <code>smith</code>. See <a href="results.html#databases">Database Search and Preview</a>.</p>
 
             <h2>Unified Fields</h2>
             <p>Fields narrow the files that can match. Unfielded words still search file content. In Unified mode, FileSearch shows interpreted chips below the search box so you can see the content terms and filters it understood; edit a chip value to rewrite that token, or remove a chip to remove it from the query.</p>
@@ -166,7 +202,7 @@
                         </tr>
                         <tr>
                             <td><code>PDFs about authentication migration modified last year</code></td>
-                            <td>Interprets <code>about authentication migration</code> as a semantic chip. With a usable model, indexed vectors, and Use index, it requests semantic retrieval. Type/date restrictions are not consistently applied to semantic candidates; see <a href="smart-search.html#results">current result limits</a>.</td>
+                            <td>Interprets <code>about authentication migration</code> as a semantic chip. With a usable model, indexed vectors, and Use index, it requests semantic retrieval within eligible current indexed files. Type/date restrictions apply before capped semantic candidates are selected; see <a href="smart-search.html#results">semantic result behavior and limits</a>.</td>
                         </tr>
                         <tr>
                             <td><code>name:report path:finance size:&gt;5mb</code></td>
@@ -201,15 +237,15 @@
                     <tbody>
                         <tr>
                             <td><code>error timeout</code></td>
-                            <td>Find files containing both words. Adjacent terms are treated as <code>AND</code>.</td>
+                            <td>Find extracted lines containing both words. Adjacent terms are treated as <code>AND</code>.</td>
                         </tr>
                         <tr>
                             <td><code>error OR warning</code></td>
-                            <td>Find files containing either term.</td>
+                            <td>Find extracted lines containing either term.</td>
                         </tr>
                         <tr>
                             <td><code>timeout AND NOT test</code></td>
-                            <td>Find files containing <code>timeout</code> but not <code>test</code>.</td>
+                            <td>Find extracted lines containing <code>timeout</code> but not <code>test</code>.</td>
                         </tr>
                         <tr>
                             <td><code>"connection string"</code></td>

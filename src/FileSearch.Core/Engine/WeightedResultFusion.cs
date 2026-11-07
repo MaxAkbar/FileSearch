@@ -20,7 +20,7 @@ public sealed class WeightedResultFusion : IResultFusion
             provider => provider.Provider,
             provider => provider.Weight);
         var groups = candidates
-            .GroupBy(candidate => candidate.Path, StringComparer.OrdinalIgnoreCase)
+            .GroupBy(candidate => candidate.ResultKey, StringComparer.OrdinalIgnoreCase)
             .Select(group =>
             {
                 // Semantic chunks are alternative passages from the same file.
@@ -44,7 +44,7 @@ public sealed class WeightedResultFusion : IResultFusion
 
                 return new
                 {
-                    Path = group.Key,
+                    Path = orderedCandidates[0].Path,
                     Score = score,
                     Candidates = orderedCandidates,
                     Explanations = explanations,
