@@ -23,7 +23,24 @@ JSON and JSON Lines include `MailMessage` metadata for each mail hit: message id
 
 ## Results and opening messages
 
-Each matching store message has its own result card, even when subjects are identical. Cards show the subject, sender, date, and folder. Previews and **Copy file content** read only the selected message. Size and modified-date filters still describe the physical MSG/PST/OST file; `from:` and `subject:` field operators and message-date filters are not implemented.
+Each matching store message has its own result card, even when subjects are identical. Cards show the subject, sender, date, and folder. Previews and **Copy file content** read only the selected message. Size, created-date, and modified-date filters still describe the physical file or store.
+
+## Structured message fields
+
+Choose **Unified**, **Content**, and document extraction to search EML/MSG/PST/OST message headers:
+
+```text
+from:alice subject:invoice
+(from:alice OR from:bob) recipient:team NOT cc:archive
+subject:"project plan" sent:2026-11-01..2026-11-07
+from:alice sent:>=2026-11-07T12:00:00Z overdue
+```
+
+`from:`, `to:`, `cc:`, and `subject:` use literal substring matching in that header, respecting Match case. `recipient:` matches To or Cc; Bcc is unavailable. Boolean AND/OR/NOT and groups apply to one message's mail/content predicates; physical-file fields remain global restrictions even inside OR groups. Unfielded words still match an extracted text line. A body word cannot satisfy a header field, and mail fields never match files without message metadata. Proximity operands containing mail fields and semantic-plus-mail queries are explicitly unsupported. Quick Search remains literal; use full search for fields.
+
+`sent:` uses a submitted timestamp for Outlook messages or the EML Date header, never a received-date fallback. The existing displayed message date can be a received date. ISO dates name whole UTC days; day ranges include both endpoints. Timestamp values require `Z` or a numeric offset and are normalized to UTC. `>`, `>=`, `<`, and `<=` retain distinct boundaries; a date-only `>` excludes that entire day. Missing sent dates cannot satisfy positive sent filters.
+
+Refresh older mail content indexes after upgrading. Updated extractor versions populate separate `SentUtc` metadata and EML headers even for unchanged files; no database schema rebuild is needed. Old coverage is detected, and current live extraction remains available when fallback is allowed. JSON/JSONL and MCP hits retain per-message metadata; GUI/CLI CSV includes message identity, recipients, display date, sent date, folder, and store fingerprint.
 
 The **File preview** tab loads complete EML/MSG and selected PST/OST messages, including readable headers, a formatted HTML or plain-text body, and attachment names. EML inline images can be displayed. Scripts, external links, and remote resources are blocked; attachment files are not opened. **Matches** remains the search-excerpt view. The built-in message view and Expand work in both the main window and Quick Search without Outlook or PowerToys. Individual EML/MSG files are limited to 64 MB and bodies to four million characters; unsupported or oversized content uses a labeled fallback. MSG property limits below still apply.
 

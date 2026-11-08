@@ -108,7 +108,125 @@ $env:FILESEARCH_BENCHMARK_REMOVABLE_ROOT='E:\'
 $env:FILESEARCH_BENCHMARK_CLOUD_ROOT="$env:OneDrive"
 ```
 
-## Notes
+## Database preview phase attribution
+
+The [database-only profiler](../benchmarks/FileSearch.Benchmarks/README.md#database-preview-phase-profile)
+separates the actual preview-opening path without rerunning searches/indexing:
+
+```powershell
+dotnet run -c Release --project benchmarks/FileSearch.Benchmarks -- database-profile --resume C:/path/to/task-manifest.json --queries 100
+```
+
+It records six warmup pairs and an even number of measured pairs with equal
+engine-first/second positions. Each session creates a fresh bounded private copy
+of the same generated source. Raw samples, phase percentiles, per-position results,
+matched-round differences and source/sidecar hashes are saved in a new
+`artifacts/benchmarks/database-phases/<run>` directory. Source/index/user settings
+are preserved. Run sequentially with no other builds/tests/probes.
+
+Copy is a subset of Snapshot. EngineOpen, EngineSetup, Schema, Validation and
+OpenOther are disjoint contributors to OpenTotal; OpenAndFirstPage is separately
+timed. Component medians/percentiles do not add. Paired differences use complete
+successful rounds, and failed/incomplete phases remain explicit. Different engine
+APIs do different amounts of setup/catalog work during Open. These measurements
+attribute preview cost, not general database performance or indexed-search speed.
+See the [README benchmark summary](../README.md#benchmark-results).
+
+The additional `SequentialDeepPage` phase primes the penultimate page outside its
+timer, then measures continuation into the last page. It retains the original
+first-page and arbitrary-deep-page measurements. Applicability is explicit, and
+failed or inapplicable timings remain null. This isolates a supported sequential
+continuation from a random row jump; its warm cache state differs from the earlier
+deep read. Compare the same phase, source, and schedule across builds.
+
+The [database navigation probe](../benchmarks/FileSearch.UiPerfProbe/README.md#database-navigation-baseline)
+adds shared-viewer Next/Previous/Go and same-source-location operations, with
+selected-record checks, source hashes, heartbeat, allocation and sampled working
+set evidence. Its readiness combines query/mapping/grid/layout; it does not
+independently time grid rendering.
+
+Keep opt-in phase/stack diagnostics separate from uninstrumented grid comparisons.
+Source and selected-record correctness must pass before using timings. New-preview opening,
+page changes and same-source hit selection are separate operations; gains in one
+do not establish gains in all three. Preserve different binary hashes and sample
+counts, failed attempts, background-load observations and unchanged source hashes.
+
+## Task baseline and comparison protocol
+
+The `tasks` command extends the component suite with real generated files. Run a
+Release build without other builds, tests, or performance probes:
+
+```powershell
+dotnet run -c Release --project benchmarks/FileSearch.Benchmarks -- tasks --profile standard --queries 20
+```
+
+The new run directory contains `task-manifest.json`, `task-baseline.json`, and
+`task-baseline.md`. No direct-seeded rows are used. The manifest identifies every
+file by SHA-256 and provides task queries, matching modes, and expected source
+locations. Use the [WPF probe](../benchmarks/FileSearch.UiPerfProbe/README.md#real-file-preview-baseline)
+against this same manifest to measure preview readiness and optional scan/OCR
+retrieval. It records UI heartbeat gaps separately from engine query latency.
+
+The first result is useful only when it identifies the expected file **and** the
+expected PDF page, ZIP member, or database cell where applicable. Empty/failing
+tasks keep null useful-result timings. Measured failures remain in completion
+samples and prevent a timing-goal pass. Task/routes run in sequential isolated
+workers, each with a 60-second total budget including startup and repetitions.
+Unresponsive workers are terminated; missing timings remain unmeasured and fail
+that task. Per-worker JSONL checkpoints survive interruption. `--resume` validates
+an existing generated manifest's root, path boundaries and hashes, reuses its own
+index, and leaves initial index time unmeasured. Iteration zero is a fresh worker's
+first invocation with warm OS caches, followed by same-worker warm samples. It is
+not an OS-cold measurement. Coordinator peak and worker working-set samples are
+reported separately, not as aggregate memory. Warm percentiles use
+nearest rank; 20 samples are exploratory and at least 100 are needed for a more
+useful P99 estimate. Large-corpus, OS-cold, human relevance, and competitive claims
+must not be inferred from a passing smoke run.
+
+Compare runs on the same corpus and preserve timeouts and missing warm samples.
+Fresh-process timings,
+warm percentiles, cumulative allocation and retained memory are separate measures.
+
+For an installed-product comparison:
+
+1. Freeze a corpus copy outside all index/report folders. Use identical real files
+   in every product, retain its manifest/hash list, and include unsuccessful and
+   unsupported tasks. Never compare the older seeded metadata corpus to a product
+   indexing real files.
+2. Record product version/channel/license/features, executable/version paths,
+   hardware, storage/filesystem, OS/runtime, available RAM, power mode, antivirus
+   state, corpus provenance, indexed scope, exclusions, freshness, optional OCR,
+   language/model/version, and whether indexes/models were already loaded. Record
+   unavailable information as unknown, not an assumed default.
+3. Use known-file tasks for filename-oriented products, and document investigations
+   for content-oriented products. Establish equivalent literal/phrase/AND behavior
+   deliberately. Record different interpretation or unsupported coverage as a
+   task result; do not silently change the question for one product.
+4. Keep first process launch, first invocation, OS-cold tests, and warm runs
+   separate. Randomize product order across independent sessions; use at least
+   100 warm samples for tail comparisons. Do not flush system caches or alter
+   machine settings as a side effect of the harness.
+5. Record first correct visible result, successful open at the expected source,
+   task completion, cancellation, responsiveness, process memory, index disk size,
+   and event-to-searchable freshness. Engine timings, dispatcher idle, and human
+   task times are different measurements. Record first/deep database page and
+   snapshot/schema costs separately where instrumentation permits.
+6. Freeze a separate relevance set before tuning ranking or typo behavior. Have a
+   reviewer judge answers on files not used for tuning, including plausible
+   distractors, phrases, no-match cases, and ordinary-language semantic requests.
+   Report top-result accuracy, MRR, NDCG@10, Recall@20 and zero-result rate with
+   the query count and judgments. The controlled `tasks` fixture checks correctness;
+   it is not this held-out set.
+7. Retain raw samples, settings, failed/partial/unsupported tasks, and conditions
+   alongside a curated result summary. Keep the [README benchmark overview](../README.md#benchmark-results)
+   brief. Performance conclusions require a correctness-qualified build; goals are not promises.
+
+Installed competitor versions/configurations, human task/relevance judgments,
+semantic models, network/removable roots and OS-cold measurements are not supplied
+by these generated-fixture runners. Qualify them separately before making public
+comparisons.
+
+## Existing component-suite notes
 
 The metadata corpus is direct-seeded so the full profile can cover one million indexed entries without creating one million real files. Physical corpus files exercise the extractor and content index paths.
 

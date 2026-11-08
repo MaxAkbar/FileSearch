@@ -4,7 +4,7 @@ FileSearch is a Windows desktop application for searching text across files and 
 
 ## Features
 
-- Search for text, file names, folder names, or file and folder names from a selected folder.
+- Search for text, file names, folder names, or file and folder names from a selected folder, selected indexed locations, or all registered indexed locations.
 - Use either the WPF desktop app or the Spectre.Console-powered interactive CLI.
 - Include or exclude subfolders.
 - Filter by file name glob patterns such as `*.cs;*.txt`.
@@ -18,6 +18,7 @@ FileSearch is a Windows desktop application for searching text across files and 
 - Filter by file size and modified date range.
 - Preview matching lines and context for selected results.
 - Use File preview for whole PDF pages, spreadsheet grids, ZIP members, complete selected messages, EPUB chapters, OpenDocument/RTF content, Markdown, source code, and images including WebP, animated GIF, and multipage TIFF. These viewers are shared with Quick Search and require no PowerToys installation.
+- Find and highlight literal phrases in loaded text, source code, formatted documents, and embedded text on the displayed PDF page, with next/previous navigation shared by the main window, Quick Search, and expanded previews.
 - Preview and apply find-and-replace batches across text files, Word/Excel/PowerPoint files, or file and folder names, with backups and Undo.
 - Filter current results by exact text in names, paths, or returned match excerpts, with highlights that preserve the original search matches. Facet, sort, group, favorite, pin, drag, export, and save or share workspace bundles, with optional workspace run-on-load.
 - Optional CSharpDB-backed indexing for faster repeat searches across multiple locations, with GUI or tray-indexer background updates.
@@ -172,20 +173,62 @@ dotnet test .\FileSearch.slnx
 
 ## Using the app
 
-1. Choose a folder in the search bar.
+1. Choose **Search locations** below the search bar: **Selected folder**, **Selected indexed locations**, or **All indexed locations**. For a folder, type or browse its path; for selected indexed locations, use the checked-location popup shared with Quick Search. Clearing every check searches no indexed locations.
 2. Open **Search options** (the sliders button). **Find a file**, **Find content**, and **Database values** choose a Plain text starting setup while keeping your query. You can also select targets and a matching mode directly.
 3. Enter your query and check the explanation below it. In Unified/Boolean, `john smith` requires both terms, `john OR smith` accepts either, and `"john smith"` keeps the phrase together. Plain text treats the complete input literally, including operators and quotes.
 4. Optionally restrict file names with a separate **File pattern**, such as `*.cs;*.xaml;*.md`. A file pattern controls which files are searched; it is separate from the text you want to find.
-5. Adjust subfolders, case, document/database extraction, optional OCR, size and date limits. **Use index** checks coverage for the folder and options when searching. The route details retain live/indexed results and any fallback or pending-update reason; registered folders can still have incomplete coverage.
+5. Adjust subfolders, case, document/database extraction, optional OCR, size and date limits. **Use index** checks coverage for the selected locations and options when searching. The route details retain live/indexed results and any fallback or pending-update reason; registered folders can still have incomplete coverage. Offline/inaccessible locations and removed registrations are explained rather than replaced with a broader scope.
 6. Click **Search** or press Enter.
 7. Select a result to view its matches or full-file preview. Database content matches within one cell, and hits identify the matching table, row and column. See the [database guide](README.Databases.md).
 8. Use **Filter current results** to narrow names, paths and returned hit text without rescanning. It does not search the rest of a file or database.
+
+### Search locations and Quick Search handoff
+
+The selected indexed-location checkboxes are shared by main search, Quick Search, and the Quick Search settings page. **All indexed locations** uses the registered roots explicitly. Removed selected roots remain visible with a notice; uncheck them or register the location again. Overlapping locations do not duplicate the same file or source hit. The folder address is unused while an indexed-location scope is selected; choosing or typing another folder switches back to **Selected folder**.
+
+In Quick Search, **Open full search** carries the query, location scope, content choice, and selected source into the main window. The query keeps Quick Search matching: every literal word must match a filename/path, while content uses the complete literal phrase. Main search explains this profile and offers **Use standard matching** to return to its ordinary query mode. Entire-machine metadata stays in Quick Search; choose a folder or indexed scope before handing off. Busy main-window searches or replacements must finish or be canceled first.
+
+Saved searches and workspaces retain the location scope, selected roots, and Quick Search matching profile. Older saved entries continue to use their saved folder. See [Search locations](src/FileSearch.Gui/Help/search.html#search-locations) and [Quick Search handoff](src/FileSearch.Gui/Help/quick-search.html#full-search-handoff).
+
+### Quick Search ranking and selection
+
+Quick Search ranks arriving candidates with exact filenames and exact names without extensions ahead of weaker prefix or folder-word matches. A deeper or later exact match keeps that priority. Within the same ranking tier, complete name components separated by punctuation, spaces or case transitions get a bounded preference over substrings inside longer words. This keeps the existing exact-name and phrase-prefix priorities and literal matching rules. The automatic selection follows the current best result until you navigate results, click one, or choose **Preview**; later arrivals then preserve your choice. A query, content or scope change clears old results and preview so stale rows cannot be opened accidentally.
+
+The quick window displays at most **80 results**. The content-enabled search stage collects at most **80 result identities** or **500 unique hits**, including any indexed filename hits it returns. Individual mail messages count separately even when they share a store file. Filename discovery finishes independently and can contribute later matches. Live metadata scans retain their **500 ms** folder/indexed-scope or **1,500 ms** entire-machine budget. Reached limits mean partial coverage, reported as a limited search; undiscovered files cannot be ranked. Use **Open full search** for broader coverage in a supported scope.
+
+Enter and Ctrl+C retain focused controls' normal input/copy behavior; result shortcuts act on the selected result. Escape closes an open scope/location popup or preview Find before closing Quick Search. Literal query rules are unchanged; this adds no automatic typo/acronym matching or usage-history learning. See [ranking and keyboard selection](src/FileSearch.Gui/Help/quick-search.html#ranking-and-keyboard).
+
+An inline database preview adapts the quick window's minimum height to the visible scope and database controls so records remain readable. Find reserves more room; closing Find returns to the current database minimum. Closing the preview restores the normal minimum height of 420 and the prior window height if it grew automatically. Manual resizes are preserved.
+
+### Find in a preview
+
+Open **File preview**, then choose **Find** or press **Ctrl+F** while the preview is focused. This searches the loaded text/source, formatted HTML view, or embedded text on the displayed PDF page. Formatted views include Markdown and supported mail/document previews. Enter the complete phrase and optionally enable **Match case**: spaces, quotes, `AND`, `OR`, and regex characters are literal text. Occurrences are highlighted without changing the source file.
+
+Use **F3** for the next occurrence and **Shift+F3** for the previous one. In the Find box, **Enter** starts Find or advances to the next occurrence after a search. **Escape** stops a running Find or closes its panel. **Expand** retains the query, case setting, current occurrence, and whether Find is open or closed when the source content is unchanged. Expanded PDFs also retain the current page, Fit mode or custom zoom, and viewing position.
+
+Find searches **this loaded preview** or **this displayed part**, such as a chapter, slide, message, or archive member; it does not search other parts or files. Long text and Markdown previews load the first 250,000 characters, and text/source Find retains at most 10,000 occurrences. The status declares partial coverage when text is truncated or a Find limit is reached. Formatted HTML uses the installed WebView2 runtime's text matching; if Find is unavailable in that runtime, the ordinary document preview remains usable.
+
+PDF Find searches embedded text on **this PDF page**, with highlights that follow the supported page crop and rotation while keeping the whole original page visible. It does not search other pages or run OCR. PDF previews remain limited to 100 MB; page text retains at most 100,000 glyphs and 250,000 characters, and Find retains at most 10,000 occurrences. Find input is limited to 2,048 characters and each search has a 15-second deadline. An existing selected OCR hit can show its recognized line region after source and page-dimension checks; this separate outline is not a per-word Find highlight. Blank, image-only, incompatible, or unavailable text leaves the whole-page preview usable. Detected source changes discard Find and OCR overlays; refresh the search or reload the preview as indicated. See [Find within File preview](src/FileSearch.Gui/Help/results.html#preview-find).
+
+## Search inside ZIP files
+
+Choose **Contents**, enable **Document & database text**, and set the file pattern to `*.zip`. Supported text members and native text in PDF, DOCX, XLSX, and PPTX documents are searchable in both live and indexed content search. Refresh existing content indexes after upgrading. Physical-file filters still describe the ZIP: `type:pdf` does not select PDF members inside an archive.
+
+Results retain the exact member, archive fingerprint, member-local line, and inner document location. Open uses the built-in viewer; PDF pages and XLSX sheets/cells are selected from the hit. Expand retains the active child's page, zoom, Find, and sheet position. DOCX/PPTX visual previews retain their existing installed-handler and navigation limitations. JSON/JSONL, CSV, and MCP results retain archive location metadata.
+
+ZIP **Matches** use captured hits and same-member indexed context, preserving results when OCR changes extraction offsets. The whole-file excerpt toggle is unavailable for those hits; **File preview** reads the complete selected member.
+
+Extraction retains the 16 MiB/member, 64 MiB/archive and 10,000-entry limits, with bounded Office-package expansion and XML depth. Text and metadata budgets are 2 Mi characters/50,000 lines per member and 8 Mi characters/200,000 lines per archive. New document parsing uses the bundled isolated host and generated temporary files; an unavailable host leaves ordinary text/image search usable and reports document skips. A 20-second cooperative archive budget and configured host hard deadline (normally 30 seconds) bound work; a terminated whole-archive host loses its buffered results. Partial notices identify skipped, corrupt/protected, duplicate/unsafe, truncated and timed-out content on live and indexed routes.
+
+Exact duplicate member names and unsafe paths are skipped rather than resolving to the wrong member. Detected source size/time changes invalidate previews. Nested archives, embedded-image/scanned-PDF OCR inside Office/PDF members, legacy/macro-enabled Office files, and mail attachment contents are not included. Existing optional OCR of standalone ZIP image members remains available. See [Search Inside ZIP Files](src/FileSearch.Gui/Help/results.html#archive-content) for precise limits and behavior.
 
 ## Find and replace
 
 In the desktop app, click **Replace** below the query row, select **Search → Find and replace**, or press **Ctrl+H** (configurable in Settings). The query box becomes **Find**; closing the panel restores your normal search query and mode.
 
 Choose **Contents** or **Names**, enter **Replace with**, then click **Preview changes** or press Enter. Preview scans the current folder and filters directly. Review the before/after details, uncheck unwanted items, and click **Apply checked**. Empty replacement text removes matches; regex mode supports capture substitutions such as `$1`.
+
+Replacement requires **Selected folder** scope. Choose that scope and an explicit folder, or use **Browse**, before previewing or applying changes. Indexed-location search scopes cannot use a remembered folder for replacement; changing scope invalidates the previous replacement preview.
 
 Content replacement supports UTF-8 and BOM-marked Unicode text, `.docx` body/table/header/footer paragraphs, `.pptx` slide/notes paragraphs, and `.xlsx` text cells. **Also replace in formulas** explicitly enables textual editing of ordinary Excel formula expressions; Excel recalculates them on opening. Shared, array, and spill formulas are skipped. PDF, OCR, archives, mail, legacy/macro-enabled Office formats, signed/protected documents, binary files, and unsupported text encodings are not content replacement targets.
 
@@ -562,6 +605,11 @@ For sideload testing, pass `-CertificateThumbprint` with a certificate trusted o
 - Workflow search and the workflow JSON file format are documented in [README.Workflows.md](README.Workflows.md).
 - The read-only MCP server for AI assistants (Claude Code, Claude Desktop, LM Studio), its tool surface, and client configuration are documented in [README.Mcp.md](README.Mcp.md). The wire-level reference for integrating it into AI apps and tools — tool schemas, error catalog, OpenAI Codex/VS Code/Cursor setup, and C#/Python client code including the OpenAI Agents SDK — is [README.McpIntegration.md](README.McpIntegration.md).
 - Security and privacy posture are documented in [SECURITY.md](SECURITY.md) and [PRIVACY.md](PRIVACY.md).
+- Reproduce controlled real-file search/database measurements and WPF preview/OCR checks with the [task baseline tools](benchmarks/FileSearch.Benchmarks/README.md#real-file-task-baseline). The [benchmark methodology](docs/BENCHMARKS.md#task-baseline-and-comparison-protocol) separates local component timings, held-out relevance, and installed-product comparisons.
+
+## Benchmark results
+
+Local development benchmarks cover searches over generated files, SQLite/CSharpDB previews, and filename ranking. Selected navigation and ranking cases improved, with mixed timing and resource results; broader performance qualification remains open. See the [benchmark methodology](docs/BENCHMARKS.md) and [runner guide](benchmarks/FileSearch.Benchmarks/README.md) to reproduce the measurements.
 
 ## Recent changes
 
@@ -569,6 +617,9 @@ Work landed from `bbd4b73` (*Add background indexed search*, June 2026) to the c
 
 ### Unreleased
 
+- **Consistent search locations**: main search and Quick Search share selected indexed-location checkboxes, support explicit selected/all-indexed scopes, and explain empty, offline, and removed locations. Open full search preserves Quick Search query matching and source selection; saved searches and workspaces retain scope and matching intent. See [search location Help](src/FileSearch.Gui/Help/search.html#search-locations).
+- **Find in file previews**: highlight and navigate literal phrases in loaded text/source, formatted HTML, and embedded text on the displayed PDF page across the main window, Quick Search, and Expand. Find shows its loaded-part/page scope and partial limits; unavailable text or browser Find leaves the ordinary preview available. PDF highlights follow supported page crop/rotation, validated existing OCR hits can show a separate line outline, and Expand retains Fit/custom zoom and position. See [preview Find Help](src/FileSearch.Gui/Help/results.html#preview-find).
+- **Database loading and navigation**: preparation stages and snapshot copy progress, Stop loading, reuse of the visible session and grid for another hit in the same unchanged database, and bounded continuation bookmarks for supported sequential pages. Ordinary page changes update existing rows where possible; sorting and record locations remain distinct. Arbitrary deep jumps retain a correct offset fallback; read-only snapshot and size/row limits remain in effect.
 - **Find in database previews**: search the selected SQLite or CSharpDB table beyond the loaded page, choose all/either literal terms or a phrase and a column scope, then navigate matching cells. Scans are cancellable and bounded, with explicit partial coverage; the database stays read-only. See [database Find and limits](README.Databases.md#find-in-a-table).
 - **Search guidance**: live mode/target explanations, starting setups for files/content/database values, and persistent per-target routing details, including zero-hit fallback reasons. Plain text, AND/OR/phrases, filename filters and database cell scope are explained in bundled Help.
 - **Built-in file previews**: switch between Matches and File preview in the main window or Quick Search. Preview images and SVG, navigate PDF pages, read formatted Markdown, and view syntax-highlighted source code, including filename-only results. Expand the same preview into a larger window. Installed Windows preview handlers extend format coverage in an isolated helper process, with file details or text as the fallback. PowerToys is not required.

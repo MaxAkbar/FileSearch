@@ -43,6 +43,8 @@ The CLI and desktop share the extractor and limits. CLI JSON and JSON Lines incl
 
 Use the table selector, **Go to row**, and page buttons to navigate 250-row pages. Columns scroll horizontally. **Expand** retains the table, row, column, available record key, and source fingerprint. Empty tables have an empty state; NULL and binary values appear blank. Limited cell text has an ellipsis and an explicit notice.
 
+Click a column header to sort the displayed page. This does not sort the entire table or change its snapshot row numbers. **Go to row** and Find navigation still use those row numbers, regardless of the displayed sort order.
+
 ### Find in a table
 
 1. Open the database's **File preview** in the main window or Quick Search, or open its built-in database viewer.
@@ -68,7 +70,11 @@ Find scans the selected table in the existing private snapshot. Its limits are t
 
 Find uses the same read-only snapshot protections and requires no SQL, Smart Search model, OCR, or PowerToys setup. If the database or WAL changes, reopen the preview from a fresh search; refresh the index first when it supplied the hit. The old snapshot's row positions and matches must not be treated as current.
 
-Snapshot preparation and page reads run in the background. Before showing the first table, FileSearch copies the database and its WAL into a private snapshot and reads the table schemas. Larger files can therefore take longer to open even though records are paginated. Page queries use `LIMIT`/`OFFSET`, so jumping far into a table can also take longer while the engine skips earlier rows. Pagination limits the displayed records; it does not guarantee a constant loading time.
+Snapshot preparation and page reads run in the background. The status shows copy progress (including WAL bytes), opening, schema discovery, and source validation. **Stop loading** cancels preparation or record navigation; it is separate from **Stop** in Find. Select the file again to retry preparation. A canceled page keeps the previously displayed records when available.
+
+The visible preview reuses its private session and, where possible, its existing grid when selecting another hit in the same unchanged database. Existing rows are disabled while that source is checked. Changed or failed preparation clears them; canceling ordinary page navigation can keep the previous page. Changing files, hiding/closing the preview, or detecting a changed database/WAL ends session reuse. A stale indexed hit still requires a refreshed index or a fresh search. Expanded previews own a separate snapshot.
+
+Sequential pages use a small session-local continuation cache when the table has a native SQLite rowid or a single CSharpDB integer primary key. Row numbers and record locations retain their original ordering. Arbitrary row jumps, evicted continuations, and tables without a suitable key use bounded `LIMIT`/`OFFSET` queries, so a deep jump can still take longer while the engine skips earlier rows. Larger files also require more snapshot copying before the first table appears. Pagination limits the displayed records; it does not guarantee a constant loading time.
 
 If the main database or its WAL changes, refresh the index or rerun the search before using an old hit location. WAL watcher events are routed to their parent database, and explicit refreshes reread databases with WAL files even when the main file's timestamp is unchanged. FileSearch's configured index is excluded from extraction, and its storage watcher events are ignored.
 
@@ -81,6 +87,6 @@ Source files are opened only for reading. FileSearch creates a bounded private d
 - Search stops at **100,000 rows total**, **250,000 populated scalar cells**, or **16 Mi characters** per database. Extraction issues report limits reached. Preview navigation supports the first **100,000 rows per table**.
 - Cell text is limited to **16,384 characters**, with an explicit notice. Text beyond that limit is not searched. Existing hit/display limits still apply.
 - Locked, changing, encrypted, corrupt, or incompatible databases can fail. A rollback journal is refused; close its application cleanly or use a valid backup. No passwords are requested, extensions loaded, or arbitrary views/procedures invoked.
-- CSharpDB file compatibility follows the bundled **CSharpDB.Engine 4.6.4** reader. Remote database servers are outside this feature.
+- CSharpDB file compatibility follows the bundled **CSharpDB.Engine 4.7.0** reader. Remote database servers are outside this feature.
 
 Extracted values are stored locally in the index like other document text. See [Privacy](PRIVACY.md) and [third-party notices](THIRD-PARTY-NOTICES.md).
