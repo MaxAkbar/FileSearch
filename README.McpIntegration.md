@@ -1,6 +1,6 @@
 # FileSearch MCP Server — Integration Reference
 
-This is the wire-level reference for developers embedding FileSearch's MCP server into AI applications, agents, and tools: the launch contract, every tool's parameters and response schema, the error model, client configuration for common hosts, and programmatic clients in C# and Python. All JSON in this document was captured from a real server session (paths sanitized) — it is the actual wire format, not an approximation.
+This is the wire-level reference for developers embedding FileSearch's MCP server into AI applications, agents, and tools: the launch contract, every tool's parameters and response schema, the error model, client configuration for common hosts, and programmatic clients in C# and Python. JSON examples were captured from real server sessions with paths sanitized. Some captures are from earlier builds and omit newer optional fields; the tables below describe the current contract.
 
 For the product overview, safety-rail design, and Claude Code / Claude Desktop / LM Studio setup, see [README.Mcp.md](README.Mcp.md).
 
@@ -97,9 +97,9 @@ Every tool advertises the same annotations, so hosts that gate on hints can auto
 | Tool | One-line purpose |
 | --- | --- |
 | `search_content` | Live full-text/name search that re-reads files under given roots. Works anywhere allowed; slower on big trees. |
-| `search_index` | Content search served from the local index. Fast; reports per-root coverage instead of silently falling back. |
-| `extract_text` | Numbered text lines from one file (146 supported extensions in the current build), pageable, with page/sheet/member anchors. |
-| `index_status` | Index database health, indexed locations, per-root stats, allowed roots, supported extensions. |
+| `search_index` | Content search served from the local index, with optional semantic retrieval from existing Smart Search vectors; reports per-root coverage instead of silently falling back. |
+| `extract_text` | Pageable numbered text lines from one file, with document-part, message, database-cell, or archive-member labels; `index_status` lists supported extensions. |
+| `index_status` | Index database health, indexed locations, per-root stats, allowed roots, supported extensions, and document-model/vector readiness. |
 | `index_failures` | Files that failed extraction during indexing, with extractor and error detail. |
 
 Input schemas are standard JSON Schema generated from the parameter lists below. Example — the full `tools/list` entry for `extract_text`:
@@ -135,7 +135,7 @@ Live scan. Use for folders the index does not cover, for file/folder-name matchi
 | --- | --- | --- | --- | --- |
 | `query` | string | yes | — | Interpreted per `mode`. |
 | `roots` | string[] | yes | — | 1–8 absolute folder paths under the allowed roots. Must exist. |
-| `mode` | string | no | `plain` | `plain`/`text`/`literal`, `regex`/`regexp`, `bool`/`boolean`, `unified`/`query`/`structured`. Boolean supports AND/OR/NOT and parentheses; unified supports field filters. |
+| `mode` | string | no | `plain` | `plain`/`text`/`literal`, `regex`/`regexp`, `bool`/`boolean`, `unified`/`query`/`structured`. Boolean supports AND/OR/NOT and parentheses; unified supports file and [message fields](README.Mail.md#structured-message-fields). `semantic` is accepted by `search_index` only. |
 | `caseSensitive` | bool | no | `false` | |
 | `target` | string | no | `content` | `content`, `files` (file names), `folders` (folder names), `names` (both). |
 | `includeGlobs` / `excludeGlobs` | string[] | no | — | Relative-path globs, e.g. `**/*.cs`. |
@@ -177,6 +177,17 @@ Each hit:
 | `sizeBytes` | long? | Absent when unknown. |
 | `modifiedUtc` | string? | ISO 8601; absent when unknown. |
 | `anchor` | string? | Human-readable source anchor (`"page 3"`, sheet/cell, archive member); absent for plain text. |
+| `mailMessage` | object? | Individual-message identity and headers; see below. |
+| `locator` | object? | Structured source location; preserve it when identifying the exact result. |
+
+`mailMessage` contains `id`, `subject`, `from`, `to`, `cc`, `folder`, and `firstLineNumber`, plus optional `dateUtc`, `sentUtc`, and `storeFingerprint`. `dateUtc` is the display date and can use a received-date fallback; `sentUtc` is the submitted/header timestamp without that fallback. Keep the opaque message `id` with `path`: different messages can share one PST/OST file and the same subject. Null properties are omitted.
+
+`locator` follows [SourceLocator](src/FileSearch.Core/Engine/SourceLocator.cs): optional `page`, `slide`, `sheet`, `cellRange`, `startLine`, `endLine`, `column`, `section`, `archiveMember`, `displayText`, OCR geometry (`x`, `y`, `width`, `height`, `sourceWidth`, `sourceHeight`), and nested `mailMessage`/`database` fields. A metadata-only hit can have an empty locator.
+
+- `database` contains `engine` (numeric: `0` SQLite, `1` CSharpDB), `table`, 1-based `rowNumber`, `column`, opaque `rowKey`, and `fingerprint`. These identify a record in an unchanged source; refresh stale search results before using old locations.
+- Archive hits retain the exact `archiveMember`, `archiveFingerprint`, and `archiveContentAnchor`. The inner [SourceAnchor](src/FileSearch.Core/Extractors/SourceAnchor.cs) has numeric `kind`, readable `displayText`, and format-specific page/sheet/cell/line fields. Do not discard it when opening a document inside a ZIP.
+
+These fields describe search hits. `extract_text` returns numbered text and readable anchor labels, rather than this structured metadata.
 
 Real example — request arguments and result:
 
@@ -225,6 +236,10 @@ Real example — request arguments and result:
 Index-backed content search. Same document shape as `search_content` plus a `coverage` array; roots the index cannot serve are reported there and **not searched** — the tool never silently degrades to a live scan.
 
 Parameters: `query` (required), `roots` (optional — omit to search **every indexed location inside the allowed roots**; same 8-root cap when given), `mode`, `caseSensitive`, `includeExtensions`, `excludeExtensions`, `modifiedAfter`, `modifiedBefore`, `maxResults`, `maxResultsPerFile`, `timeoutSeconds` — all as in `search_content`. Content queries only (no `target` parameter).
+
+This tool also accepts `mode: "semantic"`, or a Unified query containing `semantic:` terms. These requests use the core hybrid search route over existing indexed vectors; ordinary lexical requests keep the direct index route. The host reads the desktop document-model configuration. A usable installed model pack and vectors built for that selected model are prerequisites; the server does not install models or build/refresh vectors. Check `index_status.documentModels` and `locations[].smartSearch`, including `isReady` and `message`, before relying on semantic retrieval. A selected or installed model is not proof that a root has ready vectors.
+
+For `mode: "semantic"`, stored Minimum score and Maximum files settings supply the semantic retrieval options; there are no separate MCP parameters for them. `maxResults` still caps the returned tool hits. `search_content` rejects Semantic mode, and literal search remains available without model setup. See [Smart Search setup](src/FileSearch.Gui/Help/smart-search.html).
 
 The server automatically widens each root's request with that root's build-time exclusions (parsed from the stored index profile) before the coverage check. Everything widened was never indexed, so results are unchanged — this is what makes default requests cover GUI- and CLI-built indexes.
 
@@ -283,11 +298,11 @@ Real example — `{ "query": "hello" }` with roots omitted:
 }
 ```
 
-Integration rule of thumb: after a `search_index` call, retry any `covered: false` roots with `search_content`.
+After a lexical `search_index` call, an agent can explicitly retry `covered: false` roots with `search_content`. For semantic requests, live search is not an equivalent fallback: report the missing index/model/vector readiness or ask for a literal query.
 
 ### extract_text
 
-Reads one file through the format extractors (146 extensions in the current build — plain text and source code, PDF, DOCX, XLSX, PPTX, ODT/ODS/ODP, EPUB, RTF, HTML, EML, ICS/VCF, XML, ZIP members, and more; `index_status` returns the authoritative list).
+Reads one file through the registered format extractors: plain text and source code, PDF, DOCX, XLSX, PPTX, ODT/ODS/ODP, EPUB, RTF, HTML, EML/MSG/PST/OST messages, ICS/VCF, XML, ZIP members (including supported PDF/Office content), and SQLite/CSharpDB scalar values. `index_status.server.supportedExtensions` returns the authoritative extension list. Database and archive extraction retain their [database](README.Databases.md#read-only-behavior-and-limits) and [archive limits](src/FileSearch.Gui/Help/results.html#archive-content).
 
 | Parameter | Type | Required | Default | Notes |
 | --- | --- | --- | --- | --- |
@@ -309,7 +324,7 @@ Response (`ExtractResultDocument`):
 | `nextStartLine` | int? | Present when truncated: pass as `startLine` to continue. |
 | `lines` | object[] | `{ "n": <line number>, "text": <content, 500-char cap with …>, "anchor": <optional page/sheet/member label> }`. |
 
-Line numbers are the same ones search hits carry, so the canonical hit-to-context flow is: take `hit.lineNumber`, call `extract_text` with `startLine = lineNumber - N` for N lines of leading context. For archive files, extractors number per member and `anchor` disambiguates.
+For an unchanged source, use `hit.lineNumber` with `extract_text` and `startLine = max(1, lineNumber - N)` for leading context. ZIP extraction numbers its outer stream across members; the search hit's structured archive locator separately preserves the member and inner location. Do not substitute a PDF page number, database row number, or member-local line for the outer extraction line number.
 
 Real example — `{ "path": "C:\\Users\\you\\Documents\\notes\\sample.txt" }`:
 
@@ -347,6 +362,9 @@ Response (`IndexStatusDocument`):
 | `database.failedFileCount` | long | Total extraction failures (detail via `index_failures`). |
 | `database.lastIndexedUtc` | string? | Most recent refresh. |
 | `locations[]` | object[] | Per indexed root: `root`, `exists`, `fileCount`, `lineCount`, `indexedUtc`, `lastValidationStatus`, plus the parsed build profile: `ocrEnabled`, `excludedDirectories`, `excludedExtensions` (what the build skipped — useful for deciding when `search_content` is needed). |
+| `locations[].smartSearch` | object? | Root-specific `root`, `isModelAvailable`, `modelId`, `modelDisplayName`, `indexedFileCount`, `contentUnitCount`, `vectorCount`, `coveredContentUnitCount`, `message`, and `isReady`. Readiness requires an available model and vectors covering the root's content units. |
+| `documentModels` | object? | `enabled` (a nonempty configured selection), `selectedModelId`, and `installed[]` model-pack metadata. Enabled does not mean installed, usable, or indexed. |
+| `documentModels.installed[]` | object[] | `id`, `displayName`, `dimension`, `version`, `variant`, `usable`, and `status`. These report existing packs; no installation happens. |
 | `hiddenLocationCount` | int | Indexed locations outside the allowed roots (listed nowhere). |
 | `rootStats` | object? | `{ root, exists, fileCount, lineCount, indexedUtc }` when `root` was passed. |
 | `server.version` | string | Server version (same as `serverInfo.version`). |
@@ -355,7 +373,7 @@ Response (`IndexStatusDocument`):
 | `server.allowedRoots` | string[]? | The allow-list; absent when `allowAnyRoot` is true. |
 | `server.supportedExtensions` | string[] | Every extension `extract_text`/`search_content` can read. |
 
-Real example (extension list abbreviated — the live call returns all 146):
+Captured example from an earlier build (extension list abbreviated; current calls also report model/vector state when available):
 
 ```json
 {
@@ -454,6 +472,7 @@ Message catalog (prefixed on the wire with `An error occurred invoking '<tool>':
 | `<param> must be an ISO 8601 date/time` | Unparseable `modifiedAfter`/`modifiedBefore` | Use e.g. `2026-06-09` or `2026-06-09T13:00:00Z`. |
 | `No indexed locations are available within the allowed roots` | `search_index` with omitted `roots` and nothing indexed/allowed | Call `index_status`; use `search_content` with explicit roots. |
 | `No text extractor is registered for '<ext>'` | Unsupported file type in `extract_text` | Check `server.supportedExtensions` from `index_status`. |
+| `Semantic search requires an existing Smart Search index` | Semantic mode passed to `search_content` | Use `search_index` after checking selected-model and per-root vector readiness. |
 
 Any other message indicates an unexpected internal failure; details land in the server log file.
 
@@ -559,7 +578,7 @@ If a tunnel is missing, check its workspace association and your tunnel-use perm
 
 An authenticated stdio-to-Streamable-HTTP bridge can expose FileSearch through an HTTPS MCP endpoint. FileSearch itself does not include that bridge. Restrict the allowed roots and authenticate access to the endpoint. Secure MCP Tunnel is the documented private-server path; public plugin distribution still requires a public endpoint, as described in [OpenAI's MCP quickstart](https://developers.openai.com/plugins/build/app-quickstart).
 
-For local OpenAI use without a ChatGPT tunnel, use [Codex](#openai-codex-cli-ide-extension-and-codex-app) or the [Agents SDK](#python--openai-agents-sdk). The MCP tools expose plain, regex, Boolean, and Unified searches; they do not expose the GUI's Semantic mode or relevance controls.
+For local OpenAI use without a ChatGPT tunnel, use [Codex](#openai-codex-cli-ide-extension-and-codex-app) or the [Agents SDK](#python--openai-agents-sdk). `search_index` also supports Semantic mode when a usable selected local model and its indexed vectors are ready; the tools do not install models, build vectors, or expose separate per-call relevance controls.
 
 ### Any other MCP host
 

@@ -33,9 +33,9 @@ Every tool is read-only and annotated as such (`readOnlyHint: true`, `openWorldH
 | MCP tool | Core contract it wraps | What it does |
 | --- | --- | --- |
 | `search_content` | `ISearcher` (live scan path) | Full-text/regex/boolean/unified search that re-reads files under the given roots. Works on any allowed folder, indexed or not; also matches file/folder names via `target`. |
-| `search_index` | `IIndexSearch` (+ `GetCoverageAsync`) | Content search served from the CSharpDB index. Reports per-root `coverage`; roots the index cannot serve are reported, never silently live-scanned. |
-| `extract_text` | `IExtractorRegistry` → `ITextExtractor` | Streams numbered text lines from one file using the registered format extractors (text/code, PDF, DOCX, XLSX, PPTX, ODT/ODS/ODP, EPUB, RTF, HTML, EML, ICS/VCF, XML, ZIP). Line numbers match search hits; PDF pages, sheets, and archive members surface as `anchor`s. |
-| `index_status` | `IIndexMaintenance` (`GetDatabaseInfoAsync`, `GetLocationsAsync`, `GetStatsAsync`) + `IExtractorRegistry.SupportedExtensions` | Index database health/size, indexed locations with freshness and parsed build profile (OCR flag, build-time exclusions), optional per-root stats, plus server capabilities: allowed roots and supported extensions. |
+| `search_index` | `IIndexSearch` (+ `GetCoverageAsync`), with semantic requests routed through `ISearcher` | Content search served from the CSharpDB index, including existing Smart Search vectors. Reports per-root `coverage`; roots the index cannot serve are reported, never silently live-scanned. |
+| `extract_text` | `IExtractorRegistry` → `ITextExtractor` | Streams numbered text lines from one file using the registered format extractors (text/code, PDF, DOCX, XLSX, PPTX, ODT/ODS/ODP, EPUB, RTF, HTML, EML/MSG/PST/OST, ICS/VCF, XML, ZIP, SQLite, and CSharpDB). Line numbers match search hits; document parts, messages, database cells, and archive members have readable `anchor` labels. |
+| `index_status` | `IIndexMaintenance` (`GetDatabaseInfoAsync`, `GetLocationsAsync`, `GetStatsAsync`) + `IExtractorRegistry.SupportedExtensions` | Index database health/size, indexed locations with freshness and parsed build profile, optional per-root stats, model-pack and Smart Search readiness, plus allowed roots and supported extensions. |
 | `index_failures` | `IIndexMaintenance` (`GetFailedFilesAsync`) | Files that failed extraction during indexing, with extractor id/version, error, and attempt counts — the honest explanation for "why doesn't indexed search see this file". |
 
 The write-side contracts (`IIndexWriter.BuildOrRefreshAsync`, `ClearAsync`, `IIndexMaintenance.CompactAsync`) are intentionally not mapped in Phase 1.
@@ -46,11 +46,15 @@ The intended agent flow: call `index_status` once to learn allowed roots, indexe
 
 `search_content` and `search_index` share the query surface of the CLI: `mode` (`plain` | `regex` | `boolean` | `unified`), `caseSensitive`, `includeExtensions`/`excludeExtensions`, `modifiedAfter`/`modifiedBefore` (ISO 8601, treated as UTC), `maxResults`, `maxResultsPerFile`, and `timeoutSeconds`. `search_content` adds `roots` (required), `target` (`content` | `files` | `folders` | `names`), `includeGlobs`/`excludeGlobs`, and `includeHidden`. `search_index` makes `roots` optional — omitted means "every indexed location inside the allowed roots" — and accepts content queries only.
 
-The MCP host does not load the GUI's selected ONNX model or expose its Semantic mode, Minimum score, or Maximum files controls. An assistant can interpret your request and choose tool queries, but that does not enable FileSearch's local vector search through these tools.
+`search_index` additionally accepts `mode: "semantic"` and Unified `semantic:` queries. The host reads FileSearch's document-model settings and uses an existing, usable local model pack and vectors built for that model. Check `index_status.documentModels` and each location's `smartSearch` state first: a configured or installed model alone does not mean its vectors are ready. See the [Smart Search setup guide](src/FileSearch.Gui/Help/smart-search.html).
+
+For `mode: "semantic"`, Minimum score and Maximum files come from the stored desktop settings; the tools have no separate per-call parameters for these controls. No tool installs a model, changes those settings, or builds vectors. `search_content` does not support Semantic mode; ordinary literal searches need no model.
 
 ## Result shaping
 
 Tool output is JSON text: camelCase, `null`s omitted, compact (models pay per token; humans can pipe through a formatter). Field names line up with the CLI's one-shot automation DTOs (search hit, index location, index stats, index failure) so the two machine surfaces stay in lockstep; the MCP additions are the truncation flags, `coverage`, and the parsed profile fields that replace the raw options-hash string.
+
+Search hits also retain `mailMessage` metadata for individual messages and a structured `locator` for page, sheet/cell, database record, or archive-member locations. Keep these alongside the path and line number; several messages can share one PST/OST path. See the [hit schema](README.McpIntegration.md#search_content), [mail fields](README.Mail.md#structured-message-fields), and [database coverage](README.Databases.md).
 
 Every limit degrades to *partial results plus an honest flag*, never an error, because for an agent a partial answer beats a retry loop:
 

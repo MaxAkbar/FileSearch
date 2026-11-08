@@ -28,8 +28,8 @@ The script writes outputs to `artifacts\msi`:
 - `.msi` installer.
 - `SHA256SUMS-<runtime>.txt`.
 
-The MSI publishes the GUI, `FileSearch.Indexer.exe`, `FileSearch.ExtractorHost.exe`,
-and `Help\index.html`, then packages them with WiX. Pass `-CertificateThumbprint`
+The MSI publishes the GUI, CLI, MCP server, `FileSearch.Indexer.exe`,
+`FileSearch.ExtractorHost.exe`, and `Help\index.html`, then packages them with WiX. Pass `-CertificateThumbprint`
 to Authenticode-sign the MSI. For final Microsoft Store MSI/EXE submission, use
 a signing certificate that chains to a Microsoft Trusted Root Program certificate
 authority.
@@ -63,9 +63,9 @@ The script writes outputs to `artifacts\store`:
 
 The app help bundle is published from `src\FileSearch.Gui\Help` and is included
 in the package root as `Help\index.html`. The packaging script also publishes
-the companion `FileSearch.Indexer.exe` background worker and
-`FileSearch.ExtractorHost.exe` out-of-process extractor host beside
-`FileSearch.Gui.exe`; all three are verified before creating the MSIX.
+the `FileSearch.Cli.exe` command line, `FileSearch.Indexer.exe` background worker,
+and `FileSearch.ExtractorHost.exe` out-of-process extractor host beside
+`FileSearch.Gui.exe`; all four are verified before creating the MSIX.
 
 For local sideload testing, sign the `.msix` by passing `-CertificateThumbprint`
 with a certificate trusted on the test machine. The script timestamps signed
@@ -92,3 +92,5 @@ The GitHub Actions **Release** workflow always creates a portable ZIP for versio
 tags and an MSI for the Store MSI/EXE path. It also creates signed MSIX Store
 artifacts when the Store variables and signing secrets are configured in the
 protected `release-signing` environment.
+
+For the complete release process, see the [release checklist](../docs/RELEASE_CHECKLIST.md).

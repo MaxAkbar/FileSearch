@@ -2,7 +2,7 @@
 param(
     [ValidateSet('win-x64', 'win-arm64')]
     [string]$RuntimeIdentifier = 'win-x64',
-    [string]$Version = '1.10.0.0',
+    [string]$Version = '1.11.0.0',
     [string]$PackageIdentityName = 'MaxAkbar.FileSearch.PowerToys',
     [string]$Publisher = 'CN=CE11F335-A232-43CF-824D-292CFB1D1A12',
     [string]$OutputRoot = 'artifacts\powertoys',

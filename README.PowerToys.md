@@ -65,7 +65,7 @@ integration. FileSearch and its settings and indexes remain available.
 ## Build the optional package
 
 ```powershell
-.\scripts\New-PowerToysPackage.ps1 -RuntimeIdentifier win-x64 -Version 1.10.0.0
+.\scripts\New-PowerToysPackage.ps1 -RuntimeIdentifier win-x64 -Version 1.11.0.0
 ```
 
 The script requires the .NET 10 SDK and Windows SDK packaging tools, but does not

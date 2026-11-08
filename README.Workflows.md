@@ -6,9 +6,25 @@ Use **Add step → Find and replace** to configure content or name replacement. 
 
 **Dry run** performs searches and replacement previews without writing files. **Run** pauses at each replacement step for before/after review and item checkboxes. Click **Apply checked** to continue with the approved items, or **Cancel** to skip that step. Enter does not apply changes. Cancelling the workflow or closing its window stops the run; completed changes remain recoverable.
 
-Replacement uses the same text/Office/name adapters, stale-file checks, encoding preservation, backups, and protected-root rules as the main Search screen. See [Find and replace](README.md#find-and-replace) for supported formats and defaults. Names changed by a step are remapped in earlier search results and active for-each variables so later steps and exports use their current paths. Exports still contain the original search hits; use a new Search step to verify the modified contents.
+Replacement uses the same text/Office/name adapters, stale-file checks, encoding preservation, backups, and protected-root rules as the main Search screen. See [Find and replace](#find-and-replace) for supported formats and defaults. Names changed by a step are remapped in earlier search results and active for-each variables so later steps and exports use their current paths. Exports still contain the original search hits; use a new Search step to verify the modified contents.
 
 The run log records applied change counts, skipped items, failures, and batch IDs. Durable group manifests and batch journals are stored under `%LOCALAPPDATA%\FileSearch\ReplacementBackups`. **Undo workflow replacements**, beneath the run log, restores every replacement batch from the last workflow run in reverse order, including after restarting the app. Conflicts stop earlier dependent batches from being undone. Copies, moves, exports, and program launches are separate workflow actions and are outside replacement Undo.
+
+## Find and replace
+
+In the desktop app, click **Replace** below the query row, select **Search → Find and replace**, or press **Ctrl+H** (configurable in Settings). The query box becomes **Find**; closing the panel restores your normal search query and mode.
+
+Choose **Contents** or **Names**, enter **Replace with**, then click **Preview changes** or press Enter. Preview scans the current folder and filters directly. Review the before/after details, uncheck unwanted items, and click **Apply checked**. Empty replacement text removes matches; regex mode supports capture substitutions such as `$1`.
+
+Replacement requires **Selected folder** scope. Choose that scope and an explicit folder, or use **Browse**, before previewing or applying changes. Indexed-location search scopes cannot use a remembered folder for replacement; changing scope invalidates the previous replacement preview.
+
+Content replacement supports UTF-8 and BOM-marked Unicode text, `.docx` body/table/header/footer paragraphs, `.pptx` slide/notes paragraphs, and `.xlsx` text cells. **Also replace in formulas** explicitly enables textual editing of ordinary Excel formula expressions; Excel recalculates them on opening. Shared, array, and spill formulas are skipped. PDF, OCR, archives, mail, legacy/macro-enabled Office formats, signed/protected documents, binary files, and unsupported text encodings are not content replacement targets.
+
+Name replacement supports files, folders, or both, and preserves file extensions unless **Include extensions** is selected. Collisions and invalid names are skipped. The scope root, indexed roots, their ancestors, and linked files/folders are protected.
+
+**Undo last batch** survives app restarts. Originals and recovery journals are retained under `%LOCALAPPDATA%\FileSearch\ReplacementBackups`; changed files or occupied original names are reported as recovery conflicts rather than overwritten. Cancelled batches retain completed items for Undo.
+
+Saved workflows also support **Add step → Find and replace**, with fresh previews, checked-item review, and grouped Undo after restart. CLI workflow runs require explicit `--apply-replacements` authorization. See the workflow JSON examples below.
 
 ## JSON example
 
