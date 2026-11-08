@@ -9,10 +9,10 @@
     <InternalsVisibleTo Include="FileSearch.PowerToys.Tests" />
     <ProjectReference Include="..\FileSearch.Core\FileSearch.Core.csproj" />
     <ProjectReference Include="..\FileSearch.WindowsOcr\FileSearch.WindowsOcr.csproj" />
-    <PackageReference Include="Microsoft.CommandPalette.Extensions" Version="0.11.260520004" />
-    <PackageReference Include="Microsoft.Windows.CsWinRT" Version="2.2.0" />
-    <PackageReference Include="Shmuelie.WinRTServer" Version="2.1.1" />
-    <PackageReference Include="Microsoft.Extensions.DependencyInjection" Version="10.0.12" />
+    <PackageReference Include="Microsoft.CommandPalette.Extensions" Version="0.12.260812002" />
+    <PackageReference Include="Microsoft.Windows.CsWinRT" Version="2.3.1" />
+    <PackageReference Include="Shmuelie.WinRTServer" Version="2.2.1" />
+    <PackageReference Include="Microsoft.Extensions.DependencyInjection" Version="10.0.14" />
   </ItemGroup>
   <ItemGroup>
     <Content Include="THIRD-PARTY-NOTICES.txt" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />

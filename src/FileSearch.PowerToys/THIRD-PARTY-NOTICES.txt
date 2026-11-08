@@ -1,12 +1,16 @@
 FileSearch for PowerToys - optional companion dependencies
 
-Microsoft.CommandPalette.Extensions 0.11.260520004
+Microsoft.CommandPalette.Extensions 0.12.260812002
 Copyright (c) Microsoft Corporation.
 https://github.com/microsoft/PowerToys
 
-Shmuelie.WinRTServer 2.1.1
+Microsoft.Windows.CsWinRT 2.3.1 (WinRT.Runtime)
+Copyright (c) Microsoft Corporation.
+https://github.com/microsoft/CsWinRT/commit/ff5227a4ffca06dfa6de8ca0a5c127c04f294291
+
+Shmuelie.WinRTServer 2.2.1
 Copyright (c) 2025 Shmueli Englard.
-https://github.com/shmuelie/Shmuelie.WinRTServer
+https://github.com/shmuelie/Shmuelie.WinRTServer/commit/4236b787fb27934e2b16567fef4b2e8893d26596
 
 These components and the PowerToys extension template are licensed under MIT:
 
