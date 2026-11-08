@@ -112,7 +112,7 @@ public sealed class ReplacementLocationScopeTests : IDisposable
     }
 
     private void Run(RecordingReplacementService service,
-        Action<PumpingSynchronizationContext, SearchViewModel, ReplacementViewModel, RecordingReplacementService, string> action)
+        Action<PumpingSynchronizationContext, SearchViewModel, ReplacementViewModel, RecordingReplacementService, string> action) => StaTestDispatcher.Run(() =>
     {
         string file = Path.Combine(_root, "needle.txt");
         File.WriteAllText(file, "needle");
@@ -132,7 +132,7 @@ public sealed class ReplacementLocationScopeTests : IDisposable
             action(pump, search, replacement, service, file);
         }
         finally { service.CompletePreview(); SynchronizationContext.SetSynchronizationContext(previous); }
-    }
+    });
 
     private static void Complete(PumpingSynchronizationContext pump, Task task)
     {

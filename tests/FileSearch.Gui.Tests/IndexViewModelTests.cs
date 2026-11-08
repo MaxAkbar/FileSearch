@@ -15,7 +15,7 @@ namespace FileSearch.Gui.Tests;
 public sealed class IndexViewModelTests
 {
     [Fact]
-    public void SearchPathChangeRefreshesCurrentFolderState()
+    public Task SearchPathChangeRefreshesCurrentFolderState() => StaTestDispatcher.RunAsync(() =>
     {
         var (search, index) = Build();
         var raised = new List<string>();
@@ -28,10 +28,10 @@ public sealed class IndexViewModelTests
         Assert.Contains(nameof(IndexViewModel.IsCurrentFolderIndexed), raised);
         Assert.Contains(nameof(IndexViewModel.CurrentFolderIndexActionText), raised);
         Assert.True(canExecuteChanged);
-    }
+    }, TimeSpan.FromSeconds(20), TestContext.Current.CancellationToken);
 
     [Fact]
-    public void DisposeStopsListeningToSearchChanges()
+    public Task DisposeStopsListeningToSearchChanges() => StaTestDispatcher.RunAsync(() =>
     {
         var (search, index) = Build();
         index.Dispose();
@@ -42,10 +42,10 @@ public sealed class IndexViewModelTests
         search.SearchPath = Path.GetTempPath();
 
         Assert.Empty(raised);
-    }
+    }, TimeSpan.FromSeconds(20), TestContext.Current.CancellationToken);
 
     [Fact]
-    public void ActiveRefreshProgressUpdatesLocationRuntimeSummary()
+    public Task ActiveRefreshProgressUpdatesLocationRuntimeSummary() => StaTestDispatcher.RunAsync(() =>
     {
         var root = Path.GetTempPath();
         var status = new StatusBarViewModel();
@@ -96,10 +96,10 @@ public sealed class IndexViewModelTests
         Assert.Equal(10, location.FileCount);
         Assert.Equal(20, location.LineCount);
         Assert.Equal("1 location, 10 files, 20 lines (scanning 10)", index.IndexDatabaseContentText);
-    }
+    }, TimeSpan.FromSeconds(20), TestContext.Current.CancellationToken);
 
     [Fact]
-    public async Task RebuildSelectedIndexQueuesFullRebuild()
+    public Task RebuildSelectedIndexQueuesFullRebuild() => StaTestDispatcher.RunAsync(async () =>
     {
         var root = Path.Combine(Path.GetTempPath(), "filesearch-rebuild-ui-" + Guid.NewGuid().ToString("N"));
         Directory.CreateDirectory(root);
@@ -121,10 +121,10 @@ public sealed class IndexViewModelTests
         {
             Directory.Delete(root, recursive: true);
         }
-    }
+    }, TimeSpan.FromSeconds(20), TestContext.Current.CancellationToken);
 
     [Fact]
-    public void StartupCatchUpDetailsUpdateLocationRuntimeSummary()
+    public Task StartupCatchUpDetailsUpdateLocationRuntimeSummary() => StaTestDispatcher.RunAsync(() =>
     {
         var root = IndexPath.NormalizeRoot(Path.GetTempPath());
         var status = new StatusBarViewModel();
@@ -184,10 +184,10 @@ public sealed class IndexViewModelTests
             }));
 
         Assert.Equal("Caught up via USN journal", location.RuntimeStatusSummary);
-    }
+    }, TimeSpan.FromSeconds(20), TestContext.Current.CancellationToken);
 
     [Fact]
-    public void DatabaseInfoIsFormattedForIndexedLocationsPanel()
+    public Task DatabaseInfoIsFormattedForIndexedLocationsPanel() => StaTestDispatcher.RunAsync(() =>
     {
         var fileIndex = new FakeFileIndex
         {
@@ -272,10 +272,10 @@ public sealed class IndexViewModelTests
         Assert.Contains("Cloud folder: snapshot scan + watcher", location.StrategySummary);
         Assert.Contains("startup snapshot scan", location.StrategySummary);
         Assert.StartsWith("Last indexed ", index.IndexDatabaseLastIndexedText);
-    }
+    }, TimeSpan.FromSeconds(20), TestContext.Current.CancellationToken);
 
     [Fact]
-    public async Task AddFolderToIndexUsesNewIndexOptions()
+    public Task AddFolderToIndexUsesNewIndexOptions() => StaTestDispatcher.RunAsync(async () =>
     {
         var root = Path.Combine(Path.GetTempPath(), "filesearch-add-index-options-" + Guid.NewGuid().ToString("N"));
         Directory.CreateDirectory(root);
@@ -324,10 +324,10 @@ public sealed class IndexViewModelTests
         {
             Directory.Delete(root, recursive: true);
         }
-    }
+    }, TimeSpan.FromSeconds(20), TestContext.Current.CancellationToken);
 
     [Fact]
-    public async Task AddFolderToIndexUsesWorkerWhenBackgroundIndexerModeIsEnabled()
+    public Task AddFolderToIndexUsesWorkerWhenBackgroundIndexerModeIsEnabled() => StaTestDispatcher.RunAsync(async () =>
     {
         var root = Path.Combine(Path.GetTempPath(), "filesearch-add-index-worker-" + Guid.NewGuid().ToString("N"));
         Directory.CreateDirectory(root);
@@ -352,10 +352,10 @@ public sealed class IndexViewModelTests
             Directory.Delete(root, recursive: true);
             index.Dispose();
         }
-    }
+    }, TimeSpan.FromSeconds(20), TestContext.Current.CancellationToken);
 
     [Fact]
-    public void NamedIndexFilterListsCanBeSavedAndSelected()
+    public Task NamedIndexFilterListsCanBeSavedAndSelected() => StaTestDispatcher.RunAsync(() =>
     {
         var (_, index) = Build();
         index.NewIndexInclusionListName = "Source";
@@ -389,10 +389,10 @@ public sealed class IndexViewModelTests
         Assert.Equal("src; tests", index.NewIndexIncludedFolders);
         Assert.Equal(".dll; .exe", index.NewIndexExcludedExtensions);
         Assert.Equal("bin; obj", index.NewIndexExcludedFolders);
-    }
+    }, TimeSpan.FromSeconds(20), TestContext.Current.CancellationToken);
 
     [Fact]
-    public async Task CompactCommandRunsMaintenanceAndRefreshesDatabaseInfo()
+    public Task CompactCommandRunsMaintenanceAndRefreshesDatabaseInfo() => StaTestDispatcher.RunAsync(async () =>
     {
         var fileIndex = new FakeFileIndex
         {
@@ -423,10 +423,10 @@ public sealed class IndexViewModelTests
         Assert.Equal(1, fileIndex.CompactCallCount);
         Assert.Contains("1.5 KB total", index.IndexDatabaseSizeText);
         Assert.Equal("No pending index changes", index.IndexDatabaseQueueText);
-    }
+    }, TimeSpan.FromSeconds(20), TestContext.Current.CancellationToken);
 
     [Fact]
-    public async Task RemoveSelectedIndexRemovesLocationBeforeStorageClearCompletes()
+    public Task RemoveSelectedIndexRemovesLocationBeforeStorageClearCompletes() => StaTestDispatcher.RunAsync(async () =>
     {
         var root = Path.Combine(Path.GetTempPath(), "filesearch-remove-ui-" + Guid.NewGuid().ToString("N"));
         var indexingService = new FakeIndexingService
@@ -446,10 +446,10 @@ public sealed class IndexViewModelTests
         Assert.False(indexingService.RemoveLocationCompletion.Task.IsCompleted);
 
         indexingService.RemoveLocationCompletion.SetResult();
-    }
+    }, TimeSpan.FromSeconds(20), TestContext.Current.CancellationToken);
 
     [Fact]
-    public async Task CompactCommandQueuesDuringIndexingAndRunsWhenCurrentWorkStops()
+    public Task CompactCommandQueuesDuringIndexingAndRunsWhenCurrentWorkStops() => StaTestDispatcher.RunAsync(async () =>
     {
         var fileIndex = new FakeFileIndex
         {
@@ -505,10 +505,10 @@ public sealed class IndexViewModelTests
         Assert.Equal(1, indexingService.ResumeCallCount);
         Assert.False(indexingService.IsPaused);
         Assert.Contains("1.5 KB total", index.IndexDatabaseSizeText);
-    }
+    }, TimeSpan.FromSeconds(20), TestContext.Current.CancellationToken);
 
     [Fact]
-    public async Task CompactCommandUsesWorkerWhenBackgroundIndexerIsActive()
+    public Task CompactCommandUsesWorkerWhenBackgroundIndexerIsActive() => StaTestDispatcher.RunAsync(async () =>
     {
         var fileIndex = new FakeFileIndex
         {
@@ -545,10 +545,10 @@ public sealed class IndexViewModelTests
 
         Assert.Equal(1, backgroundIndexer.CompactDatabaseCallCount);
         Assert.Equal(0, fileIndex.CompactCallCount);
-    }
+    }, TimeSpan.FromSeconds(20), TestContext.Current.CancellationToken);
 
     [Fact]
-    public async Task ValidateSelectedIndexUsesWorkerWhenBackgroundIndexerModeIsEnabled()
+    public Task ValidateSelectedIndexUsesWorkerWhenBackgroundIndexerModeIsEnabled() => StaTestDispatcher.RunAsync(async () =>
     {
         var root = Path.Combine(Path.GetTempPath(), "filesearch-validate-worker-" + Guid.NewGuid().ToString("N"));
         var fileIndex = new FakeFileIndex();
@@ -569,10 +569,10 @@ public sealed class IndexViewModelTests
         Assert.Equal(1, backgroundIndexer.ValidateRootCallCount);
         Assert.Equal(0, fileIndex.ValidateRootCallCount);
         Assert.Contains("Validated", index.SelectedIndexValidationProgressText);
-    }
+    }, TimeSpan.FromSeconds(20), TestContext.Current.CancellationToken);
 
     [Fact]
-    public async Task SelectingLocationRefreshesSemanticIndexStatus()
+    public Task SelectingLocationRefreshesSemanticIndexStatus() => StaTestDispatcher.RunAsync(async () =>
     {
         var root = Path.Combine(Path.GetTempPath(), "filesearch-semantic-status-" + Guid.NewGuid().ToString("N"));
         var semanticStatus = new StubSemanticIndexStatusService(new SemanticIndexRootStatus(
@@ -594,10 +594,10 @@ public sealed class IndexViewModelTests
 
         Assert.Contains("3 vectors cover 4/5", index.SelectedSemanticIndexStatusText);
         Assert.Equal(IndexPath.NormalizeRoot(root), semanticStatus.LastRoot);
-    }
+    }, TimeSpan.FromSeconds(20), TestContext.Current.CancellationToken);
 
     [Fact]
-    public async Task RebuildSelectedSemanticIndexQueuesSemanticRefresh()
+    public Task RebuildSelectedSemanticIndexQueuesSemanticRefresh() => StaTestDispatcher.RunAsync(async () =>
     {
         var root = Path.Combine(Path.GetTempPath(), "filesearch-semantic-rebuild-" + Guid.NewGuid().ToString("N"));
         var indexingService = new FakeIndexingService();
@@ -610,10 +610,10 @@ public sealed class IndexViewModelTests
 
         Assert.Equal(1, indexingService.EnqueuedSemanticRootRefreshCount);
         Assert.Equal("Smart Search rebuild queued.", index.SelectedSemanticIndexStatusText);
-    }
+    }, TimeSpan.FromSeconds(20), TestContext.Current.CancellationToken);
 
     [Fact]
-    public async Task RebuildSelectedSemanticIndexUsesWorkerWhenBackgroundIndexerModeIsEnabled()
+    public Task RebuildSelectedSemanticIndexUsesWorkerWhenBackgroundIndexerModeIsEnabled() => StaTestDispatcher.RunAsync(async () =>
     {
         var root = Path.Combine(Path.GetTempPath(), "filesearch-semantic-rebuild-worker-" + Guid.NewGuid().ToString("N"));
         var indexingService = new FakeIndexingService();
@@ -633,10 +633,10 @@ public sealed class IndexViewModelTests
         Assert.Equal(0, indexingService.EnqueuedSemanticRootRefreshCount);
         Assert.Equal(1, backgroundIndexer.RefreshSemanticRootCallCount);
         Assert.Equal(IndexPath.NormalizeRoot(root), Assert.Single(backgroundIndexer.SemanticRefreshedLocations).Root);
-    }
+    }, TimeSpan.FromSeconds(20), TestContext.Current.CancellationToken);
 
     [Fact]
-    public async Task ExportIndexFailuresUsesSavePickerAndIndexExport()
+    public Task ExportIndexFailuresUsesSavePickerAndIndexExport() => StaTestDispatcher.RunAsync(async () =>
     {
         var exportPath = Path.Combine(Path.GetTempPath(), "filesearch-failures.json");
         var fileIndex = new FakeFileIndex
@@ -680,10 +680,10 @@ public sealed class IndexViewModelTests
         Assert.Equal(1, fileIndex.ExportFailuresCallCount);
         Assert.Equal(exportPath, fileIndex.ExportFailuresPath);
         Assert.Equal(IndexFailureExportFormat.Json, fileIndex.ExportFailuresFormat);
-    }
+    }, TimeSpan.FromSeconds(20), TestContext.Current.CancellationToken);
 
     [Fact]
-    public async Task SelectingHealthRootLoadsValidationDriftDetails()
+    public Task SelectingHealthRootLoadsValidationDriftDetails() => StaTestDispatcher.RunAsync(async () =>
     {
         var root = IndexPath.NormalizeRoot(Path.Combine(Path.GetTempPath(), "filesearch-health-drift"));
         var driftPath = IndexPath.NormalizeFile(Path.Combine(root, "added.txt"));
@@ -711,10 +711,10 @@ public sealed class IndexViewModelTests
         Assert.Equal(IndexValidationDriftKind.MissingFromIndex, item.Kind);
         Assert.Equal(driftPath, item.Path);
         Assert.Equal("1 validation drift item", index.SelectedIndexValidationDriftSummaryText);
-    }
+    }, TimeSpan.FromSeconds(20), TestContext.Current.CancellationToken);
 
     [Fact]
-    public void IndexerResourceProfileSettingUpdatesIndexingService()
+    public Task IndexerResourceProfileSettingUpdatesIndexingService() => StaTestDispatcher.RunAsync(() =>
     {
         var status = new StatusBarViewModel();
         var settings = new FakeSettingsService();
@@ -752,7 +752,7 @@ public sealed class IndexViewModelTests
         {
             search.Dispose();
         }
-    }
+    }, TimeSpan.FromSeconds(20), TestContext.Current.CancellationToken);
 
     private static (SearchViewModel Search, IndexViewModel Index) Build(
         FakeFileIndex? fileIndex = null,

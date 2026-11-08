@@ -122,7 +122,7 @@ public sealed class SearchGuidanceViewModelTests
         Assert.Contains("File names: Indexed results; Name index covers this drive", summary);
     }
 
-    private static void Run(Action<PumpingSynchronizationContext, SearchViewModel> body, ISearcher? searcher = null)
+    private static void Run(Action<PumpingSynchronizationContext, SearchViewModel> body, ISearcher? searcher = null) => StaTestDispatcher.Run(() =>
     {
         var previous = SynchronizationContext.Current;
         var pump = new PumpingSynchronizationContext();
@@ -138,7 +138,7 @@ public sealed class SearchGuidanceViewModelTests
             body(pump, vm);
         }
         finally { SynchronizationContext.SetSynchronizationContext(previous); }
-    }
+    });
 
     private sealed class EmptyRouteSearcher(bool fail) : ISearcher
     {

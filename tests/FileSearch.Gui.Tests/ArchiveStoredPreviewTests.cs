@@ -96,7 +96,7 @@ public sealed class ArchiveStoredPreviewTests
         return file;
     }
 
-    private static void WithMain(Action<PumpingSynchronizationContext, SearchViewModel, MisleadingPreview> action)
+    private static void WithMain(Action<PumpingSynchronizationContext, SearchViewModel, MisleadingPreview> action) => StaTestDispatcher.Run(() =>
     {
         var previous = SynchronizationContext.Current;
         var pump = new PumpingSynchronizationContext();
@@ -113,7 +113,7 @@ public sealed class ArchiveStoredPreviewTests
             action(pump, main, preview);
         }
         finally { SynchronizationContext.SetSynchronizationContext(previous); }
-    }
+    });
 
     private sealed class MisleadingPreview : IFilePreviewService
     {

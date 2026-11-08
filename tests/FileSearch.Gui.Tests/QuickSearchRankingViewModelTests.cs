@@ -266,7 +266,7 @@ public sealed class QuickSearchRankingViewModelTests : IDisposable
 
     private void WithQuick(ISearcher source, IVolumeNameIndex? volume,
         Action<PumpingSynchronizationContext, QuickSearchViewModel, FakeSettingsService> body, IFilePreviewService? preview = null,
-        FakeFileLauncher? launcher = null)
+        FakeFileLauncher? launcher = null) => StaTestDispatcher.Run(() =>
     {
         var previous = SynchronizationContext.Current;
         var pump = new PumpingSynchronizationContext();
@@ -291,7 +291,7 @@ public sealed class QuickSearchRankingViewModelTests : IDisposable
             body(pump, quick, settings);
         }
         finally { SynchronizationContext.SetSynchronizationContext(previous); }
-    }
+    });
 
     private static VolumeTermSearchResult Matches(params string[] paths) =>
         new(paths.Select(path => new VolumeTermMatch(path, false, 1)).ToArray(), paths.Length, [], [], TimeSpan.Zero);

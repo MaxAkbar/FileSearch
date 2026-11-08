@@ -132,25 +132,8 @@ public sealed class ResultRefinementTests
 
     private static string[] Marked(TextBlock block) => block.Inlines.OfType<Run>().Where(run => run.Background is not null).Select(run => run.Text).ToArray();
 
-    private static async Task OnDispatcherAsync(Func<Task> action)
-    {
-        var completion = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
-        var thread = new Thread(() =>
-        {
-            var dispatcher = Dispatcher.CurrentDispatcher;
-            SynchronizationContext.SetSynchronizationContext(new DispatcherSynchronizationContext(dispatcher));
-            dispatcher.BeginInvoke(async () =>
-            {
-                try { await action(); completion.SetResult(); }
-                catch (Exception error) { completion.SetException(error); }
-                finally { dispatcher.BeginInvokeShutdown(DispatcherPriority.Background); }
-            });
-            Dispatcher.Run();
-        })
-        { IsBackground = true };
-        thread.SetApartmentState(ApartmentState.STA); thread.Start();
-        await completion.Task.WaitAsync(TimeSpan.FromSeconds(20), TestContext.Current.CancellationToken);
-    }
+    private static Task OnDispatcherAsync(Func<Task> action) =>
+        StaTestDispatcher.RunAsync(action, TimeSpan.FromSeconds(20), TestContext.Current.CancellationToken);
 
     private sealed class CountingSearcher : ISearcher
     {

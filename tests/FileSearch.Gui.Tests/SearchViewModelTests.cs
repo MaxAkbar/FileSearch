@@ -1388,7 +1388,7 @@ public sealed class SearchViewModelTests
         ISearcher? searcher = null,
         IFileSavePicker? fileSavePicker = null,
         IFileOperationService? fileOperationService = null,
-        IFileLauncher? fileLauncher = null)
+        IFileLauncher? fileLauncher = null) => StaTestDispatcher.Run(() =>
     {
         var previous = SynchronizationContext.Current;
         var pump = new PumpingSynchronizationContext();
@@ -1419,7 +1419,7 @@ public sealed class SearchViewModelTests
         {
             SynchronizationContext.SetSynchronizationContext(previous);
         }
-    }
+    });
 
     /// <summary>Yields three hits across two files, then completes.</summary>
     private sealed class StubSearcher : ISearcher

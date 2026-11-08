@@ -410,7 +410,7 @@ public sealed class SearchLocationScopeTests : IDisposable
 
     private static void Run(RecordingSearcher searcher, Action<AppSettings> configure,
         Action<PumpingSynchronizationContext, SearchViewModel, HistoryViewModel, StatusBarViewModel, FakeSettingsService> action,
-        string? exportPath = null)
+        string? exportPath = null) => StaTestDispatcher.Run(() =>
     {
         var previous = SynchronizationContext.Current;
         var pump = new PumpingSynchronizationContext();
@@ -426,7 +426,7 @@ public sealed class SearchLocationScopeTests : IDisposable
             action(pump, vm, history, status, settings);
         }
         finally { searcher.Release(); SynchronizationContext.SetSynchronizationContext(previous); }
-    }
+    });
 
     private sealed class RecordingSearcher(Func<SearchRequest, IEnumerable<Hit>>? hits = null, bool waitForRelease = false) : ISearcher
     {

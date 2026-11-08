@@ -153,7 +153,8 @@ public sealed class ArchiveCoverageSearchTests
 
         using var current = new CSharpDbFileIndex(files.IndexOptions, walker, new ExtractorRegistry([new ZipExtractor()]));
         var stale = await current.GetCoverageAsync(request, Token);
-        Assert.Equal(IndexCoverageStatus.Incompatible, stale.Status);
+        Assert.True(stale.Status == IndexCoverageStatus.Incompatible,
+            $"Expected incompatible extractor coverage after reopening the unchanged archive index; got {stale.Status}. Coverage message: {stale.Message}");
         Assert.Contains("extractor versions", stale.Message, StringComparison.OrdinalIgnoreCase);
         await current.BuildOrRefreshAsync(new IndexRequest(files.Root, files.Walk), Token);
         Assert.Equal(IndexCoverageStatus.Covered, (await current.GetCoverageAsync(request, Token)).Status);

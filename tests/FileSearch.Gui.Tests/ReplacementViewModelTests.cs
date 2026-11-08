@@ -107,7 +107,7 @@ public sealed class ReplacementViewModelTests
     {
         pump.PumpUntil(() => task.IsCompleted, TimeSpan.FromSeconds(20)); task.GetAwaiter().GetResult();
     }
-    private static void Run(Action<PumpingSynchronizationContext, SearchViewModel, ReplacementViewModel, FakeSettingsService, HistoryViewModel> action)
+    private static void Run(Action<PumpingSynchronizationContext, SearchViewModel, ReplacementViewModel, FakeSettingsService, HistoryViewModel> action) => StaTestDispatcher.Run(() =>
     {
         var directory = Path.Combine(Path.GetTempPath(), "replacement-gui-" + Guid.NewGuid().ToString("N")); Directory.CreateDirectory(directory);
         var previous = SynchronizationContext.Current; var pump = new PumpingSynchronizationContext(); SynchronizationContext.SetSynchronizationContext(pump);
@@ -124,5 +124,5 @@ public sealed class ReplacementViewModelTests
             action(pump, search, replacement, settings, history);
         }
         finally { SynchronizationContext.SetSynchronizationContext(previous); Directory.Delete(directory, true); }
-    }
+    });
 }

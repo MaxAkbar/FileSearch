@@ -298,7 +298,7 @@ public sealed class QuickSearchScopeHandoffTests : IDisposable
 
     private static void Run(string root,
         Action<PumpingSynchronizationContext, SearchViewModel, QuickSearchViewModel, FakeSettingsService, RecordingSearcher> body,
-        ISearcher? quickSearcher = null, RecordingSearcher? mainSearcher = null)
+        ISearcher? quickSearcher = null, RecordingSearcher? mainSearcher = null) => StaTestDispatcher.Run(() =>
     {
         var previous = SynchronizationContext.Current;
         var pump = new PumpingSynchronizationContext();
@@ -322,7 +322,7 @@ public sealed class QuickSearchScopeHandoffTests : IDisposable
             body(pump, main, quick, settings, recorder);
         }
         finally { SynchronizationContext.SetSynchronizationContext(previous); }
-    }
+    });
 
     private sealed class RecordingSearcher(Func<SearchRequest, IReadOnlyList<Hit>>? hits = null) : ISearcher
     {

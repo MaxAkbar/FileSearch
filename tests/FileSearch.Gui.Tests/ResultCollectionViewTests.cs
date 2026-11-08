@@ -8,7 +8,7 @@ namespace FileSearch.Gui.Tests;
 public sealed class ResultCollectionViewTests
 {
     [Fact]
-    public void IncrementalGroupChangesRemainVisibleBetweenRefreshes()
+    public Task IncrementalGroupChangesRemainVisibleBetweenRefreshes() => StaTestDispatcher.RunAsync(() =>
     {
         var files = new System.Collections.ObjectModel.ObservableCollection<FileResultViewModel>();
         var view = new ResultCollectionView(files);
@@ -29,12 +29,12 @@ public sealed class ResultCollectionViewTests
         files.Clear();
         Assert.Empty(view.Groups!);
         Assert.Empty(view);
-    }
+    }, TimeSpan.FromSeconds(20), TestContext.Current.CancellationToken);
 
     [Theory]
     [InlineData(false)]
     [InlineData(true)]
-    public void ContiguousGroupingPreservesNativeGroupAndFileOrder(bool filter)
+    public Task ContiguousGroupingPreservesNativeGroupAndFileOrder(bool filter) => StaTestDispatcher.RunAsync(() =>
     {
         var files = Enumerable.Range(0, 2_000).Select(i =>
         {
@@ -66,5 +66,5 @@ public sealed class ResultCollectionViewTests
         optimized.Refresh();
         Assert.Equal([System.Collections.Specialized.NotifyCollectionChangedAction.Reset], groupEvents);
         Assert.Equal(native.Cast<FileResultViewModel>().Select(file => file.FullPath), optimized.Cast<FileResultViewModel>().Select(file => file.FullPath));
-    }
+    }, TimeSpan.FromSeconds(20), TestContext.Current.CancellationToken);
 }

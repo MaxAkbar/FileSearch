@@ -163,23 +163,6 @@ public sealed class HitHighlightPlainTextTests
         block.Arrange(new Rect(new Point(), block.DesiredSize));
     }
 
-    private static async Task OnDispatcherAsync(Action action)
-    {
-        var completion = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
-        var thread = new Thread(() =>
-        {
-            var dispatcher = Dispatcher.CurrentDispatcher;
-            SynchronizationContext.SetSynchronizationContext(new DispatcherSynchronizationContext(dispatcher));
-            dispatcher.BeginInvoke(() =>
-            {
-                try { action(); completion.SetResult(); }
-                catch (Exception error) { completion.SetException(error); }
-                finally { dispatcher.BeginInvokeShutdown(DispatcherPriority.Background); }
-            });
-            Dispatcher.Run();
-        })
-        { IsBackground = true };
-        thread.SetApartmentState(ApartmentState.STA); thread.Start();
-        await completion.Task.WaitAsync(TimeSpan.FromSeconds(20), TestContext.Current.CancellationToken);
-    }
+    private static Task OnDispatcherAsync(Action action) =>
+        StaTestDispatcher.RunAsync(action, TimeSpan.FromSeconds(20), TestContext.Current.CancellationToken);
 }

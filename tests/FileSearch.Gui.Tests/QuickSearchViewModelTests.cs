@@ -457,7 +457,7 @@ public sealed class QuickSearchViewModelTests
         ISearcher? quickSearcher = null,
         FakeFolderPicker? folderPicker = null,
         IVolumeNameIndex? volumeIndex = null,
-        IFilePreviewService? previewService = null)
+        IFilePreviewService? previewService = null) => StaTestDispatcher.Run(() =>
     {
         var previous = SynchronizationContext.Current;
         var pump = new PumpingSynchronizationContext();
@@ -496,7 +496,7 @@ public sealed class QuickSearchViewModelTests
         {
             SynchronizationContext.SetSynchronizationContext(previous);
         }
-    }
+    });
 
     private static string CreateTempDirectory()
     {

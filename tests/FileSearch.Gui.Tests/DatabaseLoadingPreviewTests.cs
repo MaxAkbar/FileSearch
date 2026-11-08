@@ -485,23 +485,6 @@ public sealed class DatabaseLoadingPreviewTests : IAsyncDisposable
         }
     }
 
-    private static async Task OnDispatcherAsync(Func<Task> action)
-    {
-        var completion = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
-        var thread = new Thread(() =>
-        {
-            var dispatcher = Dispatcher.CurrentDispatcher;
-            SynchronizationContext.SetSynchronizationContext(new DispatcherSynchronizationContext(dispatcher));
-            dispatcher.BeginInvoke(async () =>
-            {
-                try { await action(); completion.SetResult(); }
-                catch (Exception error) { completion.SetException(error); }
-                finally { dispatcher.BeginInvokeShutdown(DispatcherPriority.Background); }
-            });
-            Dispatcher.Run();
-        })
-        { IsBackground = true };
-        thread.SetApartmentState(ApartmentState.STA); thread.Start();
-        await completion.Task.WaitAsync(TimeSpan.FromSeconds(40), Token);
-    }
+    private static Task OnDispatcherAsync(Func<Task> action) =>
+        StaTestDispatcher.RunAsync(action, TimeSpan.FromSeconds(40), Token);
 }

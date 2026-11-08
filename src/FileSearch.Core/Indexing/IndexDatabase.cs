@@ -66,6 +66,9 @@ internal sealed class IndexDatabase : IDisposable
 
     private readonly SemaphoreSlim _writeGate = new(1, 1);
     private readonly SemaphoreSlim _handleGate = new(1, 1);
+    private readonly object _lifecycleGate = new();
+    private readonly TaskCompletionSource _operationsDrained = new(TaskCreationOptions.RunContinuationsAsynchronously);
+    private readonly List<SharedHandle> _retiredHandles = [];
     private readonly ILogger _logger;
     private readonly bool _useHybridHotTables;
 
@@ -94,8 +97,11 @@ internal sealed class IndexDatabase : IDisposable
     /// <summary>Write sessions since the last checkpoint; only touched under <see cref="_writeGate"/>.</summary>
     private int _writeSessionsSinceCheckpoint;
 
-    /// <summary>Set once by <see cref="Dispose"/>; later calls are no-ops.</summary>
+    /// <summary>Set when disposal starts; prevents admission of new operations.</summary>
     private int _disposedFlag;
+    private int _activeOperations;
+    private Task? _disposeTask;
+    private bool _waitForDispose;
 
     public IndexDatabase(string databasePath, ILogger logger)
         : this(new FileIndexOptions { DatabasePath = databasePath }, logger)
@@ -117,22 +123,71 @@ internal sealed class IndexDatabase : IDisposable
 
     public void Dispose()
     {
-        // WPF shutdown can dispose the host through both its async and sync
-        // paths, reaching here twice — and on the UI thread. No gate waits
-        // (the gates may already be torn down) and strictly once.
-        if (Interlocked.Exchange(ref _disposedFlag, 1) == 1)
-            return;
-
-        var current = Interlocked.Exchange(ref _current, null);
-        if (current is not null)
+        Task close;
+        bool wait;
+        lock (_lifecycleGate)
         {
-            Volatile.Write(ref current.Retired, true);
-            if (Volatile.Read(ref current.Leases) == 0)
-                _ = DisposeRetiredAsync(current);
+            if (_disposeTask is null)
+            {
+                Volatile.Write(ref _disposedFlag, 1);
+                _waitForDispose = _activeOperations == 0 &&
+                    (_current is null || Volatile.Read(ref _current.Leases) == 0) &&
+                    _retiredHandles.TrueForAll(static handle => Volatile.Read(ref handle.Leases) == 0);
+                if (_activeOperations == 0) _operationsDrained.TrySetResult();
+                // CSharpDB close can capture a synchronization context. Keep it
+                // off the UI thread even when an idle caller waits for closure.
+                _disposeTask = Task.Run(FinishDisposeAsync);
+            }
+            close = _disposeTask;
+            wait = _waitForDispose;
         }
 
+        // An idle close must finish before another instance can open this WAL.
+        // Active operations/readers may need the caller's UI thread, so their
+        // cleanup remains deferred; it must not dispose gates they still use.
+        if (wait) close.GetAwaiter().GetResult();
+    }
+
+    private async Task FinishDisposeAsync()
+    {
+        await _operationsDrained.Task.ConfigureAwait(false);
+        var current = Interlocked.Exchange(ref _current, null);
+        List<SharedHandle> handles;
+        lock (_lifecycleGate) handles = [.. _retiredHandles];
+        if (current is not null) handles.Add(current);
+        foreach (var handle in handles)
+        {
+            Volatile.Write(ref handle.DisposeWhenUnused, false);
+            Volatile.Write(ref handle.Retired, true);
+            if (Volatile.Read(ref handle.Leases) == 0) handle.LeasesDrained.TrySetResult();
+            await handle.LeasesDrained.Task.ConfigureAwait(false);
+            await DisposeRetiredAsync(handle).ConfigureAwait(false);
+        }
         _writeGate.Dispose();
         _handleGate.Dispose();
+    }
+
+    private OperationLease? TryEnterOperation()
+    {
+        lock (_lifecycleGate)
+        {
+            if (_disposedFlag != 0) return null;
+            _activeOperations++;
+            return new OperationLease(this);
+        }
+    }
+
+    private void ReleaseOperation()
+    {
+        lock (_lifecycleGate)
+        {
+            if (--_activeOperations == 0 && _disposedFlag != 0) _operationsDrained.TrySetResult();
+        }
+    }
+
+    private readonly struct OperationLease(IndexDatabase owner) : IDisposable
+    {
+        public void Dispose() => owner.ReleaseOperation();
     }
 
     /// <summary>
@@ -147,7 +202,7 @@ internal sealed class IndexDatabase : IDisposable
     /// </summary>
     public async Task RunExclusiveWriteAsync(Func<Database, Task> action, CancellationToken cancellationToken)
     {
-        ObjectDisposedException.ThrowIf(Volatile.Read(ref _disposedFlag) == 1, this);
+        using var operation = TryEnterOperation() ?? throw new ObjectDisposedException(nameof(IndexDatabase));
         await _writeGate.WaitAsync(cancellationToken).ConfigureAwait(false);
         try
         {
@@ -196,6 +251,9 @@ internal sealed class IndexDatabase : IDisposable
         // throwing ObjectDisposedException from a torn-down gate.
         if (Volatile.Read(ref _disposedFlag) == 1 || !File.Exists(DatabasePath))
             return null;
+
+        using var operation = TryEnterOperation();
+        if (operation is null) return null;
 
         SharedHandle handle;
         await _handleGate.WaitAsync(cancellationToken).ConfigureAwait(false);
@@ -252,6 +310,7 @@ internal sealed class IndexDatabase : IDisposable
 
     public async Task CompactAsync(CancellationToken cancellationToken)
     {
+        using var operation = TryEnterOperation() ?? throw new ObjectDisposedException(nameof(IndexDatabase));
         await _writeGate.WaitAsync(cancellationToken).ConfigureAwait(false);
         var tempPath = DatabasePath + ".compact-" + Guid.NewGuid().ToString("N");
         try
@@ -327,6 +386,10 @@ internal sealed class IndexDatabase : IDisposable
         public bool DisposeWhenUnused = true;
 
         public int DisposedFlag;
+
+        public TaskCompletionSource LeasesDrained { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
+
+        public TaskCompletionSource DisposalCompleted { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
     }
 
     private readonly record struct FileStamp(
@@ -446,11 +509,11 @@ internal sealed class IndexDatabase : IDisposable
 
     private void ReleaseLease(SharedHandle handle)
     {
-        if (Interlocked.Decrement(ref handle.Leases) == 0 &&
-            Volatile.Read(ref handle.Retired) &&
-            Volatile.Read(ref handle.DisposeWhenUnused))
+        if (Interlocked.Decrement(ref handle.Leases) == 0 && Volatile.Read(ref handle.Retired))
         {
-            _ = DisposeRetiredAsync(handle);
+            handle.LeasesDrained.TrySetResult();
+            if (Volatile.Read(ref handle.DisposeWhenUnused))
+                _ = Task.Run(() => DisposeRetiredAsync(handle));
         }
     }
 
@@ -461,10 +524,11 @@ internal sealed class IndexDatabase : IDisposable
             return;
 
         _current = null;
+        lock (_lifecycleGate) _retiredHandles.Add(current);
         Volatile.Write(ref current.Retired, true);
         Volatile.Write(ref current.DisposeWhenUnused, disposeWhenUnused);
         if (disposeWhenUnused && Volatile.Read(ref current.Leases) == 0)
-            _ = DisposeRetiredAsync(current);
+            _ = Task.Run(() => DisposeRetiredAsync(current));
     }
 
     private async Task RetireCurrentAndDisposeLockedAsync(CancellationToken cancellationToken)
@@ -502,7 +566,10 @@ internal sealed class IndexDatabase : IDisposable
     private async Task DisposeRetiredAsync(SharedHandle handle)
     {
         if (Interlocked.Exchange(ref handle.DisposedFlag, 1) == 1)
+        {
+            await handle.DisposalCompleted.Task.ConfigureAwait(false);
             return;
+        }
 
         try
         {
@@ -511,6 +578,11 @@ internal sealed class IndexDatabase : IDisposable
         catch (Exception ex)
         {
             _logger.LogDebug(ex, "Disposing a retired index handle failed.");
+        }
+        finally
+        {
+            handle.DisposalCompleted.TrySetResult();
+            lock (_lifecycleGate) _retiredHandles.Remove(handle);
         }
     }
 

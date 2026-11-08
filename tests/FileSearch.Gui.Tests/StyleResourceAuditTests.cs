@@ -1,6 +1,4 @@
-using System.Runtime.ExceptionServices;
 using System.Text.RegularExpressions;
-using System.Threading;
 using System.Windows;
 using System.Windows.Media;
 
@@ -126,35 +124,17 @@ public sealed class StyleResourceAuditTests
     }
 
     [Fact]
-    public void VelaBrushStyleTokensResolveToBrushes()
+    public Task VelaBrushStyleTokensResolveToBrushes() => StaTestDispatcher.RunAsync(() =>
     {
-        Exception? exception = null;
-        var thread = new Thread(() =>
-        {
-            try
-            {
-                Application.ResourceAssembly ??= typeof(global::FileSearch.Gui.App).Assembly;
-                var resources = new ResourceDictionary();
-                resources.MergedDictionaries.Add(LoadDictionary("Styles/AppStyles.xaml"));
-                resources.MergedDictionaries.Add(LoadDictionary("Themes/AtlasDark.xaml"));
-                resources.MergedDictionaries.Add(LoadDictionary("Styles/Vela.xaml"));
+        Application.ResourceAssembly ??= typeof(global::FileSearch.Gui.App).Assembly;
+        var resources = new ResourceDictionary();
+        resources.MergedDictionaries.Add(LoadDictionary("Styles/AppStyles.xaml"));
+        resources.MergedDictionaries.Add(LoadDictionary("Themes/AtlasDark.xaml"));
+        resources.MergedDictionaries.Add(LoadDictionary("Styles/Vela.xaml"));
 
-                foreach (var key in VelaBrushStyleTokenKeys)
-                    Assert.IsAssignableFrom<Brush>(resources[key]);
-            }
-            catch (Exception ex)
-            {
-                exception = ex;
-            }
-        });
-
-        thread.SetApartmentState(ApartmentState.STA);
-        thread.Start();
-        thread.Join();
-
-        if (exception is not null)
-            ExceptionDispatchInfo.Capture(exception).Throw();
-    }
+        foreach (var key in VelaBrushStyleTokenKeys)
+            Assert.IsAssignableFrom<Brush>(resources[key]);
+    }, TimeSpan.FromSeconds(20), TestContext.Current.CancellationToken);
 
     private static readonly string[] VelaBrushStyleTokenKeys =
     [
