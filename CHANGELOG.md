@@ -6,6 +6,7 @@ Work landed from `bbd4b73` (*Add background indexed search*, June 2026) to the c
 
 - **Preview reliability**: publish database readiness only after the requested cell is selected, and show a diagnostic Details/Open fallback when the Windows WebP decoder is unavailable or cannot open the file. Cancellation cleanup tests now wait for an active child within the normal host deadline. Earlier 1.11 validation candidates were not published.
 - **Index lifecycle reliability**: finish an idle index's database cleanup before returning from disposal, so immediately reopening the index cannot race its WAL cleanup. Active readers and queued writes finish before deferred cleanup closes their database and gates.
+- **PDF renderer isolation**: render PDF previews and OCR pages in a disposable copy of the current Windows host. This contains Windows software-graphics shutdown failures while preserving whole-page images, page locations, and OCR coordinates.
 - **Release validation**: GUI tests wait for dispatcher shutdown and thread exit on success, failure, timeout, or cancellation.
 
 - **Consistent search locations**: main search and Quick Search share selected indexed-location checkboxes, support explicit selected/all-indexed scopes, and explain empty, offline, and removed locations. Open full search preserves Quick Search query matching and source selection; saved searches and workspaces retain scope and matching intent. See [search location Help](src/FileSearch.Gui/Help/search.html#search-locations).

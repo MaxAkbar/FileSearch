@@ -6,6 +6,7 @@
     <ApplicationManifest>app.manifest</ApplicationManifest>
   </PropertyGroup>
   <ItemGroup>
+    <AssemblyMetadata Include="FileSearch.PdfRenderWorker" Value="1" />
     <InternalsVisibleTo Include="FileSearch.PowerToys.Tests" />
     <ProjectReference Include="..\FileSearch.Core\FileSearch.Core.csproj" />
     <ProjectReference Include="..\FileSearch.WindowsOcr\FileSearch.WindowsOcr.csproj" />

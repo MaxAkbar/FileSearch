@@ -1,10 +1,7 @@
 using System.Runtime.CompilerServices;
 using FileSearch.Core.Extractors;
-using Windows.Data.Pdf;
 using Windows.Graphics.Imaging;
 using Windows.Media.Ocr;
-using Windows.Storage;
-using Windows.Storage.Streams;
 
 namespace FileSearch.WindowsOcr;
 
@@ -42,8 +39,8 @@ public sealed class WindowsPdfOcrExtractor : IContextualTextExtractor
 
         var nativeLines = await ReadNativeLinesAsync(path, cancellationToken).ConfigureAwait(false);
 
-        var document = await TryLoadDocumentAsync(path, cancellationToken).ConfigureAwait(false);
-        if (document is null)
+        var metadata = await TryReadMetadataAsync(path, cancellationToken).ConfigureAwait(false);
+        if (metadata is null)
         {
             foreach (var line in nativeLines)
                 yield return line;
@@ -67,14 +64,15 @@ public sealed class WindowsPdfOcrExtractor : IContextualTextExtractor
             .Where(line => line.Anchor?.Page is > 0)
             .GroupBy(line => line.Anchor!.Page!.Value)
             .ToDictionary(group => group.Key, group => group.ToList());
-        var ocrPages = GetOcrPageNumbers(pagesWithNativeText, document.PageCount, _options.ResolveMaxPdfPages())
+        var pageCount = checked((uint)metadata.PageCount);
+        var ocrPages = GetOcrPageNumbers(pagesWithNativeText, pageCount, _options.ResolveMaxPdfPages())
             .ToHashSet();
 
         var lineNumber = 0;
         foreach (var line in nativeLines.Where(line => line.Anchor?.Page is not > 0))
             yield return Renumber(line, ++lineNumber);
 
-        for (uint pageNumber = 1; pageNumber <= document.PageCount; pageNumber++)
+        for (uint pageNumber = 1; pageNumber <= pageCount; pageNumber++)
         {
             cancellationToken.ThrowIfCancellationRequested();
             if (nativeLinesByPage.TryGetValue(checked((int)pageNumber), out var pageNativeLines))
@@ -86,7 +84,7 @@ public sealed class WindowsPdfOcrExtractor : IContextualTextExtractor
             if (!ocrPages.Contains(checked((int)pageNumber)))
                 continue;
 
-            var pageLines = await TryRecognizePageAsync(document, pageNumber - 1u, engine, cancellationToken)
+            var pageLines = await TryRecognizePageAsync(path, checked((int)pageNumber), engine, cancellationToken)
                 .ConfigureAwait(false);
             foreach (var line in pageLines)
             {
@@ -125,7 +123,7 @@ public sealed class WindowsPdfOcrExtractor : IContextualTextExtractor
         return lines;
     }
 
-    private async Task<PdfDocument?> TryLoadDocumentAsync(string path, CancellationToken cancellationToken)
+    private async Task<WindowsPdfRenderResult?> TryReadMetadataAsync(string path, CancellationToken cancellationToken)
     {
         try
         {
@@ -134,9 +132,7 @@ public sealed class WindowsPdfOcrExtractor : IContextualTextExtractor
                 return null;
 
             cancellationToken.ThrowIfCancellationRequested();
-            var file = await StorageFile.GetFileFromPathAsync(path);
-            cancellationToken.ThrowIfCancellationRequested();
-            return await PdfDocument.LoadFromFileAsync(file);
+            return await WindowsPdfRenderer.RenderAsync(path, 0, cancellationToken, maxPdfBytes: _options.MaxPdfBytes).ConfigureAwait(false);
         }
         catch (OperationCanceledException)
         {
@@ -149,19 +145,22 @@ public sealed class WindowsPdfOcrExtractor : IContextualTextExtractor
     }
 
     private async Task<List<TextLine>> TryRecognizePageAsync(
-        PdfDocument document,
-        uint pageIndex,
+        string path,
+        int pageNumber,
         OcrEngine engine,
         CancellationToken cancellationToken)
     {
         try
         {
-            using var page = document.GetPage(pageIndex);
-            using var stream = new InMemoryRandomAccessStream();
-            await page.RenderToStreamAsync(stream);
+            var rendered = await WindowsPdfRenderer.RenderAsync(path, pageNumber, cancellationToken, width: 0, height: 0,
+                maxPdfBytes: _options.MaxPdfBytes)
+                .ConfigureAwait(false);
             cancellationToken.ThrowIfCancellationRequested();
+            if (rendered.Page != pageNumber)
+                return [];
 
-            stream.Seek(0);
+            using var input = new MemoryStream(rendered.PngBytes, writable: false);
+            using var stream = input.AsRandomAccessStream();
             var decoder = await BitmapDecoder.CreateAsync(stream);
             if (IsTooManyPixels(decoder))
                 return [];
@@ -176,7 +175,7 @@ public sealed class WindowsPdfOcrExtractor : IContextualTextExtractor
             var ocrResult = await engine.RecognizeAsync(ocrBitmap);
             return BuildLines(
                 ocrResult,
-                checked((int)pageIndex + 1),
+                pageNumber,
                 ocrBitmap.PixelWidth,
                 ocrBitmap.PixelHeight,
                 cancellationToken);

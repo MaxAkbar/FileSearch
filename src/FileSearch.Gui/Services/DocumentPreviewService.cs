@@ -6,10 +6,8 @@ using System.Xml.Linq;
 using FileSearch.Core.Databases;
 using FileSearch.Core.Engine;
 using FileSearch.Core.Extractors;
+using FileSearch.WindowsOcr;
 using Markdig;
-using Windows.Data.Pdf;
-using Windows.Storage;
-using Windows.Storage.Streams;
 
 namespace FileSearch.Gui.Services;
 
@@ -139,26 +137,15 @@ public static class DocumentPreviewService
             token.ThrowIfCancellationRequested();
             if (new FileInfo(path).Length > MaxPdfBytes) return Limit("PDF", "PDF previews are limited to 100 MB.");
             var sourceVersion = PreviewSourceVersion.Read(path);
-            var file = await StorageFile.GetFileFromPathAsync(Path.GetFullPath(path)).AsTask(token).ConfigureAwait(false);
-            var document = await PdfDocument.LoadFromFileAsync(file).AsTask(token).ConfigureAwait(false);
-            var pageIndex = Math.Clamp(pageNumber - 1, 0, checked((int)document.PageCount) - 1);
-            using var page = document.GetPage((uint)pageIndex);
-            using var stream = new InMemoryRandomAccessStream();
-            double scale = Math.Min(1600 / page.Size.Width, 2000 / page.Size.Height);
-            await page.RenderToStreamAsync(stream, new PdfPageRenderOptions
-            {
-                DestinationWidth = (uint)Math.Max(1, page.Size.Width * scale),
-                DestinationHeight = (uint)Math.Max(1, page.Size.Height * scale),
-            }).AsTask(token).ConfigureAwait(false);
+            var rendered = await WindowsPdfRenderer.RenderAsync(path, Math.Max(1, pageNumber), token).ConfigureAwait(false);
             token.ThrowIfCancellationRequested();
-            stream.Seek(0);
-            using var input = stream.AsStreamForRead();
+            using var input = new MemoryStream(rendered.PngBytes, writable: false);
             var image = DecodeImage(input);
-            return new DocumentPreview(DocumentPreviewKind.Pdf, $"PDF · {document.PageCount:n0} pages", Image: image,
-                Page: pageIndex + 1, PageCount: checked((int)document.PageCount))
+            return new DocumentPreview(DocumentPreviewKind.Pdf, $"PDF · {rendered.PageCount:n0} pages", Image: image,
+                Page: rendered.Page, PageCount: rendered.PageCount)
             {
                 PdfSourceVersion = sourceVersion == PreviewSourceVersion.Read(path) ? sourceVersion : null,
-                PdfPageSize = new System.Windows.Size(page.Size.Width, page.Size.Height),
+                PdfPageSize = new System.Windows.Size(rendered.Width, rendered.Height),
             };
         }, token);
 

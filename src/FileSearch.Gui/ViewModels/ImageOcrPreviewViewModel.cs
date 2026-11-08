@@ -8,9 +8,7 @@ using System.Threading;
 using System.Threading.Tasks;
 using FileSearch.Core.Engine;
 using FileSearch.Core.Extractors;
-using Windows.Data.Pdf;
-using Windows.Storage;
-using Windows.Storage.Streams;
+using FileSearch.WindowsOcr;
 
 namespace FileSearch.Gui.ViewModels;
 
@@ -209,25 +207,19 @@ internal static class PdfOcrPagePreviewRenderer
                 return cachePath;
 
             Directory.CreateDirectory(Path.GetDirectoryName(cachePath)!);
-            var file = await StorageFile.GetFileFromPathAsync(pdfPath);
-            var document = await PdfDocument.LoadFromFileAsync(file);
-            if ((uint)pageNumber > document.PageCount)
+            var rendered = await WindowsPdfRenderer.RenderAsync(pdfPath, pageNumber, cancellationToken,
+                sourceWidth, sourceHeight, fitBounds: false).ConfigureAwait(false);
+            if (rendered.Page != pageNumber)
                 return null;
-
-            using var page = document.GetPage((uint)pageNumber - 1u);
-            using var stream = new InMemoryRandomAccessStream();
-            var options = new PdfPageRenderOptions
-            {
-                DestinationWidth = (uint)sourceWidth,
-                DestinationHeight = (uint)sourceHeight,
-            };
-
-            await page.RenderToStreamAsync(stream, options);
             cancellationToken.ThrowIfCancellationRequested();
-            stream.Seek(0);
-
-            await using var output = File.Create(cachePath);
-            await stream.AsStreamForRead().CopyToAsync(output, cancellationToken).ConfigureAwait(false);
+            var temporaryPath = cachePath + "." + Guid.NewGuid().ToString("N") + ".tmp";
+            try
+            {
+                await File.WriteAllBytesAsync(temporaryPath, rendered.PngBytes, cancellationToken).ConfigureAwait(false);
+                cancellationToken.ThrowIfCancellationRequested();
+                File.Move(temporaryPath, cachePath, overwrite: true);
+            }
+            finally { File.Delete(temporaryPath); }
             return cachePath;
         }
         catch (OperationCanceledException)

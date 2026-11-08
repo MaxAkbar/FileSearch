@@ -1,6 +1,7 @@
 ﻿<Project Sdk="Microsoft.NET.Sdk">
 
   <ItemGroup>
+    <AssemblyMetadata Include="FileSearch.PdfRenderWorker" Value="1" />
     <ProjectReference Include="..\FileSearch.Core\FileSearch.Core.csproj" />
     <ProjectReference Include="..\FileSearch.WindowsOcr\FileSearch.WindowsOcr.csproj" />
   </ItemGroup>

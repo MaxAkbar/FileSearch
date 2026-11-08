@@ -49,6 +49,8 @@ The database stores:
 
 When Image OCR is enabled for an indexed location, FileSearch uses Windows OCR to extract searchable lines from PNG, JPEG, BMP, and TIFF images, PDF pages that do not expose native PDF text, and embedded images in Office, OpenDocument, EPUB, email, and ZIP/archive files. OCR output is stored as text lines in the same local index, with the OCR line's image, PDF page, or embedded-member bounding region stored as source-anchor metadata. Result rows and exports can show the region label, and preview panes can render standalone image files or PDF pages with the OCR region highlighted. Opening the result still opens the original file in the default app.
 
+PDF page rendering runs in a disposable worker so a native Windows renderer failure cannot close the search host. Rendered pages have a 50-megapixel ceiling; the configured OCR pixel limit can be lower. Pages that cannot be rendered retain any native PDF text already extracted.
+
 ## Using Indexed Search
 
 1. Choose a folder in **Look in**.

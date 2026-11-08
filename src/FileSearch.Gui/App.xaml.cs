@@ -34,6 +34,11 @@ public partial class App : System.Windows.Application
     protected override void OnStartup(StartupEventArgs e)
     {
         base.OnStartup(e);
+        if (WindowsPdfRenderer.TryRunWorker(e.Args))
+        {
+            Shutdown(Environment.ExitCode);
+            return;
+        }
         if (NativePreviewHandler.TryRun(e.Args))
         {
             Shutdown();

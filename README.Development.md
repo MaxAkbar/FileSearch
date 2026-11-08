@@ -107,6 +107,8 @@ WPF front end for the core search library. It targets `net10.0-windows` and uses
 - `Microsoft.Extensions.Hosting` and dependency injection for app composition.
 - `ModernWpfUI` 1.x for modern Windows styling and .NET 10 Fluent control resources.
 
+`WindowsPdfRenderer` in `FileSearch.WindowsOcr` runs native PDF rendering in a disposable copy of the current GUI, CLI, indexer, or companion executable. The private worker mode runs before normal startup and exchanges bounded metadata and PNG bytes over a current-user-only pipe. The caller terminates its own worker after receiving a complete response, or on cancellation, timeout, or failure. This avoids the Windows PDF software-renderer crash during native DLL teardown. Whole-page dimensions and OCR pixel coordinates remain part of the response. The ordinary desktop app continues to work without PowerToys.
+
 The app provides the main search form, result grid, match preview panel, result refinement, settings, themes, and Windows integration menu actions.
 
 ### `FileSearch.Cli`

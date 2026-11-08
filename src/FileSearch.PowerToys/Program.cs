@@ -1,3 +1,4 @@
+using FileSearch.WindowsOcr;
 using Microsoft.CommandPalette.Extensions;
 using Shmuelie.WinRTServer.CsWinRT;
 
@@ -8,6 +9,9 @@ internal static class Program
     [MTAThread]
     private static void Main(string[] args)
     {
+        if (WindowsPdfRenderer.TryRunWorker(args))
+            return;
+
         // Only Command Palette's COM activation starts the companion. No tray
         // process, startup registration, or dependency on PowerToys in the GUI.
         if (!IsComServerActivation(args))

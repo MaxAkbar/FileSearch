@@ -1,5 +1,6 @@
 using FileSearch.Core.Indexing;
 using FileSearch.Core.Volumes;
+using FileSearch.WindowsOcr;
 using Forms = System.Windows.Forms;
 
 namespace FileSearch.Indexer;
@@ -9,6 +10,9 @@ internal static class Program
     [STAThread]
     private static void Main(string[] args)
     {
+        if (WindowsPdfRenderer.TryRunWorker(args))
+            return;
+
         // The elevated drive-scan helper runs before the single-instance
         // guard: it is a one-shot process, not a second tray indexer.
         if (VolumeScanHelper.IsScanCommand(args))

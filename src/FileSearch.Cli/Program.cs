@@ -6,6 +6,9 @@ using FileSearch.WindowsOcr;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 
+if (WindowsPdfRenderer.TryRunWorker(args))
+    return Environment.ExitCode;
+
 var services = new ServiceCollection();
 services.AddSingleton(new SearchOptions
 {
