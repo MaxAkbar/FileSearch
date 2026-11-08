@@ -74,7 +74,7 @@ Choose **Contents** and enable **Document & database text** for document and mai
 - **Databases:** local SQLite and CSharpDB tables, opened through read-only private snapshots.
 - **Images and scans:** optional Windows OCR for supported images, scanned PDFs, and supported embedded images.
 
-Images also have built-in previews, including animated GIF, WebP, and multipage TIFF. WebP requires an available Windows decoder; otherwise FileSearch shows file details and keeps Open available. Extra Windows preview handlers can extend the available viewers. Protected, unsupported, or oversized content may be skipped or shown with a limited preview; the [bundled Help](src/FileSearch.Gui/Help/index.html) explains the boundaries.
+Images also have built-in previews, including animated GIF, WebP, and multipage TIFF. WebP uses the Windows decoder; if it is missing or cannot open the file, FileSearch shows file details and a decoder diagnostic, with Open still available. Extra Windows preview handlers can extend the available viewers. Protected, unsupported, or oversized content may be skipped or shown with a limited preview; the [bundled Help](src/FileSearch.Gui/Help/index.html) explains the boundaries.
 
 ## Start simple, add what you need
 

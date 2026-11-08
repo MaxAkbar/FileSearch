@@ -1,10 +1,12 @@
 using System.IO.Compression;
+using System.Runtime.InteropServices;
 using System.Windows.Media.Imaging;
 using FileSearch.Core.Engine;
 using FileSearch.Core.Extractors;
 using FileSearch.Core.Queries;
 using FileSearch.Core.Tests;
 using FileSearch.Gui.Services;
+using ImagingDecoder = Windows.Graphics.Imaging.BitmapDecoder;
 
 namespace FileSearch.Gui.Tests;
 
@@ -135,14 +137,19 @@ public sealed class ExpandedPreviewTests : IDisposable
     }
 
     [Fact]
-    public async Task WebpUsesTheWindowsDecoderOrExplainsItsAbsence()
+    public async Task WebpUsesTheWindowsDecoderOrExplainsWhyPreviewIsUnavailable()
     {
         bool decoderAvailable = ImagePreviewService.HasWebpDecoder();
         var document = await Load("image.webp");
-        if (!decoderAvailable)
+        if (document.Kind == DocumentPreviewKind.Details)
         {
-            Assert.Equal(DocumentPreviewKind.Details, document.Kind);
-            Assert.Contains("Windows WebP decoder is not available", document.Text);
+            if (decoderAvailable)
+            {
+                Assert.Contains("Windows WebP decoder could not open", document.Text);
+                Assert.Matches("0x[0-9A-F]{8}", document.Text);
+            }
+            else Assert.Contains("Windows WebP decoder is not available", document.Text);
+            Assert.Contains("Use Open", document.Text);
             Assert.Null(document.Image);
             return;
         }
@@ -163,6 +170,77 @@ public sealed class ExpandedPreviewTests : IDisposable
         Assert.Null(document.Image);
         Assert.Equal(original, await File.ReadAllBytesAsync(path, TestContext.Current.CancellationToken));
         File.Move(path, path + ".moved");
+    }
+
+    [Fact]
+    public async Task RegisteredWebpDecoderFailureShowsTheNativeErrorWithoutChangingOrLockingTheSource()
+    {
+        string path = Path.Combine(_root, "image.webp");
+        byte[] original = await File.ReadAllBytesAsync(path, TestContext.Current.CancellationToken);
+        var error = new COMException("", unchecked((int)0x88982F50));
+        var document = await ImagePreviewService.LoadAsync(path, 1, static () => true,
+            (_, _) => Task.FromException<ImagingDecoder>(error), TestContext.Current.CancellationToken);
+        Assert.Equal(DocumentPreviewKind.Details, document.Kind);
+        Assert.Contains("Windows WebP decoder could not open", document.Text);
+        Assert.Contains("0x88982F50", document.Text);
+        Assert.Contains("unusable", document.Text);
+        Assert.Contains("damaged", document.Text);
+        Assert.Contains("Use Open", document.Text);
+        Assert.Null(document.Image);
+        Assert.Equal(original, await File.ReadAllBytesAsync(path, TestContext.Current.CancellationToken));
+        File.Move(path, path + ".moved");
+    }
+
+    [Theory]
+    [InlineData("animated.gif", unchecked((int)0x88982F50))]
+    [InlineData("image.webp", unchecked((int)0x80004004))]
+    [InlineData("image.webp", unchecked((int)0x8007000E))]
+    [InlineData("image.webp", unchecked((int)0x800704C7))]
+    public async Task DecoderComFailuresForOtherFormatsCancellationAndMemoryRemainErrors(string name, int hresult)
+    {
+        var error = new COMException("decoder error", hresult);
+        var actual = await Assert.ThrowsAsync<COMException>(() => ImagePreviewService.LoadAsync(Path.Combine(_root, name), 1,
+            static () => true, (_, _) => Task.FromException<ImagingDecoder>(error), TestContext.Current.CancellationToken));
+        Assert.Same(error, actual);
+    }
+
+    [Fact]
+    public async Task NonComDecoderFailuresRemainErrors()
+    {
+        foreach (var error in new Exception[] { new InvalidDataException("invalid image"), new OutOfMemoryException("decoder memory") })
+        {
+            var actual = await Record.ExceptionAsync(() => ImagePreviewService.LoadAsync(Path.Combine(_root, "image.webp"), 1,
+                static () => true, (_, _) => Task.FromException<ImagingDecoder>(error), TestContext.Current.CancellationToken));
+            Assert.Same(error, actual);
+        }
+    }
+
+    [Fact]
+    public async Task DecoderCancellationDoesNotBecomeAWebpDetailsFallback()
+    {
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(() => ImagePreviewService.LoadAsync(Path.Combine(_root, "image.webp"), 1,
+            static () => true, static (_, _) => Task.FromCanceled<ImagingDecoder>(new CancellationToken(canceled: true)),
+            TestContext.Current.CancellationToken));
+    }
+
+    [Fact]
+    public async Task CancellationDuringWebpCapabilityProbeDoesNotBecomeADetailsFallback()
+    {
+        using var cancel = new CancellationTokenSource();
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(() => ImagePreviewService.LoadAsync(Path.Combine(_root, "image.webp"), 1,
+            () => { cancel.Cancel(); return false; }, cancel.Token));
+    }
+
+    [Fact]
+    public async Task RequestCancellationWinsOverWebpDecoderComFailure()
+    {
+        using var cancel = new CancellationTokenSource();
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(() => ImagePreviewService.LoadAsync(Path.Combine(_root, "image.webp"), 1,
+            static () => true, (_, _) =>
+            {
+                cancel.Cancel();
+                return Task.FromException<ImagingDecoder>(new COMException("decoder error", unchecked((int)0x88982F50)));
+            }, cancel.Token));
     }
 
     [Fact]
