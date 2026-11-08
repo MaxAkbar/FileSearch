@@ -200,6 +200,14 @@ public sealed class DatabaseLoadingPreviewTests : IAsyncDisposable
             var gate = Gate(session);
             var grid = Named<DataGrid>(preview, "DatabaseRecordsGrid");
             var pageField = typeof(DatabasePreviewControl).GetField("_pageLoad", BindingFlags.NonPublic | BindingFlags.Instance)!;
+            string? stateBeforeSelection = null;
+            bool? gridEnabledBeforeSelection = null;
+            preview.PagePhaseMeasured = (phase, _) =>
+            {
+                if (phase != "page.status-controls" || preview.CurrentLocation?.Table != "ZAlternate") return;
+                stateBeforeSelection = preview.PreviewState;
+                gridEnabledBeforeSelection = grid.IsEnabled;
+            };
             await gate.WaitAsync(Token);
             try
             {
@@ -214,6 +222,8 @@ public sealed class DatabaseLoadingPreviewTests : IAsyncDisposable
             }
             finally { gate.Release(); }
             await WaitUntilAsync(() => preview.PreviewState == "Ready");
+            Assert.Equal("Loading", stateBeforeSelection);
+            Assert.False(gridEnabledBeforeSelection);
             Assert.True(grid.IsEnabled);
             Assert.Equal("ZAlternate", preview.CurrentLocation!.Table);
             Assert.Equal(1, preview.CurrentLocation.RowNumber);

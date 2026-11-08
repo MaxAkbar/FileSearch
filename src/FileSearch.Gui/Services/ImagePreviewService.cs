@@ -9,9 +9,19 @@ namespace FileSearch.Gui.Services;
 
 public static class ImagePreviewService
 {
-    public static Task<DocumentPreview> LoadAsync(string path, int page, CancellationToken token) => Task.Run(async () =>
+    public static Task<DocumentPreview> LoadAsync(string path, int page, CancellationToken token) =>
+        LoadAsync(path, page, HasWebpDecoder, token);
+
+    internal static bool HasWebpDecoder() => ImagingDecoder.GetDecoderInformationEnumerator()
+        .Any(codec => codec.FileExtensions.Contains(".webp", StringComparer.OrdinalIgnoreCase));
+
+    internal static Task<DocumentPreview> LoadAsync(string path, int page, Func<bool> hasWebpDecoder,
+        CancellationToken token) => Task.Run(async () =>
     {
         if (new FileInfo(path).Length > DocumentPreviewService.MaxImageBytes) throw new InvalidDataException("Image previews are limited to 32 MB.");
+        if (Path.GetExtension(path).Equals(".webp", StringComparison.OrdinalIgnoreCase) && !hasWebpDecoder())
+            return new DocumentPreview(DocumentPreviewKind.Details, "WEBP · Windows decoder unavailable",
+                "A Windows WebP decoder is not available on this computer. Use Open to view the file in another application.");
         var file = await StorageFile.GetFileFromPathAsync(Path.GetFullPath(path)).AsTask(token).ConfigureAwait(false);
         using var stream = await file.OpenReadAsync().AsTask(token).ConfigureAwait(false);
         var decoder = await ImagingDecoder.CreateAsync(stream).AsTask(token).ConfigureAwait(false);

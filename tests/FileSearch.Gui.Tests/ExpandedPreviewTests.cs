@@ -135,12 +135,34 @@ public sealed class ExpandedPreviewTests : IDisposable
     }
 
     [Fact]
-    public async Task WebpIsBuiltInAndFrozen()
+    public async Task WebpUsesTheWindowsDecoderOrExplainsItsAbsence()
     {
+        bool decoderAvailable = ImagePreviewService.HasWebpDecoder();
         var document = await Load("image.webp");
+        if (!decoderAvailable)
+        {
+            Assert.Equal(DocumentPreviewKind.Details, document.Kind);
+            Assert.Contains("Windows WebP decoder is not available", document.Text);
+            Assert.Null(document.Image);
+            return;
+        }
         Assert.Equal(DocumentPreviewKind.Image, document.Kind);
         Assert.True(document.Image!.IsFrozen);
         Assert.Equal(1, document.Image.PixelWidth);
+    }
+
+    [Fact]
+    public async Task MissingWebpDecoderKeepsTheFileAvailableWithoutDecodingOrChangingIt()
+    {
+        string path = Path.Combine(_root, "image.webp");
+        byte[] original = await File.ReadAllBytesAsync(path, TestContext.Current.CancellationToken);
+        var document = await ImagePreviewService.LoadAsync(path, 1, static () => false, TestContext.Current.CancellationToken);
+        Assert.Equal(DocumentPreviewKind.Details, document.Kind);
+        Assert.Contains("Windows WebP decoder is not available", document.Text);
+        Assert.Contains("Use Open", document.Text);
+        Assert.Null(document.Image);
+        Assert.Equal(original, await File.ReadAllBytesAsync(path, TestContext.Current.CancellationToken));
+        File.Move(path, path + ".moved");
     }
 
     [Fact]

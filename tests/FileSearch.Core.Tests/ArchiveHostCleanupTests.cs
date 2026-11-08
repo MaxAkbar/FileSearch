@@ -46,7 +46,10 @@ public sealed class ArchiveHostCleanupTests
             {
                 HostPath = hostPath,
                 UseReusableHostPool = false,
-                Timeout = TimeSpan.FromSeconds(5),
+                // This fixture starts Windows PowerShell, whose cold startup
+                // can exceed five seconds on a coverage-instrumented runner.
+                // Keep startup inside the normal production host deadline.
+                Timeout = TimeSpan.FromSeconds(30),
             }, runner);
             if (cancel)
                 await Assert.ThrowsAnyAsync<OperationCanceledException>(() => service.ExtractAsync("unused.zip", new ZipExtractor(), Token));
@@ -56,6 +59,7 @@ public sealed class ArchiveHostCleanupTests
                 Assert.Equal("extractor_host_timeout", exception.Code);
             }
             Assert.True(runner.CreatedScratchFile);
+            if (cancel) Assert.True(runner.CancellationRequestedWhileChildWasRunning);
             Assert.False(Directory.Exists(runner.DirectoryPath));
         }
         finally { File.Delete(hostPath); }
@@ -94,6 +98,7 @@ public sealed class ArchiveHostCleanupTests
     {
         public string? DirectoryPath { get; private set; }
         public bool CreatedScratchFile { get; private set; }
+        public bool CancellationRequestedWhileChildWasRunning { get; private set; }
         public async Task<ExtractorHostRunResult> RunAsync(ExtractorHostCommand command, string requestJson,
             TimeSpan deadline, CancellationToken cancellationToken)
         {
@@ -102,16 +107,20 @@ public sealed class ArchiveHostCleanupTests
             string marker = Path.Combine(DirectoryPath, "orphan.tmp");
             const string script = "$request = [Console]::In.ReadToEnd() | ConvertFrom-Json; " +
                 "[IO.File]::WriteAllText((Join-Path $request.temporaryDirectory 'orphan.tmp'), 'scratch'); " +
-                "Start-Sleep -Seconds 30";
+                "Start-Sleep -Seconds 120";
             using var linked = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
             var run = new DefaultExtractorHostProcessRunner().RunAsync(
                 new ExtractorHostCommand("powershell.exe", ["-NoProfile", "-NonInteractive", "-Command", script], "cleanup test child"),
                 requestJson, deadline, linked.Token);
             var started = System.Diagnostics.Stopwatch.StartNew();
-            while (!File.Exists(marker) && !run.IsCompleted && started.Elapsed < TimeSpan.FromSeconds(10))
+            while (!File.Exists(marker) && !run.IsCompleted && started.Elapsed < deadline)
                 await Task.Delay(20, cancellationToken);
             CreatedScratchFile = File.Exists(marker);
-            if (cancel) await linked.CancelAsync();
+            if (cancel)
+            {
+                CancellationRequestedWhileChildWasRunning = CreatedScratchFile && !run.IsCompleted;
+                linked.Cancel();
+            }
             return await run;
         }
     }

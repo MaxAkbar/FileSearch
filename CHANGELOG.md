@@ -2,7 +2,9 @@
 
 Work landed from `bbd4b73` (*Add background indexed search*, June 2026) to the current head, grouped by area.
 
-## FileSearch 1.11.0
+## FileSearch 1.11.1
+
+- **Preview reliability**: publish database readiness only after the requested cell is selected, and show a clear Details/Open fallback when Windows has no WebP decoder. Cancellation cleanup tests now wait for an active child within the normal host deadline. The earlier 1.11.0 validation candidate was not published.
 
 - **Consistent search locations**: main search and Quick Search share selected indexed-location checkboxes, support explicit selected/all-indexed scopes, and explain empty, offline, and removed locations. Open full search preserves Quick Search query matching and source selection; saved searches and workspaces retain scope and matching intent. See [search location Help](src/FileSearch.Gui/Help/search.html#search-locations).
 - **Find in file previews**: highlight and navigate literal phrases in loaded text/source, formatted HTML, and embedded text on the displayed PDF page across the main window, Quick Search, and Expand. Find shows its loaded-part/page scope and partial limits; unavailable text or browser Find leaves the ordinary preview available. PDF highlights follow supported page crop/rotation, validated existing OCR hits can show a separate line outline, and Expand retains Fit/custom zoom and position. See [preview Find Help](src/FileSearch.Gui/Help/results.html#preview-find).

@@ -307,13 +307,13 @@ public sealed partial class DatabasePreviewControl : DockPanel, IDisposable
             _rowAddress.Text = row.ToString(CultureInfo.InvariantCulture);
             _status.Text = $"{session.Kind} · {table.Name} · Rows {first:n0}–{first + page.Rows.Count - 1:n0} · Read-only snapshot. Binary and NULL values are blank." +
                 (page.ValuesTruncated ? " Cell text limited to 16,384 characters." : "") + (page.HasMore && first + PageSize > DatabaseFiles.MaxRows ? " Preview stops at 100,000 rows." : "");
-            PreviewState = page.Rows.Count == 0 ? "Empty" : "Ready";
-            UpdateFindControls();
             FinishPreviewPhase(measured, "page.status-controls", phaseStarted);
             if (page.Rows.Count == 0)
             {
                 _status.Text = "No rows on this page. Choose a smaller row number or another table.";
                 loadToken.ThrowIfCancellationRequested();
+                PreviewState = "Empty";
+                UpdateFindControls();
                 return generation == _generation && !_disposed;
             }
             long dispatchStarted = StartPreviewPhase(measured);
@@ -345,7 +345,13 @@ public sealed partial class DatabasePreviewControl : DockPanel, IDisposable
                 FinishPreviewPhase(measured, "page.horizontal-scroll", horizontalStarted);
             }, System.Windows.Threading.DispatcherPriority.ContextIdle, loadToken);
             loadToken.ThrowIfCancellationRequested();
-            return generation == _generation && !_disposed;
+            if (generation != _generation || _disposed) return false;
+            // The page is usable only after its requested record/cell has been
+            // selected. Publishing Ready earlier exposes the previous current
+            // cell while the dispatcher is still waiting to apply selection.
+            PreviewState = "Ready";
+            UpdateFindControls();
+            return true;
         }
         catch (OperationCanceledException)
         {
