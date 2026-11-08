@@ -58,6 +58,12 @@ internal static class SearchQueryGuidance
         if (!unified.HasContentCriteria)
             return "File filters only; no content text is required.";
 
+        if (unified.HasMailCriteria)
+        {
+            var textHint = unified.HasTextCriteria ? "Mail fields and content" : "Mail fields only";
+            return $"{textHint}: match one message; AND, OR and NOT preserve groups. Sent dates use UTC; modified/created/size describe the physical file.{filterHint}";
+        }
+
         if (unified.ContentQuery is RegexQuery &&
             unified.Chips.FirstOrDefault(chip => chip.Field == "Wildcard") is { } wildcard)
         {
@@ -93,7 +99,7 @@ internal static class SearchQueryGuidance
 
     private static string ModeHint(QueryMode mode) => mode switch
     {
-        QueryMode.Unified => "Unified: adjacent terms use AND; OR allows alternatives; quotes keep a phrase. Fields filter files.",
+        QueryMode.Unified => "Unified: adjacent terms use AND; OR allows alternatives; quotes keep a phrase. Fields filter files or individual mail messages.",
         QueryMode.Boolean => "Boolean: adjacent terms use AND; OR allows alternatives; quotes keep a phrase.",
         QueryMode.PlainText => "Plain text: search the whole input literally, including spaces, quotes and operators.",
         QueryMode.Regex => "Regular expression: search using the pattern as typed.",

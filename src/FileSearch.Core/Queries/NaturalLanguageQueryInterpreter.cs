@@ -133,7 +133,7 @@ internal static partial class NaturalLanguageQueryInterpreter
 
         return Regex.IsMatch(
             input,
-            @"\b(?:name|path|content|semantic|ext|type|modified|created|size|folder|root|status|extractor|regex):",
+            @"\b(?:name|path|content|semantic|ext|type|modified|created|size|folder|root|status|extractor|regex|from|to|cc|recipient|subject|sent):",
             RegexOptions.IgnoreCase | RegexOptions.CultureInvariant);
     }
 

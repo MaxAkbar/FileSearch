@@ -3362,7 +3362,10 @@ public sealed class CSharpDbFileIndex : IFileIndex, IIndexReplayWriter, IIndexUs
             return false;
 
         highlightBuffer.Clear();
-        if (!query.TryCollectHighlights(line.Content, highlightBuffer))
+        var matched = query is UnifiedQuery messageQuery
+            ? messageQuery.TryCollectHighlights(line.Content, line.Anchor?.MailMessage ?? line.Locator?.MailMessage, highlightBuffer)
+            : query.TryCollectHighlights(line.Content, highlightBuffer);
+        if (!matched)
             return false;
 
         hitsByPath[resultKey] = hitsForFile + 1;

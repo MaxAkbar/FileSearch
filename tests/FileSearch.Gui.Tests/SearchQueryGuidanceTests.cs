@@ -6,6 +6,20 @@ namespace FileSearch.Gui.Tests;
 public sealed class SearchQueryGuidanceTests
 {
     [Theory]
+    [InlineData("from:alice subject:invoice", "Mail fields only")]
+    [InlineData("from:alice invoice", "Mail fields and content")]
+    [InlineData("sent:2026-11-07", "Mail fields only")]
+    public void MailGuidanceExplainsMessageScopeAndPhysicalFileDates(string input, string expected)
+    {
+        string description = SearchQueryGuidance.Describe(input, QueryMode.Unified, false);
+        Assert.StartsWith(expected, description);
+        Assert.Contains("one message", description);
+        Assert.Contains("UTC", description);
+        Assert.Contains("physical file", description);
+        Assert.DoesNotContain("File filters only", description);
+    }
+
+    [Theory]
     [InlineData(QueryMode.Unified, "john smith", "All terms (AND): john, smith", "smith john", "john alone")]
     [InlineData(QueryMode.Boolean, "john smith", "All terms (AND): john, smith", "smith john", "john alone")]
     [InlineData(QueryMode.Unified, "john OR smith", "Either term (OR): john, smith", "smith alone", "neither name")]

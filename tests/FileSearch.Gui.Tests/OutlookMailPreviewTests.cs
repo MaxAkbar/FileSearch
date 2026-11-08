@@ -7,6 +7,42 @@ namespace FileSearch.Gui.Tests;
 public sealed class OutlookMailPreviewTests
 {
     [Fact]
+    public async Task StandaloneEmlWithMessageMetadataUsesEmlTextAndRichPreviewRoutes()
+    {
+        using var files = new OutlookTestFiles();
+        var path = files.PathFor("standalone.eml");
+        await File.WriteAllTextAsync(path, """
+            Subject: Standalone preview
+            From: Alice <alice@example.test>
+            To: Bob <bob@example.test>
+            Date: Fri, 21 Nov 1997 09:55:06 -0600
+            Content-Type: text/plain; charset=utf-8
+
+            first body line
+            matching body line
+            """, TestContext.Current.CancellationToken);
+        var extractor = new EmlExtractor();
+        var lines = new List<TextLine>();
+        await foreach (var line in extractor.ExtractAsync(path, TestContext.Current.CancellationToken))
+            lines.Add(line);
+        var selected = Assert.Single(lines, line => line.Content == "matching body line");
+        var metadata = Assert.IsType<MailMessageMetadata>(selected.Anchor?.MailMessage);
+        var service = new FilePreviewService(new ExtractorRegistry([extractor]));
+
+        var text = await service.LoadMailMessagePreviewAsync(path, metadata, [selected.Number], 100,
+            TestContext.Current.CancellationToken);
+        Assert.Contains("Subject: Standalone preview", text, StringComparison.Ordinal);
+        Assert.Contains($"► {selected.Number.ToString(System.Globalization.CultureInfo.InvariantCulture).PadLeft(6)}", text,
+            StringComparison.Ordinal);
+        Assert.Contains("matching body line", text, StringComparison.Ordinal);
+
+        var rich = await MailPreviewService.LoadAsync(path, metadata, TestContext.Current.CancellationToken);
+        Assert.Equal(DocumentPreviewKind.Html, rich.Kind);
+        Assert.Contains("Standalone preview", rich.Text, StringComparison.Ordinal);
+        Assert.Contains("matching body line", rich.Text, StringComparison.Ordinal);
+    }
+
+    [Fact]
     public async Task MailPreviewReadsOnlyTheSelectedMessageAndUsesOriginalHitNumbers()
     {
         using var files = new OutlookTestFiles();

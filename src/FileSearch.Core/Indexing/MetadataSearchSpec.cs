@@ -20,6 +20,11 @@ internal sealed record MetadataSearchSpec(
         var expression = request.Expression;
         if (expression is UnifiedQuery unified)
         {
+            // Mail predicates describe individual messages, not their physical
+            // store's filename. File metadata must never bypass those predicates.
+            if (unified.HasMailCriteria)
+                return false;
+
             if (!unified.HasContentCriteria)
             {
                 var metadataTerms = unified.MetadataTerms

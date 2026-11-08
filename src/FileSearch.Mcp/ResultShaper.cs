@@ -97,7 +97,8 @@ internal static class ResultShaper
             hit.Score,
             hit.SizeBytes,
             hit.ModifiedUtc,
-            hit.Anchor?.DisplayText);
+            hit.Anchor?.DisplayText,
+            hit.MailMessage);
     }
 
     /// <summary>

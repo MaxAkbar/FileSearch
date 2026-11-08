@@ -121,7 +121,7 @@
             <p>Content expressions match within one extracted text line. For a database, each populated scalar cell is searched separately: <code>john smith</code> in Unified or Boolean mode requires both terms in the same cell. It does not join a FirstName column containing <code>john</code> with a LastName column containing <code>smith</code>. See <a href="results.html#databases">Database Search and Preview</a>.</p>
 
             <h2>Unified Fields</h2>
-            <p>Fields narrow the files that can match. Unfielded words still search file content. In Unified mode, FileSearch shows interpreted chips below the search box so you can see the content terms and filters it understood; edit a chip value to rewrite that token, or remove a chip to remove it from the query.</p>
+            <p>File fields narrow the files that can match; mail fields below filter individual messages. File fields remain global restrictions, including when mixed with OR groups. Unfielded words still search file content. In Unified mode, FileSearch shows interpreted chips below the search box so you can see the content terms and filters it understood; edit a chip value to rewrite that token, or remove a chip to remove it from the query.</p>
             <div class="table-wrap">
                 <table>
                     <thead>
@@ -176,7 +176,8 @@
                 </table>
             </div>
 
-            <p>For mail searches, size and date fields apply to the physical file or store. <code>from:</code>, <code>subject:</code>, and message-date filters are not available; search sender and subject words as ordinary content terms. See <a href="mail.html">Outlook Mail Search</a>.</p>
+            <p>For mail, <code>from:</code>, <code>to:</code>, <code>cc:</code>, <code>recipient:</code>, and <code>subject:</code> match literal text in an individual message's headers. <code>sent:</code> accepts UTC ISO dates, inclusive day ranges, or offset-bearing timestamps and comparisons. For example, <code>(from:alice OR from:bob) subject:invoice sent:&gt;=2026-11-01</code>. Contents and document extraction are required; header values never match unrelated body words. Mail Boolean groups are preserved. Mail fields cannot be combined with semantic retrieval or used as proximity operands.</p>
+            <p><code>sent:</code> uses submitted/header time, with no received-date fallback. Other size and date fields still apply to the physical file or store. Refresh older mail indexes for the updated header and sent-date metadata. See <a href="mail.html#mail-fields">Mail Fields</a> for recipient coverage, missing metadata, UTC boundaries, and refresh behavior.</p>
 
             <h2>Unified Examples</h2>
             <div class="table-wrap">

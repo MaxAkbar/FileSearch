@@ -68,7 +68,16 @@
                 </table>
             </div>
             <p>MSG/PST/OST extraction does not search attachment contents, embedded messages, or OCR text in mail attachments. It does not export original attachments. Outlook profiles and online mailboxes are not discovered or synchronized automatically.</p>
-            <p>Search words match the extracted message text. Dedicated <code>from:</code> and <code>subject:</code> operators and message-date filters are not available. File size, created-date, and modified-date filters describe the physical mail file or store.</p>
+            <p>In <strong>Unified</strong> mode with <strong>Contents</strong> and document extraction enabled, use mail fields to match a single message's headers. Ordinary words still match one extracted text line in that message.</p>
+            <h3 id="mail-fields">Sender, Recipient, Subject, and Sent Date</h3>
+            <ul class="plain-list">
+                <li><code>from:alice</code> searches the sender; <code>to:bob</code> and <code>cc:team</code> search their respective recipient headers. <code>recipient:bob</code> searches To or Cc. Bcc is unavailable.</li>
+                <li><code>subject:"project plan"</code> searches only the subject. Text fields use literal substring matching and respect <strong>Match case</strong>. A matching word in the body cannot satisfy a header field.</li>
+                <li><code>sent:2026-11-07</code> matches a UTC day. Use <code>sent:2026-11-01..2026-11-07</code> for inclusive UTC days, or <code>sent:&gt;=2026-11-07T12:00:00Z</code> for an instant. ISO timestamps require Z or an explicit offset; offsets are converted to UTC. Comparisons distinguish &gt;, &gt;=, &lt;, and &lt;=.</li>
+                <li><code>(from:alice OR from:bob) subject:invoice NOT cc:archive</code> preserves Boolean groups within one message. Mail fields do not match non-mail files or messages missing structured metadata. NEAR with mail fields and semantic-plus-mail queries are unavailable.</li>
+            </ul>
+            <p><code>sent:</code> reads the submitted time in MSG/PST/OST and the Date header in EML. Missing sent dates cannot satisfy a positive sent-date filter; received dates are never substituted. The date displayed on a result card can be a received date. <code>modified:</code>, <code>created:</code>, and <code>size:</code> continue to describe the physical file or store.</p>
+            <p>After upgrading, refresh existing mail content indexes to populate sent dates and EML headers, including files whose bytes have not changed. The extractor-version check detects old coverage; with live fallback allowed, the query can read current mail instead. No new index database format is required. Quick Search keeps its literal query behavior; use the full search window for mail fields.</p>
 
             <h2 id="results">Results and Preview</h2>
             <p>Each matching PST/OST message has its own card, including messages with identical subjects. Cards show the subject, sender, date, and mail folder. The preview and <strong>Copy file content</strong> read only the selected message.</p>
@@ -95,7 +104,7 @@
             <pre><code>.\FileSearch.Cli.exe search "type:email invoice" --path "C:\Mail" --mode unified --json
 .\FileSearch.Cli.exe index build "C:\Mail" --json
 .\FileSearch.Cli.exe search "type:email invoice" --path "C:\Mail" --mode unified --index --json</code></pre>
-            <p>JSON and JSON Lines mail hits include optional <code>MailMessage</code> metadata with message identity, subject, sender, recipients, UTC date, mail folder, and store fingerprint. CSV includes mail identity, subject, sender, folder, and date columns. Store hit line numbers are globally unique, and message identities keep results distinct.</p>
+            <p>JSON, JSON Lines, and MCP search hits include optional <code>MailMessage</code> metadata with message identity, subject, sender, recipients, display date, separate <code>SentUtc</code>, mail folder, and store fingerprint. GUI and CLI CSV include these mail fields. Store hit line numbers are globally unique, and message identities keep results distinct.</p>
             <p><a href="workflows.html#mail-files">Workflow file operations</a> work on physical files, so a copy or move of a matched PST/OST acts on the whole store.</p>
 
             <h2 id="privacy">Local Mail Data and Preview Copies</h2>

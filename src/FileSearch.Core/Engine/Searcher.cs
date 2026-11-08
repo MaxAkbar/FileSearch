@@ -52,6 +52,11 @@ public sealed class Searcher : ISearcher
 
         if (request.SearchTarget != SearchTarget.Content)
         {
+            if (request.Expression is UnifiedQuery { HasMailCriteria: true })
+            {
+                request.Status?.Invoke("Mail fields require the Contents search target.");
+                yield break;
+            }
             await foreach (var hit in SearchNamesAsync(request, cancellationToken).ConfigureAwait(false))
                 yield return hit;
             yield break;
@@ -242,7 +247,10 @@ public sealed class Searcher : ISearcher
             if (messageId is not null && hitsForMessage >= _options.MaxHitsPerFile)
                 continue;
             highlightBuffer.Clear();
-            if (!query.TryCollectHighlights(line.Content, highlightBuffer))
+            var matched = query is UnifiedQuery unified
+                ? unified.TryCollectHighlights(line.Content, line.Anchor?.MailMessage, highlightBuffer)
+                : query.TryCollectHighlights(line.Content, highlightBuffer);
+            if (!matched)
                 continue;
 
             var hit = new Hit(

@@ -42,7 +42,10 @@ internal static class MsgFileReader
             Address(GetString(root, 0x0C1A, encoding), GetString(root, 0x5D01, encoding) ?? GetString(root, 0x0C1F, encoding)),
             to.Count > 0 ? Clean(string.Join("; ", to)) : Clean(GetString(root, 0x0E04, encoding)),
             cc.Count > 0 ? Clean(string.Join("; ", cc)) : Clean(GetString(root, 0x0E03, encoding)),
-            GetDate(root, 0x0039) ?? GetDate(root, 0x0E06), string.Empty);
+            GetDate(root, 0x0039) ?? GetDate(root, 0x0E06), string.Empty)
+        {
+            SentUtc = GetDate(root, 0x0039),
+        };
         var body = GetString(root, 0x1000, encoding);
         string? htmlBody = null;
         var html = GetBytes(root, 0x1013, 0x0102);

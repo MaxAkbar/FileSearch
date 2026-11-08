@@ -16,6 +16,8 @@ public sealed class IndexedMetadataCandidateProvider : IndexedCandidateProvider
     protected override SearchRequest? CreateRequest(SearchPlan plan)
     {
         var request = plan.Request;
+        if (request.Expression is UnifiedQuery { HasMailCriteria: true })
+            return null;
         if (request.SearchTarget is SearchTarget.FolderNames or SearchTarget.FileAndFolderNames)
             return null;
 

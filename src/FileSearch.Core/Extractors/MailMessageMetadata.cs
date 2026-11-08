@@ -10,7 +10,11 @@ public sealed record MailMessageMetadata(
     DateTime? DateUtc,
     string Folder,
     string? StoreFingerprint = null,
-    int FirstLineNumber = 1);
+    int FirstLineNumber = 1)
+{
+    /// <summary>The submitted/header date, without falling back to a received date.</summary>
+    public DateTime? SentUtc { get; init; }
+}
 
 public sealed record OutlookMailMessage(
     MailMessageMetadata Metadata,

@@ -10,6 +10,8 @@ public sealed class MetadataCandidateProvider : SearcherCandidateProvider
     protected override SearchRequest? CreateRequest(SearchPlan plan)
     {
         var request = plan.Request;
+        if (request.Expression is FileSearch.Core.Queries.UnifiedQuery { HasMailCriteria: true })
+            return null;
         if (request.SearchTarget != SearchTarget.Content)
             return CreateLiveRequest(request, RemoveUnavailableSemantic(request.Expression), request.SearchTarget);
 

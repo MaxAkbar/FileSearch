@@ -41,11 +41,22 @@ public sealed class ContentUnitSnippetGenerator : ISnippetGenerator
         if (units.Count == 0)
             return CreateFallbackSnippet(request.Expression, hit);
 
+        if (request.Expression is UnifiedQuery { HasMailCriteria: true } && hit.MailMessage is { } message)
+        {
+            // Adjacent persisted lines can belong to a different message in
+            // the same store. Its content is not context for this result.
+            units = units.Where(unit => unit.Locator.MailMessage is { } neighbor &&
+                string.Equals(neighbor.Id, message.Id, StringComparison.Ordinal) &&
+                string.Equals(neighbor.StoreFingerprint, message.StoreFingerprint, StringComparison.Ordinal)).ToArray();
+            if (units.Count == 0)
+                return CreateFallbackSnippet(request.Expression, hit);
+        }
+
         var text = string.Join(Environment.NewLine, units.Select(unit => unit.Text));
         var center = units.FirstOrDefault(unit => unit.Id == contentUnitId);
         return new SearchSnippet(
             text,
-            CollectHighlights(request.Expression, text),
+            CollectHighlights(request.Expression, text, center?.Locator.MailMessage ?? hit.MailMessage),
             center?.Locator ?? hit.Locator,
             contentUnitId,
             units.Select(unit => unit.Id).ToArray());
@@ -54,15 +65,18 @@ public sealed class ContentUnitSnippetGenerator : ISnippetGenerator
     private static SearchSnippet CreateFallbackSnippet(Query query, Hit hit) =>
         new(
             hit.LineContent,
-            hit.Highlights.Count > 0 ? hit.Highlights : CollectHighlights(query, hit.LineContent),
+            hit.Highlights.Count > 0 ? hit.Highlights : CollectHighlights(query, hit.LineContent, hit.MailMessage),
             hit.Locator,
             hit.ContentUnitId,
             hit.ContentUnitId is { } id ? new[] { id } : Array.Empty<long>());
 
-    private static List<MatchSpan> CollectHighlights(Query query, string text)
+    private static List<MatchSpan> CollectHighlights(Query query, string text, FileSearch.Core.Extractors.MailMessageMetadata? message)
     {
         var highlights = new List<MatchSpan>();
-        query.CollectHighlights(text, highlights);
+        if (query is UnifiedQuery { HasMailCriteria: true } unified)
+            unified.TryCollectHighlights(text, message, highlights);
+        else
+            query.CollectHighlights(text, highlights);
         return highlights;
     }
 }

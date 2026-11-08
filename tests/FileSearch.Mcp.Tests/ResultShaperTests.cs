@@ -7,6 +7,27 @@ namespace FileSearch.Mcp.Tests;
 
 public sealed class ResultShaperTests
 {
+    [Fact]
+    public void MailDocumentsPreserveIdentityFromAnchorAndLocator()
+    {
+        var first = new FileSearch.Core.Extractors.MailMessageMetadata("inbox:1", "Same subject", "alice@example.test",
+            "bob@example.test", "cc@example.test", DateTime.UtcNow, "Inbox", "123:456");
+        var second = first with { Id = "inbox:2" };
+        var anchored = new Hit(@"C:\Mail\store.pst", 4, "needle", [],
+            Anchor: new FileSearch.Core.Extractors.SourceAnchor(FileSearch.Core.Extractors.SourceAnchorKind.Email,
+                "Same subject", MailMessage: first));
+        var located = new Hit(anchored.Path, 10, "needle", [], Locator: new SourceLocator(MailMessage: second));
+        var firstDocument = ResultShaper.ToDocument(anchored);
+        var secondDocument = ResultShaper.ToDocument(located);
+        Assert.Equal(first, firstDocument.MailMessage);
+        Assert.Equal(second, secondDocument.MailMessage);
+        Assert.NotEqual(firstDocument.MailMessage!.Id, secondDocument.MailMessage!.Id);
+        string json = System.Text.Json.JsonSerializer.Serialize(new[] { firstDocument, secondDocument });
+        Assert.Contains("inbox:1", json);
+        Assert.Contains("inbox:2", json);
+        Assert.Contains("123:456", json);
+    }
+
     [Theory]
     [InlineData(null, ResultShaper.DefaultMaxResults)]
     [InlineData(0, 1)]

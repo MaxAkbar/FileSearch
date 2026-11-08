@@ -94,7 +94,7 @@ public static class OutlookMailReader
         await writer.WriteLineAsync($"To: {Clean(metadata.To)}".AsMemory(), cancellationToken).ConfigureAwait(false);
         if (!string.IsNullOrWhiteSpace(metadata.Cc))
             await writer.WriteLineAsync($"Cc: {Clean(metadata.Cc)}".AsMemory(), cancellationToken).ConfigureAwait(false);
-        if (metadata.DateUtc is { } date)
+        if (metadata.SentUtc is { } date)
             await writer.WriteLineAsync(("Date: " + date.ToString("r", CultureInfo.InvariantCulture)).AsMemory(), cancellationToken).ConfigureAwait(false);
         await writer.WriteLineAsync("MIME-Version: 1.0\r\nContent-Type: text/plain; charset=utf-8\r\nContent-Transfer-Encoding: base64\r\n".AsMemory(), cancellationToken).ConfigureAwait(false);
         await writer.WriteLineAsync(Convert.ToBase64String(Encoding.UTF8.GetBytes(text), Base64FormattingOptions.InsertLineBreaks).AsMemory(), cancellationToken).ConfigureAwait(false);
@@ -181,7 +181,10 @@ public static class OutlookMailReader
             Address(message.From, message.Recipients.Sender?.Address),
             Clean(string.Join("; ", message.Recipients.To.Take(1000).Select(recipient => Address(recipient.DisplayName, recipient.Address)))),
             Clean(string.Join("; ", message.Recipients.Cc.Take(1000).Select(recipient => Address(recipient.DisplayName, recipient.Address)))),
-            message.Date is { } date ? DateTime.SpecifyKind(date, DateTimeKind.Utc) : null, folder, fingerprint);
+            message.Date is { } date ? DateTime.SpecifyKind(date, DateTimeKind.Utc) : null, folder, fingerprint)
+        {
+            SentUtc = message.SubmittedTime is { } submitted ? DateTime.SpecifyKind(submitted, DateTimeKind.Utc) : null,
+        };
         var body = message.Properties[PropertyCanonicalName.PidTagBody]?.Value as string;
         var rawHtml = message.Properties[PropertyCanonicalName.PidTagHtml]?.Value;
         string? htmlBody = rawHtml is byte[] htmlBytes ? (message.Encoding ?? Encoding.UTF8).GetString(htmlBytes) : rawHtml as string;

@@ -103,7 +103,8 @@ public abstract class SearcherCandidateProvider : IRoutedCandidateProvider
                 return false;
 
             case UnifiedQuery unified:
-                return QueryUsesProvider(unified.ContentQuery, provider);
+                return (unified.HasMailCriteria && provider == CandidateProviderKind.Lexical) ||
+                    QueryUsesProvider(unified.ContentQuery, provider);
 
             case TermQuery:
                 return provider == CandidateProviderKind.Lexical;
@@ -139,6 +140,9 @@ public abstract class SearcherCandidateProvider : IRoutedCandidateProvider
 
         if (expression is not UnifiedQuery unified)
             return expression;
+
+        if (unified.HasMailCriteria)
+            return null;
 
         if (!unified.HasContentCriteria)
             return expression;

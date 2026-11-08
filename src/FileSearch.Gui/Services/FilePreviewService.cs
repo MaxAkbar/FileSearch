@@ -14,8 +14,10 @@ public sealed class FilePreviewService : IFilePreviewService
 {
     public Task<string> LoadMailMessagePreviewAsync(string path, MailMessageMetadata message,
         IReadOnlyList<int> hitLineNumbers, int contextLines, CancellationToken cancellationToken) =>
-        Task.Run(() => BuildHitsPreviewAsync(new SingleMailMessageExtractor(message), path, hitLineNumbers,
-            contextLines, cancellationToken), cancellationToken);
+        Path.GetExtension(path).Equals(".eml", StringComparison.OrdinalIgnoreCase)
+            ? LoadHitsPreviewAsync(path, hitLineNumbers, contextLines, cancellationToken)
+            : Task.Run(() => BuildHitsPreviewAsync(new SingleMailMessageExtractor(message), path, hitLineNumbers,
+                contextLines, cancellationToken), cancellationToken);
 
     private sealed class SingleMailMessageExtractor(MailMessageMetadata message) : ITextExtractor
     {

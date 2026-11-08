@@ -15,7 +15,7 @@ public sealed class QueryPlanner : IQueryPlanner
         var expression = request.Expression;
         var contentExpression = expression;
 
-        if (request.Mode != QueryMode.Semantic)
+        if (request.Mode != QueryMode.Semantic && expression is not UnifiedQuery { HasMailCriteria: true })
             AddProvider(providers, CandidateProviderKind.Metadata, RetrievalLayer.Instant);
 
         if (expression is UnifiedQuery unified)
@@ -45,6 +45,14 @@ public sealed class QueryPlanner : IQueryPlanner
 
         if (request.SearchTarget != SearchTarget.Content)
         {
+            if (expression is UnifiedQuery { HasMailCriteria: true })
+            {
+                explanations.Add(new SearchPlanExplanation(
+                    "mail-content-target",
+                    "Mail fields require the Contents search target.",
+                    SearchExplanationSeverity.Warning));
+                return new SearchPlan(request, providers.Values.ToArray(), explanations);
+            }
             explanations.Add(new SearchPlanExplanation(
                 "metadata-target",
                 "The query targets file or folder metadata.",
@@ -54,6 +62,8 @@ public sealed class QueryPlanner : IQueryPlanner
         }
 
         var contentProviders = CollectContentProviders(contentExpression);
+        if (expression is UnifiedQuery { HasMailCriteria: true })
+            contentProviders |= CandidateProviderKind.Lexical;
         if (request.Mode == QueryMode.Regex)
             contentProviders |= CandidateProviderKind.Regex;
 

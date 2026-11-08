@@ -7,7 +7,7 @@ public sealed class MsgExtractor : IDiagnosticTextExtractor
     private readonly OutlookMailOptions _options;
     public MsgExtractor(OutlookMailOptions? options = null) => _options = options ?? new OutlookMailOptions();
     public string ExtractorId => "filesearch.outlook-msg";
-    public string ExtractorVersion => "1";
+    public string ExtractorVersion => "2";
     public IReadOnlyCollection<string> SupportedExtensions { get; } = new[] { ".msg" };
     public IAsyncEnumerable<TextLine> ExtractAsync(string path, CancellationToken cancellationToken) =>
         ExtractAsync(path, NullExtractionIssueSink.Instance, cancellationToken);
@@ -32,7 +32,7 @@ public sealed class OutlookStoreExtractor : IDiagnosticTextExtractor
     private readonly OutlookMailOptions _options;
     public OutlookStoreExtractor(OutlookMailOptions? options = null) => _options = options ?? new OutlookMailOptions();
     public string ExtractorId => "filesearch.outlook-store";
-    public string ExtractorVersion => "1";
+    public string ExtractorVersion => "2";
     public IReadOnlyCollection<string> SupportedExtensions { get; } = new[] { ".pst", ".ost" };
     public IAsyncEnumerable<TextLine> ExtractAsync(string path, CancellationToken cancellationToken) =>
         ExtractAsync(path, NullExtractionIssueSink.Instance, cancellationToken);

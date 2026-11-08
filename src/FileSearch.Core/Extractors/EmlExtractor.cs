@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Globalization;
 using System.Linq;
 using System.Runtime.CompilerServices;
 using System.Text;
@@ -23,10 +24,12 @@ public sealed class EmlExtractor : IContextualTextExtractor
 
     public string ExtractorId => "filesearch.eml";
 
-    public string ExtractorVersion => "3";
+    public string ExtractorVersion => "4";
 
     /// <summary>Cap on how much of a message is read; the rest isn't searched.</summary>
     private const int MaxContentChars = 10 * 1024 * 1024;
+    private const int MaxMetadataHeaderChars = 64 * 1024;
+    private const int MaxMetadataValueChars = 4096;
 
     // Time-boxed like RegexQuery — these run over untrusted message content.
     private static readonly TimeSpan s_regexTimeout = TimeSpan.FromSeconds(2);
@@ -53,9 +56,11 @@ public sealed class EmlExtractor : IContextualTextExtractor
         [EnumeratorCancellation] CancellationToken cancellationToken)
     {
         var content = await BoundedFileReader.ReadTextAsync(path, MaxContentChars, cancellationToken).ConfigureAwait(false);
+        var (headers, body) = SplitHeadersAndBody(content);
+        var metadata = ExtractMetadata(headers);
 
         int lineNumber = 0;
-        foreach (var block in ExtractMessageText(content))
+        foreach (var block in ExtractMessageText(headers, body))
         {
             // Split before normalizing — Normalize collapses newlines, which
             // used to flatten an entire body into one giant line.
@@ -66,14 +71,17 @@ public sealed class EmlExtractor : IContextualTextExtractor
                 if (string.IsNullOrEmpty(normalized)) continue;
 
                 lineNumber++;
-                yield return new TextLine(lineNumber, normalized);
+                yield return new TextLine(lineNumber, normalized,
+                    new SourceAnchor(SourceAnchorKind.Email,
+                        string.IsNullOrWhiteSpace(metadata.Subject) ? "email message" : metadata.Subject,
+                        Line: lineNumber, MailMessage: metadata));
             }
         }
 
         if (!context.EnableOcr)
             yield break;
 
-        foreach (var imagePart in ExtractImageParts(content))
+        foreach (var imagePart in ExtractImageParts(headers, body))
         {
             cancellationToken.ThrowIfCancellationRequested();
             var request = new EmbeddedImageOcrRequest(
@@ -82,13 +90,57 @@ public sealed class EmlExtractor : IContextualTextExtractor
                 $"email image {imagePart.MemberPath}",
                 Section: imagePart.MemberPath);
             await foreach (var line in _embeddedImageOcr.ExtractAsync(imagePart.Bytes, request, cancellationToken).ConfigureAwait(false))
-                yield return line with { Number = ++lineNumber };
+            {
+                var anchor = line.Anchor ?? new SourceAnchor(SourceAnchorKind.Email, request.Label,
+                    Section: request.Section, MemberPath: request.MemberPath);
+                yield return line with { Number = ++lineNumber, Anchor = anchor with { MailMessage = metadata } };
+            }
         }
     }
 
-    private static IEnumerable<string> ExtractMessageText(string content)
+    private static MailMessageMetadata ExtractMetadata(string headers)
     {
-        var (headers, body) = SplitHeadersAndBody(content);
+        // Metadata cannot grow with an oversized header block. Body lines that
+        // happen to start with a header name are never interpreted as headers.
+        var unfolded = s_headerFoldRegex.Replace(headers[..Math.Min(headers.Length, MaxMetadataHeaderChars)], " ");
+        var values = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+        foreach (var line in unfolded.Split('\n'))
+        {
+            int separator = line.IndexOf(':');
+            if (separator <= 0)
+                continue;
+            var field = line[..separator];
+            if (!field.Equals("Subject", StringComparison.OrdinalIgnoreCase) &&
+                !field.Equals("From", StringComparison.OrdinalIgnoreCase) &&
+                !field.Equals("To", StringComparison.OrdinalIgnoreCase) &&
+                !field.Equals("Cc", StringComparison.OrdinalIgnoreCase) &&
+                !field.Equals("Date", StringComparison.OrdinalIgnoreCase))
+                continue;
+
+            string value = line[(separator + 1)..];
+            value = MarkupText.Normalize(DecodeHeader(value[..Math.Min(value.Length, MaxMetadataValueChars)]));
+            if (values.TryGetValue(field, out var previous))
+            {
+                if (!field.Equals("To", StringComparison.OrdinalIgnoreCase) &&
+                    !field.Equals("Cc", StringComparison.OrdinalIgnoreCase))
+                    continue;
+                value = previous + "; " + value;
+            }
+            values[field] = value[..Math.Min(value.Length, MaxMetadataValueChars)];
+        }
+
+        values.TryGetValue("Date", out var dateText);
+        DateTime? dateUtc = DateTimeOffset.TryParse(dateText, CultureInfo.InvariantCulture,
+            DateTimeStyles.AllowWhiteSpaces | DateTimeStyles.AssumeUniversal, out var date)
+            ? date.UtcDateTime : null;
+        return new MailMessageMetadata("eml", values.GetValueOrDefault("Subject", string.Empty),
+            values.GetValueOrDefault("From", string.Empty), values.GetValueOrDefault("To", string.Empty),
+            values.GetValueOrDefault("Cc", string.Empty), dateUtc, string.Empty)
+        { SentUtc = dateUtc };
+    }
+
+    private static IEnumerable<string> ExtractMessageText(string headers, string body)
+    {
         foreach (var header in ExtractUsefulHeaders(headers))
             yield return DecodeHeader(header);
 
@@ -148,9 +200,8 @@ public sealed class EmlExtractor : IContextualTextExtractor
         }
     }
 
-    private static IEnumerable<EmailImagePart> ExtractImageParts(string content)
+    private static IEnumerable<EmailImagePart> ExtractImageParts(string headers, string body)
     {
-        var (headers, body) = SplitHeadersAndBody(content);
         var boundary = s_boundaryRegex.Match(headers);
         if (!boundary.Success)
             yield break;

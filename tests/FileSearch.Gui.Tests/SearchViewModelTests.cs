@@ -15,6 +15,78 @@ namespace FileSearch.Gui.Tests;
 /// </summary>
 public sealed class SearchViewModelTests
 {
+    [Theory]
+    [InlineData("from", "From")]
+    [InlineData("to", "To")]
+    [InlineData("cc", "Cc")]
+    [InlineData("recipient", "Recipient")]
+    [InlineData("subject", "Subject")]
+    [InlineData("sent", "Sent")]
+    public void MailFieldChipsKeepTheirOperatorWhenEdited(string field, string label)
+    {
+        RunWithPump((pump, vm, history, status, settings) =>
+        {
+            vm.QueryText = field + ":" + (field == "sent" ? "2026-11-07" : "alice");
+            var chip = Assert.Single(vm.QueryChips);
+            Assert.Equal(label, chip.Field);
+            chip.Value = field == "sent" ? "2026-11-08" : "bob smith";
+            Assert.Equal(field + ":" + (field == "sent" ? "2026-11-08" : "\"bob smith\""), vm.QueryText);
+            Assert.Single(vm.QueryChips);
+        });
+    }
+
+    [Fact]
+    public void CsvExportRetainsSeparateMessageIdentitiesAndQuotedHeaders()
+    {
+        var exportPath = Path.Combine(Path.GetTempPath(), $"filesearch-mail-{Guid.NewGuid():N}.csv");
+        try
+        {
+            RunWithPump((pump, vm, history, status, settings) =>
+            {
+                vm.QueryText = "from:alice";
+                vm.SearchPath = Path.GetTempPath();
+                var search = vm.SearchCommand.ExecuteAsync(null);
+                pump.PumpUntil(() => search.IsCompleted, TimeSpan.FromSeconds(10));
+                Assert.Equal(2, vm.Files.Count);
+                var export = vm.ExportResultsCommand.ExecuteAsync("csv");
+                pump.PumpUntil(() => export.IsCompleted, TimeSpan.FromSeconds(10));
+                var lines = File.ReadAllLines(exportPath);
+                Assert.Equal(3, lines.Length);
+                Assert.EndsWith("mailMessageId,mailSubject,mailFrom,mailTo,mailCc,mailDateUtc,mailFolder,mailStoreFingerprint,mailSentUtc", lines[0]);
+                Assert.Contains(lines, line => line.Contains("message-one", StringComparison.Ordinal));
+                Assert.Contains(lines, line => line.Contains("message-two", StringComparison.Ordinal));
+                Assert.All(lines.Skip(1), line =>
+                {
+                    Assert.Contains("\"Invoice, \"\"November\"\"\"", line);
+                    Assert.Contains("copy@example.test", line);
+                    Assert.Contains("store-fingerprint", line);
+                    Assert.Contains("2026-11-07T12:00:00.0000000Z", line);
+                });
+            }, new MailIdentitySearcher(), new FakeFileSavePicker { PathToReturn = exportPath });
+        }
+        finally
+        {
+            if (File.Exists(exportPath)) File.Delete(exportPath);
+        }
+    }
+
+    private sealed class MailIdentitySearcher : ISearcher
+    {
+        public async IAsyncEnumerable<Hit> SearchAsync(SearchRequest request,
+            [EnumeratorCancellation] CancellationToken cancellationToken)
+        {
+            await Task.Yield();
+            foreach (var id in new[] { "message-one", "message-two" })
+            {
+                var metadata = new MailMessageMetadata(id, "Invoice, \"November\"", "alice@example.test",
+                    "team@example.test", "copy@example.test", new DateTime(2026, 11, 7, 12, 0, 0, DateTimeKind.Utc),
+                    "Inbox", "store-fingerprint");
+                yield return new Hit(@"C:\results\mail.pst", 1, "Subject: Invoice", [],
+                    Anchor: new SourceAnchor(SourceAnchorKind.Email, metadata.Subject, MailMessage: metadata));
+            }
+        }
+    }
+
     [Fact]
     public void ExternalLauncherQuerySetsTheScopeAndSelectsTheRequestedFile()
     {

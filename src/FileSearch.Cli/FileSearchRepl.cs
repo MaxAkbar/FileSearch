@@ -1086,7 +1086,7 @@ internal sealed class FileSearchRepl
     private static string RenderOneShotCsv(IReadOnlyList<Hit> hits)
     {
         var sb = new StringBuilder();
-        sb.AppendLine("path,lineNumber,kind,score,sizeBytes,modifiedUtc,line,mailMessageId,mailSubject,mailFrom,mailFolder,mailDateUtc,databaseEngine,databaseTable,databaseRow,databaseColumn,databaseKey,databaseFingerprint");
+        sb.AppendLine("path,lineNumber,kind,score,sizeBytes,modifiedUtc,line,mailMessageId,mailSubject,mailFrom,mailFolder,mailDateUtc,databaseEngine,databaseTable,databaseRow,databaseColumn,databaseKey,databaseFingerprint,mailTo,mailCc,mailStoreFingerprint,mailSentUtc");
         foreach (var hit in hits)
         {
             sb.Append(CsvField(hit.Path)).Append(',');
@@ -1106,7 +1106,11 @@ internal sealed class FileSearchRepl
             sb.Append(hit.Database?.RowNumber.ToString(CultureInfo.InvariantCulture) ?? string.Empty).Append(',');
             sb.Append(CsvField(hit.Database?.Column ?? string.Empty)).Append(',');
             sb.Append(CsvField(hit.Database?.RowKey ?? string.Empty)).Append(',');
-            sb.AppendLine(CsvField(hit.Database?.Fingerprint ?? string.Empty));
+            sb.Append(CsvField(hit.Database?.Fingerprint ?? string.Empty)).Append(',');
+            sb.Append(CsvField(hit.MailMessage?.To ?? string.Empty)).Append(',');
+            sb.Append(CsvField(hit.MailMessage?.Cc ?? string.Empty)).Append(',');
+            sb.Append(CsvField(hit.MailMessage?.StoreFingerprint ?? string.Empty)).Append(',');
+            sb.AppendLine(CsvField(hit.MailMessage?.SentUtc?.ToString("O", CultureInfo.InvariantCulture) ?? string.Empty));
         }
 
         return sb.ToString();

@@ -5,6 +5,7 @@ using System.IO;
 using System.Linq;
 using System.Text;
 using System.Text.RegularExpressions;
+using FileSearch.Core.Extractors;
 
 namespace FileSearch.Core.Queries;
 
@@ -75,24 +76,39 @@ public sealed class UnifiedQuery : Query
         ContentQuery = contentQuery ?? throw new ArgumentNullException(nameof(contentQuery));
         Filters = filters ?? throw new ArgumentNullException(nameof(filters));
         Chips = chips ?? throw new ArgumentNullException(nameof(chips));
+        HasMailCriteria = MailQueryEvaluation.ContainsMail(ContentQuery);
+        HasTextCriteria = MailQueryEvaluation.ContainsText(ContentQuery);
+        if (HasMailCriteria && HasSemantic)
+            throw new FormatException("Mail field filters cannot be combined with semantic search. Use a literal content query instead.");
+        MailQueryEvaluation.ValidateProximity(ContentQuery);
     }
 
     public Query ContentQuery { get; }
     public UnifiedQueryFilters Filters { get; }
     public IReadOnlyList<UnifiedQueryChip> Chips { get; }
     public bool HasContentCriteria => ContentQuery is not MatchAllQuery;
+    public bool HasMailCriteria { get; }
+    public bool HasTextCriteria { get; }
     public bool HasSemantic => Filters.SemanticTerms.Count > 0;
     public bool HasUnavailableSemantic => HasSemantic;
     public const string SemanticUnavailableMessage =
         "Semantic search requires an installed local Smart Search model pack.";
 
-    public override bool IsMatch(string line) => ContentQuery.IsMatch(line);
+    public override bool IsMatch(string line) => !HasMailCriteria && ContentQuery.IsMatch(line);
 
     public override bool TryCollectHighlights(string line, List<MatchSpan> sink) =>
-        ContentQuery.TryCollectHighlights(line, sink);
+        !HasMailCriteria && ContentQuery.TryCollectHighlights(line, sink);
 
-    public override void CollectHighlights(string line, List<MatchSpan> sink) =>
-        ContentQuery.CollectHighlights(line, sink);
+    public bool TryCollectHighlights(string line, MailMessageMetadata? message, List<MatchSpan> sink) =>
+        HasMailCriteria
+            ? message is not null && MailQueryEvaluation.TryCollectHighlights(ContentQuery, line, message, sink)
+            : ContentQuery.TryCollectHighlights(line, sink);
+
+    public override void CollectHighlights(string line, List<MatchSpan> sink)
+    {
+        if (!HasMailCriteria)
+            ContentQuery.CollectHighlights(line, sink);
+    }
 
     public IReadOnlyList<string> MetadataTerms
     {
@@ -361,6 +377,12 @@ public sealed partial class UnifiedQueryParser
         "status",
         "extractor",
         "regex",
+        "from",
+        "to",
+        "cc",
+        "recipient",
+        "subject",
+        "sent",
     };
 
     private static readonly Dictionary<string, string[]> s_typeExtensions = new(StringComparer.OrdinalIgnoreCase)
@@ -465,7 +487,12 @@ public sealed partial class UnifiedQueryParser
     {
         var query = ParseNot(c, builder);
         while (c.MatchNearOperator(out var maxDistance))
-            query = new NearQuery(query, ParseNot(c, builder), maxDistance);
+        {
+            var right = ParseNot(c, builder);
+            if (MailQueryEvaluation.ContainsMail(query) || MailQueryEvaluation.ContainsMail(right))
+                throw new FormatException("Mail fields cannot be NEAR operands. Use AND to combine mail fields with content terms.");
+            query = new NearQuery(query, right, maxDistance);
+        }
 
         return query;
     }
@@ -540,6 +567,16 @@ public sealed partial class UnifiedQueryParser
     {
         switch (field.ToLowerInvariant())
         {
+            case "from":
+            case "to":
+            case "cc":
+            case "recipient":
+            case "subject":
+            case "sent":
+                var mailField = Enum.Parse<MailQueryField>(field, ignoreCase: true);
+                builder.AddChip(builder.IsNegated ? "Not " + field.ToLowerInvariant() : mailField.ToString(), value, rawText, position, length);
+                return new MailFieldQuery(mailField, value, _caseSensitive);
+
             case "content":
                 builder.AddContentChip(value, rawText, position, length);
                 return new TermQuery(value, _caseSensitive);
@@ -719,7 +756,7 @@ public sealed partial class UnifiedQueryParser
 
             case OrQuery or:
                 var orChildren = or.Children.Select(Simplify).ToArray();
-                if (orChildren.Any(child => child is MatchAllQuery))
+                if (orChildren.Any(child => child is MatchAllQuery) && !orChildren.Any(MailQueryEvaluation.ContainsMail))
                     return MatchAllQuery.Instance;
                 return orChildren.Length == 1 ? orChildren[0] : new OrQuery(orChildren);
 

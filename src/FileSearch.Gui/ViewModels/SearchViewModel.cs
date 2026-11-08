@@ -1085,7 +1085,8 @@ public sealed partial class SearchViewModel : ObservableObject, IDisposable
         try
         {
             _status.Text = "Reading file content...";
-            var text = file.MailMessage is { } mail
+            var text = file.MailMessage is { } mail &&
+                (OutlookMailReader.IsStore(file.FullPath) || file.Extension.Equals(".msg", StringComparison.OrdinalIgnoreCase))
                 ? await Task.Run(() => string.Join(Environment.NewLine,
                     OutlookMailReader.ReadMessageLines(file.FullPath, mail, CancellationToken.None).Select(line => line.Content))).ConfigureAwait(true)
                 : await _previewService.LoadFullTextAsync(file.FullPath, CancellationToken.None).ConfigureAwait(true);
@@ -2440,7 +2441,7 @@ public sealed partial class SearchViewModel : ObservableObject, IDisposable
     private string RenderExportCsv(IReadOnlyList<FileResultViewModel> files)
     {
         var sb = new StringBuilder();
-        sb.AppendLine("path,fileName,folder,extension,sizeBytes,modifiedUtc,source,hitCount,lineNumber,kind,location,line,snippet");
+        sb.AppendLine("path,fileName,folder,extension,sizeBytes,modifiedUtc,source,hitCount,lineNumber,kind,location,line,snippet,mailMessageId,mailSubject,mailFrom,mailTo,mailCc,mailDateUtc,mailFolder,mailStoreFingerprint,mailSentUtc");
         foreach (var file in files)
         {
             foreach (var hit in file.Hits)
@@ -2457,7 +2458,17 @@ public sealed partial class SearchViewModel : ObservableObject, IDisposable
                 sb.Append(CsvField(hit.Kind.ToString())).Append(',');
                 sb.Append(CsvField(SourceLocationFormatter.Format(hit.Anchor, hit.Locator))).Append(',');
                 sb.Append(CsvField(hit.LineContent)).Append(',');
-                sb.AppendLine(CsvField(hit.Snippet?.Text ?? string.Empty));
+                sb.Append(CsvField(hit.Snippet?.Text ?? string.Empty)).Append(',');
+                var mail = hit.MailMessage;
+                sb.Append(CsvField(mail?.Id ?? string.Empty)).Append(',');
+                sb.Append(CsvField(mail?.Subject ?? string.Empty)).Append(',');
+                sb.Append(CsvField(mail?.From ?? string.Empty)).Append(',');
+                sb.Append(CsvField(mail?.To ?? string.Empty)).Append(',');
+                sb.Append(CsvField(mail?.Cc ?? string.Empty)).Append(',');
+                sb.Append(CsvField(mail?.DateUtc?.ToString("O", CultureInfo.InvariantCulture) ?? string.Empty)).Append(',');
+                sb.Append(CsvField(mail?.Folder ?? string.Empty)).Append(',');
+                sb.Append(CsvField(mail?.StoreFingerprint ?? string.Empty)).Append(',');
+                sb.AppendLine(CsvField(mail?.SentUtc?.ToString("O", CultureInfo.InvariantCulture) ?? string.Empty));
             }
         }
 
@@ -2944,6 +2955,12 @@ public sealed partial class SearchViewModel : ObservableObject, IDisposable
             "extension" => "ext",
             "extractor" => "extractor",
             "folder" => "folder",
+            "from" => "from",
+            "to" => "to",
+            "cc" => "cc",
+            "recipient" => "recipient",
+            "subject" => "subject",
+            "sent" => "sent",
             "modified" => "modified",
             "name" => "name",
             "path" => "path",
