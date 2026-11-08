@@ -47,7 +47,7 @@ Create a portable release folder:
 
 ```powershell
 powershell -ExecutionPolicy Bypass -File .\scripts\New-PortableRelease.ps1 `
-  -Version 1.11.3.0 `
+  -Version 1.11.4.0 `
   -RuntimeIdentifier win-x64
 ```
 

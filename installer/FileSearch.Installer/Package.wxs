@@ -40,7 +40,13 @@
     <ComponentGroup Id="PublishedFiles">
       <Files Directory="INSTALLFOLDER" Include="$(var.PublishDirectory)\**">
         <Exclude Files="$(var.PublishDirectory)\**\*.pdb" />
+        <Exclude Files="$(var.PublishDirectory)\e_sqlite3.dll" />
       </Files>
+      <!-- The upstream SQLite DLL has a version but no language. Retain its harvested component/file identity. -->
+      <Component Id="flsiGMzUhNeKoR6C64X_j4DzsylB5Q" Guid="*" Directory="INSTALLFOLDER">
+        <File Id="flsiGMzUhNeKoR6C64X_j4DzsylB5Q" Source="$(var.PublishDirectory)\e_sqlite3.dll"
+              KeyPath="yes" DefaultLanguage="0" />
+      </Component>
     </ComponentGroup>
 
     <Feature Id="MainFeature" Title="FileSearch" Level="1">
