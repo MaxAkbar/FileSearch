@@ -6,6 +6,13 @@ namespace FileSearch.Gui.Tests;
 
 public sealed class SourceOpenTargetBuilderTests
 {
+    [Fact]
+    public void ArchiveMemberPositionsCannotOpenTheBinaryZipInAnEditor()
+    {
+        var hit = new Hit("documents.zip", 300, "needle", [], Locator: new SourceLocator(ArchiveMember: "report.pdf", Page: 2, StartLine: 14));
+        Assert.Null(SourceOpenTargetBuilder.TryCreate(hit.Path, hit, @"C:\Tools\Code.exe"));
+    }
+
     [Theory]
     [InlineData("source.sqlite")]
     [InlineData("source.csdb")]

@@ -553,6 +553,13 @@ public sealed class CSharpDbFileIndex : IFileIndex, IIndexReplayWriter, IIndexUs
             if (rootId is null)
                 yield break;
 
+            if (request.Status is not null && request.SearchTarget == SearchTarget.Content &&
+                request.Expression is not UnifiedQuery { HasContentCriteria: false } &&
+                request.Expression is not UnifiedQuery { HasMailCriteria: true })
+            {
+                await ReportArchiveCoverageAsync(db, rootId.Value, root, request, cancellationToken).ConfigureAwait(false);
+            }
+
             var highlightBuffer = new List<MatchSpan>(4);
             var hitsByPath = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
             var fileFilterVerdicts = new Dictionary<string, bool>(StringComparer.OrdinalIgnoreCase);
@@ -654,6 +661,36 @@ public sealed class CSharpDbFileIndex : IFileIndex, IIndexReplayWriter, IIndexUs
             }
 
             lease?.Dispose();
+        }
+    }
+
+    private static async Task ReportArchiveCoverageAsync(
+        DbExec db, long rootId, string root, SearchRequest request, CancellationToken cancellationToken)
+    {
+        var fileIds = await IndexTables.ReadArchiveCoverageIssueFileIdsAsync(db, rootId, cancellationToken).ConfigureAwait(false);
+        if (fileIds.Count == 0)
+            return;
+        var hiddenDirectories = new Dictionary<string, bool>(StringComparer.OrdinalIgnoreCase);
+        await foreach (var file in IndexTables.ReadFileMetadataAsync(db, rootId, fileIds, cancellationToken).ConfigureAwait(false))
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            var options = request.WalkerOptions;
+            if (!IsWithinRoot(root, file.Path) ||
+                (!options.Recursive && !IndexPath.EqualsPath(Path.GetDirectoryName(file.Path) ?? string.Empty, root)))
+                continue;
+            if (!options.IncludeHidden &&
+                ((((FileAttributes)file.Attributes) & (FileAttributes.Hidden | FileAttributes.System)) != 0 ||
+                    HasHiddenParent(file.Path, root, hiddenDirectories)))
+                continue;
+            if (!IndexedFileFilter.Matches(root, file.Path, file.FileName, file.Extension, file.SizeBytes, file.ModifiedUtcTicks, options))
+                continue;
+            if (request.Expression is UnifiedQuery unified && !unified.MatchesFile(root, file.Path, file.FileName,
+                    file.Extension, file.SizeBytes, file.CreatedUtcTicks, file.ModifiedUtcTicks, file.Status,
+                    file.ExtractorId, file.FileTypeCategory))
+                continue;
+
+            request.Status?.Invoke("Partial: archive content coverage is incomplete for this scope. Some ZIP members were skipped or could not be read; inspect index extraction warnings.");
+            return;
         }
     }
 

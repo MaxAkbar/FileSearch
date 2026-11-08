@@ -11,20 +11,21 @@ using System.Threading.Tasks;
 namespace FileSearch.Core.Extractors;
 
 /// <summary>
-/// Reads text-like entries inside ZIP archives. v1 limitation: only entries
-/// whose names look like text files (by extension) are searched; nested
-/// archives, PDFs, or Office docs inside a zip are skipped.
+/// Reads bounded text, PDF, and supported Office members inside ZIP archives.
+/// New document parsers run in the isolated host; nested archives stay disabled.
 /// Each entry is preceded by a "=== entry/path ===" marker line so callers
 /// can identify which archive member matched.
 /// Decompression is capped per entry, per archive, and by entry count so a
 /// small archive that expands enormously (zip bomb) cannot stall a worker or
 /// balloon memory; excess content is best-effort and reported as an issue.
 /// </summary>
-public sealed class ZipExtractor : IContextualDiagnosticTextExtractor
+public sealed partial class ZipExtractor : IContextualDiagnosticTextExtractor
 {
+    public const int MaxDocumentTextCharacters = 2 * 1024 * 1024;
+    public const int MaxDocumentTextLines = 50_000;
     public string ExtractorId => "filesearch.zip";
 
-    public string ExtractorVersion => "4";
+    public string ExtractorVersion => "5";
 
     private readonly ZipArchivePolicy _policy;
     private readonly IEmbeddedImageOcrService _embeddedImageOcr;
@@ -47,9 +48,35 @@ public sealed class ZipExtractor : IContextualDiagnosticTextExtractor
     }
 
     internal ZipExtractor(ZipArchivePolicy policy, IEmbeddedImageOcrService? embeddedImageOcr = null)
+        : this(policy, embeddedImageOcr, null, null, false, null)
+    {
+    }
+
+    public ZipExtractor(IEmbeddedImageOcrService? embeddedImageOcr,
+        Func<IExtractorRegistry> documents, IOutOfProcessExtractionService host)
+        : this(ZipArchivePolicy.Default, embeddedImageOcr, documents, host, false, null)
+    {
+    }
+
+    public static ZipExtractor CreateForIsolatedHost(string temporaryDirectory) =>
+        new(ZipArchivePolicy.Default, null, null, null, true,
+            Path.GetFullPath(temporaryDirectory ?? throw new ArgumentNullException(nameof(temporaryDirectory))));
+
+    internal ZipExtractor(ZipArchivePolicy policy, Func<IExtractorRegistry> documents, string temporaryDirectory)
+        : this(policy, null, documents, null, true, Path.GetFullPath(temporaryDirectory))
+    {
+    }
+
+    private ZipExtractor(ZipArchivePolicy policy, IEmbeddedImageOcrService? embeddedImageOcr,
+        Func<IExtractorRegistry>? documents, IOutOfProcessExtractionService? host,
+        bool allowDirect, string? temporaryDirectory)
     {
         _policy = policy;
         _embeddedImageOcr = embeddedImageOcr ?? new NullEmbeddedImageOcrService();
+        _documents = documents ?? (() => BuiltInDocuments.Value);
+        _documentHost = host;
+        _allowDirectDocumentParsing = allowDirect;
+        _temporaryDirectory = temporaryDirectory;
     }
 
     public IReadOnlyCollection<string> SupportedExtensions { get; } = new[] { ".zip" };
@@ -86,11 +113,43 @@ public sealed class ZipExtractor : IContextualDiagnosticTextExtractor
         IExtractionIssueSink issues,
         [EnumeratorCancellation] CancellationToken cancellationToken)
     {
+        using var deadline = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+        deadline.CancelAfter(_policy.MaxDuration);
+        await using var enumerator = ExtractCoreAsync(path, context, issues, deadline.Token).GetAsyncEnumerator(deadline.Token);
+        while (true)
+        {
+            bool next;
+            try { next = await enumerator.MoveNextAsync().ConfigureAwait(false); }
+            catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested && deadline.IsCancellationRequested)
+            {
+                issues.Report(new ExtractionIssue(null, "archive_time_limit", "Archive search stopped at its duration limit; coverage is partial."));
+                yield break;
+            }
+            if (!next) yield break;
+            yield return enumerator.Current;
+        }
+    }
+
+    private async IAsyncEnumerable<TextLine> ExtractCoreAsync(
+        string path, TextExtractionContext context, IExtractionIssueSink issues,
+        [EnumeratorCancellation] CancellationToken cancellationToken)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
         var entryMetadata = ReadEntryMetadata(path);
         using var archive = ZipFile.OpenRead(path);
+        var info = new FileInfo(path);
+        var fingerprint = FormattableString.Invariant($"{info.Length}:{info.LastWriteTimeUtc.Ticks}");
+        var duplicateNames = archive.Entries.GroupBy(entry => entry.FullName, StringComparer.Ordinal)
+            .Where(group => group.Skip(1).Any()).Select(group => group.Key).ToHashSet(StringComparer.Ordinal);
+        using var ownedHost = _documentHost is null && !_allowDirectDocumentParsing
+            ? new OutOfProcessExtractionService(new OutOfProcessExtractionOptions { UseReusableHostPool = false, HostPoolSize = 1 })
+            : null;
+        var documentHost = _documentHost ?? ownedHost;
         int lineNumber = 0;
         int entriesSeen = 0;
         long remainingBudget = _policy.MaxTotalBytes;
+        int remainingText = _policy.MaxTotalTextCharacters;
+        int remainingLines = _policy.MaxTotalTextLines;
 
         foreach (var entry in archive.Entries)
         {
@@ -105,6 +164,23 @@ public sealed class ZipExtractor : IContextualDiagnosticTextExtractor
             {
                 ReportIssue(issues, entry, "archive_total_bytes_exceeded", "Archive member skipped because the archive extraction byte budget was exhausted.");
                 yield break;
+            }
+
+            if (remainingText <= 0 || remainingLines <= 0)
+            {
+                ReportIssue(issues, entry, "archive_text_limit", "Archive search stopped at its text or line budget; coverage is partial.");
+                yield break;
+            }
+
+            if (!IsSafeMember(entry.FullName))
+            {
+                ReportIssue(issues, entry, "archive_member_unsafe_path", "Archive member skipped because its path is unsafe or longer than 512 characters.");
+                continue;
+            }
+            if (duplicateNames.Contains(entry.FullName))
+            {
+                ReportIssue(issues, entry, "archive_member_duplicate_name", "Archive member skipped because its exact name is duplicated and cannot identify one member safely.");
+                continue;
             }
 
             if (entry.Length == 0)
@@ -130,7 +206,8 @@ public sealed class ZipExtractor : IContextualDiagnosticTextExtractor
             }
 
             var isImageEntry = IsImageEntry(entry.Name);
-            if (!IsTextEntry(entry.Name) && (!context.EnableOcr || !isImageEntry))
+            var isDocumentEntry = IsDocumentEntry(entry.Name);
+            if (!isDocumentEntry && !IsTextEntry(entry.Name) && (!context.EnableOcr || !isImageEntry))
             {
                 ReportIssue(issues, entry, "archive_member_unsupported_type", "Archive member skipped because its file type is not indexed inside archives.");
                 continue;
@@ -144,7 +221,76 @@ public sealed class ZipExtractor : IContextualDiagnosticTextExtractor
 
             var entryBudget = Math.Min(_policy.MaxEntryBytes, remainingBudget);
             var likelyTruncated = entry.Length > entryBudget;
-            if (context.EnableOcr && isImageEntry)
+            int entryText = _policy.MaxEntryTextCharacters;
+            int entryLines = _policy.MaxEntryTextLines;
+            bool textLimitReported = false;
+            bool TakeOutput(TextLine candidate, out TextLine bounded)
+            {
+                bounded = candidate;
+                int overhead = entry.FullName.Length + (candidate.Anchor?.DisplayText.Length ?? 0) +
+                    (candidate.Anchor?.ArchiveContentAnchor?.DisplayText.Length ?? 0) + 256;
+                int allowed = Math.Min(entryText, remainingText) - overhead;
+                if (allowed < 0 || entryLines <= 0 || remainingLines <= 0)
+                {
+                    if (!textLimitReported)
+                        ReportIssue(issues, entry, "archive_member_text_limit", "Archive member text or metadata budget was reached; coverage is partial.");
+                    textLimitReported = true;
+                    return false;
+                }
+                var content = candidate.Content;
+                if (content.Length > allowed)
+                {
+                    content = content[..allowed];
+                    if (!textLimitReported)
+                        ReportIssue(issues, entry, "archive_member_text_limit", "Archive member text was truncated at its output budget; coverage is partial.");
+                    textLimitReported = true;
+                }
+                int charge = content.Length + overhead;
+                entryText -= charge;
+                remainingText -= charge;
+                entryLines--;
+                remainingLines--;
+                bounded = candidate with { Number = ++lineNumber, Content = content };
+                return true;
+            }
+
+            if (isDocumentEntry)
+            {
+                BinaryEntryReadResult documentResult;
+                try { documentResult = await ReadBinaryEntryAsync(entry, entryBudget, cancellationToken).ConfigureAwait(false); }
+                catch (Exception ex) when (ex is IOException or InvalidDataException or UnauthorizedAccessException)
+                {
+                    ReportIssue(issues, entry, "archive_member_unreadable", $"Archive document could not be read: {ex.Message}");
+                    continue;
+                }
+                remainingBudget -= documentResult.BytesRead;
+                if (likelyTruncated || documentResult.Truncated)
+                {
+                    ReportIssue(issues, entry, "archive_member_truncated", "Archive document skipped because complete bytes did not fit the extraction budget.");
+                    continue;
+                }
+                var package = await CheckDocumentPackageAsync(documentResult.Bytes, entry.Name,
+                    Math.Max(0, remainingBudget), cancellationToken).ConfigureAwait(false);
+                remainingBudget -= package.BytesRead;
+                if (!package.Allowed)
+                {
+                    ReportIssue(issues, entry, package.Code, package.Message);
+                    continue;
+                }
+                var documentLines = await ReadDocumentAsync(entry, documentResult.Bytes, documentHost,
+                    Math.Min(entryText, remainingText), issues, cancellationToken).ConfigureAwait(false);
+                if (documentLines.Count == 0) continue;
+                var marker = new TextLine(0, $"=== {entry.FullName} ===", ArchiveAnchor(entry.FullName, fingerprint, null));
+                if (TakeOutput(marker, out var markerLine)) yield return markerLine;
+                foreach (var line in documentLines)
+                {
+                    cancellationToken.ThrowIfCancellationRequested();
+                    var wrapped = line with { Anchor = ArchiveAnchor(entry.FullName, fingerprint, DocumentAnchor(line, entry.Name)) };
+                    if (!TakeOutput(wrapped, out var bounded)) break;
+                    yield return bounded;
+                }
+            }
+            else if (context.EnableOcr && isImageEntry)
             {
                 BinaryEntryReadResult imageResult;
                 try
@@ -167,7 +313,11 @@ public sealed class ZipExtractor : IContextualDiagnosticTextExtractor
                     $"archive member {entry.FullName}",
                     Section: entry.FullName);
                 await foreach (var line in _embeddedImageOcr.ExtractAsync(imageResult.Bytes, request, cancellationToken).ConfigureAwait(false))
-                    yield return line with { Number = ++lineNumber };
+                {
+                    var inner = line.Anchor is null ? null : line.Anchor with { Kind = SourceAnchorKind.ImageOcr, MemberPath = null };
+                    if (!TakeOutput(line with { Anchor = ArchiveAnchor(entry.FullName, fingerprint, inner) }, out var bounded)) break;
+                    yield return bounded;
+                }
             }
             else
             {
@@ -186,16 +336,16 @@ public sealed class ZipExtractor : IContextualDiagnosticTextExtractor
                 if (likelyTruncated || entryResult.Truncated)
                     ReportIssue(issues, entry, "archive_member_truncated", "Archive member content was truncated because the archive byte budget was exhausted.");
 
-                lineNumber++;
-                yield return new TextLine(lineNumber, $"=== {entry.FullName} ===");
+                var marker = new TextLine(0, $"=== {entry.FullName} ===", ArchiveAnchor(entry.FullName, fingerprint, null));
+                if (TakeOutput(marker, out var markerLine)) yield return markerLine;
 
                 int memberLine = 0;
                 foreach (var line in entryResult.Lines)
                 {
                     cancellationToken.ThrowIfCancellationRequested();
-                    lineNumber++;
-                    yield return new TextLine(lineNumber, line, new SourceAnchor(SourceAnchorKind.Archive,
-                        $"archive member {entry.FullName}", Line: ++memberLine, MemberPath: entry.FullName));
+                    var inner = new SourceAnchor(SourceAnchorKind.Text, $"line {++memberLine}", Line: memberLine);
+                    if (!TakeOutput(new TextLine(memberLine, line, ArchiveAnchor(entry.FullName, fingerprint, inner)), out var bounded)) break;
+                    yield return bounded;
                 }
             }
         }
@@ -225,12 +375,18 @@ public sealed class ZipExtractor : IContextualDiagnosticTextExtractor
         long byteBudget,
         CancellationToken cancellationToken)
     {
-        var capped = new CappedStream(entry.Open(), byteBudget);
-        using (capped)
+        using (var stream = entry.Open())
         using (var memory = new MemoryStream())
         {
-            await capped.CopyToAsync(memory, cancellationToken).ConfigureAwait(false);
-            return new BinaryEntryReadResult(memory.ToArray(), capped.BytesRead, capped.LimitReached);
+            var buffer = new byte[8192];
+            while (memory.Length < byteBudget)
+            {
+                int count = await stream.ReadAsync(buffer.AsMemory(0, (int)Math.Min(buffer.Length, byteBudget - memory.Length)), cancellationToken).ConfigureAwait(false);
+                if (count == 0) return new BinaryEntryReadResult(memory.ToArray(), memory.Length, false);
+                memory.Write(buffer, 0, count);
+            }
+            bool truncated = await stream.ReadAsync(buffer.AsMemory(0, 1), cancellationToken).ConfigureAwait(false) != 0;
+            return new BinaryEntryReadResult(memory.ToArray(), memory.Length, truncated);
         }
     }
 
@@ -242,7 +398,8 @@ public sealed class ZipExtractor : IContextualDiagnosticTextExtractor
         string code,
         string message)
     {
-        issues.Report(new ExtractionIssue(entry.FullName, code, message));
+        string member = entry.FullName.Length <= 512 ? entry.FullName : entry.FullName[..512];
+        issues.Report(new ExtractionIssue(member, code, message.Length <= 1000 ? message : message[..1000]));
     }
 
     private static bool IsTextEntry(string entryName)

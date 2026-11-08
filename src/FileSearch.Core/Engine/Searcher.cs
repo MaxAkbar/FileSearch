@@ -178,7 +178,9 @@ public sealed class Searcher : ISearcher
                             // malformed files are routine, so log at Debug.
                             Interlocked.Increment(ref filesFailed);
                             _logger.LogDebug(ex, "Search failed for file {Path}.", path);
-                            if (extractor is MsgExtractor or OutlookStoreExtractor)
+                            if (extractor is ZipExtractor)
+                                request.Status?.Invoke($"Partial: could not read archive {Path.GetFileName(path)}. Its contents were not fully searched.");
+                            else if (extractor is MsgExtractor or OutlookStoreExtractor)
                                 request.Status?.Invoke($"Could not read {Path.GetFileName(path)}: {ex.Message}");
                         }
                         finally
@@ -233,9 +235,12 @@ public sealed class Searcher : ISearcher
         var highlightBuffer = new List<MatchSpan>(4);
         var context = new TextExtractionContext(options.EnableOcr);
 
-        var extracted = extractor is MsgExtractor or OutlookStoreExtractor && extractor is IDiagnosticTextExtractor diagnostic
-            ? diagnostic.ExtractAsync(path, new SearchExtractionIssueSink(status, Path.GetFileName(path)), token)
-            : extractor.ExtractWithContextAsync(path, context, token);
+        var issues = new SearchExtractionIssueSink(status, Path.GetFileName(path));
+        var extracted = extractor is IContextualDiagnosticTextExtractor contextualDiagnostic
+            ? contextualDiagnostic.ExtractAsync(path, context, issues, token)
+            : extractor is IDiagnosticTextExtractor diagnostic
+                ? diagnostic.ExtractAsync(path, issues, token)
+                : extractor.ExtractWithContextAsync(path, context, token);
         await foreach (var line in extracted.ConfigureAwait(false))
         {
             var messageId = line.Anchor?.MailMessage?.StoreFingerprint is not null ? line.Anchor.MailMessage.Id : null;
@@ -272,7 +277,32 @@ public sealed class Searcher : ISearcher
 
     private sealed class SearchExtractionIssueSink(Action<string>? status, string fileName) : IExtractionIssueSink
     {
-        public void Report(ExtractionIssue issue) => status?.Invoke($"{fileName}: {issue.Message}");
+        private const int MaximumReports = 4;
+        private const int MaximumMessageLength = 480;
+        private int _reports;
+
+        public void Report(ExtractionIssue issue)
+        {
+            if (status is null || string.Equals(issue.Severity, "info", StringComparison.OrdinalIgnoreCase))
+                return;
+            if (_reports++ >= MaximumReports)
+            {
+                if (_reports == MaximumReports + 1)
+                    status($"Partial: additional extraction warnings for {fileName}. Some content was not searched.");
+                return;
+            }
+
+            var prefix = issue.Code.StartsWith("archive_", StringComparison.Ordinal) ? "Partial: " : string.Empty;
+            var member = string.IsNullOrWhiteSpace(issue.MemberPath) ? string.Empty : $" / {issue.MemberPath}";
+            var message = $"{prefix}{fileName}{member}: {issue.Message}";
+            if (message.Length > MaximumMessageLength)
+            {
+                int length = char.IsHighSurrogate(message[MaximumMessageLength - 2])
+                    ? MaximumMessageLength - 2 : MaximumMessageLength - 1;
+                message = message[..length] + "…";
+            }
+            status(message);
+        }
     }
 
     private async IAsyncEnumerable<Hit> SearchUnifiedFileMetadataAsync(

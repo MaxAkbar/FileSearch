@@ -76,8 +76,10 @@ internal static class ExtractorHostProgram
         if (string.IsNullOrWhiteSpace(request.ExtractorId))
             return ExtractorHostResponse.Fail("extractor_host_protocol_error", "Request extractor id is required.");
 
-        var extractor = CreateExtractors().FirstOrDefault(
-            candidate => string.Equals(candidate.ExtractorId, request.ExtractorId, StringComparison.Ordinal));
+        var extractor = request.ExtractorId == "filesearch.zip"
+            ? ZipExtractor.CreateForIsolatedHost(ExtractionScratchDirectory.ValidateRequestDirectory(request.TemporaryDirectory))
+            : CreateExtractors().FirstOrDefault(
+                candidate => string.Equals(candidate.ExtractorId, request.ExtractorId, StringComparison.Ordinal));
         if (extractor is null)
         {
             return ExtractorHostResponse.Fail(
@@ -93,8 +95,21 @@ internal static class ExtractorHostProgram
                 ? diagnosticExtractor.ExtractAsync(request.Path, issues, cancellationToken)
                 : extractor.ExtractAsync(request.Path, cancellationToken);
 
+            bool boundedDocument = request.LimitDocumentOutput && request.ExtractorId is ("filesearch.pdf-pdfpig" or "filesearch.word-openxml"
+                or "filesearch.excel-closedxml" or "filesearch.powerpoint-openxml");
+            long textCharacters = 0;
             await foreach (var line in extractedLines.ConfigureAwait(false))
+            {
+                if (boundedDocument && (lines.Count >= ZipExtractor.MaxDocumentTextLines ||
+                    line.Content.Length > ZipExtractor.MaxDocumentTextCharacters - textCharacters))
+                {
+                    issues.Report(new ExtractionIssue(null, "document_text_limit",
+                        "Partial: document text exceeds the isolated parser's character or line limit; remaining text was not searched."));
+                    break;
+                }
                 lines.Add(line);
+                textCharacters += line.Content.Length;
+            }
         }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or InvalidDataException)
         {
@@ -121,7 +136,6 @@ internal static class ExtractorHostProgram
             new OutlookStoreExtractor(),
             new XmlTextExtractor(),
             new CalendarContactExtractor(),
-            new ZipExtractor(),
             new DatabaseExtractor(),
             new WindowsIFilterExtractor(),
         };

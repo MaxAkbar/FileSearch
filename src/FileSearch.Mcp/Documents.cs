@@ -31,7 +31,8 @@ internal sealed record SearchHitDocument(
     long? SizeBytes,
     DateTime? ModifiedUtc,
     string? Anchor,
-    FileSearch.Core.Extractors.MailMessageMetadata? MailMessage = null);
+    FileSearch.Core.Extractors.MailMessageMetadata? MailMessage = null,
+    FileSearch.Core.Engine.SourceLocator? Locator = null);
 
 internal sealed record IndexCoverageDocument(
     string Root,

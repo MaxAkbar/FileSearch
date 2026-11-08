@@ -384,7 +384,7 @@ public sealed partial class QuickSearchViewModel : ObservableObject, IDisposable
                 .ConfigureAwait(true);
             token.ThrowIfCancellationRequested();
             ImageOcrPreview = imagePreview;
-            var storedPreview = result.HasStructuredSnippets
+            var storedPreview = result.HasStructuredSnippets || ArchivePreviewService.HasMemberHits(result.FullPath, result.Hits)
                 ? result.BuildStoredHitPreview()
                 : string.Empty;
             if (!string.IsNullOrWhiteSpace(storedPreview))

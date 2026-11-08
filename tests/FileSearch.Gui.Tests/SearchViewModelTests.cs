@@ -16,6 +16,57 @@ namespace FileSearch.Gui.Tests;
 public sealed class SearchViewModelTests
 {
     [Theory]
+    [InlineData("csv")]
+    [InlineData("jsonl")]
+    public void ArchiveExportRetainsContainerMemberFingerprintAndInnerPage(string format)
+    {
+        string exportPath = Path.Combine(Path.GetTempPath(), $"filesearch-archive-{Guid.NewGuid():N}.{format}");
+        try
+        {
+            RunWithPump((pump, vm, history, status, settings) =>
+            {
+                vm.QueryText = "needle";
+                vm.SearchPath = Path.GetTempPath();
+                var search = vm.SearchCommand.ExecuteAsync(null);
+                pump.PumpUntil(() => search.IsCompleted, TimeSpan.FromSeconds(10));
+                var export = vm.ExportResultsCommand.ExecuteAsync(format);
+                pump.PumpUntil(() => export.IsCompleted, TimeSpan.FromSeconds(10));
+                string text = File.ReadAllText(exportPath);
+                if (format == "csv")
+                {
+                    Assert.Contains("archiveMember,archiveFingerprint,archiveContentLocation", text);
+                    Assert.Contains("\"Reports/annual,report.pdf\"", text);
+                    Assert.Contains("123:456", text);
+                    Assert.Contains("page 2", text);
+                }
+                else
+                {
+                    using var json = System.Text.Json.JsonDocument.Parse(text.Trim());
+                    var locator = json.RootElement.GetProperty("Locator");
+                    Assert.Equal("Reports/annual,report.pdf", locator.GetProperty("ArchiveMember").GetString());
+                    Assert.Equal("123:456", locator.GetProperty("ArchiveFingerprint").GetString());
+                    Assert.Equal(2, locator.GetProperty("ArchiveContentAnchor").GetProperty("Page").GetInt32());
+                }
+            }, new ArchiveIdentitySearcher(), new FakeFileSavePicker { PathToReturn = exportPath });
+        }
+        finally { if (File.Exists(exportPath)) File.Delete(exportPath); }
+    }
+
+    private sealed class ArchiveIdentitySearcher : ISearcher
+    {
+        public async IAsyncEnumerable<Hit> SearchAsync(SearchRequest request,
+            [EnumeratorCancellation] CancellationToken cancellationToken)
+        {
+            await Task.Yield();
+            var inner = SourceAnchor.PdfPage(2);
+            var anchor = new SourceAnchor(SourceAnchorKind.Archive, "archive member Reports/annual,report.pdf",
+                Line: 3, MemberPath: "Reports/annual,report.pdf", ArchiveFingerprint: "123:456", ArchiveContentAnchor: inner);
+            yield return new Hit(@"C:\results\documents.zip", 15, "needle", [],
+                Anchor: anchor, Locator: SourceLocator.FromAnchor(anchor, 15));
+        }
+    }
+
+    [Theory]
     [InlineData("from", "From")]
     [InlineData("to", "To")]
     [InlineData("cc", "Cc")]
@@ -52,7 +103,7 @@ public sealed class SearchViewModelTests
                 pump.PumpUntil(() => export.IsCompleted, TimeSpan.FromSeconds(10));
                 var lines = File.ReadAllLines(exportPath);
                 Assert.Equal(3, lines.Length);
-                Assert.EndsWith("mailMessageId,mailSubject,mailFrom,mailTo,mailCc,mailDateUtc,mailFolder,mailStoreFingerprint,mailSentUtc", lines[0]);
+                Assert.Contains("mailMessageId,mailSubject,mailFrom,mailTo,mailCc,mailDateUtc,mailFolder,mailStoreFingerprint,mailSentUtc", lines[0]);
                 Assert.Contains(lines, line => line.Contains("message-one", StringComparison.Ordinal));
                 Assert.Contains(lines, line => line.Contains("message-two", StringComparison.Ordinal));
                 Assert.All(lines.Skip(1), line =>

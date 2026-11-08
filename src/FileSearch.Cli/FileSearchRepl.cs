@@ -1086,7 +1086,7 @@ internal sealed class FileSearchRepl
     private static string RenderOneShotCsv(IReadOnlyList<Hit> hits)
     {
         var sb = new StringBuilder();
-        sb.AppendLine("path,lineNumber,kind,score,sizeBytes,modifiedUtc,line,mailMessageId,mailSubject,mailFrom,mailFolder,mailDateUtc,databaseEngine,databaseTable,databaseRow,databaseColumn,databaseKey,databaseFingerprint,mailTo,mailCc,mailStoreFingerprint,mailSentUtc");
+        sb.AppendLine("path,lineNumber,kind,score,sizeBytes,modifiedUtc,line,mailMessageId,mailSubject,mailFrom,mailFolder,mailDateUtc,databaseEngine,databaseTable,databaseRow,databaseColumn,databaseKey,databaseFingerprint,mailTo,mailCc,mailStoreFingerprint,mailSentUtc,location,archiveMember,archiveFingerprint,archiveContentLocation");
         foreach (var hit in hits)
         {
             sb.Append(CsvField(hit.Path)).Append(',');
@@ -1110,7 +1110,12 @@ internal sealed class FileSearchRepl
             sb.Append(CsvField(hit.MailMessage?.To ?? string.Empty)).Append(',');
             sb.Append(CsvField(hit.MailMessage?.Cc ?? string.Empty)).Append(',');
             sb.Append(CsvField(hit.MailMessage?.StoreFingerprint ?? string.Empty)).Append(',');
-            sb.AppendLine(CsvField(hit.MailMessage?.SentUtc?.ToString("O", CultureInfo.InvariantCulture) ?? string.Empty));
+            sb.Append(CsvField(hit.MailMessage?.SentUtc?.ToString("O", CultureInfo.InvariantCulture) ?? string.Empty)).Append(',');
+            var locator = hit.Locator ?? hit.Snippet?.Locator ?? SourceLocator.FromAnchor(hit.Anchor, hit.LineNumber);
+            sb.Append(CsvField(locator.DisplayText ?? hit.Anchor?.DisplayText ?? string.Empty)).Append(',');
+            sb.Append(CsvField(locator.ArchiveMember ?? string.Empty)).Append(',');
+            sb.Append(CsvField(locator.ArchiveFingerprint ?? string.Empty)).Append(',');
+            sb.AppendLine(CsvField(locator.ArchiveContentAnchor?.DisplayText ?? string.Empty));
         }
 
         return sb.ToString();
@@ -1452,7 +1457,8 @@ internal sealed class FileSearchRepl
             hit.ModifiedUtc,
             hit.LineContent,
             hit.MailMessage,
-            hit.Database);
+            hit.Database,
+            hit.Locator ?? hit.Snippet?.Locator ?? SourceLocator.FromAnchor(hit.Anchor, hit.LineNumber));
 
     private static OneShotIndexLocation ToOneShotIndexLocation(IndexedLocationInfo location) =>
         new(
@@ -3009,7 +3015,8 @@ internal sealed class FileSearchRepl
         [property: System.Text.Json.Serialization.JsonIgnore(Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull)]
         MailMessageMetadata? MailMessage,
         [property: System.Text.Json.Serialization.JsonIgnore(Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull)]
-        FileSearch.Core.Databases.DatabaseLocation? Database);
+        FileSearch.Core.Databases.DatabaseLocation? Database,
+        SourceLocator? Locator = null);
 
     private sealed record OneShotIndexLocationsDocument(
         int Count,

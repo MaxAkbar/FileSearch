@@ -8,6 +8,24 @@ namespace FileSearch.Mcp.Tests;
 public sealed class ResultShaperTests
 {
     [Fact]
+    public void ArchiveResultRetainsMemberFingerprintAndInnerLocationOnTheWire()
+    {
+        var inner = FileSearch.Core.Extractors.SourceAnchor.PdfPage(7);
+        var anchor = new FileSearch.Core.Extractors.SourceAnchor(FileSearch.Core.Extractors.SourceAnchorKind.Archive,
+            "archive member report.pdf · page 7", Line: 21, MemberPath: "docs/report.pdf",
+            ArchiveFingerprint: "1234:5678", ArchiveContentAnchor: inner);
+        var hit = new Hit(@"C:\Docs\bundle.zip", 901, "needle", [], Anchor: anchor);
+        var document = ResultShaper.ToDocument(hit);
+        Assert.Equal("docs/report.pdf", document.Locator!.ArchiveMember);
+        Assert.Equal("1234:5678", document.Locator.ArchiveFingerprint);
+        Assert.Equal(inner, document.Locator.ArchiveContentAnchor);
+        Assert.Equal(21, document.Locator.StartLine);
+        string json = System.Text.Json.JsonSerializer.Serialize(document);
+        var roundTrip = System.Text.Json.JsonSerializer.Deserialize<SearchHitDocument>(json)!;
+        Assert.Equal(document.Locator, roundTrip.Locator);
+    }
+
+    [Fact]
     public void MailDocumentsPreserveIdentityFromAnchorAndLocator()
     {
         var first = new FileSearch.Core.Extractors.MailMessageMetadata("inbox:1", "Same subject", "alice@example.test",

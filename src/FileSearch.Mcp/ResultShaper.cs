@@ -98,7 +98,8 @@ internal static class ResultShaper
             hit.SizeBytes,
             hit.ModifiedUtc,
             hit.Anchor?.DisplayText,
-            hit.MailMessage);
+            hit.MailMessage,
+            hit.Snippet?.Locator ?? hit.Locator ?? SourceLocator.FromAnchor(hit.Anchor, hit.LineNumber));
     }
 
     /// <summary>

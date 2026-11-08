@@ -15,7 +15,15 @@ internal sealed record ZipArchivePolicy
         long maxEntryBytes = DefaultMaxEntryBytes,
         long maxTotalBytes = DefaultMaxTotalBytes,
         int maxEntries = DefaultMaxEntries,
-        int maxNestedArchiveDepth = DefaultMaxNestedArchiveDepth)
+        int maxNestedArchiveDepth = DefaultMaxNestedArchiveDepth,
+        int maxEntryTextCharacters = ZipExtractor.MaxDocumentTextCharacters,
+        int maxTotalTextCharacters = 8 * 1024 * 1024,
+        int maxEntryTextLines = ZipExtractor.MaxDocumentTextLines,
+        int maxTotalTextLines = 200_000,
+        long maxPackageBytes = DefaultMaxTotalBytes,
+        int maxPackageEntries = DefaultMaxEntries,
+        int maxXmlDepth = 64,
+        TimeSpan? maxDuration = null)
     {
         if (maxEntryBytes <= 0)
             throw new ArgumentOutOfRangeException(nameof(maxEntryBytes), "Archive per-entry byte limit must be positive.");
@@ -25,11 +33,25 @@ internal sealed record ZipArchivePolicy
             throw new ArgumentOutOfRangeException(nameof(maxEntries), "Archive entry limit must be positive.");
         if (maxNestedArchiveDepth != 0)
             throw new ArgumentOutOfRangeException(nameof(maxNestedArchiveDepth), "Nested archive extraction is not implemented yet.");
+        if (maxEntryTextCharacters <= 0 || maxTotalTextCharacters <= 0 || maxEntryTextLines <= 0 || maxTotalTextLines <= 0)
+            throw new ArgumentOutOfRangeException(nameof(maxEntryTextCharacters), "Archive text and line limits must be positive.");
+        if (maxPackageBytes <= 0 || maxPackageEntries <= 0 || maxXmlDepth <= 0)
+            throw new ArgumentOutOfRangeException(nameof(maxPackageBytes), "Document package limits must be positive.");
+        if (maxDuration is { } duration && duration <= TimeSpan.Zero)
+            throw new ArgumentOutOfRangeException(nameof(maxDuration), "Archive duration must be positive.");
 
         MaxEntryBytes = maxEntryBytes;
         MaxTotalBytes = maxTotalBytes;
         MaxEntries = maxEntries;
         MaxNestedArchiveDepth = maxNestedArchiveDepth;
+        MaxEntryTextCharacters = maxEntryTextCharacters;
+        MaxTotalTextCharacters = maxTotalTextCharacters;
+        MaxEntryTextLines = maxEntryTextLines;
+        MaxTotalTextLines = maxTotalTextLines;
+        MaxPackageBytes = maxPackageBytes;
+        MaxPackageEntries = maxPackageEntries;
+        MaxXmlDepth = maxXmlDepth;
+        MaxDuration = maxDuration ?? TimeSpan.FromSeconds(20);
     }
 
     public long MaxEntryBytes { get; }
@@ -39,4 +61,12 @@ internal sealed record ZipArchivePolicy
     public int MaxEntries { get; }
 
     public int MaxNestedArchiveDepth { get; }
+    public int MaxEntryTextCharacters { get; }
+    public int MaxTotalTextCharacters { get; }
+    public int MaxEntryTextLines { get; }
+    public int MaxTotalTextLines { get; }
+    public long MaxPackageBytes { get; }
+    public int MaxPackageEntries { get; }
+    public int MaxXmlDepth { get; }
+    public TimeSpan MaxDuration { get; }
 }

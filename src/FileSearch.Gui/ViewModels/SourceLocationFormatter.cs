@@ -7,6 +7,11 @@ internal static class SourceLocationFormatter
 {
     public static string Format(SourceAnchor? anchor, SourceLocator? locator)
     {
+        var member = locator?.ArchiveMember ?? anchor?.MemberPath;
+        var inner = locator?.ArchiveContentAnchor ?? anchor?.ArchiveContentAnchor;
+        if (inner is not null && !string.IsNullOrWhiteSpace(member))
+            return $"archive member {member} · {Format(inner, SourceLocator.FromAnchor(inner))}";
+
         if (!string.IsNullOrWhiteSpace(anchor?.DisplayText))
             return anchor.DisplayText;
 

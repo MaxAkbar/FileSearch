@@ -2737,6 +2737,7 @@
                                                                    Foreground="{DynamicResource Atlas.Ink2Brush}" VerticalAlignment="Center"/>
                                                         <Button Grid.Column="1" Content="{Binding Search.WholeFileToggleText}"
                                                                 Command="{Binding Search.ToggleWholeFilePreviewCommand}"
+                                                                ToolTip="{Binding Search.WholeFileToggleToolTip}" ToolTipService.ShowOnDisabled="True"
                                                                 Style="{StaticResource AccentUnderlineLinkButtonStyle}"
                                                                 Margin="6,0,0,0"/>
                                                     </Grid>

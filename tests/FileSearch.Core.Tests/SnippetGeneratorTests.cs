@@ -9,6 +9,26 @@ namespace FileSearch.Core.Tests;
 public sealed class SnippetGeneratorTests
 {
     [Fact]
+    public async Task ArchiveContextCannotCrossMembersOrSourceVersions()
+    {
+        var selected = new SourceLocator(ArchiveMember: "Report.txt", ArchiveFingerprint: "123:456",
+            ArchiveContentAnchor: new FileSearch.Core.Extractors.SourceAnchor(FileSearch.Core.Extractors.SourceAnchorKind.Text, "line 2", Line: 2));
+        var reader = new StubContentUnitReader(
+            new ContentUnit(10, 5, ContentUnitKind.ArchiveMember, selected with { ArchiveMember = "report.txt" }, "different case member", "a", "", "", ""),
+            new ContentUnit(11, 5, ContentUnitKind.ArchiveMember, selected, "needle here", "b", "", "", ""),
+            new ContentUnit(12, 5, ContentUnitKind.ArchiveMember, selected with { ArchiveFingerprint = "old" }, "stale source context", "c", "", "", ""),
+            new ContentUnit(13, 5, ContentUnitKind.ArchiveMember, selected, "selected member context", "d", "", "", ""));
+        var generator = new ContentUnitSnippetGenerator(reader);
+        var hit = new Hit(@"C:\docs\files.zip", 20, "needle here", [], ContentUnitId: 11, Locator: selected);
+        var snippet = await generator.GenerateAsync(new SearchRequest(new TermQuery("needle"), [@"C:\docs"], new WalkerOptions()), hit,
+            TestContext.Current.CancellationToken);
+        Assert.Equal(string.Join(Environment.NewLine, "needle here", "selected member context"), snippet.Text);
+        Assert.Equal(new long[] { 11, 13 }, snippet.ContentUnitIds);
+        Assert.Equal(selected, snippet.Locator);
+        Assert.Single(snippet.Highlights);
+    }
+
+    [Fact]
     public async Task GenerateAsync_UsesNeighboringContentUnits()
     {
         var locator = new SourceLocator(StartLine: 20, EndLine: 20, DisplayText: "line 20");

@@ -65,7 +65,10 @@ public static class ServiceCollectionExtensions
         services.AddSingleton<ITextExtractor, OutlookStoreExtractor>();
         services.AddSingleton<ITextExtractor, XmlTextExtractor>();
         services.AddSingleton<ITextExtractor, CalendarContactExtractor>();
-        services.AddSingleton<ITextExtractor, ZipExtractor>();
+        services.AddSingleton<ITextExtractor>(sp => new ZipExtractor(
+            sp.GetRequiredService<IEmbeddedImageOcrService>(),
+            () => sp.GetRequiredService<IExtractorRegistry>(),
+            sp.GetRequiredService<IOutOfProcessExtractionService>()));
         services.AddSingleton<ITextExtractor, DatabaseExtractor>();
 
         services.TryAddSingleton<IExtractorRegistry>(sp =>

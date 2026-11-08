@@ -52,6 +52,15 @@ public sealed class ContentUnitSnippetGenerator : ISnippetGenerator
                 return CreateFallbackSnippet(request.Expression, hit);
         }
 
+        var archive = hit.Locator ?? hit.Snippet?.Locator ?? SourceLocator.FromAnchor(hit.Anchor, hit.LineNumber);
+        if (Path.GetExtension(hit.Path).Equals(".zip", StringComparison.OrdinalIgnoreCase) && archive.ArchiveMember is { } member)
+        {
+            units = units.Where(unit => string.Equals(unit.Locator.ArchiveMember, member, StringComparison.Ordinal) &&
+                string.Equals(unit.Locator.ArchiveFingerprint, archive.ArchiveFingerprint, StringComparison.Ordinal)).ToArray();
+            if (units.Count == 0)
+                return CreateFallbackSnippet(request.Expression, hit);
+        }
+
         var text = string.Join(Environment.NewLine, units.Select(unit => unit.Text));
         var center = units.FirstOrDefault(unit => unit.Id == contentUnitId);
         return new SearchSnippet(

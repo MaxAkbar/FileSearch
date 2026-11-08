@@ -65,6 +65,16 @@ public sealed class FileLauncher : IFileLauncher
             return true;
         }
 
+        if (Path.GetExtension(path).Equals(".zip", StringComparison.OrdinalIgnoreCase) &&
+            (hit.Snippet?.Locator?.ArchiveMember ?? hit.Locator?.ArchiveMember ?? hit.Anchor?.MemberPath) is not null)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            // The existing read-only document window understands ZIP members.
+            // Never hand an extracted member to a registered application.
+            _showDatabasePreview(path, hit);
+            return true;
+        }
+
         if (hit.MailMessage is { StoreFingerprint: not null } mail)
         {
             try

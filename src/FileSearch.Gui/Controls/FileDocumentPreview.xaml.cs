@@ -77,12 +77,15 @@ public partial class FileDocumentPreview : System.Windows.Controls.UserControl
         preview._expandedWorkbook = null;
         preview._expandedDatabaseLocation = null;
         preview._expandedDatabaseFindState = null;
+        preview._expandedArchiveView = null;
+        preview._archiveSourceFingerprint = null;
         preview.PreviewFindSourceChanged(args);
         _ = preview.ReloadAsync();
     }
 
     private void Stop(bool keepDatabase = false)
     {
+        _expandedArchiveView = CaptureArchiveView() ?? _expandedArchiveView;
         StopPreviewFindRendering();
         _load?.Cancel();
         _load?.Dispose();
@@ -207,16 +210,19 @@ public partial class FileDocumentPreview : System.Windows.Controls.UserControl
                     else if (ArchiveDepth >= 3) ShowFallback("Nested archive previews are limited to three levels.");
                     else
                     {
-                        var lease = await ArchivePreviewService.OpenMemberAsync(result.FullPath, document.SelectedPart, token);
+                        var lease = await ArchivePreviewService.OpenMemberAsync(result.FullPath, document.SelectedPart, token,
+                            ArchivePreviewService.ExpectedFingerprint(hit));
                         if (token.IsCancellationRequested) { lease.Dispose(); token.ThrowIfCancellationRequested(); }
                         _archiveLease = lease;
+                        _archiveSourceFingerprint = lease.SourceFingerprint;
                         _archiveChild = new FileDocumentPreview
                         {
                             Result = new FileResultViewModel(lease.Path, new PreviewOnlyLauncher()),
-                            PreferredHit = hit is null ? null : hit with { Path = lease.Path, LineNumber = hit.Anchor?.Line ?? 1 },
+                            PreferredHit = ArchivePreviewService.CreateMemberHit(document.SelectedPart, lease.Path, hit),
                             ArchiveDepth = ArchiveDepth + 1,
                             DisplayNameOverride = document.SelectedPart,
                         };
+                        RestoreArchiveChildState(document.SelectedPart, lease);
                         _archiveChild.ExpandButton.Visibility = Visibility.Collapsed;
                         Body.Content = _archiveChild;
                     }
@@ -448,6 +454,7 @@ public partial class FileDocumentPreview : System.Windows.Controls.UserControl
                 _expandedDatabaseFindState = _databaseView?.CaptureFindState(),
                 _expandedPreviewFindState = CapturePreviewFindState(),
                 _expandedPdfView = CapturePdfView(),
+                _expandedArchiveView = CaptureArchiveView(),
                 ArchiveDepth = ArchiveDepth,
                 DisplayNameOverride = DisplayNameOverride
             },

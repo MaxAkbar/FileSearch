@@ -577,7 +577,12 @@ public sealed partial class SearchViewModel : ObservableObject, IDisposable
         }
     }
 
-    public string WholeFileToggleText => IsWholeFilePreview ? "Show matches only" : "Show whole file";
+    public string WholeFileToggleText => SelectedFile is { } file && ArchivePreviewService.HasMemberHits(file.FullPath, file.Hits)
+        ? "Use File preview" : IsWholeFilePreview ? "Show matches only" : "Show whole file";
+
+    public string WholeFileToggleToolTip => SelectedFile is { } file && ArchivePreviewService.HasMemberHits(file.FullPath, file.Hits)
+        ? "ZIP Matches retain captured search excerpts. Use File preview to read the complete member."
+        : "Switch between matching excerpts and the whole extracted file.";
 
     /// <summary>Primary preview action ("Open at line 46").</summary>
     public string OpenPreviewTargetText =>
@@ -742,6 +747,8 @@ public sealed partial class SearchViewModel : ObservableObject, IDisposable
         DeleteResultCommand.NotifyCanExecuteChanged();
         OpenPreviewTargetCommand.NotifyCanExecuteChanged();
         ToggleWholeFilePreviewCommand.NotifyCanExecuteChanged();
+        OnPropertyChanged(nameof(WholeFileToggleText));
+        OnPropertyChanged(nameof(WholeFileToggleToolTip));
         IsWholeFilePreview = false;
         if (value is not null)
             SelectedDetailsTabIndex = HitsTabIndex;
@@ -981,7 +988,8 @@ public sealed partial class SearchViewModel : ObservableObject, IDisposable
         return LoadPreviewAsync(SelectedFile);
     }
 
-    private bool CanToggleWholeFilePreview() => SelectedFile is { IsDirectory: false };
+    private bool CanToggleWholeFilePreview() => SelectedFile is { IsDirectory: false } file &&
+        !ArchivePreviewService.HasMemberHits(file.FullPath, file.Hits);
 
     /// <summary>"+" on the Locations section: pin a folder for one-click searching.</summary>
     [RelayCommand]
@@ -1086,7 +1094,7 @@ public sealed partial class SearchViewModel : ObservableObject, IDisposable
         {
             _status.Text = "Reading file content...";
             var text = file.MailMessage is { } mail &&
-                (OutlookMailReader.IsStore(file.FullPath) || file.Extension.Equals(".msg", StringComparison.OrdinalIgnoreCase))
+                (OutlookMailReader.IsStore(file.FullPath) || file.Extension.Equals("msg", StringComparison.OrdinalIgnoreCase))
                 ? await Task.Run(() => string.Join(Environment.NewLine,
                     OutlookMailReader.ReadMessageLines(file.FullPath, mail, CancellationToken.None).Select(line => line.Content))).ConfigureAwait(true)
                 : await _previewService.LoadFullTextAsync(file.FullPath, CancellationToken.None).ConfigureAwait(true);
@@ -1681,6 +1689,12 @@ public sealed partial class SearchViewModel : ObservableObject, IDisposable
                 if (_filesByPath.TryGetValue(path, out var file))
                 {
                     file.AddHits(hits);
+                    if (ReferenceEquals(SelectedFile, file))
+                    {
+                        ToggleWholeFilePreviewCommand.NotifyCanExecuteChanged();
+                        OnPropertyChanged(nameof(WholeFileToggleText));
+                        OnPropertyChanged(nameof(WholeFileToggleToolTip));
+                    }
                     continue;
                 }
 
@@ -2441,7 +2455,7 @@ public sealed partial class SearchViewModel : ObservableObject, IDisposable
     private string RenderExportCsv(IReadOnlyList<FileResultViewModel> files)
     {
         var sb = new StringBuilder();
-        sb.AppendLine("path,fileName,folder,extension,sizeBytes,modifiedUtc,source,hitCount,lineNumber,kind,location,line,snippet,mailMessageId,mailSubject,mailFrom,mailTo,mailCc,mailDateUtc,mailFolder,mailStoreFingerprint,mailSentUtc");
+        sb.AppendLine("path,fileName,folder,extension,sizeBytes,modifiedUtc,source,hitCount,lineNumber,kind,location,line,snippet,mailMessageId,mailSubject,mailFrom,mailTo,mailCc,mailDateUtc,mailFolder,mailStoreFingerprint,mailSentUtc,archiveMember,archiveFingerprint,archiveContentLocation");
         foreach (var file in files)
         {
             foreach (var hit in file.Hits)
@@ -2468,7 +2482,11 @@ public sealed partial class SearchViewModel : ObservableObject, IDisposable
                 sb.Append(CsvField(mail?.DateUtc?.ToString("O", CultureInfo.InvariantCulture) ?? string.Empty)).Append(',');
                 sb.Append(CsvField(mail?.Folder ?? string.Empty)).Append(',');
                 sb.Append(CsvField(mail?.StoreFingerprint ?? string.Empty)).Append(',');
-                sb.AppendLine(CsvField(mail?.SentUtc?.ToString("O", CultureInfo.InvariantCulture) ?? string.Empty));
+                sb.Append(CsvField(mail?.SentUtc?.ToString("O", CultureInfo.InvariantCulture) ?? string.Empty)).Append(',');
+                var locator = hit.Locator ?? hit.Snippet?.Locator ?? SourceLocator.FromAnchor(hit.Anchor, hit.LineNumber);
+                sb.Append(CsvField(locator.ArchiveMember ?? string.Empty)).Append(',');
+                sb.Append(CsvField(locator.ArchiveFingerprint ?? string.Empty)).Append(',');
+                sb.AppendLine(CsvField(locator.ArchiveContentAnchor?.DisplayText ?? string.Empty));
             }
         }
 
@@ -2739,6 +2757,14 @@ public sealed partial class SearchViewModel : ObservableObject, IDisposable
                 .ConfigureAwait(true);
             token.ThrowIfCancellationRequested();
             ImageOcrPreview = imagePreview;
+            if (ArchivePreviewService.HasMemberHits(file.FullPath, file.Hits))
+            {
+                // ZIP line numbering depends on extraction coverage (including
+                // OCR). Re-extracting with another context cannot identify a hit
+                // by its old global offset, even if it returns nonempty text.
+                PreviewContent = file.BuildStoredHitPreview();
+                return;
+            }
             if (file.MailMessage is { } mail)
             {
                 var mailPreview = await _previewService.LoadMailMessagePreviewAsync(file.FullPath, mail,

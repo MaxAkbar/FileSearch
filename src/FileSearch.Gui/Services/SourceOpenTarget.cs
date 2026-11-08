@@ -24,6 +24,9 @@ internal static class SourceOpenTargetBuilder
         // Database hit line numbers enumerate extracted cells, not physical editor lines.
         if (hit.Database is not null || FileSearch.Core.Databases.DatabaseFiles.IsDatabase(path)) return null;
 
+        // Archive hit lines identify a member's extracted content, not ZIP bytes.
+        if (Path.GetExtension(path).Equals(".zip", StringComparison.OrdinalIgnoreCase)) return null;
+
         var locator = GetLocator(hit);
         if (IsPdf(path) && locator?.Page is > 0)
         {

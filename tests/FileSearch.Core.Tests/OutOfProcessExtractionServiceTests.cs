@@ -6,6 +6,22 @@ namespace FileSearch.Core.Tests;
 public sealed class OutOfProcessExtractionServiceTests : IDisposable
 {
     [Fact]
+    public async Task NonOcrWindowsPdfWrapperUsesTheNativeReaderInTheHost()
+    {
+        File.WriteAllText(_hostPath, string.Empty);
+        var runner = new FakeHostRunner();
+        using var service = new OutOfProcessExtractionService(
+            new OutOfProcessExtractionOptions { HostPath = _hostPath, UseReusableHostPool = false }, runner);
+        var reader = new TestExtractor("filesearch.windows-pdf-ocr");
+        Assert.False(service.ShouldUse(reader));
+        Assert.True(service.ShouldUseDocumentMember(reader));
+        await service.ExtractDocumentMemberAsync("document.pdf", reader, TestContext.Current.CancellationToken);
+        var request = JsonSerializer.Deserialize<ExtractorHostRequest>(runner.RequestJson!, ExtractorHostProtocol.JsonOptions);
+        Assert.Equal("filesearch.pdf-pdfpig", request!.ExtractorId);
+        Assert.True(request.LimitDocumentOutput);
+    }
+
+    [Fact]
     public async Task ConfiguredIndexIsExcludedBeforeNativeHostDispatch()
     {
         File.WriteAllText(_hostPath, string.Empty);
@@ -22,6 +38,16 @@ public sealed class OutOfProcessExtractionServiceTests : IDisposable
     public void DevelopmentHostMatchesCallerConfiguration(string preferred, string fallback)
     {
         var directory = Path.Combine(Path.GetTempPath(), "repo", "src", "Cli", "bin", preferred, "net10.0", "win-x64");
+        Assert.Equal(new[] { preferred, fallback }, OutOfProcessExtractionService.GetDevelopmentHostConfigurations(directory));
+    }
+
+    [Theory]
+    [InlineData("release", "Release", "Debug")]
+    [InlineData("debug", "Debug", "Release")]
+    [InlineData("release_win-x64", "Release", "Debug")]
+    public void ArtifactsHostMatchesCallerConfiguration(string output, string preferred, string fallback)
+    {
+        string directory = Path.Combine(Path.GetTempPath(), "repo", "artifacts", "build", "bin", "FileSearch.Gui", output);
         Assert.Equal(new[] { preferred, fallback }, OutOfProcessExtractionService.GetDevelopmentHostConfigurations(directory));
     }
 
@@ -195,6 +221,13 @@ public sealed class OutOfProcessExtractionServiceTests : IDisposable
             .OfType<System.Reflection.AssemblyConfigurationAttribute>()
             .FirstOrDefault()
             ?.Configuration ?? "Debug";
+        for (var directory = new DirectoryInfo(AppContext.BaseDirectory); directory is not null; directory = directory.Parent)
+        {
+            if (!directory.Name.Equals("bin", StringComparison.OrdinalIgnoreCase)) continue;
+            string artifactHost = Path.Combine(directory.FullName, "FileSearch.ExtractorHost", configuration.ToLowerInvariant(), "FileSearch.ExtractorHost.dll");
+            if (File.Exists(artifactHost)) return artifactHost;
+            break;
+        }
         var hostDirectory = Path.Combine(
             repositoryRoot,
             "src",

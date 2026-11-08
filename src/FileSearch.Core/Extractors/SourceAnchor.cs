@@ -34,7 +34,9 @@ public sealed record SourceAnchor(
     int? SourceWidth = null,
     int? SourceHeight = null,
     MailMessageMetadata? MailMessage = null,
-    DatabaseLocation? Database = null)
+    DatabaseLocation? Database = null,
+    string? ArchiveFingerprint = null,
+    SourceAnchor? ArchiveContentAnchor = null)
 {
     public static SourceAnchor ImageOcrRegion(
         int x,

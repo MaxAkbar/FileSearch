@@ -21,7 +21,9 @@ public sealed record SourceLocator(
     int? SourceWidth = null,
     int? SourceHeight = null,
     MailMessageMetadata? MailMessage = null,
-    DatabaseLocation? Database = null)
+    DatabaseLocation? Database = null,
+    string? ArchiveFingerprint = null,
+    SourceAnchor? ArchiveContentAnchor = null)
 {
     public static SourceLocator FromAnchor(SourceAnchor? anchor, int? lineNumber = null)
     {
@@ -46,7 +48,9 @@ public sealed record SourceLocator(
             SourceWidth: anchor.SourceWidth,
             SourceHeight: anchor.SourceHeight,
             MailMessage: anchor.MailMessage,
-            Database: anchor.Database);
+            Database: anchor.Database,
+            ArchiveFingerprint: anchor.ArchiveFingerprint,
+            ArchiveContentAnchor: anchor.ArchiveContentAnchor);
     }
 
     private static SourceLocator FromLine(int? lineNumber) =>

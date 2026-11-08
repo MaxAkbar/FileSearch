@@ -9,6 +9,21 @@ namespace FileSearch.Gui.Tests;
 
 public sealed class FileLauncherTests : IDisposable
 {
+    [Fact]
+    public async Task ArchiveHitOpensTheReadOnlyMemberViewerWithoutLaunchingExtractedContent()
+    {
+        string path = Path.Combine(_root, "documents.zip");
+        File.WriteAllText(path, "fixture");
+        var hit = new Hit(path, 901, "needle", [], Locator: new SourceLocator(ArchiveMember: "docs/report.pdf", Page: 2));
+        string? opened = null;
+        Hit? preferred = null;
+        var launcher = new FileLauncher(_ => Assert.Fail("Archive hit must not launch an external app."),
+            (file, source) => { opened = file; preferred = source; }, _ => Assert.Fail("Unexpected open error."));
+        Assert.True(await launcher.OpenAtLocationAsync(path, hit, TestContext.Current.CancellationToken));
+        Assert.Equal(path, opened);
+        Assert.Same(hit, preferred);
+    }
+
     private readonly string _root = Path.Combine(Path.GetTempPath(), "FileSearch.OpenTests", Guid.NewGuid().ToString("N"));
     public FileLauncherTests() => Directory.CreateDirectory(_root);
     public void Dispose() => Directory.Delete(_root, recursive: true);

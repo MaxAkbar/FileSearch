@@ -6,7 +6,7 @@ using Microsoft.Extensions.Logging.Abstractions;
 
 namespace FileSearch.Core.Extractors;
 
-public sealed class OutOfProcessExtractionService : IOutOfProcessExtractionService, IDisposable
+public sealed class OutOfProcessExtractionService : IOutOfProcessExtractionService, IArchiveDocumentExtractionService, IDisposable
 {
     private const int MaxErrorMessageLength = 2_000;
 
@@ -41,9 +41,30 @@ public sealed class OutOfProcessExtractionService : IOutOfProcessExtractionServi
             ResolveCommand() is not null;
     }
 
-    public async Task<OutOfProcessExtractionResult> ExtractAsync(
+    public bool ShouldUseDocumentMember(ITextExtractor extractor)
+    {
+        ArgumentNullException.ThrowIfNull(extractor);
+        return _options.Enabled && _options.ExtractorIds.Contains(GetHostExtractorId(extractor)) && ResolveCommand() is not null;
+    }
+
+    public Task<OutOfProcessExtractionResult> ExtractAsync(
         string path,
         ITextExtractor extractor,
+        CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(extractor);
+        return ExtractCoreAsync(path, extractor, extractor.ExtractorId, false, cancellationToken);
+    }
+
+    public Task<OutOfProcessExtractionResult> ExtractDocumentMemberAsync(
+        string path, ITextExtractor extractor, CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(extractor);
+        return ExtractCoreAsync(path, extractor, GetHostExtractorId(extractor), true, cancellationToken);
+    }
+
+    private async Task<OutOfProcessExtractionResult> ExtractCoreAsync(
+        string path, ITextExtractor extractor, string hostExtractorId, bool limitDocumentOutput,
         CancellationToken cancellationToken)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(path);
@@ -54,15 +75,23 @@ public sealed class OutOfProcessExtractionService : IOutOfProcessExtractionServi
         if (command is null)
             throw new ExtractorHostException("extractor_host_unavailable", "Extractor host executable was not found.");
 
+        await using var scratch = extractor.ExtractorId == "filesearch.zip" ? ExtractionScratchDirectory.Create() : null;
         var request = new ExtractorHostRequest(
             ExtractorHostProtocol.CurrentVersion,
             path,
-            extractor.ExtractorId);
+            hostExtractorId,
+            scratch?.Path,
+            limitDocumentOutput);
         if (_options.UseReusableHostPool)
             return await GetPool(command).ExtractAsync(request, cancellationToken).ConfigureAwait(false);
 
         return await ExtractOneShotAsync(command, request, cancellationToken).ConfigureAwait(false);
     }
+
+    // The Windows wrapper delegates ordinary (non-OCR) extraction to PdfPig.
+    // OCR-enabled index work remains on its existing contextual route.
+    private static string GetHostExtractorId(ITextExtractor extractor) =>
+        extractor.ExtractorId == "filesearch.windows-pdf-ocr" ? "filesearch.pdf-pdfpig" : extractor.ExtractorId;
 
     public void Dispose()
     {
@@ -161,6 +190,19 @@ public sealed class OutOfProcessExtractionService : IOutOfProcessExtractionServi
         yield return Path.Combine(baseDirectory, executableName);
         yield return Path.Combine(baseDirectory, "FileSearch.ExtractorHost.dll");
 
+        // SDK artifacts output places projects next to each other under bin.
+        for (var directory = new DirectoryInfo(baseDirectory); directory is not null; directory = directory.Parent)
+        {
+            if (!directory.Name.Equals("bin", StringComparison.OrdinalIgnoreCase)) continue;
+            foreach (var configuration in GetDevelopmentHostConfigurations(baseDirectory))
+            {
+                string sibling = Path.Combine(directory.FullName, "FileSearch.ExtractorHost", configuration.ToLowerInvariant());
+                yield return Path.Combine(sibling, executableName);
+                yield return Path.Combine(sibling, "FileSearch.ExtractorHost.dll");
+            }
+            break;
+        }
+
         var repositoryRoot = FindAncestorContaining(baseDirectory, "FileSearch.slnx");
         if (repositoryRoot is null)
             yield break;
@@ -185,9 +227,13 @@ public sealed class OutOfProcessExtractionService : IOutOfProcessExtractionServi
         // Published apps still prefer the sidecar beside their executable.
         for (var directory = new DirectoryInfo(baseDirectory); directory is not null; directory = directory.Parent)
         {
-            if (!string.Equals(directory.Parent?.Name, "bin", StringComparison.OrdinalIgnoreCase)) continue;
-            if (directory.Name.Equals("Release", StringComparison.OrdinalIgnoreCase)) return ["Release", "Debug"];
-            if (directory.Name.Equals("Debug", StringComparison.OrdinalIgnoreCase)) return ["Debug", "Release"];
+            bool legacy = string.Equals(directory.Parent?.Name, "bin", StringComparison.OrdinalIgnoreCase);
+            bool artifacts = string.Equals(directory.Parent?.Parent?.Name, "bin", StringComparison.OrdinalIgnoreCase);
+            if (!legacy && !artifacts) continue;
+            if (directory.Name.Equals("Release", StringComparison.OrdinalIgnoreCase) || directory.Name.StartsWith("release_", StringComparison.OrdinalIgnoreCase))
+                return ["Release", "Debug"];
+            if (directory.Name.Equals("Debug", StringComparison.OrdinalIgnoreCase) || directory.Name.StartsWith("debug_", StringComparison.OrdinalIgnoreCase))
+                return ["Debug", "Release"];
         }
         return ["Debug", "Release"];
     }
@@ -476,7 +522,10 @@ internal sealed class ReusableExtractorHostSession : IDisposable
         try
         {
             if (_process is { HasExited: false })
+            {
                 _process.Kill(entireProcessTree: true);
+                _process.WaitForExit(5_000);
+            }
         }
         catch (InvalidOperationException)
         {
@@ -570,32 +619,42 @@ internal sealed class DefaultExtractorHostProcessRunner : IExtractorHostProcessR
             throw new ExtractorHostException("extractor_host_start_failed", ex.Message);
         }
 
-        var stdoutTask = process.StandardOutput.ReadToEndAsync(cancellationToken);
-        var stderrTask = process.StandardError.ReadToEndAsync(cancellationToken);
-        await process.StandardInput.WriteAsync(requestJson.AsMemory(), cancellationToken).ConfigureAwait(false);
-        process.StandardInput.Close();
-
-        var waitTask = process.WaitForExitAsync(CancellationToken.None);
-        var timeoutTask = Task.Delay(timeout, cancellationToken);
-        var completed = await Task.WhenAny(waitTask, timeoutTask).ConfigureAwait(false);
-        if (completed != waitTask)
+        try
         {
-            TryKill(process);
-            cancellationToken.ThrowIfCancellationRequested();
+            var stdoutTask = process.StandardOutput.ReadToEndAsync(cancellationToken);
+            var stderrTask = process.StandardError.ReadToEndAsync(cancellationToken);
+            await process.StandardInput.WriteAsync(requestJson.AsMemory(), cancellationToken).ConfigureAwait(false);
+            process.StandardInput.Close();
 
-            await WaitForExitQuietlyAsync(process).ConfigureAwait(false);
+            var waitTask = process.WaitForExitAsync(CancellationToken.None);
+            var timeoutTask = Task.Delay(timeout, cancellationToken);
+            var completed = await Task.WhenAny(waitTask, timeoutTask).ConfigureAwait(false);
+            if (completed != waitTask)
+            {
+                TryKill(process);
+                await WaitForExitQuietlyAsync(process).ConfigureAwait(false);
+                cancellationToken.ThrowIfCancellationRequested();
+                return new ExtractorHostRunResult(
+                    ExitCode: process.HasExited ? process.ExitCode : -1,
+                    StandardOutput: await ReadQuietlyAsync(stdoutTask).ConfigureAwait(false),
+                    StandardError: await ReadQuietlyAsync(stderrTask).ConfigureAwait(false),
+                    TimedOut: true);
+            }
+
             return new ExtractorHostRunResult(
-                ExitCode: process.HasExited ? process.ExitCode : -1,
-                StandardOutput: await ReadQuietlyAsync(stdoutTask).ConfigureAwait(false),
-                StandardError: await ReadQuietlyAsync(stderrTask).ConfigureAwait(false),
-                TimedOut: true);
+                process.ExitCode,
+                await stdoutTask.ConfigureAwait(false),
+                await stderrTask.ConfigureAwait(false),
+                TimedOut: false);
         }
-
-        return new ExtractorHostRunResult(
-            process.ExitCode,
-            await stdoutTask.ConfigureAwait(false),
-            await stderrTask.ConfigureAwait(false),
-            TimedOut: false);
+        finally
+        {
+            if (!process.HasExited)
+            {
+                TryKill(process);
+                await WaitForExitQuietlyAsync(process).ConfigureAwait(false);
+            }
+        }
     }
 
     private static void TryKill(Process process)

@@ -4,7 +4,7 @@ namespace FileSearch.Core.Extractors;
 
 public static class ExtractorHostProtocol
 {
-    public const int CurrentVersion = 1;
+    public const int CurrentVersion = 2;
 
     public static JsonSerializerOptions JsonOptions { get; } = new(JsonSerializerDefaults.Web);
 }
@@ -12,7 +12,9 @@ public static class ExtractorHostProtocol
 public sealed record ExtractorHostRequest(
     int ProtocolVersion,
     string Path,
-    string ExtractorId);
+    string ExtractorId,
+    string? TemporaryDirectory = null,
+    bool LimitDocumentOutput = false);
 
 public sealed record ExtractorHostResponse(
     int ProtocolVersion,
