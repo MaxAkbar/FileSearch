@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Collections.ObjectModel;
 using System.Collections.Specialized;
+using System.ComponentModel;
 using System.Diagnostics;
 using System.IO;
 using System.Linq;
@@ -45,13 +46,16 @@ public sealed partial class QuickSearchViewModel : ObservableObject, IDisposable
     private readonly IIndexUsageStore? _indexUsageStore;
     private readonly IVolumeNameIndex? _volumeNameIndex;
     private readonly Dictionary<string, FileResultViewModel> _filesByPath = new(StringComparer.OrdinalIgnoreCase);
-    private readonly HashSet<string> _seenHits = new(StringComparer.OrdinalIgnoreCase);
+    private readonly HashSet<SearchHitIdentity> _seenHits = [];
 
     private CancellationTokenSource? _searchCts;
     private CancellationTokenSource? _previewCts;
     private bool _isPreparing;
     private bool _hitLimitReached;
+    private bool _hasIndexedContent, _hasLiveContent;
     private long _searchGeneration;
+    private bool _hasExplicitSelection;
+    private string _locationScopeNotice = string.Empty;
 
     public QuickSearchViewModel(
         ISearcher searcher,
@@ -75,6 +79,9 @@ public sealed partial class QuickSearchViewModel : ObservableObject, IDisposable
         _indexUsageStore = indexUsageStore;
         _includeContentMatches = _settingsService.Current.QuickSearchIncludeContent;
         _quickFolderPath = ResolveInitialQuickFolderPath();
+        _mainSearch.RefreshLocationSelections();
+        _mainSearch.SelectedIndexedRoots.CollectionChanged += OnSelectedIndexedRootsChanged;
+        _mainSearch.PropertyChanged += OnMainSearchStateChanged;
 
         Results.CollectionChanged += OnResultsChanged;
         RefreshScopeOptions();
@@ -85,6 +92,8 @@ public sealed partial class QuickSearchViewModel : ObservableObject, IDisposable
 
     public event EventHandler? RequestHide;
 
+    public event EventHandler? RequestOpenMainWindow;
+
     public event EventHandler? ExternalDialogOpened;
 
     public event EventHandler? ExternalDialogClosed;
@@ -93,9 +102,44 @@ public sealed partial class QuickSearchViewModel : ObservableObject, IDisposable
 
     public ObservableCollection<QuickSearchScopeOption> ScopeOptions { get; } = new();
 
+    public ObservableCollection<string> SelectedIndexedRoots => _mainSearch.SelectedIndexedRoots;
+
+    public ObservableCollection<LocationSelectionOption> LocationSelections => _mainSearch.LocationSelections;
+
+    public string LocationSelectionSummary => _mainSearch.LocationSelectionSummary;
+
+    public bool IsSelectedIndexedScope => SelectedScope?.Value == QuickSearchScopeKind.SelectedIndexedLocations;
+
+    public string LocationScopeNotice => _locationScopeNotice;
+
+    public string FullSearchHandoffSummary => SelectedScope?.Value == QuickSearchScopeKind.EntireMachineMetadata
+        ? "Entire machine metadata stays in Quick Search. Choose a folder or indexed locations to open full search."
+        : !_mainSearch.SearchCommand.CanExecute(null)
+            ? "Finish or cancel the current main-window operation before opening full search."
+            : "Open full search with this scope and Quick matching: all literal words in names/paths, one literal phrase in content.";
+
     [ObservableProperty] private string _searchText = string.Empty;
     [ObservableProperty] private QuickSearchScopeOption? _selectedScope;
-    [ObservableProperty] private FileResultViewModel? _selectedResult;
+    private FileResultViewModel? _selectedResult;
+    private bool _changingPreviewSelection;
+    public FileResultViewModel? SelectedResult
+    {
+        get => _selectedResult;
+        set
+        {
+            // A collection move can transiently update a WPF selection binding.
+            // Keep the model and its preview stable while applying ranked rows.
+            if (_updatingRankedResults)
+            {
+                if (!ReferenceEquals(value, _selectedResult)) _selectionBindingNeedsRestore = true;
+                return;
+            }
+            if (value is not null && !string.IsNullOrWhiteSpace(SearchText) && !Results.Contains(value)) return;
+            if (!SetProperty(ref _selectedResult, value)) return;
+            if (!_selectingAutomatically) MarkSelectionExplicit();
+            OnSelectedResultChanged(value);
+        }
+    }
     [ObservableProperty] private bool _isSearching;
     [ObservableProperty] private bool _isPreviewVisible;
     [ObservableProperty] private bool _includeContentMatches;
@@ -109,6 +153,12 @@ public sealed partial class QuickSearchViewModel : ObservableObject, IDisposable
 
     public bool HasResults => Results.Count > 0;
 
+    /// <summary>Keeps an intentional result selection steady as later matches arrive.</summary>
+    public void MarkSelectionExplicit()
+    {
+        if (SelectedResult is not null && !_hasExplicitSelection) _hasExplicitSelection = true;
+    }
+
     public bool HasImageOcrPreview => ImageOcrPreview is not null;
 
     public string ResultCountText => Results.Count == 1 ? "1 result" : $"{Results.Count:n0} results";
@@ -120,6 +170,7 @@ public sealed partial class QuickSearchViewModel : ObservableObject, IDisposable
         _isPreparing = true;
         try
         {
+            _mainSearch.RefreshLocationSelections();
             RefreshScopeOptions();
             SelectedScope = ScopeOptions.FirstOrDefault(option => option.Value == CurrentConfiguredScope())
                 ?? ScopeOptions.FirstOrDefault();
@@ -146,6 +197,7 @@ public sealed partial class QuickSearchViewModel : ObservableObject, IDisposable
 
     partial void OnSearchTextChanged(string value)
     {
+        OpenFullSearchCommand.NotifyCanExecuteChanged();
         if (_isPreparing)
             return;
 
@@ -154,6 +206,7 @@ public sealed partial class QuickSearchViewModel : ObservableObject, IDisposable
         IsPreviewVisible = false;
         PreviewContent = string.Empty;
         ImageOcrPreview = null;
+        ResetResults();
 
         if (string.IsNullOrWhiteSpace(value))
         {
@@ -184,6 +237,9 @@ public sealed partial class QuickSearchViewModel : ObservableObject, IDisposable
         OnPropertyChanged(nameof(CanSearchContent));
         OnPropertyChanged(nameof(ContentSearchSummary));
         OnPropertyChanged(nameof(IsFolderScope));
+        OnPropertyChanged(nameof(IsSelectedIndexedScope));
+        RefreshLocationScopeNotice();
+        NotifyFullSearchHandoffChanged();
     }
 
     partial void OnIncludeContentMatchesChanged(bool value)
@@ -198,12 +254,13 @@ public sealed partial class QuickSearchViewModel : ObservableObject, IDisposable
     partial void OnQuickFolderPathChanged(string value)
     {
         _settingsService.Update(settings => settings.QuickSearchFolderPath = value.Trim());
+        RefreshLocationScopeNotice();
 
         if (!_isPreparing && IsFolderScope && !string.IsNullOrWhiteSpace(SearchText))
             RestartSearch(SearchText.Trim());
     }
 
-    partial void OnSelectedResultChanged(FileResultViewModel? value)
+    private void OnSelectedResultChanged(FileResultViewModel? value)
     {
         OnPropertyChanged(nameof(HasSelectedResult));
         OpenResultCommand.NotifyCanExecuteChanged();
@@ -212,8 +269,8 @@ public sealed partial class QuickSearchViewModel : ObservableObject, IDisposable
         PinResultCommand.NotifyCanExecuteChanged();
         PreviewResultCommand.NotifyCanExecuteChanged();
         OpenOcrPreviewCommand.NotifyCanExecuteChanged();
-        if (IsPreviewVisible && value is not null)
-            _ = PreviewResultAsync(value);
+        if (IsPreviewVisible && value is not null && !_changingPreviewSelection)
+            _ = LoadPreviewAsync(value);
         else if (value is null)
         {
             _previewCts?.Cancel();
@@ -225,6 +282,7 @@ public sealed partial class QuickSearchViewModel : ObservableObject, IDisposable
     [RelayCommand(CanExecute = nameof(CanUseResult))]
     private async Task OpenResultAsync(FileResultViewModel? result)
     {
+        if (!CanUseResult(result)) return;
         result ??= SelectedResult;
         if (result is null)
             return;
@@ -236,6 +294,7 @@ public sealed partial class QuickSearchViewModel : ObservableObject, IDisposable
     [RelayCommand(CanExecute = nameof(CanUseResult))]
     private void RevealResult(FileResultViewModel? result)
     {
+        if (!CanUseResult(result)) return;
         result ??= SelectedResult;
         if (result is null)
             return;
@@ -247,6 +306,7 @@ public sealed partial class QuickSearchViewModel : ObservableObject, IDisposable
     [RelayCommand(CanExecute = nameof(CanUseResult))]
     private void CopyResultPath(FileResultViewModel? result)
     {
+        if (!CanUseResult(result)) return;
         result ??= SelectedResult;
         if (result is null)
             return;
@@ -258,6 +318,7 @@ public sealed partial class QuickSearchViewModel : ObservableObject, IDisposable
     [RelayCommand(CanExecute = nameof(CanPinResult))]
     private void PinResult(FileResultViewModel? result)
     {
+        if (!CanPinResult(result)) return;
         result ??= SelectedResult;
         if (result is null || result.IsStoreMessage)
             return;
@@ -273,6 +334,8 @@ public sealed partial class QuickSearchViewModel : ObservableObject, IDisposable
             result.IsPinned = false;
             if (string.IsNullOrWhiteSpace(SearchText))
                 LoadPinnedResults();
+            else
+                ProjectRankedResults();
 
             StatusText = "Unpinned result.";
             return;
@@ -291,12 +354,21 @@ public sealed partial class QuickSearchViewModel : ObservableObject, IDisposable
     }
 
     [RelayCommand(CanExecute = nameof(CanUseResult))]
-    private async Task PreviewResultAsync(FileResultViewModel? result)
+    private Task PreviewResultAsync(FileResultViewModel? result)
     {
+        if (!CanUseResult(result)) return Task.CompletedTask;
         result ??= SelectedResult;
         if (result is null)
-            return;
+            return Task.CompletedTask;
 
+        _changingPreviewSelection = true;
+        try { SelectedResult = result; MarkSelectionExplicit(); }
+        finally { _changingPreviewSelection = false; }
+        return LoadPreviewAsync(result);
+    }
+
+    private async Task LoadPreviewAsync(FileResultViewModel result)
+    {
         _previewCts?.Cancel();
         _previewCts?.Dispose();
         _previewCts = new CancellationTokenSource();
@@ -351,6 +423,7 @@ public sealed partial class QuickSearchViewModel : ObservableObject, IDisposable
     [RelayCommand(CanExecute = nameof(CanOpenOcrPreview))]
     private async Task OpenOcrPreviewAsync(FileResultViewModel? result)
     {
+        if (!CanOpenOcrPreview(result)) return;
         result ??= SelectedResult;
         if (result is null)
             return;
@@ -359,11 +432,86 @@ public sealed partial class QuickSearchViewModel : ObservableObject, IDisposable
         RequestHide?.Invoke(this, EventArgs.Empty);
     }
 
-    private bool CanUseResult(FileResultViewModel? result) => result is not null || SelectedResult is not null;
-    private bool CanPinResult(FileResultViewModel? result) => (result ?? SelectedResult) is { IsStoreMessage: false };
+    private bool CanUseResult(FileResultViewModel? result)
+    {
+        var candidate = result ?? SelectedResult;
+        return candidate is not null && (string.IsNullOrWhiteSpace(SearchText) || Results.Contains(candidate));
+    }
+    private bool CanPinResult(FileResultViewModel? result) => CanUseResult(result) && (result ?? SelectedResult) is { IsStoreMessage: false };
 
     private bool CanOpenOcrPreview(FileResultViewModel? result) =>
-        (result ?? SelectedResult)?.HasImageOcrPreview == true;
+        CanUseResult(result) && (result ?? SelectedResult)?.HasImageOcrPreview == true;
+
+    [RelayCommand(CanExecute = nameof(CanOpenFullSearch))]
+    private async Task OpenFullSearchAsync()
+    {
+        if (!CanOpenFullSearch()) return;
+        var scope = SelectedScope?.Value ?? CurrentConfiguredScope();
+        if (!_mainSearch.ApplyQuickSearchHandoff(SearchText.Trim(), LocationScopeFor(scope),
+            SelectedIndexedRoots.ToArray(), QuickFolderPath, IncludeContentMatches && CanSearchContent, SelectedResult))
+        {
+            StatusText = string.IsNullOrWhiteSpace(_mainSearch.HandoffFailureText)
+                ? "Finish or cancel the current main-window operation before opening full search."
+                : _mainSearch.HandoffFailureText;
+            return;
+        }
+        Dismiss();
+        RequestOpenMainWindow?.Invoke(this, EventArgs.Empty);
+        RequestHide?.Invoke(this, EventArgs.Empty);
+        await _mainSearch.SearchCommand.ExecuteAsync(null).ConfigureAwait(true);
+    }
+
+    [RelayCommand]
+    private void RefreshLocationSelections() => _mainSearch.RefreshLocationSelections();
+
+    private bool CanOpenFullSearch() => !string.IsNullOrWhiteSpace(SearchText) &&
+        SelectedScope?.Value != QuickSearchScopeKind.EntireMachineMetadata && _mainSearch.SearchCommand.CanExecute(null);
+
+    private void NotifyFullSearchHandoffChanged()
+    {
+        OpenFullSearchCommand.NotifyCanExecuteChanged();
+        OnPropertyChanged(nameof(FullSearchHandoffSummary));
+    }
+
+    private void RefreshLocationScopeNotice()
+    {
+        var scope = SelectedScope?.Value ?? CurrentConfiguredScope();
+        _locationScopeNotice = scope switch
+        {
+            QuickSearchScopeKind.EntireMachineMetadata => "Filename/path metadata across ready fixed drives; indexed content is unavailable in this scope.",
+            QuickSearchScopeKind.CurrentFolder => "Selected folder; availability is checked when searching.",
+            _ => _mainSearch.GetLocationScopeNotice(LocationScopeFor(scope)),
+        };
+        OnPropertyChanged(nameof(LocationScopeNotice));
+        OnPropertyChanged(nameof(LocationSelectionSummary));
+    }
+
+    private void OnSelectedIndexedRootsChanged(object? sender, NotifyCollectionChangedEventArgs args)
+    {
+        RefreshLocationScopeNotice();
+        if (!_isPreparing && IsSelectedIndexedScope && !string.IsNullOrWhiteSpace(SearchText)) RestartSearch(SearchText.Trim());
+    }
+
+    private void OnMainSearchStateChanged(object? sender, PropertyChangedEventArgs args)
+    {
+        if (args.PropertyName is nameof(SearchViewModel.IsSearching) or nameof(SearchViewModel.IsReplacementBusy))
+            NotifyFullSearchHandoffChanged();
+        if (args.PropertyName is nameof(SearchViewModel.LocationSelections) or nameof(SearchViewModel.LocationScopeNotice))
+        {
+            RefreshLocationScopeNotice();
+            if (args.PropertyName == nameof(SearchViewModel.LocationSelections) && !_isPreparing && !IsFolderScope &&
+                SelectedScope?.Value != QuickSearchScopeKind.EntireMachineMetadata && !string.IsNullOrWhiteSpace(SearchText))
+                RestartSearch(SearchText.Trim());
+        }
+        if (args.PropertyName == nameof(SearchViewModel.LocationSelectionSummary)) OnPropertyChanged(nameof(LocationSelectionSummary));
+    }
+
+    private static LocationScopeKind LocationScopeFor(QuickSearchScopeKind scope) => scope switch
+    {
+        QuickSearchScopeKind.SelectedIndexedLocations => LocationScopeKind.SelectedIndexedLocations,
+        QuickSearchScopeKind.AllIndexedLocations => LocationScopeKind.AllIndexedLocations,
+        _ => LocationScopeKind.SelectedFolder,
+    };
 
     partial void OnImageOcrPreviewChanged(ImageOcrPreviewViewModel? value) =>
         OnPropertyChanged(nameof(HasImageOcrPreview));
@@ -424,6 +572,8 @@ public sealed partial class QuickSearchViewModel : ObservableObject, IDisposable
 
     public void Dispose()
     {
+        _mainSearch.SelectedIndexedRoots.CollectionChanged -= OnSelectedIndexedRootsChanged;
+        _mainSearch.PropertyChanged -= OnMainSearchStateChanged;
         CancelSearch();
         _previewCts?.Cancel();
         _searchCts?.Dispose();
@@ -455,6 +605,7 @@ public sealed partial class QuickSearchViewModel : ObservableObject, IDisposable
     private void RestartSearch(string text)
     {
         CancelSearch();
+        ResetResults();
         var cts = new CancellationTokenSource();
         _searchCts?.Dispose();
         _searchCts = cts;
@@ -464,6 +615,7 @@ public sealed partial class QuickSearchViewModel : ObservableObject, IDisposable
     private async Task SearchAsync(string text, long generation, CancellationToken token)
     {
         ResetResults();
+        _nameRanking = QuickSearchNameRanking.Compile(text);
         IsSearching = true;
         ImageOcrPreview = null;
         StageText = "Filename and path matches";
@@ -471,13 +623,31 @@ public sealed partial class QuickSearchViewModel : ObservableObject, IDisposable
 
         var scope = SelectedScope?.Value ?? CurrentConfiguredScope();
         var machine = scope == QuickSearchScopeKind.EntireMachineMetadata;
-        var roots = machine ? GetMachineMetadataRoots() : ResolveRoots(scope);
+        IReadOnlyList<string> roots;
+        if (machine) roots = await Task.Run(GetMachineMetadataRoots, token).ConfigureAwait(true);
+        else
+        {
+            string folder = QuickFolderPath;
+            string[] selected = SelectedIndexedRoots.ToArray();
+            var resolution = await _mainSearch.ResolveLocationScopeAsync(LocationScopeFor(scope), folder, selected, token).ConfigureAwait(true);
+            if (scope == QuickSearchScopeKind.CurrentFolder)
+            {
+                var folderRoots = resolution.Roots;
+                bool exists = await Task.Run(() => folderRoots.Any(Directory.Exists), token).WaitAsync(token).ConfigureAwait(true);
+                if (!exists) resolution = new SearchLocationResolution([], "Choose an existing folder to search.");
+            }
+            if (!IsCurrentSearch(generation, token)) return;
+            roots = resolution.Roots;
+            _locationScopeNotice = resolution.Notice;
+            OnPropertyChanged(nameof(LocationScopeNotice));
+        }
+        if (!IsCurrentSearch(generation, token)) return;
         if (roots.Count == 0)
         {
             IsSearching = false;
             StatusText = machine ? "No ready fixed drives were found."
                 : scope == QuickSearchScopeKind.CurrentFolder ? "Choose an existing folder to search."
-                : "No searchable roots are configured.";
+                : LocationScopeNotice;
             return;
         }
 
@@ -495,6 +665,8 @@ public sealed partial class QuickSearchViewModel : ObservableObject, IDisposable
 
         using var producerCts = CancellationTokenSource.CreateLinkedTokenSource(token);
         var producerToken = producerCts.Token;
+        using var contentCts = CancellationTokenSource.CreateLinkedTokenSource(producerToken);
+        var contentToken = contentCts.Token;
         var pendingHits = Channel.CreateBounded<QueuedHit>(new BoundedChannelOptions(512)
         {
             SingleReader = true,
@@ -505,16 +677,41 @@ public sealed partial class QuickSearchViewModel : ObservableObject, IDisposable
             roots, text, pendingHits.Writer,
             machine ? MachineMetadataScanBudgetMilliseconds : ScopedMetadataScanBudgetMilliseconds,
             producerToken), producerToken);
+        var contentStatuses = new List<string>();
+        var statusGate = new Lock();
+        void RecordContentStatus(string message)
+        {
+            if (string.IsNullOrWhiteSpace(message)) return;
+            if (message.Length > 512)
+            {
+                int length = char.IsHighSurrogate(message[510]) ? 510 : 511;
+                message = message[..length] + "…";
+            }
+            lock (statusGate)
+                if (contentStatuses.Count < 8 && !contentStatuses.Contains(message, StringComparer.Ordinal)) contentStatuses.Add(message);
+        }
+        void FinishCurrentSearch()
+        {
+            if (metadataProducer.IsCompletedSuccessfully) _hitLimitReached |= metadataProducer.Result;
+            FinishSearchStatus();
+            string coverage;
+            lock (statusGate) coverage = string.Join(" · ", contentStatuses);
+            if (coverage.Length > 0) StatusText += " · Content: " + coverage;
+        }
         var includeContent = !machine && IncludeContentMatches && CanSearchContent;
         var request = includeContent ? new SearchRequest(
             query, roots, _mainSearch.BuildQuickSearchWalkerOptions(),
-            Progress: null, UseIndex: true, Status: null, RawQuery: text, Mode: QueryMode.PlainText) : null;
+            Progress: null, UseIndex: true, Status: RecordContentStatus, RawQuery: text, Mode: QueryMode.PlainText) : null;
         var contentProducer = request is not null
             ? Task.Run(async () =>
             {
-                await foreach (var hit in _searcher.SearchAsync(request, producerToken).ConfigureAwait(false))
-                    await pendingHits.Writer.WriteAsync(new QueuedHit(hit, false), producerToken).ConfigureAwait(false);
-            }, producerToken)
+                try
+                {
+                    await foreach (var hit in _searcher.SearchAsync(request, contentToken).ConfigureAwait(false))
+                        await pendingHits.Writer.WriteAsync(new QueuedHit(hit, false, FromContentSearch: true), contentToken).ConfigureAwait(false);
+                }
+                catch (OperationCanceledException) when (contentToken.IsCancellationRequested && !producerToken.IsCancellationRequested) { }
+            }, contentToken)
             : Task.CompletedTask;
         var producers = Task.WhenAll(metadataProducer, contentProducer);
 
@@ -522,20 +719,20 @@ public sealed partial class QuickSearchViewModel : ObservableObject, IDisposable
         {
             while (IsCurrentSearch(generation, token))
             {
-                DrainPendingHits(pendingHits.Reader, producerCts);
-                if (_hitLimitReached || (producers.IsCompleted && !pendingHits.Reader.TryPeek(out _)))
+                DrainPendingHits(pendingHits.Reader, contentCts);
+                if (producers.IsCompleted && !pendingHits.Reader.TryPeek(out _))
                     break;
                 await Task.Delay(DrainDelayMilliseconds, token).ConfigureAwait(true);
             }
 
             await producers.ConfigureAwait(true);
             if (IsCurrentSearch(generation, token))
-                FinishSearchStatus();
+                FinishCurrentSearch();
         }
         catch (OperationCanceledException)
         {
             if (IsCurrentSearch(generation, token) && _hitLimitReached)
-                FinishSearchStatus();
+                FinishCurrentSearch();
         }
         catch (Exception ex)
         {
@@ -556,24 +753,37 @@ public sealed partial class QuickSearchViewModel : ObservableObject, IDisposable
         }
     }
 
-    private void DrainPendingHits(ChannelReader<QueuedHit> pendingHits, CancellationTokenSource producerCts)
+    private void DrainPendingHits(ChannelReader<QueuedHit> pendingHits, CancellationTokenSource contentCts)
     {
         var started = Stopwatch.GetTimestamp();
         var drained = 0;
         while (drained < 128 && Stopwatch.GetElapsedTime(started) < TimeSpan.FromMilliseconds(8) &&
                pendingHits.TryRead(out var pending))
         {
-            if (_seenHits.Count >= MaxHits || _filesByPath.Count >= MaxResultFiles)
-            {
-                _hitLimitReached = true;
-                producerCts.Cancel();
-                break;
-            }
-
             var hit = pending.Hit;
-            var key = $"{hit.Path}\0{hit.Kind}\0{hit.LineNumber}\0{hit.LineContent}";
+            var key = SearchHitIdentity.Create(hit);
             drained++;
-            if (!_seenHits.Add(key))
+            if (pending.FromContentSearch)
+            {
+                if (_contentLimitReached) continue;
+                if (hit.Kind == HitKind.Content)
+                {
+                    _hasIndexedContent |= hit.Route == HitRoute.Indexed;
+                    _hasLiveContent |= hit.Route == HitRoute.Live;
+                    StageText = _hasIndexedContent && _hasLiveContent ? "Indexed and live content matches"
+                        : _hasIndexedContent ? "Indexed content matches" : "Live content fallback matches";
+                }
+                if (!_contentHitsSeen.Add(key)) continue;
+                _contentFilesSeen.Add(hit.ResultKey);
+                if (_contentHitsSeen.Count >= MaxHits || _contentFilesSeen.Count >= MaxResultFiles)
+                {
+                    _contentLimitReached = _hitLimitReached = true;
+                    contentCts.Cancel();
+                }
+            }
+            if (hit.Kind == HitKind.Metadata && hit.Route == HitRoute.Indexed && !_hasIndexedContent && !_hasLiveContent)
+                StageText = pending.FromContentSearch ? "Indexed name and path matches" : "Drive name index matches";
+            if (_seenHits.Contains(key))
                 continue;
 
             if (!_filesByPath.TryGetValue(hit.ResultKey, out var file))
@@ -585,54 +795,50 @@ public sealed partial class QuickSearchViewModel : ObservableObject, IDisposable
                     IsPinned = hit.MailMessage?.StoreFingerprint is null && IsPinned(hit.Path),
                 };
                 file.AddHit(hit);
+                if (!AdmitCandidate(file)) { _hitLimitReached = true; continue; }
                 _filesByPath[hit.ResultKey] = file;
-                Results.Add(file);
-                SelectedResult ??= file;
             }
             else
             {
                 file.AddHit(hit);
             }
-
-            if (hit.Kind == HitKind.Content)
-                StageText = "Indexed lexical content matches";
-            else if (hit.Route == HitRoute.Indexed && StageText.Length > 0 && !StageText.StartsWith("Indexed", StringComparison.Ordinal))
-                StageText = "Drive name index matches";
-
-            if (_seenHits.Count >= MaxHits || _filesByPath.Count >= MaxResultFiles)
-            {
-                _hitLimitReached = true;
-                producerCts.Cancel();
-                break;
-            }
+            _seenHits.Add(key);
         }
 
         if (drained > 0)
         {
+            ProjectRankedResults();
             OnPropertyChanged(nameof(ResultCountText));
-            StatusText = $"{Results.Count:n0} results, {_seenHits.Count:n0} hits";
+            StatusText = $"{Results.Count:n0} results, {Results.Sum(file => file.HitCount):n0} hits";
         }
     }
 
-    private readonly record struct QueuedHit(Hit Hit, bool IsDirectory);
+    private readonly record struct QueuedHit(Hit Hit, bool IsDirectory, bool FromContentSearch = false);
 
     private void FinishSearchStatus()
     {
         StatusText = _hitLimitReached
-            ? $"Showing first {Results.Count:n0} results"
+            ? $"Showing first {Results.Count:n0} ranked results · limited search"
             : Results.Count == 0
                 ? "No matches"
-                : $"{Results.Count:n0} results, {_seenHits.Count:n0} hits";
+                : $"{Results.Count:n0} results, {Results.Sum(file => file.HitCount):n0} hits";
         StageText = Results.Count == 0 ? string.Empty : StageText;
     }
 
     private void ResetResults()
     {
         _hitLimitReached = false;
+        _contentLimitReached = false;
+        _hasExplicitSelection = false;
+        _selectionBindingNeedsRestore = false;
+        _nameRanking = null;
+        _hasIndexedContent = _hasLiveContent = false;
         _filesByPath.Clear();
         _seenHits.Clear();
+        _contentHitsSeen.Clear();
+        _contentFilesSeen.Clear();
+        SelectAutomatically(null);
         Results.Clear();
-        SelectedResult = null;
         PreviewContent = string.Empty;
         ImageOcrPreview = null;
         OnPropertyChanged(nameof(ResultCountText));
@@ -658,7 +864,7 @@ public sealed partial class QuickSearchViewModel : ObservableObject, IDisposable
             Results.Add(file);
         }
 
-        SelectedResult = Results.FirstOrDefault();
+        SelectAutomatically(Results.FirstOrDefault());
         StatusText = Results.Count == 0 ? "Type to search" : $"{Results.Count:n0} pinned";
         OnPropertyChanged(nameof(ResultCountText));
     }
@@ -682,32 +888,7 @@ public sealed partial class QuickSearchViewModel : ObservableObject, IDisposable
             : NormalizeScope(_settingsService.Current.QuickSearchDefaultScope);
 
     private static QuickSearchScopeKind NormalizeScope(QuickSearchScopeKind scope) =>
-        Enum.IsDefined(scope) ? scope : QuickSearchScopeKind.AllIndexedLocations;
-
-    private IReadOnlyList<string> ResolveRoots(QuickSearchScopeKind scope)
-    {
-        if (scope == QuickSearchScopeKind.CurrentFolder)
-        {
-            var folder = QuickFolderPath.Trim();
-            return Directory.Exists(folder) ? new[] { folder } : Array.Empty<string>();
-        }
-
-        var indexedRoots = _settingsService.Current.IndexedLocations
-            .Select(location => location.Root)
-            .Where(root => !string.IsNullOrWhiteSpace(root) && Directory.Exists(root))
-            .Distinct(StringComparer.OrdinalIgnoreCase)
-            .ToList();
-
-        if (scope == QuickSearchScopeKind.AllIndexedLocations)
-            return indexedRoots;
-
-        var selected = _settingsService.Current.QuickSearchSelectedIndexedRoots
-            .Where(root => indexedRoots.Contains(root, StringComparer.OrdinalIgnoreCase))
-            .Distinct(StringComparer.OrdinalIgnoreCase)
-            .ToList();
-
-        return selected.Count == 0 ? indexedRoots : selected;
-    }
+        Enum.IsDefined(scope) ? scope : QuickSearchScopeKind.CurrentFolder;
 
     private static IReadOnlyList<string> GetMachineMetadataRoots()
     {
@@ -729,7 +910,7 @@ public sealed partial class QuickSearchViewModel : ObservableObject, IDisposable
     /// indexed drives (complete and ranked), and falls back to the
     /// time-boxed folder walk only for roots the index does not cover.
     /// </summary>
-    private async Task EnqueueMetadataMatchesAsync(
+    private async Task<bool> EnqueueMetadataMatchesAsync(
         IReadOnlyList<string> roots,
         string text,
         ChannelWriter<QueuedHit> pendingHits,
@@ -737,6 +918,7 @@ public sealed partial class QuickSearchViewModel : ObservableObject, IDisposable
         CancellationToken token)
     {
         var uncovered = roots;
+        bool limited = false;
         if (_volumeNameIndex is not null)
         {
             var result = await _volumeNameIndex
@@ -756,55 +938,12 @@ public sealed partial class QuickSearchViewModel : ObservableObject, IDisposable
             }
 
             uncovered = result.UncoveredRoots;
+            limited = result.TotalMatches > result.Matches.Count;
         }
 
         if (uncovered.Count > 0)
-            await EnqueueFilesystemMetadataMatchesAsync(uncovered, text, pendingHits, scanBudgetMilliseconds, token).ConfigureAwait(false);
-    }
-
-    private static async Task EnqueueFilesystemMetadataMatchesAsync(
-        IReadOnlyList<string> roots,
-        string text,
-        ChannelWriter<QueuedHit> pendingHits,
-        int scanBudgetMilliseconds,
-        CancellationToken token)
-    {
-        var terms = SplitMetadataTerms(text);
-        if (terms.Length == 0)
-            return;
-
-        var started = Stopwatch.GetTimestamp();
-        var emitted = 0;
-        foreach (var root in roots)
-        {
-            token.ThrowIfCancellationRequested();
-            if (IsMetadataScanBudgetSpent(started, scanBudgetMilliseconds))
-                return;
-
-            if (!Directory.Exists(root))
-                continue;
-
-            foreach (var path in EnumerateFilesSafe(root, token))
-            {
-                token.ThrowIfCancellationRequested();
-                if (IsMetadataScanBudgetSpent(started, scanBudgetMilliseconds))
-                    return;
-
-                if (!MetadataMatches(path, terms))
-                    continue;
-
-                await pendingHits.WriteAsync(new QueuedHit(new Hit(
-                    path,
-                    0,
-                    "Filename/path match",
-                    Array.Empty<MatchSpan>(),
-                    HitKind.Metadata,
-                    Score: 1), false), token).ConfigureAwait(false);
-                emitted++;
-                if (emitted >= MaxResultFiles)
-                    return;
-            }
-        }
+            limited |= await EnqueueRankedFilesystemMetadataMatchesAsync(uncovered, text, pendingHits, scanBudgetMilliseconds, token).ConfigureAwait(false);
+        return limited;
     }
 
     private static bool IsMetadataScanBudgetSpent(long started, int scanBudgetMilliseconds) =>

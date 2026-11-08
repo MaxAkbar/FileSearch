@@ -71,7 +71,7 @@
                         </tr>
                         <tr>
                             <td><strong>Folder</strong></td>
-                            <td>The folder to search. Recent folders are saved in the dropdown.</td>
+                            <td>The folder used by Selected folder scope. Typing or choosing another folder switches back to that scope; indexed-location scopes use their registered roots instead.</td>
                             <td><code>C:\Source\MyApp</code></td>
                         </tr>
                         <tr>
@@ -82,6 +82,15 @@
                     </tbody>
                 </table>
             </div>
+
+            <h2 id="search-locations">Search Locations</h2>
+            <p><strong>Search locations</strong> below the query chooses where the main search runs. <strong>Selected folder</strong> uses the folder address in the search bar. <strong>Selected indexed locations</strong> uses only the checked registered locations; click the selected-count button to change the checkboxes. <strong>All indexed locations</strong> uses every registered indexed root. Add registrations through <strong>Index &gt; Manage indexed locations</strong>.</p>
+            <p>The selected-location checkboxes are shared with Quick Search and its settings page. Clearing every check searches no indexed locations; it never means all locations. Selected roots whose registration was removed remain visible as <strong>No longer indexed</strong> and are skipped. Offline or inaccessible roots are reported when searching; the remaining available roots stay in the requested scope. Overlapping roots do not duplicate the same physical result or source hit. No missing root redirects the search to the folder address or to all roots.</p>
+            <p>The folder address is unused while an indexed-location scope is active. Typing, browsing, or choosing another folder switches to <strong>Selected folder</strong>. File patterns, search targets, subfolder and extraction options still apply to the selected locations. <strong>Use index</strong> requests covered indexed results; actual route details explain indexed/live coverage and any allowed live fallback. Registered roots do not by themselves guarantee complete indexed content.</p>
+            <p>Saved searches and workspaces retain the location scope and selected roots. Older saved searches keep their saved-folder behavior. <strong>Open full search</strong> from Quick Search also retains its matching profile: all literal words for names/paths, and one literal phrase for content. The main window explains that profile and offers <strong>Use standard matching</strong> to return to the ordinary query mode. Saved searches and workspaces preserve that choice too. See <a href="quick-search.html#full-search-handoff">Quick Search handoff</a>.</p>
+
+            <p>A search across multiple locations stops after retaining 100,000 unique hits and declares <strong>Partial</strong> coverage. Narrow the query or locations to inspect more. Overlapping roots share that budget.</p>
+            <p>Find and replace still uses one explicitly chosen folder. Select <strong>Selected folder</strong> or use <strong>Browse</strong> to choose the replacement folder before previewing changes. An indexed-location search scope cannot use a remembered folder for replacement.</p>
 
             <h2>Search Controls</h2>
             <ul class="plain-list">

@@ -10,6 +10,12 @@ internal static class IndexedSearchRequestSupport
         if (request.SearchTarget == SearchTarget.Content)
             return true;
 
+        if (request.MatchFilePaths)
+        {
+            fallbackReason = "Filename/path matching is not supported by the metadata index";
+            return false;
+        }
+
         if (request.SearchTarget is SearchTarget.FolderNames or SearchTarget.FileAndFolderNames)
         {
             fallbackReason = "Folder name search is not indexed yet";

@@ -20,47 +20,95 @@ public sealed partial class DatabaseReadSession : IAsyncDisposable
     internal string SnapshotPath => _snapshot.Path;
     public IReadOnlyList<DatabaseTable> Tables { get; private set; } = [];
 
-    public static async Task<DatabaseReadSession> OpenAsync(string path, string? expectedFingerprint, CancellationToken token)
+    public static Task<DatabaseReadSession> OpenAsync(string path, string? expectedFingerprint, CancellationToken token) =>
+        OpenAsync(path, expectedFingerprint, null, null, token);
+
+    public static Task<DatabaseReadSession> OpenAsync(string path, string? expectedFingerprint,
+        IProgress<DatabasePreparationProgress> progress, CancellationToken token) =>
+        OpenAsync(path, expectedFingerprint, null, progress, token);
+
+    internal static Task<DatabaseReadSession> OpenAsync(string path, string? expectedFingerprint, DatabaseOpenTimings? timings, CancellationToken token) =>
+        OpenAsync(path, expectedFingerprint, timings, null, token);
+
+    private static async Task<DatabaseReadSession> OpenAsync(string path, string? expectedFingerprint,
+        DatabaseOpenTimings? timings, IProgress<DatabasePreparationProgress>? progress, CancellationToken token)
     {
-        var session = new DatabaseReadSession(await DatabaseSnapshot.CreateAsync(path, expectedFingerprint, token).ConfigureAwait(false));
+        long totalStarted = DatabaseOpenTimings.Start(timings);
         try
         {
-            if (session.Kind == DatabaseKind.Sqlite)
+            long stageStarted = DatabaseOpenTimings.Start(timings);
+            DatabaseSnapshot snapshot;
+            try { snapshot = await DatabaseSnapshot.CreateAsync(path, expectedFingerprint, timings, progress, token).ConfigureAwait(false); }
+            finally { if (timings is not null) timings.SnapshotTicks = DatabaseOpenTimings.Elapsed(stageStarted); }
+            var session = new DatabaseReadSession(snapshot);
+            try
             {
-                session._sqlite = new SqliteConnection(new SqliteConnectionStringBuilder
-                { DataSource = session._snapshot.Path, Mode = SqliteOpenMode.ReadOnly, Cache = SqliteCacheMode.Private, Pooling = false, DefaultTimeout = 2 }.ToString());
-                await session._sqlite.OpenAsync(token).ConfigureAwait(false);
-                using var settings = session._sqlite.CreateCommand();
-                settings.CommandText = "PRAGMA query_only=ON; PRAGMA trusted_schema=OFF;";
-                await settings.ExecuteNonQueryAsync(token).ConfigureAwait(false);
-                session.Tables = await session.ReadSqliteSchemaAsync(token).ConfigureAwait(false);
-            }
-            else
-            {
-                session._csharp = await Database.OpenAsync(session._snapshot.Path, token).ConfigureAwait(false);
-                var tables = new List<DatabaseTable>();
-                foreach (string name in session._csharp.GetTableNames().Where(name => !name.StartsWith("__", StringComparison.Ordinal)).Order(StringComparer.Ordinal))
+                progress?.Report(new(DatabasePreparationStage.Engine));
+                token.ThrowIfCancellationRequested();
+                if (session.Kind == DatabaseKind.Sqlite)
                 {
+                    stageStarted = DatabaseOpenTimings.Start(timings);
+                    session._sqlite = new SqliteConnection(new SqliteConnectionStringBuilder
+                    { DataSource = session._snapshot.Path, Mode = SqliteOpenMode.ReadOnly, Cache = SqliteCacheMode.Private, Pooling = false, DefaultTimeout = 2 }.ToString());
+                    await session._sqlite.OpenAsync(token).ConfigureAwait(false);
+                    if (timings is not null) timings.EngineOpenTicks = DatabaseOpenTimings.Elapsed(stageStarted);
+                    stageStarted = DatabaseOpenTimings.Start(timings);
+                    using var settings = session._sqlite.CreateCommand();
+                    settings.CommandText = "PRAGMA query_only=ON; PRAGMA trusted_schema=OFF;";
+                    await settings.ExecuteNonQueryAsync(token).ConfigureAwait(false);
+                    if (timings is not null) timings.EngineSetupTicks = DatabaseOpenTimings.Elapsed(stageStarted);
+                    progress?.Report(new(DatabasePreparationStage.Schema));
                     token.ThrowIfCancellationRequested();
-                    if (tables.Count >= DatabaseFiles.MaxTables) throw new InvalidDataException("Database previews are limited to 256 user tables.");
-                    var schema = session._csharp.GetTableSchema(name)!;
-                    if (schema.Columns.Count > DatabaseFiles.MaxColumns) throw new InvalidDataException("Database previews are limited to 512 columns per table.");
-                    var columns = schema.Columns.Select(column => new DatabaseColumn(column.Name, column.Type.ToString(), column.IsPrimaryKey)).ToArray();
-                    string order = string.Join(',', columns.Where(column => column.IsPrimaryKey).Select(column => DatabaseFiles.Quote(column.Name)));
-                    tables.Add(new DatabaseTable(name, columns, order));
+                    stageStarted = DatabaseOpenTimings.Start(timings);
+                    session.Tables = await session.ReadSqliteSchemaAsync(token).ConfigureAwait(false);
+                    if (timings is not null) timings.SchemaTicks = DatabaseOpenTimings.Elapsed(stageStarted);
                 }
-                session.Tables = tables;
+                else
+                {
+                    stageStarted = DatabaseOpenTimings.Start(timings);
+                    session._csharp = await Database.OpenAsync(session._snapshot.Path, token).ConfigureAwait(false);
+                    if (timings is not null)
+                    {
+                        timings.EngineOpenTicks = DatabaseOpenTimings.Elapsed(stageStarted);
+                        timings.EngineSetupTicks = 0; // no separate connection settings for this engine
+                    }
+                    progress?.Report(new(DatabasePreparationStage.Schema));
+                    token.ThrowIfCancellationRequested();
+                    stageStarted = DatabaseOpenTimings.Start(timings);
+                    var tables = new List<DatabaseTable>();
+                    foreach (string name in session._csharp.GetTableNames().Where(name => !name.StartsWith("__", StringComparison.Ordinal)).Order(StringComparer.Ordinal))
+                    {
+                        token.ThrowIfCancellationRequested();
+                        if (tables.Count >= DatabaseFiles.MaxTables) throw new InvalidDataException("Database previews are limited to 256 user tables.");
+                        var schema = session._csharp.GetTableSchema(name)!;
+                        if (schema.Columns.Count > DatabaseFiles.MaxColumns) throw new InvalidDataException("Database previews are limited to 512 columns per table.");
+                        var columns = schema.Columns.Select(column => new DatabaseColumn(column.Name, column.Type.ToString(), column.IsPrimaryKey)).ToArray();
+                        string order = string.Join(',', columns.Where(column => column.IsPrimaryKey).Select(column => DatabaseFiles.Quote(column.Name)));
+                        tables.Add(new DatabaseTable(name, columns, order));
+                    }
+                    session.Tables = tables;
+                    if (timings is not null) timings.SchemaTicks = DatabaseOpenTimings.Elapsed(stageStarted);
+                }
+                progress?.Report(new(DatabasePreparationStage.Validation));
+                token.ThrowIfCancellationRequested();
+                stageStarted = DatabaseOpenTimings.Start(timings);
+                session._snapshot.EnsureUnchanged();
+                if (timings is not null)
+                {
+                    timings.ValidationTicks = DatabaseOpenTimings.Elapsed(stageStarted);
+                    timings.Completed = true;
+                }
+                return session;
             }
-            session._snapshot.EnsureUnchanged();
-            return session;
+            catch (Exception error)
+            {
+                await session.DisposeAsync().ConfigureAwait(false);
+                if (error is SqliteException or CSharpDB.Primitives.CSharpDbException)
+                    throw new InvalidDataException("The database could not be read. It may be encrypted, corrupt, or incompatible with this reader.", error);
+                throw;
+            }
         }
-        catch (Exception error)
-        {
-            await session.DisposeAsync().ConfigureAwait(false);
-            if (error is SqliteException or CSharpDB.Primitives.CSharpDbException)
-                throw new InvalidDataException("The database could not be read. It may be encrypted, corrupt, or incompatible with this reader.", error);
-            throw;
-        }
+        finally { if (timings is not null) timings.TotalTicks = DatabaseOpenTimings.Elapsed(totalStarted); }
     }
 
     private async Task<List<DatabaseTable>> ReadSqliteSchemaAsync(CancellationToken token)
@@ -111,19 +159,27 @@ public sealed partial class DatabaseReadSession : IAsyncDisposable
             var table = Tables.FirstOrDefault(table => table.Name == tableName) ?? throw new InvalidDataException("The selected table does not exist.");
             count = (int)Math.Min(count, DatabaseFiles.MaxRows - firstRow + 1);
             if (table.Columns.Count == 0) return new DatabasePage([], false, false);
-            var page = Kind == DatabaseKind.Sqlite ? await ReadSqlitePageAsync(table, firstRow, count, token).ConfigureAwait(false) :
+            var result = Kind == DatabaseKind.Sqlite ? await ReadSqlitePageAsync(table, firstRow, count, token).ConfigureAwait(false) :
                 await ReadCSharpPageAsync(table, firstRow, count, token).ConfigureAwait(false);
+            token.ThrowIfCancellationRequested();
             _snapshot.EnsureUnchanged();
-            return page;
+            RememberPage(table, firstRow, result);
+            return result.Page;
         }
         catch (Exception error) when (error is SqliteException or CSharpDB.Primitives.CSharpDbException)
         {
+            token.ThrowIfCancellationRequested();
             throw new InvalidDataException("The database table could not be read. Use a valid stable backup or a compatible database file.", error);
+        }
+        catch (InvalidDataException)
+        {
+            ClearPageBookmarks();
+            throw;
         }
         finally { _gate.Release(); }
     }
 
-    private async Task<DatabasePage> ReadSqlitePageAsync(DatabaseTable table, long firstRow, int count, CancellationToken token)
+    private async Task<PageReadResult> ReadSqlitePageAsync(DatabaseTable table, long firstRow, int count, CancellationToken token)
     {
         using var command = _sqlite!.CreateCommand();
         string Projection(DatabaseColumn column)
@@ -133,16 +189,22 @@ public sealed partial class DatabaseReadSession : IAsyncDisposable
         }
         string columns = string.Join(',', table.Columns.Select(Projection));
         if (table.RowId is not null) columns = DatabaseFiles.Quote(table.RowId) + "," + columns;
-        command.CommandText = $"SELECT {columns} FROM {DatabaseFiles.Quote(table.Name)}" + (table.OrderBy.Length == 0 ? "" : " ORDER BY " + table.OrderBy) + " LIMIT $limit OFFSET $offset";
+        long? after = table.RowId is null ? null : PageBookmark(table, firstRow);
+        command.CommandText = $"SELECT {columns} FROM {DatabaseFiles.Quote(table.Name)}" +
+            (after.HasValue ? $" WHERE {DatabaseFiles.Quote(table.RowId!)} > $after" : "") +
+            (table.OrderBy.Length == 0 ? "" : " ORDER BY " + table.OrderBy) + " LIMIT $limit OFFSET $offset";
         command.Parameters.AddWithValue("$limit", Math.Min(count, DatabaseFiles.MaxRows - firstRow + 1) + 1);
-        command.Parameters.AddWithValue("$offset", firstRow - 1);
+        command.Parameters.AddWithValue("$offset", after.HasValue ? 0 : firstRow - 1);
+        if (after.HasValue) command.Parameters.AddWithValue("$after", after.Value);
         using var cancellation = token.Register(command.Cancel);
         using var reader = await command.ExecuteReaderAsync(token).ConfigureAwait(false);
         var rows = new List<DatabaseRow>();
         bool truncated = false;
+        long? lastKey = null;
         while (await reader.ReadAsync(token).ConfigureAwait(false))
         {
-            if (rows.Count == count) return new DatabasePage(rows, true, truncated);
+            token.ThrowIfCancellationRequested();
+            if (rows.Count == count) return new PageReadResult(new DatabasePage(rows, true, truncated), lastKey);
             var values = new string?[table.Columns.Count];
             for (int index = 0; index < values.Length; index++)
             {
@@ -151,23 +213,31 @@ public sealed partial class DatabaseReadSession : IAsyncDisposable
                 if (value?.Length > DatabaseFiles.MaxCellCharacters) { value = value[..DatabaseFiles.MaxCellCharacters] + "…"; truncated = true; }
                 values[index] = value;
             }
-            string key = table.RowId is null ? PrimaryKey(table, values) : "rowid=" + reader.GetInt64(0).ToString(CultureInfo.InvariantCulture);
+            lastKey = table.RowId is null ? null : reader.GetInt64(0);
+            string key = lastKey is null ? PrimaryKey(table, values) : "rowid=" + lastKey.Value.ToString(CultureInfo.InvariantCulture);
             rows.Add(new DatabaseRow(firstRow + rows.Count, key, values));
         }
-        return new DatabasePage(rows, false, truncated);
+        return new PageReadResult(new DatabasePage(rows, false, truncated), lastKey);
     }
 
-    private async Task<DatabasePage> ReadCSharpPageAsync(DatabaseTable table, long firstRow, int count, CancellationToken token)
+    private async Task<PageReadResult> ReadCSharpPageAsync(DatabaseTable table, long firstRow, int count, CancellationToken token)
     {
+        int keyColumn = IntegerPrimaryKeyColumn(table);
+        long? after = keyColumn < 0 ? null : PageBookmark(table, firstRow);
         string projection = string.Join(',', table.Columns.Select(column => column.Type == nameof(DbType.Blob) ? "NULL" : DatabaseFiles.Quote(column.Name)));
-        string sql = $"SELECT {projection} FROM {DatabaseFiles.Quote(table.Name)}" + (table.OrderBy.Length == 0 ? "" : " ORDER BY " + table.OrderBy) +
-            string.Create(CultureInfo.InvariantCulture, $" LIMIT {Math.Min(count, DatabaseFiles.MaxRows - firstRow + 1) + 1} OFFSET {firstRow - 1}");
+        string sql = $"SELECT {projection} FROM {DatabaseFiles.Quote(table.Name)}" +
+            (after.HasValue ? $" WHERE {DatabaseFiles.Quote(table.Columns[keyColumn].Name)} > {after.Value.ToString(CultureInfo.InvariantCulture)}" : "") +
+            (table.OrderBy.Length == 0 ? "" : " ORDER BY " + table.OrderBy) +
+            string.Create(CultureInfo.InvariantCulture, $" LIMIT {Math.Min(count, DatabaseFiles.MaxRows - firstRow + 1) + 1} OFFSET {(after.HasValue ? 0 : firstRow - 1)}");
         await using var reader = await _csharp!.ExecuteAsync(sql, token).ConfigureAwait(false);
         var rows = new List<DatabaseRow>();
         bool truncated = false;
+        long? lastKey = null;
+        bool validKeys = keyColumn >= 0;
         while (await reader.MoveNextAsync(token).ConfigureAwait(false))
         {
-            if (rows.Count == count) return new DatabasePage(rows, true, truncated);
+            token.ThrowIfCancellationRequested();
+            if (rows.Count == count) return new PageReadResult(new DatabasePage(rows, true, truncated), validKeys ? lastKey : null);
             var values = new string?[table.Columns.Count];
             for (int index = 0; index < values.Length; index++)
             {
@@ -176,9 +246,15 @@ public sealed partial class DatabaseReadSession : IAsyncDisposable
                 if (value?.Length > DatabaseFiles.MaxCellCharacters) { value = value[..DatabaseFiles.MaxCellCharacters] + "…"; truncated = true; }
                 values[index] = value;
             }
+            if (keyColumn >= 0)
+            {
+                var key = reader.Current[keyColumn];
+                if (key.Type != DbType.Integer) validKeys = false;
+                else lastKey = key.AsInteger;
+            }
             rows.Add(new DatabaseRow(firstRow + rows.Count, PrimaryKey(table, values), values));
         }
-        return new DatabasePage(rows, false, truncated);
+        return new PageReadResult(new DatabasePage(rows, false, truncated), validKeys ? lastKey : null);
     }
 
     private static string PrimaryKey(DatabaseTable table, string?[] values) => string.Join(", ", table.Columns.Select((column, index) =>
@@ -191,6 +267,7 @@ public sealed partial class DatabaseReadSession : IAsyncDisposable
         {
             if (_disposed) return;
             _disposed = true;
+            ClearPageBookmarks();
             if (_sqlite is not null) await _sqlite.DisposeAsync().ConfigureAwait(false);
             if (_csharp is not null) await _csharp.DisposeAsync().ConfigureAwait(false);
         }

@@ -55,6 +55,8 @@ public sealed partial class ApplicationSettingsViewModel : ObservableObject
     private CustomThemeInfo? _selectedCustomTheme;
     private AppStyleOption _selectedStyle;
     private bool _isUpdatingShortcuts;
+    private bool _quickLocationSelectionsDirty;
+    private HashSet<string> _quickLocationSelectionSnapshot = new(StringComparer.OrdinalIgnoreCase);
 
     public ApplicationSettingsViewModel(
         ISettingsService settingsService,
@@ -773,6 +775,8 @@ public sealed partial class ApplicationSettingsViewModel : ObservableObject
 
     private void SaveSettings(bool updateStartupRegistration)
     {
+        var selectedQuickRoots = QuickIndexedLocationSelections.Where(location => location.IsSelected)
+            .Select(location => NormalizeQuickSelectionRoot(location.Root)).OfType<string>().ToHashSet(StringComparer.OrdinalIgnoreCase);
         _settingsService.Update(settings =>
         {
             settings.SidebarPageSize = SidebarPageSize;
@@ -781,10 +785,17 @@ public sealed partial class ApplicationSettingsViewModel : ObservableObject
             settings.QuickSearchDefaultScope = QuickSearchDefaultScope.Value;
             settings.QuickSearchRememberLastScope = QuickSearchRememberLastScope;
             settings.QuickSearchIncludeContent = QuickSearchIncludeContent;
-            settings.QuickSearchSelectedIndexedRoots = QuickIndexedLocationSelections
-                .Where(location => location.IsSelected)
-                .Select(location => location.Root)
-                .ToList();
+            if (_quickLocationSelectionsDirty)
+            {
+                // This settings view can outlive changes made by the shared main/Quick
+                // selector. Apply only explicit row changes to the current global set.
+                var current = settings.QuickSearchSelectedIndexedRoots
+                    .Select(NormalizeQuickSelectionRoot).OfType<string>()
+                    .ToHashSet(StringComparer.OrdinalIgnoreCase);
+                current.ExceptWith(_quickLocationSelectionSnapshot.Except(selectedQuickRoots, StringComparer.OrdinalIgnoreCase));
+                current.UnionWith(selectedQuickRoots.Except(_quickLocationSelectionSnapshot, StringComparer.OrdinalIgnoreCase));
+                settings.QuickSearchSelectedIndexedRoots = current.ToList();
+            }
             settings.KeepIndexUpdatedAfterClose = KeepIndexUpdatedAfterClose;
             settings.StartBackgroundIndexerAtSignIn = StartBackgroundIndexerAtSignIn;
             settings.PauseIndexingOnBattery = PauseIndexingOnBattery;
@@ -801,6 +812,11 @@ public sealed partial class ApplicationSettingsViewModel : ObservableObject
             settings.QuickSearchShortcuts = BuildQuickSearchShortcutSettings();
             settings.RunInBackground = null;
         });
+        if (_quickLocationSelectionsDirty)
+        {
+            _quickLocationSelectionSnapshot = selectedQuickRoots;
+            _quickLocationSelectionsDirty = false;
+        }
         if (_semanticModelOptions is not null)
         {
             _semanticModelOptions.SelectedModelPackId = SemanticModelPack.IsDisabled ? string.Empty : SemanticModelPack.Id;
@@ -1136,20 +1152,30 @@ public sealed partial class ApplicationSettingsViewModel : ObservableObject
     private void RefreshQuickIndexedLocationSelectionsCore()
     {
         var selected = _settingsService.Current.QuickSearchSelectedIndexedRoots
+            .Select(NormalizeQuickSelectionRoot).OfType<string>()
             .ToHashSet(StringComparer.OrdinalIgnoreCase);
+        var available = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         QuickIndexedLocationSelections.Clear();
         foreach (var location in _settingsService.Current.IndexedLocations)
         {
-            if (string.IsNullOrWhiteSpace(location.Root))
+            string? root = SearchLocationResolver.Normalize(location.Root);
+            if (root is null || !available.Add(root))
                 continue;
 
             var row = new QuickIndexedLocationSelection(
                 location.DisplayName,
-                location.Root,
-                selected.Count == 0 || selected.Contains(location.Root),
+                root,
+                selected.Contains(root),
                 SaveQuickIndexedLocationSelections);
             QuickIndexedLocationSelections.Add(row);
         }
+        foreach (string root in selected.Where(root => !available.Contains(root)))
+        {
+            QuickIndexedLocationSelections.Add(new QuickIndexedLocationSelection(
+                "No longer indexed", root, isSelected: true, SaveQuickIndexedLocationSelections));
+        }
+        _quickLocationSelectionSnapshot = selected;
+        _quickLocationSelectionsDirty = false;
 
         OnPropertyChanged(nameof(HasQuickIndexedLocations));
     }
@@ -1157,8 +1183,14 @@ public sealed partial class ApplicationSettingsViewModel : ObservableObject
     private void SaveQuickIndexedLocationSelections()
     {
         if (_isInitialized)
+        {
+            _quickLocationSelectionsDirty = true;
             SaveSettings(updateStartupRegistration: false);
+        }
     }
+
+    private static string? NormalizeQuickSelectionRoot(string? root) => SearchLocationResolver.Normalize(root) ??
+        (string.IsNullOrWhiteSpace(root) ? null : root.Trim());
 
     private void RegisterQuickSearchHotkey()
     {

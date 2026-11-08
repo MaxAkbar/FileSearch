@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.IO;
 using System.Linq;
 using System.Text.Json.Serialization;
 using FileSearch.Core.Engine;
@@ -12,6 +13,12 @@ public sealed class SavedSearchSettings
     public string QueryText { get; set; } = string.Empty;
 
     public string SearchPath { get; set; } = string.Empty;
+
+    public LocationScopeKind LocationScope { get; set; } = LocationScopeKind.SelectedFolder;
+
+    public List<string> SelectedIndexedRoots { get; set; } = [];
+
+    public bool UseQuickSearchMatching { get; set; }
 
     public string FileNamePattern { get; set; } = string.Empty;
 
@@ -57,6 +64,28 @@ public sealed class SavedSearchSettings
     public string DisplayName =>
         string.IsNullOrWhiteSpace(QueryText) ? "(empty search)" : QueryText.Trim();
 
+    public LocationScopeKind GetLocationScope() =>
+        Enum.IsDefined(LocationScope) ? LocationScope : LocationScopeKind.SelectedFolder;
+
+    public IReadOnlyList<string> GetSelectedIndexedRoots() => (SelectedIndexedRoots ?? [])
+        .Where(root => !string.IsNullOrWhiteSpace(root))
+        .Select(root => Path.TrimEndingDirectorySeparator(root.Trim()))
+        .Distinct(StringComparer.OrdinalIgnoreCase)
+        .ToArray();
+
+    [JsonIgnore]
+    public string LocationSummary => GetLocationScope() switch
+    {
+        LocationScopeKind.AllIndexedLocations => "All indexed locations",
+        LocationScopeKind.SelectedIndexedLocations => GetSelectedIndexedRoots().Count switch
+        {
+            0 => "No indexed locations selected",
+            1 => "1 selected indexed location",
+            var count => $"{count} selected indexed locations",
+        },
+        _ => string.IsNullOrWhiteSpace(SearchPath) ? "No folder" : SearchPath.Trim(),
+    };
+
     public IReadOnlyList<SearchTarget> GetSearchTargets()
     {
         var configuredTargets = SearchTargets.Count > 0 ? SearchTargets : [SearchTarget];
@@ -85,13 +114,13 @@ public sealed class SavedSearchSettings
     {
         get
         {
-            var path = string.IsNullOrWhiteSpace(SearchPath) ? "No folder" : SearchPath.Trim();
+            var path = LocationSummary;
             var scope = string.IsNullOrWhiteSpace(FileNamePattern) ? "all files" : FileNamePattern.Trim();
             var targets = GetSearchTargets();
             var target = targets.Count == 1 && targets[0] == SearchTarget.Content
                 ? SearchMode.ToString()
                 : string.Join(", ", targets);
-            return $"{path} | {target} | {scope}";
+            return $"{path} | {target} | {scope}" + (UseQuickSearchMatching ? " | Quick Search matching" : "");
         }
     }
 }

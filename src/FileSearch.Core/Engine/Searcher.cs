@@ -416,7 +416,7 @@ public sealed class Searcher : ISearcher
                     try
                     {
                         Interlocked.Increment(ref itemsProcessed);
-                        if (!TryCreateNameHit(directory, normalizedRoot, isDirectory: true, request.Expression, highlightBuffer, out var hit))
+                        if (!TryCreateNameHit(directory, normalizedRoot, isDirectory: true, request.Expression, highlightBuffer, out var hit, request.MatchFilePaths))
                         {
                             PublishProgress();
                             continue;
@@ -448,7 +448,7 @@ public sealed class Searcher : ISearcher
                 try
                 {
                     Interlocked.Increment(ref itemsProcessed);
-                    if (!TryCreateNameHit(path, normalizedRoot, isDirectory: false, request.Expression, highlightBuffer, out var hit))
+                    if (!TryCreateNameHit(path, normalizedRoot, isDirectory: false, request.Expression, highlightBuffer, out var hit, request.MatchFilePaths))
                     {
                         PublishProgress();
                         continue;
@@ -567,9 +567,10 @@ public sealed class Searcher : ISearcher
         bool isDirectory,
         Query query,
         List<MatchSpan> highlightBuffer,
-        out Hit hit)
+        out Hit hit,
+        bool matchFilePaths = false)
     {
-        if (!TryMatchName(path, root, isDirectory, query, out var line, out var score))
+        if (!TryMatchName(path, root, isDirectory, query, out var line, out var score, matchFilePaths))
         {
             hit = null!;
             return false;
@@ -583,8 +584,8 @@ public sealed class Searcher : ISearcher
     /// <summary>
     /// Name-target matching shared with the drive name index searcher, so
     /// both routes accept the same items and format them identically: files
-    /// match on their name; folders on their name, then their path relative
-    /// to the search root, then their full path.
+    /// match on their name unless path matching is explicitly requested;
+    /// folders match their name, relative path, then full path.
     /// </summary>
     internal static bool TryMatchName(
         string path,
@@ -592,7 +593,8 @@ public sealed class Searcher : ISearcher
         bool isDirectory,
         Query query,
         out string line,
-        out double score)
+        out double score,
+        bool matchFilePaths = false)
     {
         var name = GetItemName(path, isDirectory);
         score = 0d;
@@ -603,7 +605,7 @@ public sealed class Searcher : ISearcher
             displayText = name;
             score = 900;
         }
-        else if (isDirectory)
+        else if (isDirectory || matchFilePaths)
         {
             var relativePath = GetRelativePath(root, path);
             if (!string.Equals(relativePath, name, StringComparison.OrdinalIgnoreCase) &&

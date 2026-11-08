@@ -174,17 +174,29 @@
                            Style="{StaticResource StatusLineTextStyle}" Margin="10,0,0,0"
                            ToolTip="Elapsed time of the last search"/>
                 <Path Grid.Column="4" Data="{StaticResource Icon.Database}" Style="{StaticResource LineIcon14Style}"
+                      Visibility="{Binding Search.IsFolderLocationScope, Converter={StaticResource BoolToVisibility}}"
                       StrokeThickness="1.2" Margin="0,0,7,0" TextElement.Foreground="{DynamicResource Atlas.Ink2Brush}"/>
                 <TextBlock Grid.Column="5" Text="{Binding Index.CurrentFolderIndexStatusText}"
+                           Visibility="{Binding Search.IsFolderLocationScope, Converter={StaticResource BoolToVisibility}}"
                            Style="{StaticResource StatusLineTextStyle}" Foreground="{DynamicResource Atlas.InkBrush}"
                            MaxWidth="360"/>
                 <Button Grid.Column="6" Content="Add to index"
                         Command="{Binding Index.AddCurrentFolderToIndexCommand}"
-                        Style="{StaticResource AccentUnderlineLinkButtonStyle}"
                         Margin="6,0,0,0">
-                    <Button.Visibility>
-                        <Binding Path="Index.IsCurrentFolderIndexed" Converter="{StaticResource InverseBoolToVisibility}"/>
-                    </Button.Visibility>
+                    <Button.Style>
+                        <Style TargetType="Button" BasedOn="{StaticResource AccentUnderlineLinkButtonStyle}">
+                            <Setter Property="Visibility" Value="Collapsed"/>
+                            <Style.Triggers>
+                                <MultiDataTrigger>
+                                    <MultiDataTrigger.Conditions>
+                                        <Condition Binding="{Binding Search.IsFolderLocationScope}" Value="True"/>
+                                        <Condition Binding="{Binding Index.IsCurrentFolderIndexed}" Value="False"/>
+                                    </MultiDataTrigger.Conditions>
+                                    <Setter Property="Visibility" Value="Visible"/>
+                                </MultiDataTrigger>
+                            </Style.Triggers>
+                        </Style>
+                    </Button.Style>
                 </Button>
                 <TextBlock Grid.Column="7" Style="{StaticResource StatusLineTextStyle}" Margin="12,0,0,0">
                     <Run Text="{Binding Index.IndexActivityText, Mode=OneWay}"/><Run Text=" · "/><Run Text="{Binding Index.IndexedLocationCountText, Mode=OneWay}"/>
@@ -1325,10 +1337,90 @@
                         <Border x:Name="SearchGuidancePanel" Margin="20,0,20,8" Padding="12,8"
                                 Style="{StaticResource SearchOptionsPanelStyle}">
                             <StackPanel>
+                                <WrapPanel Margin="0,0,0,5" IsEnabled="{Binding CanEditQuery}">
+                                    <Label Content="Search locations" Target="{Binding ElementName=MainLocationScope}"
+                                           Padding="0,4,7,4" Foreground="{DynamicResource Atlas.InkBrush}"/>
+                                    <ComboBox x:Name="MainLocationScope" Width="215" MinHeight="28" Margin="0,0,7,3"
+                                              Foreground="{DynamicResource Atlas.InkBrush}" Background="{DynamicResource Atlas.SurfaceBrush}"
+                                              BorderBrush="{DynamicResource Atlas.Line2Brush}"
+                                              ItemsSource="{Binding Search.LocationScopeOptions}" DisplayMemberPath="DisplayName"
+                                              SelectedValuePath="Value"
+                                              SelectedValue="{Binding Search.SelectedLocationScope, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
+                                              AutomationProperties.Name="Search location scope"
+                                              ToolTip="Search one folder, selected indexed locations, or all registered indexed locations">
+                                        <ComboBox.ItemContainerStyle>
+                                            <Style TargetType="ComboBoxItem" BasedOn="{StaticResource {x:Type ComboBoxItem}}">
+                                                <Setter Property="Foreground" Value="{DynamicResource Atlas.InkBrush}"/>
+                                                <Setter Property="Background" Value="{DynamicResource Atlas.SurfaceBrush}"/>
+                                                <Style.Triggers>
+                                                    <Trigger Property="IsHighlighted" Value="True">
+                                                        <Setter Property="Background" Value="{DynamicResource Atlas.AccentSoftBrush}"/>
+                                                    </Trigger>
+                                                    <Trigger Property="IsSelected" Value="True">
+                                                        <Setter Property="Background" Value="{DynamicResource Atlas.AccentSoftBrush}"/>
+                                                    </Trigger>
+                                                </Style.Triggers>
+                                            </Style>
+                                        </ComboBox.ItemContainerStyle>
+                                    </ComboBox>
+                                    <ToggleButton x:Name="MainLocationSelectionButton" MinHeight="28" Padding="9,3" Margin="0,0,0,3"
+                                                  FocusVisualStyle="{DynamicResource {x:Static SystemParameters.FocusVisualStyleKey}}"
+                                                  Width="Auto" MinWidth="100"
+                                                  Command="{Binding Search.RefreshLocationSelectionsCommand}"
+                                                  Content="{Binding Search.LocationSelectionSummary}"
+                                                  Style="{StaticResource InlineToggleButtonStyle}"
+                                                  Visibility="{Binding Search.IsSelectedIndexedScope, Converter={StaticResource BoolToVisibility}}"
+                                                  ToolTip="Choose the indexed locations included in this search"
+                                                  AutomationProperties.Name="Choose indexed search locations"/>
+                                    <Popup PlacementTarget="{Binding ElementName=MainLocationSelectionButton}"
+                                           IsOpen="{Binding IsChecked, ElementName=MainLocationSelectionButton, Mode=TwoWay}"
+                                           StaysOpen="False" AllowsTransparency="True" Placement="Bottom">
+                                        <Border Style="{StaticResource DropdownCardStyle}" Width="430"
+                                                DataContext="{Binding DataContext, ElementName=MainLocationSelectionButton}"
+                                                KeyboardNavigation.TabNavigation="Cycle">
+                                            <StackPanel>
+                                                <TextBlock Text="Choose indexed locations" Style="{StaticResource MenuSectionLabelStyle}"/>
+                                                <TextBlock Text="Only checked locations are searched. Clearing every check searches no indexed locations."
+                                                           TextWrapping="Wrap" Foreground="{DynamicResource Atlas.Ink2Brush}"
+                                                           FontSize="11.5" Margin="8,0,8,6"/>
+                                                <ScrollViewer MaxHeight="280" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
+                                                    <ItemsControl x:Name="MainLocationChoices" ItemsSource="{Binding Search.LocationSelections}">
+                                                        <ItemsControl.ItemTemplate>
+                                                            <DataTemplate>
+                                                                <CheckBox IsChecked="{Binding IsSelected, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
+                                                                          AutomationProperties.Name="{Binding Root}" Margin="8,4" HorizontalContentAlignment="Stretch">
+                                                                    <StackPanel>
+                                                                        <TextBlock Text="{Binding DisplayName}" Foreground="{DynamicResource Atlas.InkBrush}" TextWrapping="Wrap"/>
+                                                                        <TextBlock Text="{Binding Root}" FontFamily="{DynamicResource Atlas.MonoFont}" FontSize="11"
+                                                                                   Foreground="{DynamicResource Atlas.Ink2Brush}" TextTrimming="CharacterEllipsis" ToolTip="{Binding Root}"/>
+                                                                        <TextBlock Text="{Binding StatusText}" FontSize="11" TextWrapping="Wrap" Foreground="{DynamicResource Atlas.Ink2Brush}"/>
+                                                                    </StackPanel>
+                                                                </CheckBox>
+                                                            </DataTemplate>
+                                                        </ItemsControl.ItemTemplate>
+                                                    </ItemsControl>
+                                                </ScrollViewer>
+                                            </StackPanel>
+                                        </Border>
+                                    </Popup>
+                                </WrapPanel>
+                                <TextBlock x:Name="MainLocationScopeNotice" Text="{Binding Search.LocationScopeNotice}"
+                                           FontSize="11.5" TextWrapping="Wrap" Margin="0,0,0,5"
+                                           MaxHeight="48" LineHeight="16" TextTrimming="CharacterEllipsis"
+                                           ToolTip="{Binding Search.LocationScopeNotice}"
+                                           Foreground="{DynamicResource Atlas.Ink2Brush}"
+                                           AutomationProperties.Name="Search location coverage" AutomationProperties.LiveSetting="Polite"/>
                                 <TextBlock x:Name="SearchMeaningText" Text="{Binding Search.QueryMeaningText}"
                                            FontSize="12.5" TextWrapping="Wrap"
                                            Foreground="{DynamicResource Atlas.InkBrush}"
                                            AutomationProperties.Name="Search interpretation"/>
+                                <Button x:Name="UseStandardSearchMatchingButton" Content="Use standard matching"
+                                        Command="{Binding Search.UseStandardSearchMatchingCommand}"
+                                        Visibility="{Binding Search.UseQuickSearchMatching, Converter={StaticResource BoolToVisibility}}"
+                                        HorizontalAlignment="Left" Margin="0,4,0,0"
+                                        Style="{StaticResource UnderlineLinkButtonStyle}"
+                                        ToolTip="Leave the Quick Search matching profile and use the main search query mode"
+                                        AutomationProperties.Name="Use standard search matching"/>
                                 <TextBlock x:Name="SearchScopeText" Text="{Binding Search.SearchScopeText}"
                                            FontSize="11.5" TextWrapping="Wrap" Margin="0,3,0,0"
                                            Foreground="{DynamicResource Atlas.Ink2Brush}"

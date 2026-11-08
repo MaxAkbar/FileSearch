@@ -13,6 +13,8 @@ public sealed partial class SearchViewModel
     {
         get
         {
+            if (UseQuickSearchMatching)
+                return "Quick Search matching · File names/paths require every space-separated literal term; contents use the whole literal phrase. Operators and quotes are literal." + (MatchCase ? " · Case sensitive" : "");
             var mode = SearchMode == QueryMode.PlainText ? "Plain text" : SearchMode.ToString();
             var meaning = SearchQueryGuidance.Describe(QueryText, SearchMode, MatchCase);
             return (meaning.StartsWith(mode + ":", StringComparison.Ordinal) ? meaning : $"{mode} · {meaning}") +
@@ -21,7 +23,7 @@ public sealed partial class SearchViewModel
     }
 
     public string SearchScopeText =>
-        $"{SearchTargetSummary} · {(IncludeSubfolders ? "Folder and subfolders" : "This folder only")}" +
+        $"{SearchTargetSummary} · {LocationScopeOptions.First(option => option.Value == SelectedLocationScope).DisplayName} · {(IncludeSubfolders ? "Folder and subfolders" : IsFolderLocationScope ? "This folder only" : "Each root folder only")}" +
         (string.IsNullOrWhiteSpace(FileNamePattern) ? string.Empty : $" · File pattern: {FileNamePattern}") +
         (CurrentSearchTargets.Contains(SearchTarget.Content) && EnableDocumentExtraction
             ? " · Database values match within one cell."
@@ -30,13 +32,13 @@ public sealed partial class SearchViewModel
     public string SearchCoverageText => _searchRouting is not null
         ? $"{(IsSearching ? "This search" : "Last search")}: {_searchRouting.Describe(IsSearching)}"
         : IsSemanticMode
-            ? "Smart Search needs a ready local model and vectors for this folder. Availability is checked when you search."
+            ? $"Smart Search needs a ready local model and vectors for {(IsFolderLocationScope ? "this folder" : "the selected locations")}. Availability is checked when you search."
             : UseIndex
                 ? "Index requested · Coverage and availability are checked when you search."
                 : "Use index off · Ordinary text and name searches run live; Smart Search still requires the index.";
 
     public string SearchCoverageDetails => _searchRouting is not null
-        ? $"Folder for this search: {_searchRouting.Root}\n{SearchCoverageText}"
+        ? $"Locations for this search: {_searchRouting.Root}\n{SearchCoverageText}"
         : SearchCoverageText;
 
     private void NotifySearchGuidanceChanged()
@@ -98,7 +100,7 @@ internal sealed class SearchRouteSummary
         _routes = targets.ToDictionary(target => target, _ => new Route());
     }
 
-    public string Root { get; }
+    public string Root { get; set; }
 
     public void ReportStatus(SearchTarget target, string message)
     {

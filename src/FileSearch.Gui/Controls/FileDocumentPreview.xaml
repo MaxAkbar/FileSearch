@@ -19,6 +19,10 @@
                     Style="{StaticResource FilePreviewButtonStyle}"
                     ToolTip="Open a larger file preview" AutomationProperties.Name="Expand file preview" Padding="9,3"/>
             <WrapPanel>
+                <Button x:Name="PreviewFindToggle" Content="Find" Click="OnTogglePreviewFind"
+                        Style="{StaticResource FilePreviewButtonStyle}" IsEnabled="False"
+                        ToolTipService.ShowOnDisabled="True"
+                        ToolTip="Find literal text in this preview" AutomationProperties.Name="Find in file preview" Padding="9,3"/>
                 <ComboBox x:Name="PartSelector" MinWidth="110" MaxWidth="300" Visibility="Collapsed"
                           Foreground="{DynamicResource Atlas.InkBrush}" Background="{DynamicResource Atlas.SurfaceBrush}"
                           DisplayMemberPath="Title" SelectedValuePath="Id" SelectionChanged="OnPartChanged"
@@ -41,6 +45,28 @@
                 </StackPanel>
             </WrapPanel>
         </DockPanel>
+        <StackPanel x:Name="PreviewFindPanel" DockPanel.Dock="Top" Visibility="Collapsed" Margin="8,0,8,5">
+            <WrapPanel>
+                <Label Content="Find in preview" Target="{Binding ElementName=PreviewFindQuery}" Padding="0,3,5,3"
+                       Foreground="{DynamicResource Atlas.InkBrush}"/>
+                <TextBox x:Name="PreviewFindQuery" Width="165" Height="28" MaxLength="2048" Margin="0,0,4,3"
+                         TextChanged="OnPreviewFindInputChanged" AutomationProperties.Name="Find literal text in preview"
+                         ToolTip="One literal phrase, including spaces. AND, OR, quotes and regular expressions are ordinary text."
+                         Foreground="{DynamicResource Atlas.InkBrush}" Background="{DynamicResource Atlas.SurfaceBrush}"/>
+                <Button x:Name="PreviewFindStart" Content="Find" Click="OnStartPreviewFind" Style="{StaticResource FilePreviewButtonStyle}"/>
+                <Button x:Name="PreviewFindStop" Content="Stop" Click="OnStopPreviewFind" IsEnabled="False" Style="{StaticResource FilePreviewButtonStyle}"/>
+                <Button x:Name="PreviewFindPrevious" Content="‹ Match" Click="OnPreviousPreviewMatch" IsEnabled="False"
+                        AutomationProperties.Name="Previous match in file preview" Style="{StaticResource FilePreviewButtonStyle}"/>
+                <Button x:Name="PreviewFindNext" Content="Match ›" Click="OnNextPreviewMatch" IsEnabled="False"
+                        AutomationProperties.Name="Next match in file preview" Style="{StaticResource FilePreviewButtonStyle}"/>
+                <CheckBox x:Name="PreviewFindCase" Content="Match case" Margin="6,4,4,3"
+                          Checked="OnPreviewFindInputChanged" Unchecked="OnPreviewFindInputChanged"
+                          Foreground="{DynamicResource Atlas.InkBrush}" AutomationProperties.Name="Preview Find match case"/>
+                <Button Content="Close" Click="OnClosePreviewFind" Style="{StaticResource FilePreviewButtonStyle}"/>
+            </WrapPanel>
+            <TextBlock x:Name="PreviewFindStatus" Text="This preview only · Literal phrase" TextWrapping="Wrap" FontSize="11.5"
+                       Foreground="{DynamicResource Atlas.Ink2Brush}" AutomationProperties.LiveSetting="Polite"/>
+        </StackPanel>
         <TextBlock x:Name="Summary" DockPanel.Dock="Top" Margin="10,0,10,6" TextTrimming="CharacterEllipsis"
                    Foreground="{DynamicResource Atlas.Ink2Brush}" FontSize="12"/>
         <TextBlock x:Name="Status" DockPanel.Dock="Bottom" Margin="10,5" TextWrapping="Wrap" FontSize="12"

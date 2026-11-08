@@ -8,13 +8,18 @@ using System.Windows.Forms;
 using System.Windows.Input;
 using System.Windows.Interop;
 using System.Windows.Threading;
-using FileSearch.Gui.Settings;
 using FileSearch.Gui.Controls;
+using FileSearch.Gui.Settings;
 using FileSearch.Gui.ViewModels;
+using ButtonBase = System.Windows.Controls.Primitives.ButtonBase;
+using ComboBox = System.Windows.Controls.ComboBox;
+using DataGrid = System.Windows.Controls.DataGrid;
 using DataObject = System.Windows.DataObject;
 using DragDropEffects = System.Windows.DragDropEffects;
 using MouseEventArgs = System.Windows.Input.MouseEventArgs;
 using Point = System.Windows.Point;
+using ScrollBar = System.Windows.Controls.Primitives.ScrollBar;
+using TextBoxBase = System.Windows.Controls.Primitives.TextBoxBase;
 
 namespace FileSearch.Gui;
 
@@ -29,47 +34,152 @@ public partial class QuickSearchWindow : Window
     private int _externalDialogDepth;
     private bool _databaseFindVisible;
     private readonly double _normalMinimumHeight;
-    private double? _heightBeforeFind;
+    private double? _heightBeforePreviewGrowth;
+    private double? _automaticPreviewHeight;
+    private bool _updatingPreviewLayout;
+    private FileResultViewModel? _previewContextResult;
+    private bool _previewContextVisible;
+    private readonly ContentControl _inlineDocumentBody;
+    private readonly DependencyPropertyDescriptor _inlineBodyDescriptor;
+    private DatabasePreviewControl? _inlineDatabase;
+    private DataGrid? _inlineDatabaseGrid;
 
     public QuickSearchWindow()
     {
         InitializeComponent();
         _normalMinimumHeight = MinHeight;
         DataContextChanged += OnDataContextChanged;
-        SizeChanged += (_, _) => UpdatePreviewHeight();
+        SizeChanged += (_, _) =>
+        {
+            if (!_updatingPreviewLayout && _automaticPreviewHeight is { } automatic && Math.Abs(Height - automatic) > 1)
+            {
+                // A user resize owns the new height; closing the preview must not undo it.
+                _heightBeforePreviewGrowth = _automaticPreviewHeight = null;
+            }
+            UpdatePreviewHeight();
+        };
+        QuickSearchLayout.SizeChanged += (_, _) => UpdatePreviewHeight();
+        QuickSearchBar.SizeChanged += (_, _) => UpdatePreviewHeight();
+        QuickScopeHeader.SizeChanged += (_, _) => UpdatePreviewHeight();
+        _inlineDocumentBody = QuickFileDocumentPreview.FindName("Body") as ContentControl
+            ?? throw new InvalidOperationException("The inline preview body is unavailable.");
+        _inlineBodyDescriptor = DependencyPropertyDescriptor.FromProperty(ContentControl.ContentProperty, typeof(ContentControl))
+            ?? throw new InvalidOperationException("The inline preview body cannot be observed.");
+        _inlineBodyDescriptor.AddValueChanged(_inlineDocumentBody, OnInlineDocumentBodyChanged);
+        QuickFileDocumentPreview.IsVisibleChanged += (_, _) => UpdatePreviewHeight();
         AddHandler(DatabasePreviewControl.FindVisibilityChangedEvent, new RoutedEventHandler((_, args) =>
         {
-            if (args.OriginalSource is DatabasePreviewControl preview) SetDatabaseFindLayout(preview.IsFindVisible);
+            if (args.OriginalSource is DatabasePreviewControl preview && ReferenceEquals(preview, _inlineDatabase))
+                SetDatabaseFindLayout(preview.IsFindVisible);
         }));
-        Closed += (_, _) => { if (DataContext is QuickSearchViewModel model) model.PropertyChanged -= OnPreviewContextChanged; };
+        AddHandler(FileDocumentPreview.PreviewFindVisibilityChangedEvent, new RoutedEventHandler((_, args) =>
+        {
+            if (args.OriginalSource is FileDocumentPreview preview) SetDatabaseFindLayout(preview.IsPreviewFindVisible);
+        }));
+        Closed += (_, _) =>
+        {
+            if (DataContext is QuickSearchViewModel model) model.PropertyChanged -= OnPreviewContextChanged;
+            _inlineBodyDescriptor.RemoveValueChanged(_inlineDocumentBody, OnInlineDocumentBodyChanged);
+            if (_inlineDatabaseGrid is not null) _inlineDatabaseGrid.SizeChanged -= OnDatabaseGridSizeChanged;
+        };
     }
 
     private void SetDatabaseFindLayout(bool visible)
     {
-        if (_databaseFindVisible == visible) return;
         _databaseFindVisible = visible;
-        if (visible)
-        {
-            _heightBeforeFind = ActualHeight < 540 ? Height : null;
-            MinHeight = Math.Max(_normalMinimumHeight, 540);
-            if (Height < MinHeight) Height = MinHeight;
-        }
-        else
-        {
-            MinHeight = _normalMinimumHeight;
-            if (_heightBeforeFind is { } height && Height <= 540) Height = height;
-            _heightBeforeFind = null;
-        }
         UpdatePreviewHeight();
     }
 
-    private void UpdatePreviewHeight() => InlinePreviewBorder.Height = _databaseFindVisible
-        ? 420 : Math.Clamp(ActualHeight * 0.6, 220, 420);
+    private void OnInlineDocumentBodyChanged(object? sender, EventArgs args)
+    {
+        bool wasDatabase = _inlineDatabase is not null;
+        if (_inlineDatabaseGrid is not null) _inlineDatabaseGrid.SizeChanged -= OnDatabaseGridSizeChanged;
+        _inlineDatabase = _inlineDocumentBody.Content as DatabasePreviewControl;
+        _inlineDatabaseGrid = _inlineDatabase is null ? null : FindDescendant<DataGrid>(_inlineDatabase);
+        if (_inlineDatabaseGrid is not null) _inlineDatabaseGrid.SizeChanged += OnDatabaseGridSizeChanged;
+        if (_inlineDatabase is not null) _databaseFindVisible = _inlineDatabase.IsFindVisible;
+        else if (wasDatabase) _databaseFindVisible = QuickFileDocumentPreview.IsPreviewFindVisible;
+        UpdatePreviewHeight();
+    }
+
+    private void OnDatabaseGridSizeChanged(object sender, SizeChangedEventArgs args) => UpdatePreviewHeight();
+
+    private void UpdatePreviewHeight()
+    {
+        if (_updatingPreviewLayout || QuickSearchLayout.ActualHeight <= 0) return;
+        _updatingPreviewLayout = true;
+        try
+        {
+            // Reserve the measured header/chooser and enough database chrome for
+            // a full record row. Ordinary document previews keep their compact sizing.
+            double reserved = QuickSearchBar.ActualHeight + QuickSearchBar.Margin.Top + QuickSearchBar.Margin.Bottom +
+                QuickScopeHeader.ActualHeight + QuickScopeHeader.Margin.Top + QuickScopeHeader.Margin.Bottom +
+                InlinePreviewBorder.Margin.Top + InlinePreviewBorder.Margin.Bottom;
+            bool databaseVisible = _inlineDatabase is not null && _previewContextVisible && QuickFileDocumentPreview.IsVisible;
+            double databaseMinimum = 0;
+            double minimumWindow = _databaseFindVisible ? Math.Max(_normalMinimumHeight, 540) : _normalMinimumHeight;
+            if (databaseVisible)
+            {
+                databaseMinimum = _databaseFindVisible ? 340 : 300;
+                if (_inlineDatabaseGrid is { ActualHeight: > 0 } grid && InlinePreviewBorder.ActualHeight > 0)
+                {
+                    double databaseChrome = InlinePreviewBorder.ActualHeight - grid.ActualHeight;
+                    databaseMinimum = Math.Max(databaseMinimum, databaseChrome + 64);
+                }
+                databaseMinimum = Math.Min(420, Math.Ceiling(databaseMinimum));
+                double windowChrome = Math.Max(0, ActualHeight - QuickSearchLayout.ActualHeight);
+                minimumWindow = Math.Max(minimumWindow, Math.Ceiling(windowChrome + reserved + databaseMinimum));
+            }
+            ApplyPreviewMinimumHeight(minimumWindow);
+            double available = Math.Max(0, QuickSearchLayout.ActualHeight - reserved);
+            double desired = _databaseFindVisible ? 420 : Math.Clamp(ActualHeight * 0.6, 220, 420);
+            InlinePreviewBorder.Height = Math.Min(Math.Max(desired, databaseMinimum), available);
+        }
+        finally { _updatingPreviewLayout = false; }
+    }
+
+    private void ApplyPreviewMinimumHeight(double minimum)
+    {
+        double current = double.IsFinite(Height) ? Height : ActualHeight;
+        double target = current;
+        if (_heightBeforePreviewGrowth is { } before && _automaticPreviewHeight is { } automatic && Math.Abs(current - automatic) < 1)
+            target = Math.Max(before, minimum);
+        else if (current < minimum)
+        {
+            _heightBeforePreviewGrowth ??= current;
+            target = minimum;
+        }
+        MinHeight = minimum;
+        if (Math.Abs(target - current) > .1)
+        {
+            _automaticPreviewHeight = target;
+            Height = target;
+        }
+        if (_heightBeforePreviewGrowth is { } restored && target <= restored + .1 && minimum <= restored + .1)
+            _heightBeforePreviewGrowth = _automaticPreviewHeight = null;
+    }
+
+    private static T? FindDescendant<T>(DependencyObject parent) where T : DependencyObject
+    {
+        for (int index = 0; index < System.Windows.Media.VisualTreeHelper.GetChildrenCount(parent); index++)
+        {
+            var child = System.Windows.Media.VisualTreeHelper.GetChild(parent, index);
+            if (child is T match) return match;
+            if (FindDescendant<T>(child) is { } nested) return nested;
+        }
+        return null;
+    }
 
     private void OnPreviewContextChanged(object? sender, PropertyChangedEventArgs args)
     {
-        if (args.PropertyName is nameof(QuickSearchViewModel.SelectedResult) or nameof(QuickSearchViewModel.IsPreviewVisible))
-            SetDatabaseFindLayout(false);
+        if (args.PropertyName is not (nameof(QuickSearchViewModel.SelectedResult) or nameof(QuickSearchViewModel.IsPreviewVisible)) ||
+            sender is not QuickSearchViewModel viewModel)
+            return;
+        if (ReferenceEquals(_previewContextResult, viewModel.SelectedResult) && _previewContextVisible == viewModel.IsPreviewVisible)
+            return;
+        _previewContextResult = viewModel.SelectedResult;
+        _previewContextVisible = viewModel.IsPreviewVisible;
+        SetDatabaseFindLayout(false);
     }
 
     public void ShowFromHotkey()
@@ -94,6 +204,10 @@ public partial class QuickSearchWindow : Window
 
     private void OnDataContextChanged(object sender, DependencyPropertyChangedEventArgs e)
     {
+        SetDatabaseFindLayout(false);
+        _previewContextResult = (e.NewValue as QuickSearchViewModel)?.SelectedResult;
+        _previewContextVisible = (e.NewValue as QuickSearchViewModel)?.IsPreviewVisible ?? false;
+        UpdatePreviewHeight();
         if (e.OldValue is QuickSearchViewModel oldViewModel)
         {
             oldViewModel.RequestHide -= OnRequestHide;
@@ -115,33 +229,63 @@ public partial class QuickSearchWindow : Window
 
     private void OnWindowPreviewKeyDown(object sender, System.Windows.Input.KeyEventArgs e)
     {
-        if (DatabasePreviewControl.TryRouteFindKey(e.OriginalSource, e.Key, Keyboard.Modifiers, out bool localHandled))
-        { e.Handled = localHandled; return; }
+        e.Handled = TryHandleQuickKey(e.OriginalSource, NormalizeKey(e), Keyboard.Modifiers);
+    }
+
+    private bool TryHandleQuickKey(object? source, Key key, ModifierKeys modifiers)
+    {
+        if (DatabasePreviewControl.TryRouteFindKey(source, key, modifiers, out bool localHandled))
+            return localHandled;
+        if (FileDocumentPreview.TryRoutePreviewFindKey(source, key, modifiers, out bool previewHandled))
+            return previewHandled;
         if (DataContext is not QuickSearchViewModel viewModel)
-            return;
+            return false;
+
+        if (key == Key.Escape && modifiers == ModifierKeys.None)
+        {
+            if (QuickLocationScope.IsDropDownOpen) { QuickLocationScope.IsDropDownOpen = false; return true; }
+            if (QuickLocationSelectionButton.IsChecked == true) { QuickLocationSelectionButton.IsChecked = false; QuickLocationSelectionButton.Focus(); return true; }
+        }
+
+        if (modifiers == ModifierKeys.None && key is Key.Up or Key.Down or Key.Home or Key.End or Key.PageUp or Key.PageDown &&
+            (ReferenceEquals(source, ResultsList) || FindResultRow(source) is not null) &&
+            !IsWithinInteractiveControl(source))
+            viewModel.MarkSelectionExplicit();
 
         foreach (var action in s_shortcutActionOrder)
         {
             var gesture = viewModel.GetShortcut(action);
-            if (!MatchesShortcut(gesture, e))
+            if (!MatchesShortcut(gesture, key, modifiers))
                 continue;
 
-            if (ShouldIgnoreShortcut(action, gesture))
-                return;
+            if (ShouldIgnoreShortcut(action, gesture, source))
+                return false;
 
             if (!TryExecuteShortcut(action, viewModel))
-                return;
+                return false;
 
-            e.Handled = true;
-            return;
+            return true;
+        }
+        return false;
+    }
+
+    private void OnResultsPreviewMouseLeftButtonDown(object sender, MouseButtonEventArgs e)
+    {
+        if (DataContext is QuickSearchViewModel viewModel && FindResultRow(e.OriginalSource) is { DataContext: FileResultViewModel result })
+        {
+            ResultsList.SelectedItem = result;
+            viewModel.MarkSelectionExplicit();
         }
     }
 
     private void OnResultDoubleClick(object sender, MouseButtonEventArgs e)
     {
-        if (DataContext is QuickSearchViewModel viewModel && viewModel.OpenResultCommand.CanExecute(null))
+        if (e.ChangedButton == MouseButton.Left && !IsWithinInteractiveControl(e.OriginalSource) &&
+            FindResultRow(e.OriginalSource) is { DataContext: FileResultViewModel result } &&
+            DataContext is QuickSearchViewModel viewModel && viewModel.OpenResultCommand.CanExecute(result))
         {
-            viewModel.OpenResultCommand.Execute(null);
+            viewModel.MarkSelectionExplicit();
+            viewModel.OpenResultCommand.Execute(result);
             e.Handled = true;
         }
     }
@@ -234,6 +378,9 @@ public partial class QuickSearchWindow : Window
         if (ResultsList.SelectedIndex < 0)
             ResultsList.SelectedIndex = 0;
 
+        if (DataContext is QuickSearchViewModel viewModel)
+            viewModel.MarkSelectionExplicit();
+        ResultsList.ScrollIntoView(ResultsList.SelectedItem);
         ResultsList.UpdateLayout();
         if (ResultsList.ItemContainerGenerator.ContainerFromIndex(ResultsList.SelectedIndex) is ListBoxItem item)
             item.Focus();
@@ -280,25 +427,24 @@ public partial class QuickSearchWindow : Window
         return true;
     }
 
-    private bool ShouldIgnoreShortcut(QuickSearchShortcutAction action, AppShortcutGesture gesture)
+    private bool ShouldIgnoreShortcut(QuickSearchShortcutAction action, AppShortcutGesture gesture, object? source)
     {
         if (action == QuickSearchShortcutAction.FocusResults &&
             gesture == AppShortcutGesture.Down &&
-            !SearchBox.IsKeyboardFocusWithin)
+            !IsWithin(source, SearchBox))
         {
             return true;
         }
 
-        return action == QuickSearchShortcutAction.CopySelectedResultPath &&
-               gesture == AppShortcutGesture.CtrlC &&
-               SearchBox.IsKeyboardFocusWithin;
+        if (gesture == AppShortcutGesture.Enter && IsWithinInteractiveControl(source))
+            return true;
+
+        return action == QuickSearchShortcutAction.CopySelectedResultPath && gesture == AppShortcutGesture.CtrlC &&
+            FindAncestor<TextBoxBase>(source) is not null;
     }
 
-    private static bool MatchesShortcut(AppShortcutGesture gesture, System.Windows.Input.KeyEventArgs e)
+    private static bool MatchesShortcut(AppShortcutGesture gesture, Key key, ModifierKeys modifiers)
     {
-        var key = NormalizeKey(e);
-        var modifiers = Keyboard.Modifiers;
-
         return gesture switch
         {
             AppShortcutGesture.Down => modifiers == ModifierKeys.None && key == Key.Down,
@@ -312,6 +458,37 @@ public partial class QuickSearchWindow : Window
             _ => false,
         };
     }
+
+    private ListBoxItem? FindResultRow(object? source)
+    {
+        var row = FindAncestor<ListBoxItem>(source);
+        return row is not null && ResultsList.ItemContainerGenerator.IndexFromContainer(row) >= 0 ? row : null;
+    }
+
+    private bool IsWithinInteractiveControl(object? source) =>
+        FindAncestor<ButtonBase>(source) is not null || FindAncestor<ComboBox>(source) is not null ||
+        FindAncestor<ComboBoxItem>(source) is not null ||
+        FindAncestor<ScrollBar>(source) is not null ||
+        FindAncestor<TextBoxBase>(source) is { } textBox && !ReferenceEquals(textBox, SearchBox);
+
+    private static bool IsWithin(object? source, DependencyObject ancestor)
+    {
+        for (var current = source as DependencyObject; current is not null; current = InputParent(current))
+            if (ReferenceEquals(current, ancestor)) return true;
+        return false;
+    }
+
+    private static T? FindAncestor<T>(object? source) where T : DependencyObject
+    {
+        for (var current = source as DependencyObject; current is not null; current = InputParent(current))
+            if (current is T match) return match;
+        return null;
+    }
+
+    private static DependencyObject? InputParent(DependencyObject child) => child is FrameworkContentElement content
+        ? content.Parent : child is System.Windows.Media.Visual or System.Windows.Media.Media3D.Visual3D
+            ? System.Windows.Media.VisualTreeHelper.GetParent(child) ?? LogicalTreeHelper.GetParent(child)
+            : LogicalTreeHelper.GetParent(child);
 
     private static Key NormalizeKey(System.Windows.Input.KeyEventArgs e)
     {

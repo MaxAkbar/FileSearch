@@ -26,6 +26,52 @@ public sealed class DatabaseSearchTests : IAsyncDisposable
     [Theory]
     [InlineData(DatabaseKind.Sqlite)]
     [InlineData(DatabaseKind.CSharpDb)]
+    public async Task OptInOpenTimingsPreservePagesSourceAndSnapshotCleanup(DatabaseKind kind)
+    {
+        string path = await DatabaseTestFiles.CreateAsync(_root, "profile.db", kind, 275, Token);
+        var before = SourceState(path);
+        var timings = new DatabaseOpenTimings();
+        string snapshot;
+        await using (var session = await DatabaseReadSession.OpenAsync(path, null, timings, Token))
+        {
+            snapshot = session.SnapshotPath;
+            var page = await session.ReadPageAsync(DatabaseTestFiles.TableName, 251, 250, Token);
+            Assert.Equal(275, page.Rows[^1].Number);
+            Assert.Contains("needle 東京 O'Brien", page.Rows[^1].Values[2]);
+            Assert.True(timings.Completed);
+            Assert.Equal(new FileInfo(path).Length, timings.MainBytes);
+            Assert.Equal(0, timings.WalBytes);
+            Assert.NotNull(timings.CopyTicks);
+            Assert.NotNull(timings.EngineOpenTicks);
+            Assert.NotNull(timings.EngineSetupTicks);
+            Assert.NotNull(timings.SchemaTicks);
+            Assert.NotNull(timings.ValidationTicks);
+            Assert.True(timings.CopyTicks >= 0 && timings.CopyTicks <= timings.SnapshotTicks);
+            Assert.True(timings.TotalTicks >= timings.SnapshotTicks + timings.EngineOpenTicks + timings.EngineSetupTicks + timings.SchemaTicks + timings.ValidationTicks);
+        }
+        Assert.False(File.Exists(snapshot));
+        Assert.Equal(before, SourceState(path));
+        await using var ordinary = await DatabaseReadSession.OpenAsync(path, null, Token);
+        Assert.Equal("275", (await ordinary.ReadPageAsync(DatabaseTestFiles.TableName, 251, 250, Token)).Rows[^1].Values[0]);
+    }
+
+    [Fact]
+    public async Task FailedProfiledOpenDoesNotReportUnreachedPhasesAsSuccessful()
+    {
+        string path = await DatabaseTestFiles.CreateAsync(_root, "stale-profile.db", DatabaseKind.Sqlite, 1, Token);
+        var timings = new DatabaseOpenTimings();
+        await Assert.ThrowsAsync<InvalidDataException>(() => DatabaseReadSession.OpenAsync(path, "stale", timings, Token));
+        Assert.False(timings.Completed);
+        Assert.NotNull(timings.TotalTicks);
+        Assert.NotNull(timings.SnapshotTicks);
+        Assert.Null(timings.CopyTicks);
+        Assert.Null(timings.EngineOpenTicks);
+        Assert.Null(timings.SchemaTicks);
+    }
+
+    [Theory]
+    [InlineData(DatabaseKind.Sqlite)]
+    [InlineData(DatabaseKind.CSharpDb)]
     public async Task ScalarSearchPreservesExactSourceAndLocatesQuotedTableRowColumn(DatabaseKind kind)
     {
         string path = await DatabaseTestFiles.CreateAsync(_root, "source.db", kind, 3, Token);
@@ -141,9 +187,12 @@ public sealed class DatabaseSearchTests : IAsyncDisposable
         File.Copy(writerPath, source); File.Copy(writerPath + ".wal", source + ".wal");
         var before = SourceState(source);
         string temporary;
-        await using (var session = await DatabaseReadSession.OpenAsync(source, null, Token))
+        var timings = new DatabaseOpenTimings();
+        await using (var session = await DatabaseReadSession.OpenAsync(source, null, timings, Token))
         {
             temporary = session.SnapshotPath;
+            Assert.Equal(new FileInfo(source + ".wal").Length, timings.WalBytes);
+            Assert.True(timings.WalBytes > 0);
             Assert.Contains("FileSearchDatabasePreview", temporary);
             Assert.Equal("committed needle", (await session.ReadPageAsync("Data", 1, 250, Token)).Rows[0].Values[1]);
         }

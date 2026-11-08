@@ -295,8 +295,8 @@ public sealed partial class DatabasePreviewControl
         var navigation = _findNavigation;
         var token = navigation.Token;
         int generation = _findGeneration;
-        await LoadPageAsync(match.Location.RowNumber, token, match.Location.Column);
-        if (generation != _findGeneration || !ReferenceEquals(_findNavigation, navigation) || token.IsCancellationRequested || _disposed || PreviewState != "Ready") return;
+        bool pageLoaded = await LoadPageAsync(match.Location.RowNumber, token, match.Location.Column);
+        if (!pageLoaded || generation != _findGeneration || !ReferenceEquals(_findNavigation, navigation) || token.IsCancellationRequested || _disposed || PreviewState != "Ready") return;
         _findMatchIndex = index;
         UpdateFindStatus(); UpdateFindControls();
     }
@@ -331,6 +331,7 @@ public sealed partial class DatabasePreviewControl
     {
         bool table = !_disposed && _session is not null && _tables.SelectedItem is DatabaseTable;
         bool pageReady = PreviewState is "Ready" or "Empty";
+        _grid.IsEnabled = table && pageReady;
         if (_findButton is null) return;
         _findOptionsButton.Content = new TextBlock
         {
@@ -368,6 +369,10 @@ public sealed partial class DatabasePreviewControl
             if (values.Length < 2 || values[0] is not string text || values[1] is not long row ||
                 !owner._findHighlights.TryGetValue((row, column), out var match) || match.Highlights.Count == 0) return null;
             int start = match.Highlights[0].Start;
+            // Reused row bindings can briefly deliver the new value before its
+            // row number. Wait for a compatible value rather than slicing it
+            // with the previous row's distant highlight offsets.
+            if ((uint)start >= (uint)text.Length) return null;
             int end = Math.Min(text.Length, Math.Max(start + 220, match.Highlights[0].Start + match.Highlights[0].Length));
             if (start > 0 && start < text.Length && char.IsLowSurrogate(text[start]) && char.IsHighSurrogate(text[start - 1])) start--;
             if (end < text.Length && end > 0 && char.IsHighSurrogate(text[end - 1]) && char.IsLowSurrogate(text[end])) end--;
@@ -405,23 +410,37 @@ public sealed partial class DatabasePreviewControl
     private async Task KeepCurrentCellVisibleAsync()
     {
         if (_disposed) return;
+        var measured = PagePhaseMeasured;
+        measured?.Invoke("keep.scheduled", 0);
+        long totalStarted = StartPreviewPhase(measured);
+        long dispatchStarted = StartPreviewPhase(measured);
         int generation = _generation;
         var token = _lifetime.Token;
         try
         {
             await _grid.Dispatcher.InvokeAsync(() =>
             {
+                FinishPreviewPhase(measured, "keep.dispatch-wait", dispatchStarted);
                 if (_disposed || generation != _generation || !_grid.IsLoaded || _grid.CurrentCell.Item is not DataRowView || _grid.CurrentCell.Column is not { } column) return;
+                long phaseStarted = StartPreviewPhase(measured);
                 _grid.UpdateLayout();
+                FinishPreviewPhase(measured, "keep.layout-before", phaseStarted);
+                phaseStarted = StartPreviewPhase(measured);
                 _grid.ScrollIntoView(_grid.CurrentCell.Item, column);
+                FinishPreviewPhase(measured, "keep.scroll", phaseStarted);
+                phaseStarted = StartPreviewPhase(measured);
                 _grid.UpdateLayout();
+                FinishPreviewPhase(measured, "keep.layout-after", phaseStarted);
+                phaseStarted = StartPreviewPhase(measured);
                 if (FindScrollViewer(_grid) is { } scroll)
                 {
                     double left = _grid.Columns.Where(item => item.DisplayIndex < column.DisplayIndex).Sum(item => item.ActualWidth);
                     scroll.ScrollToHorizontalOffset(Math.Clamp(left - _grid.Columns[0].ActualWidth, 0, scroll.ScrollableWidth));
                 }
+                FinishPreviewPhase(measured, "keep.horizontal-scroll", phaseStarted);
             }, System.Windows.Threading.DispatcherPriority.ContextIdle, token);
         }
         catch (OperationCanceledException) { }
+        finally { FinishPreviewPhase(measured, "keep.total", totalStarted); }
     }
 }

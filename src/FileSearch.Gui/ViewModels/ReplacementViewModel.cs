@@ -40,6 +40,8 @@ public sealed partial class ReplacementViewModel : ObservableObject, IDisposable
     private int _generation;
     private bool _disposed;
     private bool _externalBusy;
+    private bool _isPreviewing;
+    private const string FolderScopeRequired = "Choose Selected folder scope and Browse to choose a folder before previewing or applying replacements.";
 
     public ReplacementViewModel(IReplacementService service, SearchViewModel search, ISettingsService settings,
         HistoryViewModel history, StatusBarViewModel status, IIndexingService? indexing = null, IBackgroundIndexerProcessService? background = null)
@@ -75,7 +77,9 @@ public sealed partial class ReplacementViewModel : ObservableObject, IDisposable
         OnPropertyChanged(nameof(CanEdit)); PreviewCommand.NotifyCanExecuteChanged(); ApplyCommand.NotifyCanExecuteChanged();
         UndoCommand.NotifyCanExecuteChanged(); ToggleCommand.NotifyCanExecuteChanged(); ClearFindCommand.NotifyCanExecuteChanged();
     }
-    public string ScopeText => $"Folder: {_search.SearchPath} · {(_search.IncludeSubfolders ? "including subfolders" : "this folder only")} · {_search.FilePatternSummary}";
+    public string ScopeText => _search.IsFolderLocationScope
+        ? $"Folder: {_search.SearchPath} · {(_search.IncludeSubfolders ? "including subfolders" : "this folder only")} · {_search.FilePatternSummary}"
+        : FolderScopeRequired;
     public string SelectedPreview => SelectedItem is { } item
         ? item.Path + (item.Destination is { } destination ? "\nProposed path: " + destination : "") + "\n\n" + item.Preview
         : "Select an item to review its changes.";
@@ -112,7 +116,13 @@ public sealed partial class ReplacementViewModel : ObservableObject, IDisposable
 
     private void SearchChanged(object? sender, PropertyChangedEventArgs args)
     {
-        if (args.PropertyName == nameof(SearchViewModel.IsSearching)) { ToggleCommand.NotifyCanExecuteChanged(); PreviewCommand.NotifyCanExecuteChanged(); OnPropertyChanged(nameof(CanStartExternalOperation)); }
+        if (args.PropertyName == nameof(SearchViewModel.SelectedLocationScope))
+        {
+            if (_isPreviewing) _cancellation?.Cancel();
+            OnPropertyChanged(nameof(ScopeText)); Invalidate();
+            return;
+        }
+        if (args.PropertyName == nameof(SearchViewModel.IsSearching)) { ToggleCommand.NotifyCanExecuteChanged(); PreviewCommand.NotifyCanExecuteChanged(); ApplyCommand.NotifyCanExecuteChanged(); OnPropertyChanged(nameof(CanStartExternalOperation)); }
         if (args.PropertyName is nameof(SearchViewModel.SearchPath) or nameof(SearchViewModel.FileNamePattern) or nameof(SearchViewModel.ExcludeFileNamePattern) or
             nameof(SearchViewModel.IncludeSubfolders) or nameof(SearchViewModel.EnableDocumentExtraction) or nameof(SearchViewModel.SkipUnknownFileTypes) or
             nameof(SearchViewModel.AdditionalPlainTextExtensions) or nameof(SearchViewModel.MinSizeKB) or nameof(SearchViewModel.MaxSizeKB) or
@@ -125,15 +135,21 @@ public sealed partial class ReplacementViewModel : ObservableObject, IDisposable
         _generation++; _plan = null;
         foreach (var item in Items) item.PropertyChanged -= ItemChanged;
         Items.Clear(); SelectedItem = null;
-        Summary = "Preview changes before applying.";
+        Summary = _search.IsFolderLocationScope ? "Preview changes before applying." : FolderScopeRequired;
         PreviewCommand.NotifyCanExecuteChanged(); ApplyCommand.NotifyCanExecuteChanged(); OnPropertyChanged(nameof(CheckedChanges));
     }
 
-    private bool CanPreview() => CanEdit && !_search.IsSearching && !string.IsNullOrEmpty(FindText) && Directory.Exists(_search.SearchPath);
+    private bool CanPreview() => _search.IsFolderLocationScope && CanEdit && !_search.IsSearching && !string.IsNullOrEmpty(FindText) && Directory.Exists(_search.SearchPath);
     [RelayCommand(CanExecute = nameof(CanPreview))]
     private async Task PreviewAsync()
     {
+        if (!CanPreview())
+        {
+            if (!_search.IsFolderLocationScope) _status.Text = Summary = FolderScopeRequired;
+            return;
+        }
         var generation = _generation;
+        _isPreviewing = true;
         IsBusy = true; _cancellation?.Dispose(); _cancellation = new(); Summary = "Scanning the current folder…";
         try
         {
@@ -141,7 +157,7 @@ public sealed partial class ReplacementViewModel : ObservableObject, IDisposable
                 UseRegex, MatchCase, NameTarget, IncludeExtensions, IncludeFormulas, _settings.Current.IndexedLocations.Select(location => location.Root).ToArray(),
                 _search.AdditionalPlainTextExtensions.Split([';', ',', ' '], StringSplitOptions.RemoveEmptyEntries).Select(extension => extension.StartsWith('.') ? extension : "." + extension).ToHashSet(StringComparer.OrdinalIgnoreCase));
             var plan = await _service.PreviewAsync(request, _cancellation.Token);
-            if (generation != _generation) { Summary = "Options changed; preview again."; return; }
+            if (generation != _generation) { Summary = _search.IsFolderLocationScope ? "Options changed; preview again." : FolderScopeRequired; return; }
             _plan = plan;
             foreach (var item in plan.Items)
             {
@@ -151,9 +167,14 @@ public sealed partial class ReplacementViewModel : ObservableObject, IDisposable
             UpdateSelection();
             Summary = $"{Items.Count(item => item.CanApply):N0} items · {CheckedChanges:N0} changes checked · {Items.Count(item => !item.CanApply):N0} skipped";
         }
-        catch (OperationCanceledException) { Summary = "Preview cancelled. No changes applied."; }
-        catch (Exception exception) { Summary = "Preview failed: " + exception.Message; }
-        finally { IsBusy = false; _status.Text = Summary; }
+        catch (OperationCanceledException) { Summary = _search.IsFolderLocationScope ? "Preview cancelled. No changes applied." : FolderScopeRequired; }
+        catch (Exception exception)
+        {
+            Summary = generation != _generation
+                ? _search.IsFolderLocationScope ? "Options changed; preview again." : FolderScopeRequired
+                : "Preview failed: " + exception.Message;
+        }
+        finally { _isPreviewing = false; IsBusy = false; _status.Text = Summary; }
     }
 
     private void ItemChanged(object? sender, PropertyChangedEventArgs args)
@@ -173,7 +194,7 @@ public sealed partial class ReplacementViewModel : ObservableObject, IDisposable
         OnPropertyChanged(nameof(CheckedChanges)); ApplyCommand.NotifyCanExecuteChanged();
         OnPropertyChanged(nameof(SelectedPreview));
     }
-    private bool CanApply() => CanEdit && _plan is not null && Items.Any(item => item.IsChecked && item.CanApply);
+    private bool CanApply() => _search.IsFolderLocationScope && CanEdit && !_search.IsSearching && _plan is not null && Items.Any(item => item.IsChecked && item.CanApply);
     [RelayCommand(CanExecute = nameof(CanApply))]
     private Task ApplyAsync() => RunBatchAsync(false);
     private bool CanRunUndo() => CanEdit && !_search.IsSearching && CanUndo;
@@ -182,7 +203,11 @@ public sealed partial class ReplacementViewModel : ObservableObject, IDisposable
 
     private async Task RunBatchAsync(bool undo)
     {
-        if (!undo && _plan is null) return;
+        if (!undo && !CanApply())
+        {
+            if (!_search.IsFolderLocationScope) _status.Text = Summary = FolderScopeRequired;
+            return;
+        }
         IsBusy = true; _cancellation?.Dispose(); _cancellation = new(); Summary = undo ? "Undoing the last batch…" : "Applying checked changes…";
         try
         {

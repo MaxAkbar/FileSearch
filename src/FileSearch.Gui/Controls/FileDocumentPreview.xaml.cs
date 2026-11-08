@@ -3,6 +3,7 @@ using System.Text;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Forms.Integration;
+using System.Windows.Input;
 using System.Windows.Media;
 using FileSearch.Core.Databases;
 using FileSearch.Core.Engine;
@@ -46,6 +47,7 @@ public partial class FileDocumentPreview : System.Windows.Controls.UserControl
     internal string? DisplayNameOverride { get; set; }
     private SpreadsheetPreview? _expandedWorkbook;
     private DatabasePreviewControl? _databaseView;
+    private string? _databaseSourcePath;
     private DatabaseLocation? _expandedDatabaseLocation;
     private DatabasePreviewFindState? _expandedDatabaseFindState;
 
@@ -55,6 +57,10 @@ public partial class FileDocumentPreview : System.Windows.Controls.UserControl
         Loaded += (_, _) => _ = ReloadAsync();
         Unloaded += (_, _) => Stop();
         IsVisibleChanged += (_, _) => { if (IsVisible) _ = ReloadAsync(); else Stop(); };
+        PreviewKeyDown += (_, args) =>
+        {
+            if (TryRoutePreviewFindKey(args.OriginalSource, args.Key, Keyboard.Modifiers, out bool handled)) args.Handled = handled;
+        };
     }
 
     public FileResultViewModel? Result { get => (FileResultViewModel?)GetValue(ResultProperty); set => SetValue(ResultProperty, value); }
@@ -71,14 +77,17 @@ public partial class FileDocumentPreview : System.Windows.Controls.UserControl
         preview._expandedWorkbook = null;
         preview._expandedDatabaseLocation = null;
         preview._expandedDatabaseFindState = null;
+        preview.PreviewFindSourceChanged(args);
         _ = preview.ReloadAsync();
     }
 
-    private void Stop()
+    private void Stop(bool keepDatabase = false)
     {
+        StopPreviewFindRendering();
         _load?.Cancel();
         _load?.Dispose();
         _load = null;
+        if (keepDatabase) return;
         _native?.Dispose();
         _native = null;
         _nativeHost?.Dispose();
@@ -90,6 +99,7 @@ public partial class FileDocumentPreview : System.Windows.Controls.UserControl
         _archiveChild?.Stop();
         _databaseView?.Dispose();
         _databaseView = null;
+        _databaseSourcePath = null;
         _archiveChild = null;
         _archiveLease?.Dispose();
         _archiveLease = null;
@@ -102,7 +112,10 @@ public partial class FileDocumentPreview : System.Windows.Controls.UserControl
     private async Task ReloadAsync(int? page = null)
     {
         if (!IsLoaded || !IsVisible) return;
-        Stop();
+        bool keepDatabase = _databaseView is not null && ReferenceEquals(Body.Content, _databaseView) &&
+            _document?.Kind == DocumentPreviewKind.Database &&
+            string.Equals(_databaseSourcePath, Result?.FullPath, StringComparison.OrdinalIgnoreCase);
+        Stop(keepDatabase);
         _document = null;
         PageControls.Visibility = ZoomControls.Visibility = PartSelector.Visibility = AnimationButton.Visibility = Visibility.Collapsed;
         var result = Result;
@@ -135,7 +148,8 @@ public partial class FileDocumentPreview : System.Windows.Controls.UserControl
             switch (document.Kind)
             {
                 case DocumentPreviewKind.Database:
-                    _databaseView = new DatabasePreviewControl();
+                    _databaseView ??= new DatabasePreviewControl();
+                    _databaseSourcePath = result.FullPath;
                     Body.Content = _databaseView;
                     await _databaseView.InitializeAsync(result.FullPath, _expandedDatabaseLocation ?? hit?.Snippet?.Locator?.Database ?? hit?.Locator?.Database ?? hit?.Anchor?.Database, token);
                     _expandedDatabaseLocation = null;
@@ -147,7 +161,15 @@ public partial class FileDocumentPreview : System.Windows.Controls.UserControl
                     _zoom = 1;
                     _fitImage = true;
                     _imageBox = new Viewbox { Stretch = Stretch.Uniform, Child = new System.Windows.Controls.Image { Source = document.Image } };
+                    if (document.Kind == DocumentPreviewKind.Pdf)
+                    {
+                        var surface = new Grid { Width = document.Image!.PixelWidth, Height = document.Image.PixelHeight, ClipToBounds = true };
+                        surface.Children.Add(new System.Windows.Controls.Image { Source = document.Image, Stretch = Stretch.Fill });
+                        _imageBox.Child = surface;
+                        CreatePdfSurface(document, surface);
+                    }
                     var scroll = new ScrollViewer { Content = _imageBox, HorizontalScrollBarVisibility = ScrollBarVisibility.Auto, VerticalScrollBarVisibility = ScrollBarVisibility.Auto };
+                    if (document.Kind == DocumentPreviewKind.Pdf) _pdfScroll = scroll;
                     scroll.SizeChanged += (_, _) => FitImage(scroll);
                     scroll.ScrollChanged += (_, _) => FitImage(scroll);
                     Body.Content = scroll;
@@ -225,10 +247,15 @@ public partial class FileDocumentPreview : System.Windows.Controls.UserControl
                     break;
             }
             token.ThrowIfCancellationRequested();
+            // The document has loaded. Optional Find owns its own deadline and must
+            // not turn a usable preview into a load failure when Find takes too long.
             _load?.CancelAfter(Timeout.InfiniteTimeSpan);
+            await InitializePreviewFindAsync(hit, token);
+            token.ThrowIfCancellationRequested();
+            await RestorePdfViewportAsync(token);
             PreviewState = document.Kind == DocumentPreviewKind.Shell && _native is null ? "Unavailable" : document.Kind.ToString();
             Status.Text = document.IsTruncated ? "Showing the first 250,000 characters. Use Open to view the rest." :
-                document.Kind == DocumentPreviewKind.Pdf ? "Whole PDF page · Read-only" :
+                document.Kind == DocumentPreviewKind.Pdf ? PdfStatus() :
                 document.Kind == DocumentPreviewKind.Details || PreviewState == "Unavailable" ? "File details / text fallback" :
                 document.Kind == DocumentPreviewKind.Image ? $"{document.Image!.PixelWidth:n0} × {document.Image.PixelHeight:n0} preview pixels · Read-only" : "Read-only file preview";
         }
@@ -271,6 +298,20 @@ public partial class FileDocumentPreview : System.Windows.Controls.UserControl
             Padding = new Thickness(8),
             VerticalScrollBarVisibility = ScrollBarVisibility.Auto,
         };
+        void ApplyEditorPalette()
+        {
+            editor.SyntaxHighlighting = SystemParameters.HighContrast ? null : definition;
+            editor.Background = SystemParameters.HighContrast ? System.Windows.SystemColors.WindowBrush : System.Windows.Media.Brushes.WhiteSmoke;
+            editor.Foreground = SystemParameters.HighContrast ? System.Windows.SystemColors.WindowTextBrush : System.Windows.Media.Brushes.Black;
+            editor.TextArea.TextView.InvalidateLayer(ICSharpCode.AvalonEdit.Rendering.KnownLayer.Background);
+        }
+        void OnSystemPaletteChanged(object? sender, System.ComponentModel.PropertyChangedEventArgs args)
+        {
+            if (args.PropertyName == nameof(SystemParameters.HighContrast)) editor.Dispatcher.BeginInvoke(ApplyEditorPalette);
+        }
+        ApplyEditorPalette();
+        editor.Loaded += (_, _) => SystemParameters.StaticPropertyChanged += OnSystemPaletteChanged;
+        editor.Unloaded += (_, _) => SystemParameters.StaticPropertyChanged -= OnSystemPaletteChanged;
         System.Windows.Automation.AutomationProperties.SetName(editor, "Read-only file contents");
         Body.Content = editor;
     }
@@ -405,6 +446,8 @@ public partial class FileDocumentPreview : System.Windows.Controls.UserControl
                 _expandedWorkbook = (Body.Content as SpreadsheetPreviewControl)?.CurrentPosition,
                 _expandedDatabaseLocation = _databaseView?.CurrentLocation,
                 _expandedDatabaseFindState = _databaseView?.CaptureFindState(),
+                _expandedPreviewFindState = CapturePreviewFindState(),
+                _expandedPdfView = CapturePdfView(),
                 ArchiveDepth = ArchiveDepth,
                 DisplayNameOverride = DisplayNameOverride
             },

@@ -150,6 +150,7 @@ public sealed partial class SearchViewModel : ObservableObject, IDisposable
             _fileTypeOptionsStore.Save(_fileTypeOptions);
         }
         AdditionalPlainTextExtensions = string.Join("; ", _fileTypeOptions.AdditionalPlainTextExtensions);
+        InitializeLocationSelections();
 
         // Seed the input fields with the most recent full saved search when
         // available; older settings files fall back to query/path history.
@@ -582,7 +583,8 @@ public sealed partial class SearchViewModel : ObservableObject, IDisposable
     public string OpenPreviewTargetText =>
         CurrentPreviewLine?.LineNumber is { } line ? $"Open at line {line:n0}" : "Open";
 
-    public Hit? CurrentPreviewHit => CurrentPreviewLine?.SourceHit is { } hit &&
+    public Hit? CurrentPreviewHit => _handoffPreviewHit is { } preferred && SelectedFile?.Hits.Contains(preferred) == true ? preferred :
+        CurrentPreviewLine?.SourceHit is { } hit &&
         SelectedFile?.Hits.Contains(hit) == true
             ? hit : SelectedFile?.Hits.FirstOrDefault(hit => hit.Kind == HitKind.Content);
 
@@ -732,6 +734,7 @@ public sealed partial class SearchViewModel : ObservableObject, IDisposable
 
     partial void OnSelectedFileChanged(FileResultViewModel? value)
     {
+        _handoffPreviewHit = null;
         OnPropertyChanged(nameof(HasSelectedFile));
         OnPropertyChanged(nameof(CurrentPreviewHit));
         CopyFileContentCommand.NotifyCanExecuteChanged();
@@ -759,6 +762,7 @@ public sealed partial class SearchViewModel : ObservableObject, IDisposable
 
     partial void OnCurrentPreviewLineChanged(PreviewLineViewModel? value)
     {
+        if (value is not null) _handoffPreviewHit = null;
         if (_markedPreviewLine is not null)
             _markedPreviewLine.IsCurrent = false;
         _markedPreviewLine = value;
@@ -783,7 +787,9 @@ public sealed partial class SearchViewModel : ObservableObject, IDisposable
         _previewMatchLines = filteredMatches.Length > 0 ? filteredMatches : lines.Where(line => line.IsHit).ToArray();
         _markedPreviewLine = null;
         PreviewLines = lines;
-        CurrentPreviewLine = _previewMatchLines.Length > 0 ? _previewMatchLines[0] : null;
+        CurrentPreviewLine = _handoffPreviewHit is { } preferred
+            ? _previewMatchLines.FirstOrDefault(line => ReferenceEquals(line.SourceHit, preferred)) ?? _previewMatchLines.FirstOrDefault()
+            : _previewMatchLines.FirstOrDefault();
 
         OnPropertyChanged(nameof(HasPreviewLines));
         OnPropertyChanged(nameof(PreviewMatchCount));
@@ -990,7 +996,10 @@ public sealed partial class SearchViewModel : ObservableObject, IDisposable
     private void UseLocation(string? path)
     {
         if (!string.IsNullOrWhiteSpace(path))
+        {
             SearchPath = path;
+            SelectedLocationScope = LocationScopeKind.SelectedFolder;
+        }
     }
 
     /// <summary>Pins the folder being searched to Locations.</summary>
@@ -1311,7 +1320,10 @@ public sealed partial class SearchViewModel : ObservableObject, IDisposable
     {
         var folder = _folderPicker.PickFolder("Select folder to search", SearchPath);
         if (folder is not null)
+        {
             SearchPath = folder;
+            SelectedLocationScope = LocationScopeKind.SelectedFolder;
+        }
     }
 
     /// <summary>Opens an explicit query handed off by an external launcher.</summary>
@@ -1325,6 +1337,8 @@ public sealed partial class SearchViewModel : ObservableObject, IDisposable
 
         if (root is not null)
             SearchPath = root;
+        SelectedLocationScope = LocationScopeKind.SelectedFolder;
+        UseQuickSearchMatching = false;
         QueryText = query;
         SearchMode = target == SearchTarget.FileNames ? QueryMode.PlainText : QueryMode.Unified;
         SetSearchTargets([target]);
@@ -1348,8 +1362,16 @@ public sealed partial class SearchViewModel : ObservableObject, IDisposable
     [RelayCommand(CanExecute = nameof(CanSearch))]
     private async Task SearchAsync()
     {
-        if (string.IsNullOrWhiteSpace(QueryText) || string.IsNullOrWhiteSpace(SearchPath))
+        if (string.IsNullOrWhiteSpace(QueryText) || (IsFolderLocationScope && string.IsNullOrWhiteSpace(SearchPath)))
             return;
+
+        RefreshLocationSelections();
+        var locationScope = SelectedLocationScope;
+        string selectedFolder = SearchPath, searchText = QueryText;
+        var selectedRoots = SelectedIndexedRoots.ToArray();
+        var registeredRoots = _registeredLocationRoots.ToArray();
+        var mode = SearchMode;
+        bool matchCase = MatchCase, useIndex = UseIndex, quickMatching = UseQuickSearchMatching;
 
         _searchCts?.Cancel();
         _searchCts = new CancellationTokenSource();
@@ -1383,7 +1405,7 @@ public sealed partial class SearchViewModel : ObservableObject, IDisposable
         Query query;
         try
         {
-            query = _queryFactory.Build(QueryText, SearchMode, MatchCase);
+            query = _queryFactory.Build(searchText, mode, matchCase);
         }
         catch (Exception ex)
         {
@@ -1401,11 +1423,31 @@ public sealed partial class SearchViewModel : ObservableObject, IDisposable
         var stopwatch = Stopwatch.StartNew();
         var routeStatus = string.Empty;
         var searchTargets = CurrentSearchTargets;
-        var routing = new SearchRouteSummary(SearchPath, searchTargets);
+        var walkerOptions = searchTargets.ToDictionary(target => target, BuildWalkerOptions);
+        var semanticOptions = IsSemanticMode ? new SemanticSearchOptions(SemanticMinimumScore, SemanticMaximumResults) : null;
+        var routing = new SearchRouteSummary(locationScope == LocationScopeKind.SelectedFolder ? selectedFolder : locationScope.ToString(), searchTargets);
         _searchRouting = routing;
         NotifySearchCoverageChanged();
         try
         {
+            var resolution = await SearchLocationResolver.ResolveAsync(locationScope, selectedFolder, selectedRoots, registeredRoots, token).ConfigureAwait(true);
+            token.ThrowIfCancellationRequested();
+            var roots = resolution.Roots;
+            _lastSearchRoots = roots.ToArray();
+            _lastSearchLocationScope = locationScope;
+            _lastSearchText = searchText;
+            _lastSearchFolder = selectedFolder;
+            _lastUseQuickSearchMatching = quickMatching;
+            if (SelectedLocationScope == locationScope && SelectedIndexedRoots.SequenceEqual(selectedRoots, StringComparer.OrdinalIgnoreCase))
+                _locationRunNotice = resolution.Notice;
+            OnPropertyChanged(nameof(LocationScopeNotice));
+            routing.Root = locationScope == LocationScopeKind.SelectedFolder ? selectedFolder : string.Join("; ", roots);
+            if (!string.IsNullOrWhiteSpace(resolution.Notice))
+            {
+                routeStatus = resolution.Notice;
+                routing.ReportOutcome(resolution.Notice);
+            }
+            if (roots.Count == 0) { _status.Text = resolution.Notice; return; }
             IProgress<SearchProgress> progress = new Progress<SearchProgress>(UpdateProgressStatus);
             IProgress<string?> routeProgress = new Progress<string?>(message =>
             {
@@ -1419,9 +1461,13 @@ public sealed partial class SearchViewModel : ObservableObject, IDisposable
                 }
                 NotifySearchCoverageChanged();
             });
-            var semanticOptions = IsSemanticMode
-                ? new SemanticSearchOptions(SemanticMinimumScore, SemanticMaximumResults)
-                : null;
+            var requests = searchTargets.Select(searchTarget => new SearchRequest(
+                quickMatching && searchTarget != SearchTarget.Content ? new QuickSearchNameQuery(searchText, matchCase) : query,
+                roots, walkerOptions[searchTarget], progress.Report, useIndex,
+                message => { routing.ReportStatus(searchTarget, message); routeProgress.Report(message); },
+                quickMatching && searchTarget != SearchTarget.Content ? null : searchText,
+                quickMatching && searchTarget != SearchTarget.Content ? null : mode,
+                searchTarget, semanticOptions, MatchFilePaths: quickMatching && searchTarget != SearchTarget.Content)).ToArray();
 
             // Consume the hit stream on the thread pool and flush to the UI
             // in timed batches. The hand-off channel is bounded so the engine
@@ -1435,32 +1481,29 @@ public sealed partial class SearchViewModel : ObservableObject, IDisposable
                 FullMode = BoundedChannelFullMode.Wait,
             });
             long hitsFound = 0;
+            bool dedupLimitReached = false;
             var consumer = Task.Run(async () =>
             {
                 try
                 {
-                    foreach (var searchTarget in searchTargets)
+                    var seen = new HashSet<SearchHitIdentity>();
+                    foreach (var request in requests)
                     {
-                        var request = new SearchRequest(
-                            query,
-                            new[] { SearchPath },
-                            BuildWalkerOptions(searchTarget),
-                            progress.Report,
-                            UseIndex,
-                            message =>
-                            {
-                                routing.ReportStatus(searchTarget, message);
-                                routeProgress.Report(message);
-                            },
-                            QueryText,
-                            SearchMode,
-                            searchTarget,
-                            semanticOptions);
-
+                        var searchTarget = request.SearchTarget;
                         var reportedLive = false;
                         var reportedIndexed = false;
                         await foreach (var hit in _searcher.SearchAsync(request, token).ConfigureAwait(false))
                         {
+                            if (roots.Count > 1)
+                            {
+                                if (!seen.Add(SearchHitIdentity.Create(hit))) continue;
+                                if (seen.Count > MaxRetainedHits)
+                                {
+                                    dedupLimitReached = true;
+                                    routing.ReportOutcome("Partial: the 100,000 unique-hit limit was reached for this multi-location search");
+                                    return;
+                                }
+                            }
                             if (hit.Route == HitRoute.Indexed ? !reportedIndexed : !reportedLive)
                             {
                                 routing.ReportHit(searchTarget, hit.Route);
@@ -1504,6 +1547,7 @@ public sealed partial class SearchViewModel : ObservableObject, IDisposable
             }
 
             await consumer.ConfigureAwait(true); // surface cancellation/errors
+            if (dedupLimitReached) routeStatus = "Partial: the 100,000 unique-hit limit was reached";
             UpdateHiddenHits(Interlocked.Read(ref hitsFound));
 
             stopwatch.Stop();
@@ -1535,6 +1579,7 @@ public sealed partial class SearchViewModel : ObservableObject, IDisposable
                 RefreshFilesView();
 
             IsSearching = false;
+            RestoreHandoffSelection();
             NotifySearchCoverageChanged();
             SearchCommand.NotifyCanExecuteChanged();
             CancelCommand.NotifyCanExecuteChanged();
@@ -1557,7 +1602,11 @@ public sealed partial class SearchViewModel : ObservableObject, IDisposable
 
     internal void RemapReplacementPaths(string oldPath, string newPath, bool directory)
     {
-        SearchPath = ReplacementViewModel.Remap(SearchPath, oldPath, newPath, directory);
+        _locationInputUpdateDepth++;
+        try { SearchPath = ReplacementViewModel.Remap(SearchPath, oldPath, newPath, directory); }
+        finally { _locationInputUpdateDepth--; }
+        var selected = SelectedIndexedRoots.Select(path => ReplacementViewModel.Remap(path, oldPath, newPath, directory)).ToArray();
+        if (!SelectedIndexedRoots.SequenceEqual(selected, StringComparer.OrdinalIgnoreCase)) ApplyLocationScope(SelectedLocationScope, selected);
         foreach (var file in Files)
         {
             var path = ReplacementViewModel.Remap(file.FullPath, oldPath, newPath, directory);
@@ -1854,6 +1903,9 @@ public sealed partial class SearchViewModel : ObservableObject, IDisposable
         {
             QueryText = QueryText,
             SearchPath = SearchPath,
+            LocationScope = SelectedLocationScope,
+            SelectedIndexedRoots = SelectedIndexedRoots.ToList(),
+            UseQuickSearchMatching = UseQuickSearchMatching,
             FileNamePattern = FileNamePattern,
             ExcludeFileNamePattern = ExcludeFileNamePattern,
             IncludeSubfolders = IncludeSubfolders,
@@ -1903,6 +1955,10 @@ public sealed partial class SearchViewModel : ObservableObject, IDisposable
         ModifiedBefore = search.ModifiedBefore == default ? DateTime.Today : search.ModifiedBefore;
         AdditionalPlainTextExtensions = search.AdditionalPlainTextExtensions?.Trim() ?? string.Empty;
         SearchMode = search.SearchMode;
+        if (search.GetLocationScope() != LocationScopeKind.SelectedFolder || search.GetSelectedIndexedRoots().Count > 0)
+            ApplyLocationScope(search.GetLocationScope(), search.GetSelectedIndexedRoots());
+        else SelectedLocationScope = LocationScopeKind.SelectedFolder;
+        UseQuickSearchMatching = search.UseQuickSearchMatching && SearchMode == QueryMode.PlainText;
         EnsureSemanticSearchOptions();
 
         if (_isInitialized)
@@ -1928,12 +1984,14 @@ public sealed partial class SearchViewModel : ObservableObject, IDisposable
                 .Select(path => path.Trim())
                 .Distinct(StringComparer.OrdinalIgnoreCase)
                 .ToList();
-            settings.QuickSearchSelectedIndexedRoots = workspace.QuickSearchSelectedIndexedRoots
+            settings.QuickSearchSelectedIndexedRoots = (workspace.Search.GetLocationScope() == LocationScopeKind.SelectedIndexedLocations
+                    ? workspace.Search.GetSelectedIndexedRoots() : workspace.QuickSearchSelectedIndexedRoots)
                 .Where(path => !string.IsNullOrWhiteSpace(path))
                 .Select(path => path.Trim())
                 .Distinct(StringComparer.OrdinalIgnoreCase)
                 .ToList();
         });
+        RefreshLocationSelections();
 
         foreach (var file in Files)
         {
@@ -1948,9 +2006,9 @@ public sealed partial class SearchViewModel : ObservableObject, IDisposable
             return;
         }
 
-        if (string.IsNullOrWhiteSpace(QueryText) || string.IsNullOrWhiteSpace(SearchPath))
+        if (string.IsNullOrWhiteSpace(QueryText) || (IsFolderLocationScope && string.IsNullOrWhiteSpace(SearchPath)))
         {
-            _status.Text = $"Workspace loaded: {workspace.DisplayName}, but it needs search text and a folder before it can run.";
+            _status.Text = $"Workspace loaded: {workspace.DisplayName}, but it needs search text and a location before it can run.";
             return;
         }
 
@@ -1966,13 +2024,19 @@ public sealed partial class SearchViewModel : ObservableObject, IDisposable
 
     public void Dispose()
     {
+        if (_isDisposed) return;
         _isDisposed = true;
+        _searchCts?.Cancel();
+        _previewCts?.Cancel();
+        _refinementDebounceCts?.Cancel();
         foreach (var file in Files)
             file.MetadataLoaded -= OnResultMetadataLoaded;
         _searchCts?.Dispose();
         _previewCts?.Dispose();
         _refinementDebounceCts?.Dispose();
         _history.FavoriteResults.CollectionChanged -= OnFavoriteResultsChanged;
+        SelectedIndexedRoots.CollectionChanged -= OnSelectedIndexedRootsChanged;
+        foreach (var row in LocationSelections) row.PropertyChanged -= OnLocationSelectionChanged;
     }
 
     // ----- helpers -----
@@ -2351,12 +2415,17 @@ public sealed partial class SearchViewModel : ObservableObject, IDisposable
     private string RenderExportJson(IReadOnlyList<FileResultViewModel> files)
     {
         var document = new SearchResultsExportDocument(
-            QueryText.Trim(),
-            SearchPath,
+            _lastSearchText?.Trim() ?? QueryText.Trim(),
+            (_lastSearchLocationScope ?? SelectedLocationScope) == LocationScopeKind.SelectedFolder ? ExportFolder : string.Empty,
             DateTime.UtcNow,
             files.Count,
             files.Sum(file => file.HitCount),
-            files.Select(ToExportFile).ToArray());
+            files.Select(ToExportFile).ToArray())
+        {
+            LocationScope = (_lastSearchLocationScope ?? SelectedLocationScope).ToString(),
+            Roots = _lastSearchRoots.Length > 0 ? _lastSearchRoots : IsFolderLocationScope ? [SearchPath] : SelectedIndexedRoots.ToArray(),
+            UseQuickSearchMatching = _lastSearchLocationScope.HasValue ? _lastUseQuickSearchMatching : UseQuickSearchMatching,
+        };
         return JsonSerializer.Serialize(document, s_exportJsonOptions);
     }
 
@@ -2400,8 +2469,10 @@ public sealed partial class SearchViewModel : ObservableObject, IDisposable
         var sb = new StringBuilder();
         sb.AppendLine("# FileSearch Results");
         sb.AppendLine();
-        sb.AppendLine(CultureInfo.InvariantCulture, $"- Query: {QueryText.Trim()}");
-        sb.AppendLine(CultureInfo.InvariantCulture, $"- Folder: {SearchPath}");
+        sb.AppendLine(CultureInfo.InvariantCulture, $"- Query: {_lastSearchText?.Trim() ?? QueryText.Trim()}");
+        if ((_lastSearchLocationScope ?? SelectedLocationScope) == LocationScopeKind.SelectedFolder)
+            sb.AppendLine(CultureInfo.InvariantCulture, $"- Folder: {ExportFolder}");
+        else sb.AppendLine(CultureInfo.InvariantCulture, $"- Locations: {string.Join("; ", _lastSearchRoots)} ({_lastSearchLocationScope ?? SelectedLocationScope})");
         sb.AppendLine(CultureInfo.InvariantCulture, $"- Exported: {DateTime.UtcNow:yyyy-MM-dd HH:mm:ss}Z");
         sb.AppendLine(CultureInfo.InvariantCulture, $"- Files: {files.Count:n0}");
         sb.AppendLine(CultureInfo.InvariantCulture, $"- Hits: {files.Sum(file => file.HitCount):n0}");
@@ -2958,6 +3029,7 @@ public sealed partial class SearchViewModel : ObservableObject, IDisposable
 
     partial void OnSearchModeChanged(QueryMode value)
     {
+        if (value != QueryMode.PlainText) UseQuickSearchMatching = false;
         EnsureSemanticSearchOptions();
         OnPropertyChanged(nameof(IsRegexMode));
         OnPropertyChanged(nameof(IsSemanticMode));
@@ -3023,6 +3095,7 @@ public sealed partial class SearchViewModel : ObservableObject, IDisposable
 
     partial void OnQueryTextChanged(string value)
     {
+        _handoffSelection = null;
         OnPropertyChanged(nameof(ResultsContextText));
         OnPropertyChanged(nameof(ResultsHeadlineText));
         OnPropertyChanged(nameof(QueryMeaningText));
@@ -3031,6 +3104,8 @@ public sealed partial class SearchViewModel : ObservableObject, IDisposable
 
     partial void OnSearchPathChanged(string value)
     {
+        if (_isInitialized && _locationInputUpdateDepth == 0) SelectedLocationScope = LocationScopeKind.SelectedFolder;
+        NotifySearchGuidanceChanged();
         if (!string.Equals(SelectedRecentPath, value, StringComparison.OrdinalIgnoreCase))
             SelectedRecentPath = value;
     }

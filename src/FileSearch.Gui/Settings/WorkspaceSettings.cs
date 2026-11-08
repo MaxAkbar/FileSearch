@@ -41,9 +41,9 @@ public sealed class WorkspaceSettings
         get
         {
             var query = string.IsNullOrWhiteSpace(Search.QueryText) ? "empty query" : Search.QueryText.Trim();
-            var path = string.IsNullOrWhiteSpace(Search.SearchPath) ? "no folder" : Search.SearchPath.Trim();
+            var path = Search.LocationSummary;
             var run = RunOnLoad ? "runs on load" : "manual run";
-            return $"{run} | {query} | {path}";
+            return $"{run} | {query} | {path}" + (Search.UseQuickSearchMatching ? " | Quick Search matching" : "");
         }
     }
 }

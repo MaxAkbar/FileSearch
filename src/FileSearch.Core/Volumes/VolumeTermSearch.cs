@@ -7,6 +7,7 @@ using System.Linq;
 using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
+using FileSearch.Core.Queries;
 using FileSearch.Core.Walker;
 
 namespace FileSearch.Core.Volumes;
@@ -228,11 +229,12 @@ internal static class VolumeTermSearch
             : null;
         var maxResults = Math.Max(1, request.MaxResults);
 
-        // Name scores decide the candidates; depth then reorders them, which
-        // keeps a shallow user file ahead of an equally named one buried in
-        // a package cache without walking the parent chain of every match.
+        // Admission and final ordering use the same bounded complete score.
+        // A better shallow candidate must not be discarded before a later
+        // depth rerank, and record IDs make equal-score admission deterministic.
+        var ranking = QuickSearchNameRanking.Compile(request.Text);
         var candidateCount = Math.Min(maxResults * RerankFactor, MaxRerankCandidates);
-        var heaps = new ConcurrentBag<PriorityQueue<int, double>>();
+        var heaps = new ConcurrentBag<PriorityQueue<int, (double Score, int Tie)>>();
         long total = 0;
 
         try
@@ -240,7 +242,7 @@ internal static class VolumeTermSearch
             Parallel.ForEach(
                 Partitioner.Create(0, table.HighWater, PartitionSize),
                 new ParallelOptions { CancellationToken = cancellationToken },
-                () => (Heap: new PriorityQueue<int, double>(candidateCount + 1), Count: 0L, Path: new StringBuilder(260)),
+                () => (Heap: new PriorityQueue<int, (double Score, int Tie)>(candidateCount + 1), Count: 0L, Path: new StringBuilder(260)),
                 (range, loopState, local) =>
                 {
                     Span<char> nameBuffer = stackalloc char[VolumeNameTable.MaxNameLength];
@@ -278,14 +280,14 @@ internal static class VolumeTermSearch
                         }
 
                         local.Count++;
-                        var score = Score(name, nameMask, terms.NameTerms);
+                        var priority = (Score: ranking.ScoreName(name, isDirectory, BoundedDepth(table, record)), Tie: -record);
                         if (local.Heap.Count < candidateCount)
                         {
-                            local.Heap.Enqueue(record, score);
+                            local.Heap.Enqueue(record, priority);
                         }
-                        else if (local.Heap.TryPeek(out _, out var lowest) && score > lowest)
+                        else if (local.Heap.TryPeek(out _, out var lowest) && priority.CompareTo(lowest) > 0)
                         {
-                            local.Heap.DequeueEnqueue(record, score);
+                            local.Heap.DequeueEnqueue(record, priority);
                         }
                     }
 
@@ -305,14 +307,13 @@ internal static class VolumeTermSearch
         var ranked = new List<(int Record, double Score)>();
         foreach (var heap in heaps)
         {
-            while (heap.TryDequeue(out var record, out var score))
-                ranked.Add((record, score));
+            while (heap.TryDequeue(out var record, out var priority))
+                ranked.Add((record, priority.Score));
         }
 
         var builder = new StringBuilder(260);
         var matches = new List<VolumeTermMatch>(Math.Min(ranked.Count, maxResults));
         foreach (var (record, score) in ranked
-                     .Select(item => (item.Record, Score: item.Score - DepthPenalty * Math.Max(table.DepthBelow(item.Record, table.RootRecord), 0)))
                      .OrderByDescending(item => item.Score)
                      .ThenBy(item => item.Record)
                      .Take(maxResults))
@@ -326,7 +327,18 @@ internal static class VolumeTermSearch
 
     private const int RerankFactor = 4;
     private const int MaxRerankCandidates = 4_000;
-    private const double DepthPenalty = 8;
+
+    private static int BoundedDepth(VolumeNameTable table, int record)
+    {
+        int depth = 0;
+        while (record != table.RootRecord && (uint)record < (uint)table.HighWater &&
+               depth < QuickSearchNameRanking.MaxScoredDepth)
+        {
+            depth++;
+            record = table.ParentOf(record);
+        }
+        return depth;
+    }
 
     internal static int NameMask(ReadOnlySpan<char> name, string[] terms)
     {
@@ -338,35 +350,6 @@ internal static class VolumeTermSearch
         }
 
         return mask;
-    }
-
-    /// <summary>
-    /// Higher is better: more terms in the entry's own name, exact and
-    /// prefix matches, then shorter names.
-    /// </summary>
-    internal static double Score(ReadOnlySpan<char> name, int nameMask, string[] terms)
-    {
-        var matched = System.Numerics.BitOperations.PopCount((uint)nameMask);
-        var score = 1000.0 * matched / terms.Length;
-        var stem = name;
-        var dot = name.LastIndexOf('.');
-        if (dot > 0)
-            stem = name[..dot];
-
-        foreach (var term in terms)
-        {
-            if (name.Equals(term, StringComparison.OrdinalIgnoreCase) ||
-                stem.Equals(term, StringComparison.OrdinalIgnoreCase))
-            {
-                score += 400;
-                break;
-            }
-        }
-
-        if (name.StartsWith(terms[0], StringComparison.OrdinalIgnoreCase))
-            score += 150;
-
-        return score - Math.Min(name.Length, 255);
     }
 
     private static bool MatchesPathTerms(

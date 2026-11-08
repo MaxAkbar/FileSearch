@@ -18,8 +18,8 @@ namespace FileSearch.Gui.Controls;
 public sealed partial class DatabasePreviewControl : DockPanel, IDisposable
 {
     private readonly ComboBox _tables = new() { Name = "DatabaseTableSelector", MinWidth = 100, MaxWidth = 260, Height = 28, DisplayMemberPath = nameof(DatabaseTable.Name) };
-    private readonly TextBox _rowAddress = new() { Width = 75, Height = 28, Margin = new Thickness(4, 0, 0, 0) };
-    private readonly TextBlock _status = new() { Margin = new Thickness(6, 4, 6, 4), FontSize = 12, TextWrapping = TextWrapping.Wrap };
+    private readonly TextBox _rowAddress = new() { Name = "DatabaseRowAddress", Width = 75, Height = 28, Margin = new Thickness(4, 0, 0, 0) };
+    private readonly TextBlock _status = new() { Name = "DatabaseLoadingStatus", Margin = new Thickness(6, 4, 6, 4), FontSize = 12, TextWrapping = TextWrapping.Wrap };
     private readonly DataGrid _grid = new()
     {
         Name = "DatabaseRecordsGrid",
@@ -34,11 +34,13 @@ public sealed partial class DatabasePreviewControl : DockPanel, IDisposable
         MinColumnWidth = 60,
         MaxColumnWidth = 400,
     };
-    private readonly Button _previous, _next, _go;
+    private readonly Button _previous, _next, _go, _stopLoading;
     private readonly CancellationTokenSource _lifetime = new();
     private CancellationTokenSource? _pageLoad;
     private CancellationTokenSource? _openingLoad;
     private DatabaseReadSession? _session;
+    private string? _sourcePath;
+    private bool _loadingStopped;
     private long _row = 1, _pageStart = 1;
     private string _column = "", _rowKey = "";
     private int _generation, _sourceGeneration;
@@ -57,6 +59,9 @@ public sealed partial class DatabasePreviewControl : DockPanel, IDisposable
         _previous = AddButton(toolbar, "‹ Rows", () => _ = LoadPageAsync(Math.Max(1, _pageStart - PageSize), _lifetime.Token));
         _next = AddButton(toolbar, "Rows ›", () => _ = LoadPageAsync(_pageStart + PageSize, _lifetime.Token));
         AddButton(toolbar, "Find in table", ToggleFind).Name = "DatabaseFindToggleButton";
+        _stopLoading = AddButton(toolbar, "Stop loading", CancelLoading);
+        _stopLoading.Name = "DatabaseStopLoadingButton";
+        _stopLoading.Visibility = Visibility.Collapsed;
         SetDock(toolbar, Dock.Top); SetDock(_status, Dock.Bottom);
         Children.Add(toolbar); Children.Add(CreateFindPanel()); Children.Add(_status); Children.Add(_grid);
         foreach (var control in new Control[] { _tables, _rowAddress, _grid })
@@ -99,6 +104,8 @@ public sealed partial class DatabasePreviewControl : DockPanel, IDisposable
         System.Windows.Automation.AutomationProperties.SetName(_tables, "Database table");
         System.Windows.Automation.AutomationProperties.SetName(_rowAddress, "Database row number");
         System.Windows.Automation.AutomationProperties.SetName(_grid, "Read-only database records");
+        System.Windows.Automation.AutomationProperties.SetName(_stopLoading, "Stop loading database preview");
+        System.Windows.Automation.AutomationProperties.SetLiveSetting(_status, System.Windows.Automation.AutomationLiveSetting.Polite);
         SizeChanged += (_, _) => _ = KeepCurrentCellVisibleAsync();
         Unloaded += (_, _) => Dispose();
     }
@@ -115,16 +122,57 @@ public sealed partial class DatabasePreviewControl : DockPanel, IDisposable
         _openingLoad = opening;
         var openingToken = opening.Token;
         var previous = _session; _session = null;
+        string? previousPath = _sourcePath;
+        string fullPath = System.IO.Path.GetFullPath(path);
+        _sourcePath = fullPath;
+        bool preserveGrid = previous is not null && string.Equals(previousPath, fullPath, StringComparison.OrdinalIgnoreCase) &&
+            (location is null || location.Fingerprint == previous.Fingerprint);
         _settingTable = true; _tables.ItemsSource = null; _settingTable = false;
-        _grid.ItemsSource = null;
+        if (!preserveGrid) _grid.ItemsSource = null;
+        _grid.IsEnabled = false;
         PreviewState = "Loading";
+        _loadingStopped = false;
+        _stopLoading.Visibility = Visibility.Visible;
         UpdateFindControls();
         _status.Text = "Reading a private database snapshot…";
+        int? initialPageGeneration = null;
         try
         {
-            if (previous is not null) await CloseAsync(previous);
+            DatabaseReadSession session;
+            bool reuse = false;
+            if (previous is not null)
+            {
+                try
+                {
+                    reuse = await Task.Run(() => string.Equals(previousPath, fullPath, StringComparison.OrdinalIgnoreCase) &&
+                        (location is null || location.Fingerprint == previous.Fingerprint) &&
+                        DatabaseFiles.Fingerprint(fullPath) == previous.Fingerprint, openingToken);
+                }
+                catch
+                {
+                    var failed = previous; previous = null;
+                    await CloseAsync(failed); throw;
+                }
+                if (!reuse)
+                {
+                    if (source == _sourceGeneration && !_disposed) _grid.ItemsSource = null;
+                    var expired = previous; previous = null; await CloseAsync(expired);
+                }
+            }
             openingToken.ThrowIfCancellationRequested();
-            var session = await Task.Run(() => DatabaseReadSession.OpenAsync(path, location?.Fingerprint, openingToken), openingToken);
+            var progress = new Progress<DatabasePreparationProgress>(value =>
+            {
+                if (_disposed || source != _sourceGeneration || openingToken.IsCancellationRequested || !ReferenceEquals(_openingLoad, opening)) return;
+                _status.Text = value.Stage switch
+                {
+                    DatabasePreparationStage.Snapshot => $"Copying a private snapshot · {value.BytesCopied / 1048576d:n1} / {value.TotalBytes / 1048576d:n1} MB…",
+                    DatabasePreparationStage.Engine => "Opening the private database snapshot…",
+                    DatabasePreparationStage.Schema => "Reading database tables and columns…",
+                    _ => "Checking that the source database is unchanged…",
+                };
+            });
+            session = reuse ? previous! : await Task.Run(() => DatabaseReadSession.OpenAsync(fullPath, location?.Fingerprint, progress, openingToken), openingToken);
+            previous = null;
             if (openingToken.IsCancellationRequested || source != _sourceGeneration || _disposed)
             { await session.DisposeAsync(); openingToken.ThrowIfCancellationRequested(); return; }
             _session = session;
@@ -134,12 +182,56 @@ public sealed partial class DatabasePreviewControl : DockPanel, IDisposable
             _settingTable = false;
             _column = location?.Column ?? "";
             _rowKey = location?.RowKey ?? "";
-            _row = location?.RowNumber ?? 1;
+            long requestedRow = location?.RowNumber ?? 1;
+            _row = requestedRow;
             SetFindColumns();
             if (session.Tables.Count == 0) { PreviewState = "Empty"; _status.Text = "This database has no supported ordinary SQL tables. Views, virtual tables, and internal tables are excluded."; UpdateFindControls(); return; }
-            await LoadPageAsync(_row, openingToken);
+            var initialPage = LoadPageAsync(requestedRow, openingToken);
+            initialPageGeneration = _generation;
+            bool pageLoaded = await initialPage;
+            openingToken.ThrowIfCancellationRequested();
+            if (source == _sourceGeneration && initialPageGeneration == _generation && !_disposed &&
+                (!pageLoaded || PreviewState is not ("Ready" or "Empty")))
+            {
+                _grid.ItemsSource = null;
+                var failed = _session; _session = null;
+                if (failed is not null) await CloseAsync(failed);
+                if (source != _sourceGeneration || _disposed) return;
+                PreviewState = "Unavailable";
+                _status.Text = "The requested database record could not be loaded. Select the file again to retry.";
+                UpdateFindControls();
+            }
         }
-        finally { if (ReferenceEquals(_openingLoad, opening)) _openingLoad = null; }
+        catch (OperationCanceledException) when (source == _sourceGeneration && !_disposed)
+        {
+            if (initialPageGeneration is { } pageGeneration && pageGeneration != _generation) return;
+            _grid.ItemsSource = null;
+            var canceled = _session; _session = null;
+            if (canceled is not null) await CloseAsync(canceled);
+            if (source != _sourceGeneration || _disposed) return;
+            PreviewState = "Canceled";
+            _status.Text = _loadingStopped ? "Database preview canceled. Select the file again to retry." : "Database preparation canceled or timed out. Select the file again or use a stable backup.";
+            UpdateFindControls();
+        }
+        catch
+        {
+            if (source == _sourceGeneration && !_disposed && (initialPageGeneration is null || initialPageGeneration == _generation)) _grid.ItemsSource = null;
+            throw;
+        }
+        finally
+        {
+            if (previous is not null) await CloseAsync(previous);
+            if (ReferenceEquals(_openingLoad, opening))
+            { _openingLoad = null; _stopLoading.Visibility = _pageLoad is null ? Visibility.Collapsed : Visibility.Visible; }
+        }
+    }
+
+    public void CancelLoading()
+    {
+        if (_disposed) return;
+        _loadingStopped = true;
+        _openingLoad?.Cancel();
+        _pageLoad?.Cancel();
     }
 
     private static Button AddButton(System.Windows.Controls.Panel toolbar, string title, Action action)
@@ -154,9 +246,12 @@ public sealed partial class DatabasePreviewControl : DockPanel, IDisposable
         { _status.Text = "Enter a row number from 1 to 100,000."; return; }
         _ = LoadPageAsync(row, _lifetime.Token);
     }
-    private async Task LoadPageAsync(long row, CancellationToken token, string? selectedColumn = null)
+    private async Task<bool> LoadPageAsync(long row, CancellationToken token, string? selectedColumn = null)
     {
-        if (_disposed || _session is not { } session || _tables.SelectedItem is not DatabaseTable table) return;
+        if (_disposed || _session is not { } session || _tables.SelectedItem is not DatabaseTable table) return false;
+        var measured = PagePhaseMeasured;
+        long totalStarted = StartPreviewPhase(measured);
+        long phaseStarted = StartPreviewPhase(measured);
         string columnToSelect = selectedColumn ?? _column;
         _pageLoad?.Cancel(); _pageLoad?.Dispose();
         _pageLoad = CancellationTokenSource.CreateLinkedTokenSource(token, _lifetime.Token);
@@ -165,46 +260,71 @@ public sealed partial class DatabasePreviewControl : DockPanel, IDisposable
         load.CancelAfter(TimeSpan.FromSeconds(15));
         int generation = ++_generation;
         PreviewState = "Loading";
+        _loadingStopped = false;
+        _stopLoading.Visibility = Visibility.Visible;
         _status.Text = "Loading records…";
         _previous.IsEnabled = _next.IsEnabled = false;
         UpdateFindControls();
         long first = ((Math.Clamp(row, 1, DatabaseFiles.MaxRows) - 1) / PageSize) * PageSize + 1;
+        FinishPreviewPhase(measured, "page.ui-setup", phaseStarted);
         try
         {
-            var page = await Task.Run(() => session.ReadPageAsync(table.Name, first, PageSize, loadToken), loadToken);
+            var (page, data, backgroundFinished) = await Task.Run(async () =>
+            {
+                long queryStarted = StartPreviewPhase(measured);
+                var page = await session.ReadPageAsync(table.Name, first, PageSize, loadToken).ConfigureAwait(false);
+                FinishPreviewPhase(measured, "page.query", queryStarted);
+                long mappingStarted = StartPreviewPhase(measured);
+                var data = CreatePageData(table, page, loadToken);
+                FinishPreviewPhase(measured, "page.mapping", mappingStarted);
+                return (page, data, StartPreviewPhase(measured));
+            }, loadToken);
+            FinishPreviewPhase(measured, "page.ui-resume-wait", backgroundFinished);
             loadToken.ThrowIfCancellationRequested();
-            if (generation != _generation || _disposed) return;
+            if (generation != _generation || _disposed) return false;
+            phaseStarted = StartPreviewPhase(measured);
+            bool sameTable = _grid.Columns.Count == table.Columns.Count + 2 && ReferenceEquals(_grid.Tag, table);
+            bool reuseRows = sameTable && _grid.Columns.All(column => column.SortDirection is null);
+            if (!sameTable)
+            {
+                _grid.Columns.Clear();
+                _grid.Columns.Add(new DataGridTextColumn { Header = "Row", Binding = new Binding("[r]"), SortMemberPath = "r" });
+                _grid.Columns.Add(new DataGridTextColumn { Header = "Record key", Binding = new Binding("[key]"), SortMemberPath = "key", MaxWidth = 220 });
+                for (int index = 0; index < table.Columns.Count; index++)
+                    _grid.Columns.Add(CreateValueColumn("c" + index.ToString(CultureInfo.InvariantCulture), table.Columns[index].Name));
+                _grid.Tag = table;
+            }
+            foreach (var column in _grid.Columns) column.SortDirection = null;
+            FinishPreviewPhase(measured, "page.columns", phaseStarted);
+            phaseStarted = StartPreviewPhase(measured);
+            ApplyPageData(data, reuseRows, loadToken);
+            FinishPreviewPhase(measured, "page.items-source", phaseStarted);
+            if (generation != _generation || _disposed) return false;
             _pageStart = first; _row = row; _column = columnToSelect;
             _rowKey = page.Rows.FirstOrDefault(record => record.Number == row)?.Key ?? "";
             _pageHasMore = page.HasMore;
-            _grid.Columns.Clear();
-            var data = new DataTable { Locale = CultureInfo.InvariantCulture };
-            data.Columns.Add("r", typeof(long)); data.Columns.Add("key");
-            _grid.Columns.Add(new DataGridTextColumn { Header = "Row", Binding = new Binding("[r]"), SortMemberPath = "r" });
-            _grid.Columns.Add(new DataGridTextColumn { Header = "Record key", Binding = new Binding("[key]"), SortMemberPath = "key", MaxWidth = 220 });
-            for (int index = 0; index < table.Columns.Count; index++)
-            {
-                string name = "c" + index.ToString(CultureInfo.InvariantCulture);
-                data.Columns.Add(name);
-                _grid.Columns.Add(CreateValueColumn(name, table.Columns[index].Name));
-            }
-            foreach (var record in page.Rows)
-            {
-                var values = new object[table.Columns.Count + 2]; values[0] = record.Number; values[1] = record.Key;
-                for (int index = 0; index < record.Values.Count; index++) values[index + 2] = record.Values[index] ?? "";
-                data.Rows.Add(values);
-            }
-            _grid.ItemsSource = data.DefaultView;
+            phaseStarted = StartPreviewPhase(measured);
             _rowAddress.Text = row.ToString(CultureInfo.InvariantCulture);
             _status.Text = $"{session.Kind} · {table.Name} · Rows {first:n0}–{first + page.Rows.Count - 1:n0} · Read-only snapshot. Binary and NULL values are blank." +
                 (page.ValuesTruncated ? " Cell text limited to 16,384 characters." : "") + (page.HasMore && first + PageSize > DatabaseFiles.MaxRows ? " Preview stops at 100,000 rows." : "");
             PreviewState = page.Rows.Count == 0 ? "Empty" : "Ready";
             UpdateFindControls();
-            if (page.Rows.Count == 0) { _status.Text = "No rows on this page. Choose a smaller row number or another table."; return; }
+            FinishPreviewPhase(measured, "page.status-controls", phaseStarted);
+            if (page.Rows.Count == 0)
+            {
+                _status.Text = "No rows on this page. Choose a smaller row number or another table.";
+                loadToken.ThrowIfCancellationRequested();
+                return generation == _generation && !_disposed;
+            }
+            long dispatchStarted = StartPreviewPhase(measured);
             await _grid.Dispatcher.InvokeAsync(() =>
             {
+                FinishPreviewPhase(measured, "page.dispatch-wait", dispatchStarted);
                 if (generation != _generation || !_grid.IsLoaded || _grid.Items.Count == 0) return;
+                long layoutStarted = StartPreviewPhase(measured);
                 _grid.UpdateLayout();
+                FinishPreviewPhase(measured, "page.layout-before", layoutStarted);
+                long selectionStarted = StartPreviewPhase(measured);
                 var item = _grid.Items.Cast<DataRowView>().FirstOrDefault(item => (long)item["r"] == row) ?? (DataRowView)_grid.Items[0];
                 int columnIndex = table.Columns.ToList().FindIndex(column => column.Name == columnToSelect);
                 var member = "c" + columnIndex.ToString(CultureInfo.InvariantCulture);
@@ -212,31 +332,83 @@ public sealed partial class DatabasePreviewControl : DockPanel, IDisposable
                 _grid.CurrentCell = new DataGridCellInfo(item, column);
                 _grid.SelectedCells.Clear(); _grid.SelectedCells.Add(_grid.CurrentCell);
                 _grid.ScrollIntoView(item, column);
+                FinishPreviewPhase(measured, "page.selection-scroll", selectionStarted);
+                layoutStarted = StartPreviewPhase(measured);
                 _grid.UpdateLayout();
+                FinishPreviewPhase(measured, "page.layout-after", layoutStarted);
+                long horizontalStarted = StartPreviewPhase(measured);
                 if (FindScrollViewer(_grid) is { } scroll)
                 {
                     double left = _grid.Columns.Where(item => item.DisplayIndex < column.DisplayIndex).Sum(item => item.ActualWidth);
                     scroll.ScrollToHorizontalOffset(Math.Clamp(left - _grid.Columns[0].ActualWidth, 0, scroll.ScrollableWidth));
                 }
+                FinishPreviewPhase(measured, "page.horizontal-scroll", horizontalStarted);
             }, System.Windows.Threading.DispatcherPriority.ContextIdle, loadToken);
+            loadToken.ThrowIfCancellationRequested();
+            return generation == _generation && !_disposed;
         }
         catch (OperationCanceledException)
         {
-            if (generation != _generation || _disposed) return;
+            if (generation != _generation || _disposed) return false;
             PreviewState = _grid.Items.Count > 0 ? "Ready" : "Unavailable";
             _rowAddress.Text = _row.ToString(CultureInfo.InvariantCulture);
-            _status.Text = token.IsCancellationRequested ? "Record navigation canceled." : "Database page loading timed out. Try a smaller row number or a stable backup.";
+            _status.Text = _loadingStopped || token.IsCancellationRequested ? "Record navigation canceled." : "Database page loading timed out. Try a smaller row number or a stable backup.";
             UpdateFindControls();
+            return false;
         }
         catch (Exception error)
         {
-            if (generation != _generation || _disposed) return;
+            if (generation != _generation || _disposed) return false;
             PreviewState = "Unavailable";
             ResetFind("Database records are unavailable. Reopen the preview or rerun the search.");
             FindState = "Unavailable";
             _status.Text = error is System.IO.InvalidDataException ? error.Message : "Database records could not be loaded. Close its application or use a stable backup.";
             UpdateFindControls();
+            return false;
         }
+        finally
+        {
+            if (ReferenceEquals(_pageLoad, load))
+            {
+                _pageLoad = null; load.Dispose();
+                if (generation == _generation && _openingLoad is null) _stopLoading.Visibility = Visibility.Collapsed;
+            }
+            FinishPreviewPhase(measured, "page.total", totalStarted);
+        }
+    }
+
+    private void ApplyPageData(DataTable prepared, bool canReuseRows, CancellationToken token)
+    {
+        token.ThrowIfCancellationRequested();
+        if (canReuseRows && _grid.ItemsSource is DataView view && view.Table is { } current &&
+            string.IsNullOrEmpty(view.Sort) && string.IsNullOrEmpty(view.RowFilter) && !view.ApplyDefaultSort &&
+            view.RowStateFilter == DataViewRowState.CurrentRows && view.Count == current.Rows.Count && current.Rows.Count == prepared.Rows.Count &&
+            _grid.Items.SortDescriptions.Count == 0 && _grid.Items.GroupDescriptions.Count == 0 &&
+            current.Columns.Count == prepared.Columns.Count && current.Columns.Cast<DataColumn>().All(column =>
+                column.ColumnName == prepared.Columns[column.Ordinal].ColumnName && column.DataType == prepared.Columns[column.Ordinal].DataType))
+        {
+            // Publish a complete bounded page in one dispatcher turn. Keeping the
+            // existing row views lets realized cells update their bindings instead
+            // of rebuilding the whole grid. Custom views keep replacement semantics.
+            for (int index = 0; index < current.Rows.Count; index++) current.Rows[index].ItemArray = prepared.Rows[index].ItemArray;
+            return;
+        }
+        _grid.ItemsSource = prepared.DefaultView;
+    }
+
+    private static DataTable CreatePageData(DatabaseTable table, DatabasePage page, CancellationToken token)
+    {
+        var data = new DataTable { Locale = CultureInfo.InvariantCulture };
+        data.Columns.Add("r", typeof(long)); data.Columns.Add("key");
+        for (int index = 0; index < table.Columns.Count; index++) data.Columns.Add("c" + index.ToString(CultureInfo.InvariantCulture));
+        foreach (var record in page.Rows)
+        {
+            token.ThrowIfCancellationRequested();
+            var values = new object[table.Columns.Count + 2]; values[0] = record.Number; values[1] = record.Key;
+            for (int index = 0; index < record.Values.Count; index++) values[index + 2] = record.Values[index] ?? "";
+            data.Rows.Add(values);
+        }
+        return data;
     }
     private static ScrollViewer? FindScrollViewer(DependencyObject parent)
     {

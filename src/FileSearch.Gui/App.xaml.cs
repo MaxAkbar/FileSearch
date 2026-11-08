@@ -135,7 +135,14 @@ public partial class App : System.Windows.Application
 
         window.DataContext = viewModel;
         var quickWindow = _host.Services.GetRequiredService<QuickSearchWindow>();
-        quickWindow.DataContext = _host.Services.GetRequiredService<QuickSearchViewModel>();
+        var quickViewModel = _host.Services.GetRequiredService<QuickSearchViewModel>();
+        quickWindow.DataContext = quickViewModel;
+        quickViewModel.RequestOpenMainWindow += (_, _) =>
+        {
+            if (viewModel.Replacement is { IsBusy: false } replacement)
+                replacement.IsOpen = false;
+            ShowMainWindow(window);
+        };
         window.Closing += (_, args) =>
         {
             if (!AppWindowLifetime.ShouldKeepResidentOnMainWindowClose(

@@ -7,8 +7,8 @@ using System.Windows.Controls;
 using System.Windows.Controls.Primitives;
 using System.Windows.Input;
 using System.Windows.Media;
-using FileSearch.Gui.Settings;
 using FileSearch.Gui.Controls;
+using FileSearch.Gui.Settings;
 using FileSearch.Gui.ViewModels;
 
 namespace FileSearch.Gui;
@@ -85,6 +85,7 @@ public partial class MainWindow : Window
         if (DataContext is not MainViewModel viewModel)
             return;
 
+        viewModel.Settings.RefreshQuickIndexedLocationsCommand.Execute(null);
         var window = new SettingsWindow
         {
             Owner = this,
@@ -300,6 +301,8 @@ public partial class MainWindow : Window
     {
         if (DatabasePreviewControl.TryRouteFindKey(e.OriginalSource, e.Key, Keyboard.Modifiers, out bool localHandled))
         { e.Handled = localHandled; return; }
+        if (FileDocumentPreview.TryRoutePreviewFindKey(e.OriginalSource, e.Key, Keyboard.Modifiers, out bool previewHandled))
+        { e.Handled = previewHandled; return; }
         if (DataContext is not MainViewModel viewModel)
             return;
 

@@ -41,7 +41,7 @@
             BorderThickness="1"
             CornerRadius="8"
             Padding="{DynamicResource AppDensity.QuickSearchPadding}">
-        <Grid>
+        <Grid x:Name="QuickSearchLayout">
             <Grid.RowDefinitions>
                 <RowDefinition Height="Auto"/>
                 <RowDefinition Height="Auto"/>
@@ -49,7 +49,7 @@
                 <RowDefinition Height="Auto"/>
             </Grid.RowDefinitions>
 
-            <Border Grid.Row="0" Style="{StaticResource OmniBarStyle}" Height="{DynamicResource AppDensity.QuickSearchOmniBarHeight}">
+            <Border x:Name="QuickSearchBar" Grid.Row="0" Style="{StaticResource OmniBarStyle}" Height="{DynamicResource AppDensity.QuickSearchOmniBarHeight}">
                 <Grid>
                     <Grid.ColumnDefinitions>
                         <ColumnDefinition Width="Auto"/>
@@ -64,28 +64,49 @@
                                  VerticalAlignment="Center"
                                  Margin="0,0,10,0"/>
                     <TextBox x:Name="SearchBox"
+                             AutomationProperties.Name="Quick Search query"
                              Grid.Column="1"
                              Text="{Binding SearchText, UpdateSourceTrigger=PropertyChanged}"
                              Style="{StaticResource OmniQueryBoxStyle}"
                              ui:ControlHelper.PlaceholderText="Search files, paths, and indexed content"/>
-                    <CheckBox Grid.Column="2"
+                    <CheckBox x:Name="QuickContentToggle" Grid.Column="2"
                               Content="Content"
+                              Foreground="{DynamicResource Atlas.InkBrush}"
                               IsChecked="{Binding IncludeContentMatches, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
                               IsEnabled="{Binding CanSearchContent}"
                               ToolTip="{Binding ContentSearchSummary}"
                               VerticalAlignment="Center"
                               Margin="12,0,8,0"/>
                     <Border Grid.Column="3" Style="{StaticResource OmniDividerStyle}"/>
-                    <ComboBox Grid.Column="4"
+                    <ComboBox x:Name="QuickLocationScope" Grid.Column="4"
+                              Foreground="{DynamicResource Atlas.InkBrush}" Background="{DynamicResource Atlas.SurfaceBrush}"
+                              BorderBrush="{DynamicResource Atlas.Line2Brush}"
                               ItemsSource="{Binding ScopeOptions}"
                               SelectedItem="{Binding SelectedScope, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
                               DisplayMemberPath="DisplayName"
+                              AutomationProperties.Name="Quick Search location scope"
+                              ToolTip="Choose which folder or indexed locations Quick Search uses"
                               VerticalAlignment="Center"
-                              MinHeight="30"/>
+                              MinHeight="30">
+                        <ComboBox.ItemContainerStyle>
+                            <Style TargetType="ComboBoxItem" BasedOn="{StaticResource {x:Type ComboBoxItem}}">
+                                <Setter Property="Foreground" Value="{DynamicResource Atlas.InkBrush}"/>
+                                <Setter Property="Background" Value="{DynamicResource Atlas.SurfaceBrush}"/>
+                                <Style.Triggers>
+                                    <Trigger Property="IsHighlighted" Value="True">
+                                        <Setter Property="Background" Value="{DynamicResource Atlas.AccentSoftBrush}"/>
+                                    </Trigger>
+                                    <Trigger Property="IsSelected" Value="True">
+                                        <Setter Property="Background" Value="{DynamicResource Atlas.AccentSoftBrush}"/>
+                                    </Trigger>
+                                </Style.Triggers>
+                            </Style>
+                        </ComboBox.ItemContainerStyle>
+                    </ComboBox>
                 </Grid>
             </Border>
 
-            <StackPanel Grid.Row="1" Margin="2,9,2,8">
+            <StackPanel x:Name="QuickScopeHeader" Grid.Row="1" Margin="2,9,2,8">
                 <Border BorderBrush="{DynamicResource Atlas.LineBrush}"
                         BorderThickness="1"
                         CornerRadius="6"
@@ -108,6 +129,7 @@
                                  Style="{StaticResource OmniPathBoxStyle}"
                                  VerticalAlignment="Center"/>
                         <Button Grid.Column="2"
+                                AutomationProperties.Name="Choose Quick Search folder"
                                 Command="{Binding ChooseQuickFolderCommand}"
                                 Style="{StaticResource IconButtonStyle}"
                                 Width="{DynamicResource AppDensity.QuickFolderButtonSize}"
@@ -119,28 +141,93 @@
                     </Grid>
                 </Border>
 
+                <Border BorderBrush="{DynamicResource Atlas.LineBrush}" BorderThickness="1" CornerRadius="6"
+                        Background="{DynamicResource Atlas.Surface2Brush}" Padding="8" Margin="0,0,0,8"
+                        Visibility="{Binding IsSelectedIndexedScope, Converter={StaticResource BoolToVisibility}}">
+                    <StackPanel>
+                        <ToggleButton x:Name="QuickLocationSelectionButton" Content="{Binding LocationSelectionSummary}"
+                                      FocusVisualStyle="{DynamicResource {x:Static SystemParameters.FocusVisualStyleKey}}"
+                                      Width="Auto" MinWidth="100"
+                                      Command="{Binding RefreshLocationSelectionsCommand}"
+                                      HorizontalAlignment="Left" MinHeight="28" Padding="9,3"
+                                      Style="{StaticResource InlineToggleButtonStyle}"
+                                      ToolTip="Choose the indexed locations included in Quick Search"
+                                      AutomationProperties.Name="Choose Quick Search indexed locations"/>
+                        <Popup PlacementTarget="{Binding ElementName=QuickLocationSelectionButton}"
+                               IsOpen="{Binding IsChecked, ElementName=QuickLocationSelectionButton, Mode=TwoWay}"
+                               StaysOpen="False" AllowsTransparency="True" Placement="Bottom">
+                            <Border Style="{StaticResource DropdownCardStyle}" Width="430"
+                                    DataContext="{Binding DataContext, ElementName=QuickLocationSelectionButton}"
+                                    PreviewKeyDown="OnWindowPreviewKeyDown"
+                                    KeyboardNavigation.TabNavigation="Cycle">
+                                <StackPanel>
+                                    <TextBlock Text="Choose indexed locations" Style="{StaticResource MenuSectionLabelStyle}"/>
+                                    <TextBlock Text="The checked locations are shared with main search. Clearing every check searches no indexed locations."
+                                               TextWrapping="Wrap" Foreground="{DynamicResource Atlas.Ink2Brush}"
+                                               FontSize="11.5" Margin="8,0,8,6"/>
+                                    <ScrollViewer MaxHeight="280" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
+                                        <ItemsControl x:Name="QuickLocationChoices" ItemsSource="{Binding LocationSelections}">
+                                            <ItemsControl.ItemTemplate>
+                                                <DataTemplate>
+                                                    <CheckBox IsChecked="{Binding IsSelected, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
+                                                              AutomationProperties.Name="{Binding Root}" Margin="8,4" HorizontalContentAlignment="Stretch">
+                                                        <StackPanel>
+                                                            <TextBlock Text="{Binding DisplayName}" Foreground="{DynamicResource Atlas.InkBrush}" TextWrapping="Wrap"/>
+                                                            <TextBlock Text="{Binding Root}" FontFamily="{DynamicResource Atlas.MonoFont}" FontSize="11"
+                                                                       Foreground="{DynamicResource Atlas.Ink2Brush}" TextTrimming="CharacterEllipsis" ToolTip="{Binding Root}"/>
+                                                            <TextBlock Text="{Binding StatusText}" FontSize="11" TextWrapping="Wrap" Foreground="{DynamicResource Atlas.Ink2Brush}"/>
+                                                        </StackPanel>
+                                                    </CheckBox>
+                                                </DataTemplate>
+                                            </ItemsControl.ItemTemplate>
+                                        </ItemsControl>
+                                    </ScrollViewer>
+                                </StackPanel>
+                            </Border>
+                        </Popup>
+                    </StackPanel>
+                </Border>
+
                 <Grid>
                     <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="Auto"/>
                         <ColumnDefinition Width="*"/>
                         <ColumnDefinition Width="Auto"/>
                     </Grid.ColumnDefinitions>
                     <TextBlock Text="{Binding StageText}"
-                               Style="{StaticResource StatusStrongStyle}"/>
+                               Style="{StaticResource StatusStrongStyle}" MaxWidth="200" TextTrimming="CharacterEllipsis"
+                               ToolTip="{Binding StageText}" VerticalAlignment="Center"/>
                     <TextBlock Grid.Column="1"
                                Text="{Binding StatusText}"
                                Style="{StaticResource StatusTextStyle}"
-                               Margin="16,0,0,0"/>
+                               Margin="16,0,0,0" VerticalAlignment="Center" TextTrimming="CharacterEllipsis"
+                               ToolTip="{Binding StatusText}"/>
+                    <Button x:Name="OpenFullSearchButton" Grid.Column="2" Content="Open full search"
+                            Command="{Binding OpenFullSearchCommand}" ToolTip="{Binding FullSearchHandoffSummary}"
+                            AutomationProperties.Name="Open Quick Search query in full search"
+                            Style="{StaticResource UnderlineLinkButtonStyle}" Margin="12,0,0,0"/>
                 </Grid>
+                <TextBlock x:Name="QuickLocationScopeNotice" Text="{Binding LocationScopeNotice}"
+                           Foreground="{DynamicResource Atlas.Ink2Brush}" FontSize="11" Margin="0,4,0,0"
+                           TextTrimming="CharacterEllipsis" ToolTip="{Binding LocationScopeNotice}"
+                           AutomationProperties.Name="Quick Search location coverage" AutomationProperties.LiveSetting="Polite"/>
             </StackPanel>
 
             <Grid Grid.Row="2">
                 <ListBox x:Name="ResultsList"
+                         AutomationProperties.Name="Quick Search results"
                          ItemsSource="{Binding Results}"
                          SelectedItem="{Binding SelectedResult, Mode=TwoWay}"
                          Style="{StaticResource ResultsListStyle}"
-                         ItemContainerStyle="{StaticResource ResultCardContainerStyle}"
                          MouseDoubleClick="OnResultDoubleClick"
+                         PreviewMouseLeftButtonDown="OnResultsPreviewMouseLeftButtonDown"
                          PreviewMouseMove="OnResultsPreviewMouseMove">
+                    <ListBox.ItemContainerStyle>
+                        <Style TargetType="ListBoxItem" BasedOn="{StaticResource ResultCardContainerStyle}">
+                            <Setter Property="AutomationProperties.Name" Value="{Binding DisplayName}"/>
+                            <Setter Property="AutomationProperties.HelpText" Value="{Binding DisplayDirectory}"/>
+                        </Style>
+                    </ListBox.ItemContainerStyle>
                     <ListBox.ItemTemplate>
                         <DataTemplate DataType="{x:Type vm:FileResultViewModel}">
                             <Grid Margin="{DynamicResource AppDensity.QuickResultCardInnerMargin}">
@@ -189,6 +276,7 @@
                                     </Border>
                                     <StackPanel Orientation="Horizontal" HorizontalAlignment="Right">
                                         <Button Command="{Binding DataContext.OpenOcrPreviewCommand, RelativeSource={RelativeSource AncestorType=ListBox}}"
+                                                AutomationProperties.Name="Open OCR preview"
                                                 CommandParameter="{Binding}"
                                                 Visibility="{Binding HasImageOcrPreview, Converter={StaticResource BoolToVisibility}}"
                                                 Style="{StaticResource IconButtonStyle}"
@@ -198,6 +286,7 @@
                                             <ui:FontIcon Glyph="&#xE8A5;" FontSize="13"/>
                                         </Button>
                                         <Button Command="{Binding DataContext.OpenResultCommand, RelativeSource={RelativeSource AncestorType=ListBox}}"
+                                                AutomationProperties.Name="Open result"
                                                 CommandParameter="{Binding}"
                                                 Style="{StaticResource IconButtonStyle}"
                                                 Width="{DynamicResource AppDensity.PreviewIconButtonSize}"
@@ -206,6 +295,7 @@
                                             <ui:FontIcon Glyph="&#xE8E5;" FontSize="13"/>
                                         </Button>
                                         <Button Command="{Binding DataContext.RevealResultCommand, RelativeSource={RelativeSource AncestorType=ListBox}}"
+                                                AutomationProperties.Name="Reveal result in Explorer"
                                                 CommandParameter="{Binding}"
                                                 Style="{StaticResource IconButtonStyle}"
                                                 Width="{DynamicResource AppDensity.PreviewIconButtonSize}"
@@ -214,6 +304,7 @@
                                             <ui:FontIcon Glyph="&#xE838;" FontSize="13"/>
                                         </Button>
                                         <Button Command="{Binding DataContext.CopyResultPathCommand, RelativeSource={RelativeSource AncestorType=ListBox}}"
+                                                AutomationProperties.Name="Copy result path"
                                                 CommandParameter="{Binding}"
                                                 Style="{StaticResource IconButtonStyle}"
                                                 Width="{DynamicResource AppDensity.PreviewIconButtonSize}"
@@ -222,6 +313,7 @@
                                             <ui:FontIcon Glyph="&#xE8C8;" FontSize="13"/>
                                         </Button>
                                         <Button Command="{Binding DataContext.PinResultCommand, RelativeSource={RelativeSource AncestorType=ListBox}}"
+                                                AutomationProperties.Name="{Binding PinActionText}"
                                                 CommandParameter="{Binding}"
                                                 Style="{StaticResource IconButtonStyle}"
                                                 Width="{DynamicResource AppDensity.PreviewIconButtonSize}"
@@ -294,7 +386,8 @@
                                     </Canvas>
                                 </Viewbox>
                             </Border>
-                            <TextBox Text="{Binding PreviewContent, Mode=OneWay}"
+                            <TextBox x:Name="QuickMatchesPreview" Text="{Binding PreviewContent, Mode=OneWay}"
+                                     AutomationProperties.Name="Quick Search matching text preview"
                                      Style="{StaticResource PreviewCodeBoxStyle}"
                                      BorderThickness="0"
                                      Background="Transparent"
@@ -302,7 +395,7 @@
                         </DockPanel>
                     </TabItem>
                     <TabItem Header="File preview">
-                        <controls:FileDocumentPreview Result="{Binding SelectedResult}" FallbackText="{Binding PreviewContent}"/>
+                        <controls:FileDocumentPreview x:Name="QuickFileDocumentPreview" Result="{Binding SelectedResult}" FallbackText="{Binding PreviewContent}"/>
                     </TabItem>
                 </TabControl>
             </Border>

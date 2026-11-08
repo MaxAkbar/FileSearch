@@ -67,7 +67,8 @@ internal sealed class DatabaseSnapshot : IDisposable
     public DatabaseKind Kind { get; }
     public string Fingerprint { get; private set; } = "";
 
-    public static async Task<DatabaseSnapshot> CreateAsync(string path, string? expected, CancellationToken token)
+    public static async Task<DatabaseSnapshot> CreateAsync(string path, string? expected, DatabaseOpenTimings? timings,
+        IProgress<DatabasePreparationProgress>? progress, CancellationToken token)
     {
         token.ThrowIfCancellationRequested();
         string fullPath = System.IO.Path.GetFullPath(path);
@@ -87,9 +88,14 @@ internal sealed class DatabaseSnapshot : IDisposable
             handles.Add(source);
             string walSuffix = kind == DatabaseKind.Sqlite ? "-wal" : ".wal";
             if (File.Exists(fullPath + walSuffix)) handles.Add(new FileStream(fullPath + walSuffix, FileMode.Open, FileAccess.Read, FileShare.Read, 64 * 1024, FileOptions.Asynchronous));
-            if (handles.Sum(file => file.Length) > DatabaseFiles.MaxSnapshotBytes) throw new InvalidDataException("Database snapshots, including WAL data, are limited to 256 MB.");
+            long totalBytes = handles.Sum(file => file.Length);
+            if (totalBytes > DatabaseFiles.MaxSnapshotBytes) throw new InvalidDataException("Database snapshots, including WAL data, are limited to 256 MB.");
+            progress?.Report(new(DatabasePreparationStage.Snapshot, 0, totalBytes));
+            token.ThrowIfCancellationRequested();
             Directory.CreateDirectory(directory);
+            long copyStarted = DatabaseOpenTimings.Start(timings);
             long remaining = DatabaseFiles.MaxSnapshotBytes;
+            long copied = 0, reported = 0;
             var buffer = new byte[64 * 1024];
             for (int index = 0; index < handles.Count; index++)
             {
@@ -100,7 +106,20 @@ internal sealed class DatabaseSnapshot : IDisposable
                 {
                     if ((remaining -= read) < 0) throw new InvalidDataException("The database grew past the 256 MB snapshot limit.");
                     await output.WriteAsync(buffer.AsMemory(0, read), token).ConfigureAwait(false);
+                    copied += read;
+                    if (progress is not null && (copied - reported >= 1024 * 1024 || copied == totalBytes))
+                    {
+                        progress.Report(new(DatabasePreparationStage.Snapshot, copied, totalBytes));
+                        reported = copied;
+                        token.ThrowIfCancellationRequested();
+                    }
                 }
+            }
+            if (timings is not null)
+            {
+                timings.CopyTicks = DatabaseOpenTimings.Elapsed(copyStarted);
+                timings.MainBytes = handles[0].Position;
+                timings.WalBytes = handles.Count > 1 ? handles[1].Position : 0;
             }
             snapshot.Fingerprint = DatabaseFiles.Fingerprint(fullPath);
             if (before != snapshot.Fingerprint) throw new InvalidDataException("The database changed while the snapshot was being read. Close its application or search a stable backup.");

@@ -90,6 +90,9 @@ internal sealed class VolumeNameSearcher : ISearcher
             return (null, null);
         }
 
+        if (request.MatchFilePaths)
+            return (null, "Filename/path matching is not supported by the drive name index");
+
         var includeFiles = request.SearchTarget is SearchTarget.FileNames or SearchTarget.FileAndFolderNames;
         var plans = new List<RootPlan>(request.Roots.Count);
         foreach (var root in request.Roots)

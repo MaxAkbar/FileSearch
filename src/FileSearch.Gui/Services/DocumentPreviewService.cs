@@ -22,7 +22,11 @@ public sealed record DocumentPreview(
     DocumentPreviewKind Kind, string Summary, string Text = "", BitmapSource? Image = null,
     int Page = 1, int PageCount = 0, bool IsTruncated = false,
     SpreadsheetPreview? Workbook = null, IReadOnlyList<PreviewPart>? Parts = null, string? SelectedPart = null,
-    IReadOnlyDictionary<string, PreviewResource>? Resources = null, PreviewResource? Animation = null);
+    IReadOnlyDictionary<string, PreviewResource>? Resources = null, PreviewResource? Animation = null)
+{
+    internal PreviewSourceVersion? PdfSourceVersion { get; init; }
+    internal System.Windows.Size PdfPageSize { get; init; }
+}
 
 /// <summary>Bounded, read-only previews of the original file, independent of search hits.</summary>
 public static class DocumentPreviewService
@@ -134,6 +138,7 @@ public static class DocumentPreviewService
         {
             token.ThrowIfCancellationRequested();
             if (new FileInfo(path).Length > MaxPdfBytes) return Limit("PDF", "PDF previews are limited to 100 MB.");
+            var sourceVersion = PreviewSourceVersion.Read(path);
             var file = await StorageFile.GetFileFromPathAsync(Path.GetFullPath(path)).AsTask(token).ConfigureAwait(false);
             var document = await PdfDocument.LoadFromFileAsync(file).AsTask(token).ConfigureAwait(false);
             var pageIndex = Math.Clamp(pageNumber - 1, 0, checked((int)document.PageCount) - 1);
@@ -150,7 +155,11 @@ public static class DocumentPreviewService
             using var input = stream.AsStreamForRead();
             var image = DecodeImage(input);
             return new DocumentPreview(DocumentPreviewKind.Pdf, $"PDF · {document.PageCount:n0} pages", Image: image,
-                Page: pageIndex + 1, PageCount: checked((int)document.PageCount));
+                Page: pageIndex + 1, PageCount: checked((int)document.PageCount))
+            {
+                PdfSourceVersion = sourceVersion == PreviewSourceVersion.Read(path) ? sourceVersion : null,
+                PdfPageSize = new System.Windows.Size(page.Size.Width, page.Size.Height),
+            };
         }, token);
 
     private static FileStream OpenRead(string path) => new(path, FileMode.Open, FileAccess.Read, FileShare.ReadWrite | FileShare.Delete);

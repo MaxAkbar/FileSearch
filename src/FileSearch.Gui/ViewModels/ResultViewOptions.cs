@@ -89,7 +89,12 @@ public sealed record SearchResultsExportDocument(
     DateTime ExportedUtc,
     int FileCount,
     int HitCount,
-    IReadOnlyList<ExportFile> Files);
+    IReadOnlyList<ExportFile> Files)
+{
+    public string LocationScope { get; init; } = string.Empty;
+    public IReadOnlyList<string> Roots { get; init; } = [];
+    public bool UseQuickSearchMatching { get; init; }
+}
 
 public sealed record ExportFile(
     string Path,

@@ -186,7 +186,7 @@ public sealed partial class HistoryViewModel : ObservableObject
         SaveHistory();
     }
 
-    /// <summary>Promotes the attempt into saved searches, both legacy lists, and persists.</summary>
+    /// <summary>Promotes the attempt into saved searches and applicable legacy lists, then persists.</summary>
     public void RecordSearch(SavedSearchSettings search)
     {
         var savedSearch = NormalizeSavedSearch(search);
@@ -195,7 +195,8 @@ public sealed partial class HistoryViewModel : ObservableObject
 
         PromoteSavedSearch(savedSearch);
         SearchHistory.PromoteToFront(RecentQueries, savedSearch.QueryText, MaxHistoryEntries);
-        SearchHistory.PromoteToFront(RecentPaths, savedSearch.SearchPath, MaxHistoryEntries);
+        if (savedSearch.GetLocationScope() == LocationScopeKind.SelectedFolder)
+            SearchHistory.PromoteToFront(RecentPaths, savedSearch.SearchPath, MaxHistoryEntries);
 
         // Persist immediately so history survives a crash.
         SaveHistory();
@@ -658,7 +659,10 @@ public sealed partial class HistoryViewModel : ObservableObject
         for (var i = 0; i < Locations.Count; i++) Locations[i] = Map(Locations[i]);
         for (var i = 0; i < SavedSearches.Count; i++)
         {
-            var search = NormalizeSavedSearch(SavedSearches[i]); search.SearchPath = Map(search.SearchPath); SavedSearches[i] = search;
+            var search = NormalizeSavedSearch(SavedSearches[i]);
+            search.SearchPath = Map(search.SearchPath);
+            search.SelectedIndexedRoots = search.GetSelectedIndexedRoots().Select(Map).Distinct(StringComparer.OrdinalIgnoreCase).ToList();
+            SavedSearches[i] = search;
         }
         for (var i = 0; i < FavoriteResults.Count; i++)
             FavoriteResults[i] = new FavoriteResultSettings { Path = Map(FavoriteResults[i].Path), AddedUtc = FavoriteResults[i].AddedUtc };
@@ -666,6 +670,7 @@ public sealed partial class HistoryViewModel : ObservableObject
         {
             var workspace = NormalizeWorkspace(Workspaces[i]);
             workspace.Search.SearchPath = Map(workspace.Search.SearchPath);
+            workspace.Search.SelectedIndexedRoots = workspace.Search.GetSelectedIndexedRoots().Select(Map).Distinct(StringComparer.OrdinalIgnoreCase).ToList();
             workspace.PinnedPaths = workspace.PinnedPaths.Select(Map).ToList();
             workspace.QuickSearchSelectedIndexedRoots = workspace.QuickSearchSelectedIndexedRoots.Select(Map).ToList();
             foreach (var favorite in workspace.FavoriteResults) favorite.Path = Map(favorite.Path);
@@ -726,7 +731,13 @@ public sealed partial class HistoryViewModel : ObservableObject
 
     private static bool HasSameSavedSearchIdentity(SavedSearchSettings left, SavedSearchSettings right) =>
         string.Equals(left.QueryText?.Trim(), right.QueryText?.Trim(), StringComparison.OrdinalIgnoreCase) &&
-        string.Equals(left.SearchPath?.Trim(), right.SearchPath?.Trim(), StringComparison.OrdinalIgnoreCase) &&
+        left.UseQuickSearchMatching == right.UseQuickSearchMatching &&
+        left.GetLocationScope() == right.GetLocationScope() &&
+        (left.GetLocationScope() != LocationScopeKind.SelectedFolder ||
+            string.Equals(left.SearchPath?.Trim(), right.SearchPath?.Trim(), StringComparison.OrdinalIgnoreCase)) &&
+        (left.GetLocationScope() != LocationScopeKind.SelectedIndexedLocations ||
+            left.GetSelectedIndexedRoots().OrderBy(root => root, StringComparer.OrdinalIgnoreCase)
+                .SequenceEqual(right.GetSelectedIndexedRoots().OrderBy(root => root, StringComparer.OrdinalIgnoreCase), StringComparer.OrdinalIgnoreCase)) &&
         left.GetSearchTargets().OrderBy(target => target)
             .SequenceEqual(right.GetSearchTargets().OrderBy(target => target));
 
@@ -808,6 +819,8 @@ public sealed partial class HistoryViewModel : ObservableObject
     private static bool MatchesSavedSearch(SavedSearchSettings item, string needle) =>
         Contains(item.QueryText, needle) ||
         Contains(item.SearchPath, needle) ||
+        Contains(item.LocationSummary, needle) ||
+        item.GetSelectedIndexedRoots().Any(root => Contains(root, needle)) ||
         Contains(item.FileNamePattern, needle) ||
         Contains(item.ExcludeFileNamePattern, needle) ||
         Contains(item.SearchMode.ToString(), needle) ||
@@ -822,6 +835,8 @@ public sealed partial class HistoryViewModel : ObservableObject
         Contains(item.Name, needle) ||
         Contains(item.Search.QueryText, needle) ||
         Contains(item.Search.SearchPath, needle) ||
+        Contains(item.Search.LocationSummary, needle) ||
+        item.Search.GetSelectedIndexedRoots().Any(root => Contains(root, needle)) ||
         Contains(item.ResultSort, needle) ||
         Contains(item.ResultGroup, needle);
 
@@ -857,6 +872,9 @@ public sealed partial class HistoryViewModel : ObservableObject
         {
             QueryText = search.QueryText?.Trim() ?? string.Empty,
             SearchPath = search.SearchPath?.Trim() ?? string.Empty,
+            LocationScope = search.GetLocationScope(),
+            SelectedIndexedRoots = search.GetSelectedIndexedRoots().ToList(),
+            UseQuickSearchMatching = search.UseQuickSearchMatching,
             FileNamePattern = search.FileNamePattern?.Trim() ?? string.Empty,
             ExcludeFileNamePattern = search.ExcludeFileNamePattern?.Trim() ?? string.Empty,
             IncludeSubfolders = search.IncludeSubfolders,

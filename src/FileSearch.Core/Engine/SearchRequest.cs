@@ -23,4 +23,5 @@ public sealed record SearchRequest(
     string? RawQuery = null,
     QueryMode? Mode = null,
     SearchTarget SearchTarget = SearchTarget.Content,
-    SemanticSearchOptions? SemanticOptions = null);
+    SemanticSearchOptions? SemanticOptions = null,
+    bool MatchFilePaths = false);

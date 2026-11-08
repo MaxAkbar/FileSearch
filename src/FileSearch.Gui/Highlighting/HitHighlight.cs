@@ -22,6 +22,9 @@ namespace FileSearch.Gui.Highlighting;
 /// </summary>
 public static class HitHighlight
 {
+    private static readonly DependencyProperty HasInlineContentProperty = DependencyProperty.RegisterAttached(
+        "HasInlineContent", typeof(bool), typeof(HitHighlight), new PropertyMetadata(false));
+
     public static readonly DependencyProperty HitProperty =
         DependencyProperty.RegisterAttached(
             "Hit",
@@ -57,11 +60,29 @@ public static class HitHighlight
         if (d is not TextBlock textBlock)
             return;
 
-        textBlock.Inlines.Clear();
         var hit = GetHit(textBlock);
         string text = hit?.LineContent ?? GetText(textBlock) ?? string.Empty;
-        var spans = new List<MatchSpan>(hit?.Highlights ?? Array.Empty<MatchSpan>());
         string filter = GetFilterText(textBlock).Trim();
+        if (hit is null && filter.Length == 0)
+        {
+            // Keep ordinary cells on TextBlock's simple text path. Touching Inlines
+            // creates rich text state even when there is nothing to highlight.
+            if ((bool)textBlock.GetValue(HasInlineContentProperty))
+            {
+                textBlock.Inlines.Clear();
+                textBlock.SetValue(HasInlineContentProperty, false);
+            }
+            textBlock.Text = text;
+            System.Windows.Automation.AutomationProperties.SetName(textBlock, text);
+            return;
+        }
+
+        // The first rich-text conversion can force UpdateLayout on an already
+        // measured block. Leave it queued when bindings update a recycled row.
+        if (!(bool)textBlock.GetValue(HasInlineContentProperty)) textBlock.InvalidateMeasure();
+        textBlock.Inlines.Clear();
+        textBlock.SetValue(HasInlineContentProperty, true);
+        var spans = new List<MatchSpan>(hit?.Highlights ?? Array.Empty<MatchSpan>());
         if (filter.Length > 0) new TermQuery(filter).CollectHighlights(text, spans);
 
         foreach (var run in BuildRuns(text, spans))
