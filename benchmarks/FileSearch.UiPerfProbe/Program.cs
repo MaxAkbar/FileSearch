@@ -44,9 +44,64 @@ internal static class Program
         {
             try
             {
+                if (args.Contains("--task-preview-baseline"))
+                {
+                    await TaskPreviewBaseline.RunAsync(_output, args[2], args.Length > 3 ? int.Parse(args[3]) : 20, args.Contains("--include-ocr"));
+                    return;
+                }
+                if (args.Contains("--database-navigation-baseline"))
+                {
+                    await DatabaseNavigationBaseline.RunAsync(_output, args[2], args.Length > 3 ? int.Parse(args[3]) : 10, args.Contains("--database-phase-details"));
+                    return;
+                }
                 if (args.Contains("--preview-smoke"))
                 {
                     await FilePreviewSmoke.RunAsync(_output, args.Contains("--preview-inspect"));
+                    return;
+                }
+                if (args.Contains("--archive-document-smoke"))
+                {
+                    await ArchiveDocumentSmoke.RunAsync(_output);
+                    return;
+                }
+                if (args.Contains("--refinement-smoke"))
+                {
+                    await ResultRefinementSmoke.RunAsync(_output);
+                    return;
+                }
+                if (args.Contains("--guidance-smoke"))
+                {
+                    await SearchGuidanceSmoke.RunAsync(_output);
+                    return;
+                }
+                if (args.Contains("--database-find-smoke"))
+                {
+                    await DatabaseFindSmoke.RunAsync(_output, args.Contains("--trace-expanded-database-load"));
+                    return;
+                }
+                if (args.Contains("--document-find-smoke"))
+                {
+                    await DocumentPreviewFindSmoke.RunAsync(_output);
+                    return;
+                }
+                if (args.Contains("--pdf-find-smoke"))
+                {
+                    await PdfPreviewFindSmoke.RunAsync(_output);
+                    return;
+                }
+                if (args.Contains("--location-scope-smoke"))
+                {
+                    await LocationScopeSmoke.RunAsync(_output);
+                    return;
+                }
+                if (args.Contains("--quick-interaction-smoke"))
+                {
+                    await QuickInteractionSmoke.RunAsync(_output);
+                    return;
+                }
+                if (args.Contains("--quick-ranking-baseline"))
+                {
+                    await QuickRankingBaseline.RunAsync(_output);
                     return;
                 }
                 if (args.Contains("--replace-smoke"))

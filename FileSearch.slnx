@@ -10,6 +10,7 @@
     <Project Path="src/FileSearch.WindowsOcr/FileSearch.WindowsOcr.csproj" />
   </Folder>
   <Folder Name="/tests/">
+    <Project Path="tests/FileSearch.Benchmarks.Tests/FileSearch.Benchmarks.Tests.csproj" />
     <Project Path="tests/FileSearch.Core.Tests/FileSearch.Core.Tests.csproj" />
     <Project Path="tests/FileSearch.Gui.Tests/FileSearch.Gui.Tests.csproj" />
     <Project Path="tests/FileSearch.Mcp.Tests/FileSearch.Mcp.Tests.csproj" />

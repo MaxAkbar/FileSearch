@@ -2,6 +2,7 @@
 
   <ItemGroup>
     <ProjectReference Include="..\..\src\FileSearch.Core\FileSearch.Core.csproj" />
+    <InternalsVisibleTo Include="FileSearch.Benchmarks.Tests" />
   </ItemGroup>
 
   <ItemGroup>

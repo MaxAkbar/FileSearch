@@ -299,7 +299,7 @@ internal sealed class BenchmarkCorpusGenerator
         Environment.GetEnvironmentVariable("OneDriveConsumer") ??
         Environment.GetEnvironmentVariable("OneDrive");
 
-    private static void CreateDocx(string path, string text)
+    internal static void CreateDocx(string path, string text)
     {
         using var document = WordprocessingDocument.Create(path, WordprocessingDocumentType.Document);
         var mainPart = document.AddMainDocumentPart();
@@ -311,7 +311,7 @@ internal sealed class BenchmarkCorpusGenerator
         mainPart.Document.Save();
     }
 
-    private static void CreateXlsx(string path, string text)
+    internal static void CreateXlsx(string path, string text)
     {
         using var document = SpreadsheetDocument.Create(path, SpreadsheetDocumentType.Workbook);
         var workbookPart = document.AddWorkbookPart();
@@ -335,7 +335,7 @@ internal sealed class BenchmarkCorpusGenerator
         workbookPart.Workbook.Save();
     }
 
-    private static void CreateSimplePdf(string path, string text)
+    internal static void CreateSimplePdf(string path, string text)
     {
         static string Escape(string value) =>
             value.Replace(@"\", @"\\", StringComparison.Ordinal)

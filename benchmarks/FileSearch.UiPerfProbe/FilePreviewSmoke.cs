@@ -112,7 +112,7 @@ internal static class FilePreviewSmoke
                 var expandedDb = Descendants(popup).OfType<DatabasePreviewControl>().Single();
                 if (expandedDb.CurrentLocation?.RowNumber != 275 || expandedDb.CurrentLocation.Column != "Notes") throw new InvalidOperationException("Expand lost its database location.");
                 popup.Close();
-                var selector = Descendants(database).OfType<ComboBox>().Single();
+                var selector = Descendants(database).OfType<ComboBox>().Single(control => System.Windows.Automation.AutomationProperties.GetName(control) == "Database table");
                 selector.SelectedItem = selector.Items.Cast<DatabaseTable>().Single(table => table.Name == "EmptyTable");
                 for (int attempt = 0; database.PreviewState == "Loading" && attempt < 100; attempt++) await Task.Delay(25);
                 if (database.PreviewState != "Empty") throw new InvalidOperationException("Empty database table did not render a useful state.");
@@ -278,7 +278,11 @@ internal static class FilePreviewSmoke
         foreach (var file in files.Where(file => file.Extension is "xlsx" or "zip" or "epub" or "eml" or "gif" or "tiff" or "odt" or "ods" or "odp" or "rtf" or "webp" or "sqlite" or "csdb"))
         {
             quick.SelectedResult = file;
-            await Wait(quickView);
+            try { await Wait(quickView); }
+            catch (TimeoutException error)
+            {
+                throw new TimeoutException($"Quick preview did not settle for {file.FileName}: state={quickView.PreviewState}, loaded={quickView.IsLoaded}, visible={quickView.IsVisible}, selected={quickView.Result?.FullPath}.", error);
+            }
             if (quickView.PreviewState is "Unavailable" or "Details") throw new InvalidOperationException("Quick Search viewer failed: " + file.FileName);
             if (file.Extension is "sqlite" or "csdb")
             {

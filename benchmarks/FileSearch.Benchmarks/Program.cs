@@ -16,6 +16,21 @@ internal static class Program
         {
             switch (command)
             {
+                case "quick-name-tasks":
+                    return await new QuickNameTaskRunner().RunAsync(paths,
+                        options.Documents ?? 10_000, options.Queries ?? 20, CancellationToken.None).ConfigureAwait(false);
+
+                case "database-profile":
+                    return await new DatabasePhaseProfileRunner().RunAsync(paths,
+                        options.ResumeManifest ?? throw new ArgumentException("database-profile requires --resume <task-manifest.json>."),
+                        options.Queries ?? 100, CancellationToken.None).ConfigureAwait(false);
+
+                case "tasks":
+                    return await new TaskBaselineRunner().RunAsync(paths, options.Queries ?? 20, CancellationToken.None, options.ResumeManifest).ConfigureAwait(false);
+
+                case "task-worker":
+                    return await TaskBaselineRunner.RunWorkerAsync(args[1], args[2], args[3], int.Parse(args[4], System.Globalization.CultureInfo.InvariantCulture), args[5], CancellationToken.None).ConfigureAwait(false);
+
                 case "generate":
                     var manifest = new BenchmarkCorpusGenerator().EnsureCorpus(paths, options.ForceCorpus);
                     Console.WriteLine($"Generated {manifest.Profile} corpus at {paths.CorpusDirectory}");
@@ -95,6 +110,9 @@ internal static class Program
         Console.WriteLine("FileSearch.Benchmarks");
         Console.WriteLine();
         Console.WriteLine("Commands:");
+        Console.WriteLine("  quick-name-tasks  Scan generated real filenames and capture frozen native name-ranking/repeated kernel diagnostics.");
+        Console.WriteLine("  database-profile  Split database preview phases using alternating engine order and an existing task corpus.");
+        Console.WriteLine("  tasks     Measure real-file search tasks and database pages in a new isolated run directory.");
         Console.WriteLine("  generate  Generate deterministic benchmark corpus only.");
         Console.WriteLine("  report    Generate corpus, build indexes, measure metrics, and write Markdown/JSON reports.");
         Console.WriteLine("  bench     Run BenchmarkDotNet benchmarks.");
@@ -107,8 +125,9 @@ internal static class Program
         Console.WriteLine("  --root <directory>");
         Console.WriteLine("  --force-corpus");
         Console.WriteLine("  --force-index");
-        Console.WriteLine("  --documents <count>  Semantic benchmark document count (default 200000).");
-        Console.WriteLine("  --queries <count>    Semantic benchmark measured queries (default 20).");
+        Console.WriteLine("  --resume <task-manifest.json>  Generated manifest for tasks resume or database-profile.");
+        Console.WriteLine("  --documents <count>  Semantic documents (default 200000); quick-name-tasks distractor files (default 10000, range 1000-100000).");
+        Console.WriteLine("  --queries <count>    Warm repetitions: tasks/semantic/quick-name-tasks default 20; database-profile default 100 even pairs.");
         Console.WriteLine("  --model-id <id>      Semantic model catalog ID.");
         Console.WriteLine("  --model-directory <path>  Explicit model-pack directory.");
         Console.WriteLine("  --install-model      Install the model before the semantic-model smoke.");
@@ -129,7 +148,8 @@ internal static class Program
         bool InstallModel,
         string? Drive = null,
         FileSearch.Core.Volumes.VolumeBuildMethod VolumeMethod = FileSearch.Core.Volumes.VolumeBuildMethod.Auto,
-        string? ParityScope = null)
+        string? ParityScope = null,
+        string? ResumeManifest = null)
     {
         public static CommandOptions Parse(IEnumerable<string> args)
         {
@@ -145,6 +165,7 @@ internal static class Program
             string? drive = null;
             var volumeMethod = FileSearch.Core.Volumes.VolumeBuildMethod.Auto;
             string? parityScope = null;
+            string? resumeManifest = null;
             var queue = new Queue<string>(args);
 
             while (queue.Count > 0)
@@ -158,6 +179,10 @@ internal static class Program
 
                     case "--root" when queue.Count > 0:
                         root = queue.Dequeue();
+                        break;
+
+                    case "--resume" when queue.Count > 0:
+                        resumeManifest = queue.Dequeue();
                         break;
 
                     case "--force-corpus":
@@ -219,7 +244,8 @@ internal static class Program
                 installModel,
                 drive,
                 volumeMethod,
-                parityScope);
+                parityScope,
+                resumeManifest);
         }
     }
 }

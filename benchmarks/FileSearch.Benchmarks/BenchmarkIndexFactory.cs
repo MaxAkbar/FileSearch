@@ -52,6 +52,7 @@ internal static class BenchmarkIndexFactory
             new XmlTextExtractor(),
             new CalendarContactExtractor(),
             new ZipExtractor(),
+            new DatabaseExtractor(),
         };
 
         return new ExtractorRegistry(extractors, plainText);
