@@ -115,22 +115,22 @@ jobs:
       - name: Verify Store package
         shell: pwsh
         run: |
-          $verifyArgs = @(
-            "-ArtifactDirectory", ".\artifacts\store",
-            "-Version", "${{ inputs.version }}",
-            "-RuntimeIdentifier", "${{ inputs.runtime }}",
-            "-PackageIdentityName", "${{ inputs.package_identity_name }}",
-            "-Publisher", "${{ inputs.publisher }}",
-            "-DisplayName", "${{ inputs.display_name }}",
-            "-PublisherDisplayName", "${{ inputs.publisher_display_name }}",
-            "-RequireRunFullTrust",
-            "-RequireSymbols"
-          )
+          $verifyArgs = @{
+            ArtifactDirectory = ".\artifacts\store"
+            Version = "${{ inputs.version }}"
+            RuntimeIdentifier = "${{ inputs.runtime }}"
+            PackageIdentityName = "${{ inputs.package_identity_name }}"
+            Publisher = "${{ inputs.publisher }}"
+            DisplayName = "${{ inputs.display_name }}"
+            PublisherDisplayName = "${{ inputs.publisher_display_name }}"
+            RequireRunFullTrust = $true
+            RequireSymbols = $true
+          }
 
           if (-not [string]::IsNullOrWhiteSpace("${{ steps.signing.outputs.thumbprint }}")) {
-            $verifyArgs += "-RequireSigned"
+            $verifyArgs.RequireSigned = $true
             if (-not [string]::IsNullOrWhiteSpace("${{ inputs.timestamp_url }}")) {
-              $verifyArgs += "-RequireTimestamp"
+              $verifyArgs.RequireTimestamp = $true
             }
           }
 
