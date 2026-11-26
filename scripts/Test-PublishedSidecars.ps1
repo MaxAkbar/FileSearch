@@ -350,6 +350,7 @@ Assert-FileExists (Join-Path $publishPath "docs\licenses\CSharpDB-MIT.txt") "CSh
 if (-not (Get-ChildItem -LiteralPath $publishPath -Filter "e_sqlite3.dll" -File -Recurse | Select-Object -First 1)) {
     throw "SQLite native runtime was not found in the publish output."
 }
+# MimeKit 5 is a meta-package that publishes separate core and cryptography assemblies.
 foreach ($previewDependency in @("MimeKit.Core.dll", "MimeKit.Cryptography.dll", "HtmlSanitizer.dll", "AngleSharp.dll", "AngleSharp.Css.dll", "BouncyCastle.Cryptography.dll")) {
     Assert-FileExists (Join-Path $publishPath $previewDependency) "Built-in structured preview dependency"
 }
