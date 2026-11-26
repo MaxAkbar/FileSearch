@@ -37,7 +37,7 @@ public sealed class OutOfProcessExtractionServiceTests : IDisposable
     [InlineData("Debug", "Release")]
     public void DevelopmentHostMatchesCallerConfiguration(string preferred, string fallback)
     {
-        var directory = Path.Combine(Path.GetTempPath(), "repo", "src", "Cli", "bin", preferred, "net10.0", "win-x64");
+        var directory = Path.Combine(Path.GetTempPath(), "repo", "src", "Cli", "bin", preferred, "net11.0", "win-x64");
         Assert.Equal(new[] { preferred, fallback }, OutOfProcessExtractionService.GetDevelopmentHostConfigurations(directory));
     }
 
@@ -234,7 +234,7 @@ public sealed class OutOfProcessExtractionServiceTests : IDisposable
             "FileSearch.ExtractorHost",
             "bin",
             configuration,
-            "net10.0");
+            "net11.0");
         var executableName = OperatingSystem.IsWindows()
             ? "FileSearch.ExtractorHost.exe"
             : "FileSearch.ExtractorHost";

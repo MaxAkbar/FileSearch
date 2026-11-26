@@ -225,7 +225,7 @@ public sealed class BackgroundIndexerProcessService : IBackgroundIndexerProcessS
             "FileSearch.Indexer",
             "bin",
             "Debug",
-            "net10.0-windows",
+            "net11.0-windows10.0.19041.0",
             "FileSearch.Indexer.exe"));
     }
 

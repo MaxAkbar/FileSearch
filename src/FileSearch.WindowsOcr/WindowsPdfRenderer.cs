@@ -85,10 +85,13 @@ public static class WindowsPdfRenderer
         }
     }
 
+    public static bool IsWorkerInvocation(string[] args) =>
+        args.Length > 0 && string.Equals(args[0], WorkerArgument, StringComparison.Ordinal);
+
     /// <summary>Handles only the private worker mode, before normal application startup.</summary>
     public static bool TryRunWorker(string[] args)
     {
-        if (args.Length == 0 || !string.Equals(args[0], WorkerArgument, StringComparison.Ordinal)) return false;
+        if (!IsWorkerInvocation(args)) return false;
         if (args.Length != 2 || !IsPrivatePipeName(args[1])) { Environment.ExitCode = 1; return true; }
         try { Task.Run(() => RunWorkerAsync(args[1])).GetAwaiter().GetResult(); }
         catch (Exception error) when (error is IOException or OperationCanceledException or InvalidDataException or UnauthorizedAccessException)
@@ -302,7 +305,7 @@ public static class WindowsPdfRenderer
                 foreach (string host in new[]
                 {
                     Path.Combine(root, "FileSearch.Gui.exe"),
-                    Path.Combine(root, "net10.0-windows10.0.19041.0", "FileSearch.Gui.exe"),
+                    Path.Combine(root, "net11.0-windows10.0.19041.0", "FileSearch.Gui.exe"),
                 })
                     if (File.Exists(host) && HasWorkerMarker(Path.ChangeExtension(host, ".dll"))) return host;
             }

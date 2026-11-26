@@ -1,4 +1,5 @@
 using FileSearch.Core.Indexing;
+using FileSearch.Core.Logging;
 using FileSearch.Core.Volumes;
 using FileSearch.WindowsOcr;
 using Forms = System.Windows.Forms;
@@ -10,6 +11,7 @@ internal static class Program
     [STAThread]
     private static void Main(string[] args)
     {
+        CrashDiagnostics.Initialize(WindowsPdfRenderer.IsWorkerInvocation(args) ? CrashProcessRole.PdfRenderWorker : CrashProcessRole.Indexer);
         if (WindowsPdfRenderer.TryRunWorker(args))
             return;
 

@@ -61,6 +61,8 @@ The script writes outputs to `artifacts\store`:
 - `.appxsym` for public symbols.
 - `.msixupload` for Microsoft Store submission.
 
+Retain the exact `.msixupload` for each Store version and architecture. It contains the distributed binaries and their symbol archive. The Store artifact check with `-RequireSymbols` opens the archive inside the upload and checks for both the managed PDB and the ReadyToRun native PDB for each FileSearch assembly in the Store app.
+
 The app help bundle is published from `src\FileSearch.Gui\Help` and is included
 in the package root as `Help\index.html`. The packaging script also publishes
 the `FileSearch.Cli.exe` command line, `FileSearch.Indexer.exe` background worker,

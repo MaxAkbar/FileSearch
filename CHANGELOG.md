@@ -2,6 +2,12 @@
 
 Work landed from `bbd4b73` (*Add background indexed search*, June 2026) to the current head, grouped by area.
 
+## FileSearch 1.11.5
+
+- **Crash details.** After an unexpected shutdown, use **About → Copy latest crash** to copy the most recent available local summary. It includes the affected process, exception types and FileSearch methods. File paths, search terms and document contents are excluded.
+- **Store diagnostics.** The Store upload includes matching managed and ReadyToRun symbols for the desktop app and its workers. FileSearch registers the build, process role and operation with Windows Error Reporting.
+- **Runtime and packaging.** FileSearch now ships with .NET 11 and updated dependencies. The packaged desktop app and its command-line tools use the same .NET 11 packaging library, and release checks start the packaged WPF executable.
+
 ## FileSearch 1.11.4
 
 - **Preview reliability**: publish database readiness only after the requested cell is selected, and show a diagnostic Details/Open fallback when the Windows WebP decoder is unavailable or cannot open the file. Cancellation cleanup tests now wait for an active child within the normal host deadline. Earlier 1.11 validation candidates were not published.

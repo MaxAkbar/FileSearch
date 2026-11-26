@@ -115,7 +115,7 @@ function Write-Checksums([System.IO.FileInfo[]]$Files, [string]$DestinationPath,
     Write-Host "Wrote checksums: $DestinationPath"
 }
 
-Add-Type -AssemblyName System.IO.Compression.FileSystem
+Add-Type -AssemblyName System.IO.Compression, System.IO.Compression.FileSystem
 
 $artifactPath = [System.IO.Path]::GetFullPath($ArtifactDirectory)
 if (-not (Test-Path -LiteralPath $artifactPath -PathType Container)) {
@@ -199,7 +199,24 @@ $uploadArchive = [System.IO.Compression.ZipFile]::OpenRead($upload.FullName)
 try {
     Assert-ZipEntry $uploadArchive $msix.Name "MSIX inside Store upload package" | Out-Null
     if ($symbols.Count -eq 1) {
-        Assert-ZipEntry $uploadArchive $symbols[0].Name "symbols inside Store upload package" | Out-Null
+        $symbolsEntry = Assert-ZipEntry $uploadArchive $symbols[0].Name "symbols inside Store upload package"
+        if ($RequireSymbols) {
+            $stream = $symbolsEntry.Open()
+            try {
+                $symbolArchive = [System.IO.Compression.ZipArchive]::new($stream, [System.IO.Compression.ZipArchiveMode]::Read)
+                try {
+                    foreach ($assembly in "Gui", "Core", "WindowsOcr", "Indexer", "ExtractorHost", "Cli") {
+                        foreach ($suffix in ".pdb", ".ni.pdb") {
+                            $name = "FileSearch.$assembly$suffix"
+                            $entry = Assert-ZipEntry $symbolArchive $name "FileSearch symbol file"
+                            if ($entry.Length -eq 0) { throw "Empty FileSearch symbol file inside Store upload: $name" }
+                        }
+                    }
+                }
+                finally { $symbolArchive.Dispose() }
+            }
+            finally { $stream.Dispose() }
+        }
     }
 }
 finally {

@@ -106,6 +106,7 @@ function Publish-Project(
         "-p:Version=$Version",
         "-p:PublishSingleFile=false",
         "-p:PublishReadyToRun=true",
+        "-p:PublishReadyToRunEmitSymbols=true",
         "-p:DebugType=portable",
         "-p:DebugSymbols=true",
         "-o",
@@ -205,28 +206,21 @@ function New-PackageAssets([string]$AssetsDirectory) {
     }
 }
 
-function New-AppSymbols([string]$PublishDirectory, [string]$SymbolsPath, [string]$ScratchDirectory) {
-    $pdbFiles = Get-ChildItem -Path $PublishDirectory -Recurse -Filter "*.pdb" -File
-    if ($pdbFiles.Count -eq 0) {
-        return $false
+function New-AppSymbols([string]$PublishDirectory, [string]$SymbolsPath) {
+    $pdbFiles = @(Get-ChildItem -LiteralPath $PublishDirectory -Recurse -Filter "*.pdb" -File | Where-Object {
+        $_.Name -notlike "*.ni.pdb" -or $_.Name -like "FileSearch.*.ni.pdb"
+    })
+    if ($pdbFiles.Count -eq 0) { return $false }
+
+    Add-Type -AssemblyName System.IO.Compression, System.IO.Compression.FileSystem
+    $archive = [System.IO.Compression.ZipFile]::Open($SymbolsPath, [System.IO.Compression.ZipArchiveMode]::Create)
+    try {
+        foreach ($pdb in $pdbFiles) {
+            $relative = (Get-RelativePath $PublishDirectory $pdb.FullName).Replace('\', '/')
+            [System.IO.Compression.ZipFileExtensions]::CreateEntryFromFile($archive, $pdb.FullName, $relative) | Out-Null
+        }
     }
-
-    $symbolsRoot = Join-Path $ScratchDirectory "symbols"
-    New-Item -ItemType Directory -Force -Path $symbolsRoot | Out-Null
-
-    foreach ($pdb in $pdbFiles) {
-        $relative = Get-RelativePath $PublishDirectory $pdb.FullName
-        $target = Join-Path $symbolsRoot $relative
-        New-Item -ItemType Directory -Force -Path ([System.IO.Path]::GetDirectoryName($target)) | Out-Null
-        Copy-Item -Path $pdb.FullName -Destination $target -Force
-    }
-
-    $zipPath = [System.IO.Path]::ChangeExtension($SymbolsPath, ".zip")
-    if (Test-Path $zipPath) { Remove-Item -LiteralPath $zipPath -Force }
-    if (Test-Path $SymbolsPath) { Remove-Item -LiteralPath $SymbolsPath -Force }
-
-    Compress-Archive -Path (Join-Path $symbolsRoot "*") -DestinationPath $zipPath -CompressionLevel Optimal
-    Move-Item -LiteralPath $zipPath -Destination $SymbolsPath -Force
+    finally { $archive.Dispose() }
     return $true
 }
 
@@ -349,7 +343,7 @@ if (-not [string]::IsNullOrWhiteSpace($CertificateThumbprint)) {
 }
 
 Write-Host "Creating symbols package..."
-$hasSymbols = New-AppSymbols $publishDirectory $symbolsPath $outputRootPath
+$hasSymbols = New-AppSymbols $publishDirectory $symbolsPath
 if (-not $hasSymbols) {
     Write-Host "No PDB files found; continuing without .appxsym."
 }

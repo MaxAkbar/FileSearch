@@ -6,7 +6,7 @@ starts indexing. Run it with no other builds, tests, or probes running.
 
 ```powershell
 dotnet build benchmarks/FileSearch.UiPerfProbe/UiPerfProbe.csproj -c Release
-dotnet benchmarks/FileSearch.UiPerfProbe/bin/Release/net10.0-windows10.0.19041.0/UiPerfProbe.dll C:/temp/ui-perf.json 500,2000,10000 default 20 4 --verify
+dotnet benchmarks/FileSearch.UiPerfProbe/bin/Release/net11.0-windows10.0.19041.0/UiPerfProbe.dll C:/temp/ui-perf.json 500,2000,10000 default 20 4 --verify
 ```
 
 Arguments are output JSON path, comma-separated file counts, comma-separated modes
@@ -35,7 +35,7 @@ After running the benchmark project's `tasks` command, pass its manifest here:
 
 ```powershell
 dotnet build benchmarks/FileSearch.UiPerfProbe/UiPerfProbe.csproj -c Release
-dotnet benchmarks/FileSearch.UiPerfProbe/bin/Release/net10.0-windows10.0.19041.0/UiPerfProbe.dll C:/temp/preview-baseline.json --task-preview-baseline C:/path/to/run/task-manifest.json 20 --include-ocr
+dotnet benchmarks/FileSearch.UiPerfProbe/bin/Release/net11.0-windows10.0.19041.0/UiPerfProbe.dll C:/temp/preview-baseline.json --task-preview-baseline C:/path/to/run/task-manifest.json 20 --include-ocr
 ```
 
 Run sequentially with no other builds/tests/probes. The real shared preview control

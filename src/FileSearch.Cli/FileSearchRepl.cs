@@ -2395,7 +2395,7 @@ internal sealed class FileSearchRepl
                 "FileSearch.Indexer",
                 "bin",
                 "Debug",
-                "net10.0-windows10.0.19041.0",
+                "net11.0-windows10.0.19041.0",
                 "FileSearch.Indexer.exe")),
             Path.GetFullPath(Path.Combine(
                 AppContext.BaseDirectory,
@@ -2403,7 +2403,7 @@ internal sealed class FileSearchRepl
                 "FileSearch.Indexer",
                 "bin",
                 "Debug",
-                "net10.0-windows",
+                "net11.0-windows",
                 "FileSearch.Indexer.exe")),
         };
 

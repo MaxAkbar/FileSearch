@@ -215,7 +215,7 @@ public sealed class OutOfProcessExtractionService : IOutOfProcessExtractionServi
                 "FileSearch.ExtractorHost",
                 "bin",
                 configuration,
-                "net10.0");
+                "net11.0");
             yield return Path.Combine(hostOutput, executableName);
             yield return Path.Combine(hostOutput, "FileSearch.ExtractorHost.dll");
         }

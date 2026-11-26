@@ -65,10 +65,10 @@ integration. FileSearch and its settings and indexes remain available.
 ## Build the optional package
 
 ```powershell
-.\scripts\New-PowerToysPackage.ps1 -RuntimeIdentifier win-x64 -Version 1.11.4.0
+.\scripts\New-PowerToysPackage.ps1 -RuntimeIdentifier win-x64 -Version 1.11.5.0
 ```
 
-The script requires the .NET 10 SDK and Windows SDK packaging tools, but does not
+The script requires the .NET 11 SDK and Windows SDK packaging tools, but does not
 require PowerToys. It creates a self-contained MSIX and checksum under
 `artifacts\powertoys`; unsigned builds also include the development ZIP. Checksums
 are in `SHA256SUMS-PowerToys-<runtime>.txt`. Pass `-CertificateThumbprint` for signing; the certificate

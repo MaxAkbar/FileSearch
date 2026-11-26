@@ -10,6 +10,8 @@ using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using ModelContextProtocol.Protocol;
 
+CrashDiagnostics.Initialize(CrashProcessRole.McpServer);
+
 McpServerRails rails;
 try
 {

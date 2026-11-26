@@ -103,7 +103,7 @@ comparison. See the [benchmark results summary](../../README.md#benchmark-result
 
 ```powershell
 dotnet build benchmarks/FileSearch.Benchmarks/FileSearch.Benchmarks.csproj -c Release
-dotnet benchmarks/FileSearch.Benchmarks/bin/Release/net10.0/FileSearch.Benchmarks.dll tasks --profile standard --queries 20
+dotnet benchmarks/FileSearch.Benchmarks/bin/Release/net11.0/FileSearch.Benchmarks.dll tasks --profile standard --queries 20
 ```
 
 Run without concurrent builds/tests/probes. Each invocation creates a new GUID run
@@ -126,7 +126,7 @@ The standard/full profiles can take minutes to build and run; start with smoke.
 To reuse an unchanged generated corpus/index after interruption:
 
 ```powershell
-dotnet benchmarks/FileSearch.Benchmarks/bin/Release/net10.0/FileSearch.Benchmarks.dll tasks --resume C:/path/to/task-manifest.json --queries 3
+dotnet benchmarks/FileSearch.Benchmarks/bin/Release/net11.0/FileSearch.Benchmarks.dll tasks --resume C:/path/to/task-manifest.json --queries 3
 ```
 
 Resume checks the original root, relative path boundaries and every source hash.

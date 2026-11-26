@@ -140,6 +140,8 @@ Invoke-CheckedCommand "dotnet" @(
     "-p:ProductName=$ProductName",
     "-p:Manufacturer=$Manufacturer",
     "-p:PublishDirectory=$publishDirectory",
+    # Rebuild WiX's harvested file list from this run's freshly published payload.
+    "-p:IntermediateOutputPath=$wixOutputDirectory\obj/",
     "-o",
     $wixOutputDirectory
 ) "Building MSI installer..."

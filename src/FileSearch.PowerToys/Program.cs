@@ -1,3 +1,4 @@
+using FileSearch.Core.Logging;
 using FileSearch.WindowsOcr;
 using Microsoft.CommandPalette.Extensions;
 using Shmuelie.WinRTServer.CsWinRT;
@@ -9,6 +10,7 @@ internal static class Program
     [MTAThread]
     private static void Main(string[] args)
     {
+        CrashDiagnostics.Initialize(WindowsPdfRenderer.IsWorkerInvocation(args) ? CrashProcessRole.PdfRenderWorker : CrashProcessRole.PowerToys);
         if (WindowsPdfRenderer.TryRunWorker(args))
             return;
 

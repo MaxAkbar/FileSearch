@@ -31,7 +31,7 @@ For the product overview, safety-rail design, and Claude Code / Claude Desktop /
 | Tool surface | 5 tools, all read-only (`readOnlyHint: true`, `destructiveHint: false`, `idempotentHint: true`, `openWorldHint: false`) |
 | Writes to disk | None — never builds, refreshes, clears, or compacts an index |
 | Network calls | None — local filesystem and local index database only |
-| Platform | Windows (`net10.0-windows`), self-contained release binaries |
+| Platform | Windows (`net11.0-windows`), self-contained release binaries |
 | Diagnostics | `%LocalAppData%\FileSearch\logs\filesearch-mcp-YYYYMMDD.log` (7-day retention); stdout is reserved for the protocol |
 
 ## Getting the binary

@@ -104,7 +104,7 @@ Search and indexing run locally. You choose the folders to index and the optiona
 
 ## Build from source
 
-Use Windows and the **.NET 10 SDK**:
+Use Windows and the **.NET 11 SDK**:
 
 ```powershell
 git clone https://github.com/MaxAkbar/FileSearch.git

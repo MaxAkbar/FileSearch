@@ -1,5 +1,8 @@
 using System.Text.Json;
 using FileSearch.Core.Extractors;
+using FileSearch.Core.Logging;
+
+CrashDiagnostics.Initialize(CrashProcessRole.ExtractorHost);
 
 return args.Contains("--serve", StringComparer.OrdinalIgnoreCase)
     ? await ExtractorHostProgram.RunServerAsync(Console.In, Console.Out, CancellationToken.None).ConfigureAwait(false)

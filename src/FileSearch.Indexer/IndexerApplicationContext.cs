@@ -506,7 +506,7 @@ internal sealed class IndexerApplicationContext : Forms.ApplicationContext
             "FileSearch.Gui",
             "bin",
             "Debug",
-            "net10.0-windows",
+            "net11.0-windows10.0.19041.0",
             "FileSearch.Gui.exe"));
         return File.Exists(devPath) ? devPath : null;
     }

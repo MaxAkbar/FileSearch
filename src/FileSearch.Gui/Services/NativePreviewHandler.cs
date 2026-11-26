@@ -23,9 +23,13 @@ internal static class NativePreviewHandler
             Guid.TryParse(new string(output).TrimEnd('\0'), out var id) ? id : null;
     }
 
+    internal const string WorkerArgument = "--file-preview-host";
+
+    public static bool IsWorkerInvocation(string[] args) => args.Length > 0 && args[0] == WorkerArgument;
+
     public static bool TryRun(string[] args)
     {
-        if (args.Length == 0 || args[0] != "--file-preview-host") return false;
+        if (!IsWorkerInvocation(args)) return false;
         if (args.Length != 4 || !long.TryParse(args[1], NumberStyles.HexNumber, CultureInfo.InvariantCulture, out var handle) ||
             !args[2].StartsWith("FileSearchPreview-", StringComparison.Ordinal) || !File.Exists(args[3])) return true;
         using var pipe = new NamedPipeClientStream(".", args[2], PipeDirection.Out);
@@ -188,7 +192,7 @@ internal sealed class NativePreviewSession : IDisposable
             PipeOptions.Asynchronous | PipeOptions.CurrentUserOnly);
         var start = new ProcessStartInfo(Path.Combine(AppContext.BaseDirectory, "FileSearch.Gui.exe"))
         { UseShellExecute = false, CreateNoWindow = true };
-        foreach (var value in new[] { "--file-preview-host", parent.ToInt64().ToString("x", CultureInfo.InvariantCulture), name, Path.GetFullPath(path) })
+        foreach (var value in new[] { NativePreviewHandler.WorkerArgument, parent.ToInt64().ToString("x", CultureInfo.InvariantCulture), name, Path.GetFullPath(path) })
             start.ArgumentList.Add(value);
         _process = Process.Start(start);
         using var registration = token.Register(Dispose);

@@ -6,6 +6,7 @@ using FileSearch.WindowsOcr;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 
+CrashDiagnostics.Initialize(WindowsPdfRenderer.IsWorkerInvocation(args) ? CrashProcessRole.PdfRenderWorker : CrashProcessRole.Cli);
 if (WindowsPdfRenderer.TryRunWorker(args))
     return Environment.ExitCode;
 

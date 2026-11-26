@@ -7,7 +7,7 @@ Build FileSearch from source, embed its .NET search engine, or prepare a release
 ## Source-build requirements
 
 - Windows, for running the WPF desktop app.
-- .NET 10 SDK (see `global.json` for SDK selection).
+- .NET 11 SDK (see `global.json` for SDK selection).
 - PowerShell for packaging scripts; Node.js 18 or later only for Help search tests.
 
 ## Build from source
@@ -47,7 +47,7 @@ Create a portable release folder:
 
 ```powershell
 powershell -ExecutionPolicy Bypass -File .\scripts\New-PortableRelease.ps1 `
-  -Version 1.11.4.0 `
+  -Version 1.11.5.0 `
   -RuntimeIdentifier win-x64
 ```
 
@@ -101,11 +101,11 @@ Key namespaces/folders:
 
 ### `FileSearch.Gui`
 
-WPF front end for the core search library. It targets `net10.0-windows` and uses:
+WPF front end for the core search library. It targets `net11.0-windows` and uses:
 
 - `CommunityToolkit.Mvvm` for MVVM helpers.
 - `Microsoft.Extensions.Hosting` and dependency injection for app composition.
-- `ModernWpfUI` 1.x for modern Windows styling and .NET 10 Fluent control resources.
+- `ModernWpfUI` 1.x for modern Windows styling and .NET 11 Fluent control resources.
 
 `WindowsPdfRenderer` in `FileSearch.WindowsOcr` runs native PDF rendering in a disposable copy of the current GUI, CLI, indexer, or companion executable. The private worker mode runs before normal startup and exchanges bounded metadata and PNG bytes over a current-user-only pipe. The caller terminates its own worker after receiving a complete response, or on cancellation, timeout, or failure. This avoids the Windows PDF software-renderer crash during native DLL teardown. Whole-page dimensions and OCR pixel coordinates remain part of the response. The ordinary desktop app continues to work without PowerToys.
 
@@ -113,7 +113,7 @@ The app provides the main search form, result grid, match preview panel, result 
 
 ### `FileSearch.Cli`
 
-Interactive REPL front end for the core search library. It targets `net10.0-windows` and uses:
+Interactive REPL front end for the core search library. It targets `net11.0-windows` and uses:
 
 - `Spectre.Console` for rich terminal prompts, status spinners, tables, panels, and highlighted match output.
 - `Microsoft.Extensions.DependencyInjection` for the same core service registration used by the GUI.

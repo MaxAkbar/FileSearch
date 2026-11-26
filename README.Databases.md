@@ -87,6 +87,6 @@ Source files are opened only for reading. FileSearch creates a bounded private d
 - Search stops at **100,000 rows total**, **250,000 populated scalar cells**, or **16 Mi characters** per database. Extraction issues report limits reached. Preview navigation supports the first **100,000 rows per table**.
 - Cell text is limited to **16,384 characters**, with an explicit notice. Text beyond that limit is not searched. Existing hit/display limits still apply.
 - Locked, changing, encrypted, corrupt, or incompatible databases can fail. A rollback journal is refused; close its application cleanly or use a valid backup. No passwords are requested, extensions loaded, or arbitrary views/procedures invoked.
-- CSharpDB file compatibility follows the bundled **CSharpDB.Engine 4.7.0** reader. Remote database servers are outside this feature.
+- CSharpDB file compatibility follows the bundled **CSharpDB.Engine 5.0.0** reader. Remote database servers are outside this feature.
 
 Extracted values are stored locally in the index like other document text. See [Privacy](PRIVACY.md) and [third-party notices](THIRD-PARTY-NOTICES.md).

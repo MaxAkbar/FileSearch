@@ -1,7 +1,10 @@
 using System;
+using System.IO;
+using System.Linq;
 using System.Reflection;
 using System.Runtime.InteropServices;
 using System.Windows;
+using FileSearch.Core.Logging;
 
 namespace FileSearch.Gui;
 
@@ -44,7 +47,7 @@ public partial class AboutWindow : Window
                 $"FileSearch{Environment.NewLine}" +
                 $"Version: {VersionText}{Environment.NewLine}" +
                 $"Runtime: {RuntimeText}{Environment.NewLine}" +
-                $"Framework: .NET 10 WPF{Environment.NewLine}" +
+                $"Framework: .NET 11 WPF{Environment.NewLine}" +
                 $"Location: {LocationText}");
         }
         catch (Exception ex)
@@ -55,6 +58,29 @@ public partial class AboutWindow : Window
                 "About FileSearch",
                 MessageBoxButton.OK,
                 MessageBoxImage.Warning);
+        }
+    }
+
+    private void OnCopyCrashClick(object sender, RoutedEventArgs e)
+    {
+        try
+        {
+            var directory = CrashDiagnostics.ReportDirectory;
+            var latest = Enum.GetValues<CrashProcessRole>()
+                .Select(role => new FileInfo(Path.Combine(directory, $"{role}.txt")))
+                .Where(file => file.Exists)
+                .MaxBy(file => file.LastWriteTimeUtc);
+            if (latest is null)
+            {
+                System.Windows.MessageBox.Show(this, "No local crash summary is available.", "FileSearch");
+                return;
+            }
+
+            System.Windows.Clipboard.SetText(File.ReadAllText(latest.FullName));
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or ExternalException)
+        {
+            System.Windows.MessageBox.Show(this, "The crash summary could not be copied.", "FileSearch");
         }
     }
 

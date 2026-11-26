@@ -38,9 +38,13 @@ Database search reads SQLite/CSharpDB scalar values and table/record locations l
 
 ## Telemetry
 
-FileSearch does not currently send telemetry or search data to a remote service.
+FileSearch does not operate a remote telemetry service. Windows Error Reporting follows the device's Windows diagnostic settings. FileSearch registers the build identifier, process role (such as the desktop or PDF worker), and a fixed operation name with Windows to help interpret operating-system crash reports.
 
-If telemetry is added later, it should be opt-in, documented here, and avoid collecting file contents, file paths, or search queries by default.
+When .NET reports a terminating unhandled exception, FileSearch tries to save a text summary in `%LocalAppData%\FileSearch\CrashReports`. It keeps the latest summary for each process role. The summary contains the UTC time, software versions, host, role, operation, exception types and error codes, and available FileSearch method names. It omits exception messages, file paths, document contents, search text, and memory dumps. **About → Copy latest crash** copies the summary to your clipboard for you to review and share. You can delete the summaries by removing the files in that folder.
+
+Native crashes, fail-fast termination, and forced process exits can occur before .NET can write a summary. Windows controls which diagnostics are available in Partner Center.
+
+If FileSearch adds its own remote telemetry later, it should be opt-in, documented here, and avoid collecting file contents, file paths, or search queries by default.
 
 ## Clearing Local Data
 

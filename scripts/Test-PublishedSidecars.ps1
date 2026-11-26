@@ -321,6 +321,17 @@ $cliExe = Join-Path $publishPath "FileSearch.Cli.exe"
 $helpIndex = Join-Path $publishPath "Help\index.html"
 
 Assert-FileExists $guiExe "Published GUI executable"
+# This private mode initializes WPF and exits before opening a window when no preview request is supplied.
+$guiProcess = Start-Process -FilePath $guiExe -ArgumentList "--file-preview-host" -WindowStyle Hidden -PassThru
+try {
+    if (-not $guiProcess.WaitForExit($StartupTimeoutSeconds * 1000)) {
+        $guiProcess.Kill()
+        throw "Published WPF startup timed out."
+    }
+    if ($guiProcess.ExitCode -ne 0) { throw "Published WPF startup failed with exit code $($guiProcess.ExitCode)." }
+}
+finally { $guiProcess.Dispose() }
+Write-SmokeLog "Published WPF startup passed."
 Assert-FileExists $indexerExe "Published background indexer executable"
 Assert-FileExists $extractorHostExe "Published extractor host executable"
 Assert-FileExists $cliExe "Published CLI executable"
@@ -339,7 +350,7 @@ Assert-FileExists (Join-Path $publishPath "docs\licenses\CSharpDB-MIT.txt") "CSh
 if (-not (Get-ChildItem -LiteralPath $publishPath -Filter "e_sqlite3.dll" -File -Recurse | Select-Object -First 1)) {
     throw "SQLite native runtime was not found in the publish output."
 }
-foreach ($previewDependency in @("MimeKit.dll", "HtmlSanitizer.dll", "AngleSharp.dll", "AngleSharp.Css.dll", "BouncyCastle.Cryptography.dll")) {
+foreach ($previewDependency in @("MimeKit.Core.dll", "MimeKit.Cryptography.dll", "HtmlSanitizer.dll", "AngleSharp.dll", "AngleSharp.Css.dll", "BouncyCastle.Cryptography.dll")) {
     Assert-FileExists (Join-Path $publishPath $previewDependency) "Built-in structured preview dependency"
 }
 foreach ($previewLicense in @("MimeKit-MIT.txt", "HtmlSanitizer-MIT.txt", "AngleSharp-MIT.txt", "AngleSharp.Css-MIT.txt", "BouncyCastle-License.txt")) {
